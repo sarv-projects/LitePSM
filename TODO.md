@@ -32,11 +32,11 @@ Before implementing application code, all normative specifications, data contrac
 
 | ID | Task | Owner | Acceptance Evidence | Status |
 |---|---|---|---|---|
-| **LPSM-B001** | Implement `internal/domain` (ID parsing, canonical JSON RFC 8785, digest hashing, schema validation). | [ARCH/10](ARCH/10-DOMAIN-MODEL.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | 100% unit test coverage on pure domain types; zero external network or disk I/O. | Planned |
-| **LPSM-B002** | Implement `internal/config` (platform paths for Windows `%LOCALAPPDATA%`, macOS `~/Library/Application Support`, Linux `$XDG_DATA_HOME`). | [ARCH/11](ARCH/11-LOCAL-RUNTIME-IPC.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Platform path resolution and configuration precedence test suite passing across OS targets. | Planned |
-| **LPSM-B003** | Implement `internal/state` (SQLite WAL initialization, migration runner, 20 tables DDL). | [ARCH/12](ARCH/12-STORAGE-TRANSACTIONS-RECOVERY.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Database migration suite verifies clean up/down and foreign key constraint enforcement. | Planned |
-| **LPSM-B004** | Implement `internal/ipc` (Named pipe server/client on Windows, Unix domain sockets on Linux/macOS, JSON-RPC 2.0 framing). | [ARCH/11](ARCH/11-LOCAL-RUNTIME-IPC.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Benchmark shows low-latency local RPC; permissions validated to reject non-owner processes. | Planned |
-| **LPSM-B005** | Implement `internal/state` operation journal and recovery worker. | [ARCH/12](ARCH/12-STORAGE-TRANSACTIONS-RECOVERY.md), [ARCH/21](ARCH/21-TESTING-CONFORMANCE.md) | Fault-injection harness confirms incomplete operations cleanly recover on startup. | Planned |
+| **LPSM-B001** | Implement `internal/domain` (ID parsing, canonical JSON RFC 8785, digest hashing, schema validation). | [ARCH/10](ARCH/10-DOMAIN-MODEL.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | 100% unit test coverage on pure domain types; zero external network or disk I/O. | Completed |
+| **LPSM-B002** | Implement `internal/config` (platform paths for Windows `%LOCALAPPDATA%`, macOS `~/Library/Application Support`, Linux `$XDG_DATA_HOME`). | [ARCH/11](ARCH/11-LOCAL-RUNTIME-IPC.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Platform path resolution and configuration precedence test suite passing across OS targets. | Completed |
+| **LPSM-B003** | Implement `internal/state` (SQLite WAL initialization, migration runner, 22 tables DDL). | [ARCH/12](ARCH/12-STORAGE-TRANSACTIONS-RECOVERY.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Database migration suite verifies clean up/down and foreign key constraint enforcement. | Completed |
+| **LPSM-B004** | Implement `internal/ipc` (Named pipe server/client on Windows, Unix domain sockets on Linux/macOS, JSON-RPC 2.0 framing). | [ARCH/11](ARCH/11-LOCAL-RUNTIME-IPC.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Benchmark shows low-latency local RPC; permissions validated to reject non-owner processes. | Completed |
+| **LPSM-B005** | Implement `internal/state` operation journal and recovery worker. | [ARCH/12](ARCH/12-STORAGE-TRANSACTIONS-RECOVERY.md), [ARCH/21](ARCH/21-TESTING-CONFORMANCE.md) | Fault-injection harness confirms incomplete operations cleanly recover on startup. | Completed |
 
 ---
 

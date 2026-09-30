@@ -13,8 +13,8 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | Phase | Description | Focus Area | Status |
 |---|---|---|---|
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `ARCH/00`–`ARCH/25`, 6 JSON Schemas (Draft 2020-12), `AGENTS.md`, `TEST.md` | **COMPLETED** |
-| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets) | **IN PROGRESS** |
-| **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder) | Planned |
+| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/litepsm` | **COMPLETED** |
+| **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder) | **IN PROGRESS** |
 | **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver) | Planned |
 | **Phase E** | **Process Supervision & First Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/bridge`, **Cline, Pi Agent, Grok Build** adapters | Planned |
 | **Phase F** | **MCP Protocol Dual-Profile & Secrets** | Stateless MCP 2026-07-28 (Streamable HTTP), legacy 2025-11-25, WinCred/DPAPI/Keychain | Planned |
@@ -170,6 +170,16 @@ Typing `/litepsm` in any configured agent opens the **Capability Panel** with 4 
   ├── TODO.md                                           # Master delivery ledger (Phases A through H)
   ├── AGENTS.md                                         # Supported AI agents guide & /litepsm UX
   ├── TEST.md                                           # Test scenarios for Cline, Pi Agent, Grok Build
+  │
+  ├── cmd/
+  │   └── litepsm/                                      # Root CLI entrypoint (doctor, version, daemon serve)
+  │       └── main.go
+  │
+  ├── internal/
+  │   ├── domain/                                       # Pure domain models, canonical IDs, RFC 8785 JCS, errors
+  │   ├── config/                                       # Platform paths (%LOCALAPPDATA%, XDG, runtimes) & config
+  │   ├── state/                                        # SQLite WAL engine (22 tables), safe CAS rollback journal
+  │   └── ipc/                                          # Local authenticated IPC (Named Pipes DACL / Unix 0600)
   │
   ├── schemas/                                          # Draft 2020-12 Canonical JSON Schemas
   │   ├── install-plan.schema.json                      # Cryptographic plan schema with planHash

@@ -1,0 +1,24 @@
+# Binaries and executables
+/litepsm
+/litepsm.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts and coverage
+*.test
+*.out
+cover.html
+
+# Local database and caches
+*.db
+*.db-wal
+*.db-shm
+daemon.lock
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
