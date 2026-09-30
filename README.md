@@ -14,8 +14,8 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 |---|---|---|---|
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `ARCH/00`–`ARCH/25`, 6 JSON Schemas (Draft 2020-12), `AGENTS.md`, `TEST.md` | **COMPLETED** |
 | **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/litepsm` | **COMPLETED** |
-| **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder) | **IN PROGRESS** |
-| **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver) | Planned |
+| **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder), `internal/catalog` (Search) | **COMPLETED** |
+| **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver) | **IN PROGRESS** |
 | **Phase E** | **Process Supervision & First Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/bridge`, **Cline, Pi Agent, Grok Build** adapters | Planned |
 | **Phase F** | **MCP Protocol Dual-Profile & Secrets** | Stateless MCP 2026-07-28 (Streamable HTTP), legacy 2025-11-25, WinCred/DPAPI/Keychain | Planned |
 | **Phase G** | **In-Agent `/litepsm` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | Planned |
@@ -179,7 +179,10 @@ Typing `/litepsm` in any configured agent opens the **Capability Panel** with 4 
   │   ├── domain/                                       # Pure domain models, canonical IDs, RFC 8785 JCS, errors
   │   ├── config/                                       # Platform paths (%LOCALAPPDATA%, XDG, runtimes) & config
   │   ├── state/                                        # SQLite WAL engine (22 tables), safe CAS rollback journal
-  │   └── ipc/                                          # Local authenticated IPC (Named Pipes DACL / Unix 0600)
+  │   ├── ipc/                                          # Local authenticated IPC (Named Pipes DACL / Unix 0600)
+  │   ├── source/                                       # Upstream adapters (Official MCP Registry, Agent Skills)
+  │   ├── catalogbuild/                                 # Deterministic release compiler & manifest generator
+  │   └── catalog/                                      # Catalog client, HTTP sync, ETag cache & lexical search
   │
   ├── schemas/                                          # Draft 2020-12 Canonical JSON Schemas
   │   ├── install-plan.schema.json                      # Cryptographic plan schema with planHash
