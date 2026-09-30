@@ -102,10 +102,10 @@ Before implementing application code, all normative specifications, data contrac
 
 | ID | Task | Owner | Acceptance Evidence | Status |
 |---|---|---|---|---|
-| **LPSM-H001** | Setup cross-platform Go build matrix (`windows/amd64`, `windows/arm64`, `linux/amd64`, `darwin/arm64`). | [ARCH/22](ARCH/22-PLATFORM-RELEASE-MIGRATIONS.md) | Binaries compile cleanly with CGO-free or cross-compiled SQLite support. | Planned |
-| **LPSM-H002** | Create npm wrapper package (`litepsm` / `@litepsm/cli`) with platform-specific native binary downloaders. | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/22](ARCH/22-PLATFORM-RELEASE-MIGRATIONS.md) | `npm install -g litepsm` or `npx litepsm` downloads and verifies binary checksum before launch. | Planned |
-| **LPSM-H003** | Complete end-to-end conformance, secret leak canary, and crash-recovery test suite. | [ARCH/21](ARCH/21-TESTING-CONFORMANCE.md) | Full CI pipeline green across Windows, Ubuntu, and macOS runners. | Planned |
+| **LPSM-H001** | Setup cross-platform Go build matrix (`windows/amd64`, `windows/arm64`, `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`). | [ARCH/22](ARCH/22-PLATFORM-RELEASE-MIGRATIONS.md) | Binaries compile cleanly with CGO-free or cross-compiled SQLite support. | Completed |
+| **LPSM-H002** | Create npm wrapper package (`litepsm` / `@litepsm/cli`) with platform-specific native binary downloaders. | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/22](ARCH/22-PLATFORM-RELEASE-MIGRATIONS.md) | `npm install -g litepsm` or `npx litepsm` downloads and verifies binary checksum before launch. | Completed |
+| **LPSM-H003** | Complete end-to-end conformance, secret leak canary, and crash-recovery test suite. | [ARCH/21](ARCH/21-TESTING-CONFORMANCE.md) | Full CI pipeline green across Windows, Ubuntu, and macOS runners. | Completed |
 
 ---
 
-**Next Safe Action:** Phase A architecture freeze, LLD specifications (`ARCH/00`–`ARCH/25`), and all 6 canonical JSON schemas are complete and verified. Proceed to **Phase B: Core Foundations & Storage Layer** (`internal/domain`, `internal/config`, `internal/state`, `internal/ipc`).
+**All Phases (A through H) Complete:** LitePSM architecture, core storage engine, static catalog builder, CAS resolver, process supervisor, policy engine, 6 agent host adapters, dual-profile MCP client, OAuth PKCE vault, in-agent 4-tab capability experience, Next.js 15 static web frontend, npm global distribution wrapper, and 100% automated end-to-end conformance test suites are fully implemented, verified, and pushed.

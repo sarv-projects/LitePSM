@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compile Release Binaries
+        run: |
+          chmod +x scripts/build-release.sh
+          ./scripts/build-release.sh
+
+      - name: Build Web Static Export
+        working-directory: ./web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package Release Archives
+        run: |
+          mkdir -p release-assets
+          cp dist/* release-assets/
+          tar -czf release-assets/litepsm-web-static.tar.gz -C web/out .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

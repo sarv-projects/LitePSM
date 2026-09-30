@@ -1,0 +1,32 @@
+{
+  "name": "litepsm",
+  "version": "0.1.0",
+  "description": "Universal Package & Capability Manager for AI Coding Agents",
+  "bin": {
+    "litepsm": "bin/litepsm.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install-binary.js",
+    "test": "node test_npm.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "cline",
+    "claude-code",
+    "codex",
+    "grok",
+    "opencode",
+    "pi-agent"
+  ],
+  "author": "Sarv Projects",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sarv-projects/LitePSM.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
