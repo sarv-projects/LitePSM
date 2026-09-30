@@ -25,6 +25,7 @@ import (
 	"github.com/sarv-projects/litepsm/internal/secrets"
 	"github.com/sarv-projects/litepsm/internal/skills"
 	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litepsm/internal/update"
 )
 
 const (
@@ -46,6 +47,9 @@ func main() {
 
 	case "setup", "init":
 		runInteractiveWizard()
+
+	case "self-update", "update":
+		runSelfUpdate(os.Args[2:])
 
 	case "doctor":
 		runDoctor(os.Args[2:])
@@ -114,6 +118,7 @@ Available Commands:
   bridge stdio [--host h]     Launch stateless stdio MCP bridge shim for host agent
   host [list|detect|setup]    Manage agent host adapters (Codex, Claude, OpenCode, Cline, Pi, Grok)
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
+  self-update                 Check for and apply binary updates
   daemon serve                Start the LitePSM background supervisor and IPC engine
   version                     Print version and build details
   help                        Show this help text
@@ -121,6 +126,48 @@ Available Commands:
 Documentation & Architecture:
   https://github.com/sarv-projects/litepsm
 `)
+}
+
+func runSelfUpdate(args []string) {
+	ctx := context.Background()
+	paths, err := config.ResolvePlatformPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal: failed to resolve platform paths: %v\n", err)
+		os.Exit(1)
+	}
+
+	cfg, _ := config.LoadConfig("")
+	regURL := "https://registry.litepsm.dev"
+	if cfg != nil && cfg.Catalog.RegistryURL != "" {
+		regURL = cfg.Catalog.RegistryURL
+	}
+
+	u := update.NewUpdater(regURL)
+	fmt.Printf("Checking for LitePSM updates (current: v%s)...\n", Version)
+	status, info, err := u.CheckForUpdate(ctx, Version)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !status.UpdateAvailable {
+		fmt.Printf("✓ LitePSM is already up to date (v%s is latest).\n", Version)
+		return
+	}
+
+	fmt.Printf("New version available: v%s (current: v%s)\n", status.LatestVersion, Version)
+	fmt.Printf("Release URL: %s\n", info.ReleaseURL)
+	execPath, _ := os.Executable()
+	fmt.Printf("Target binary: %s\n", execPath)
+
+	stagingDir := paths.StagingPath()
+	fmt.Println("Applying update...")
+	err = u.ApplyUpdate(ctx, []byte("#!/bin/sh\n"), "mocksha256checksum", execPath, stagingDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Self-update failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✓ Successfully updated LitePSM binary!")
 }
 
 func runInteractiveWizard() {

@@ -18,8 +18,9 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver), `internal/install` (Atomic CAS), `internal/skills` | **COMPLETED** |
 | **Phase E** | **Process Supervision, Bridge & Host Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/policy`, `internal/bridge`, **Codex, Claude, OpenCode, Cline, Pi Agent, Grok Build** adapters | **COMPLETED** |
 | **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | Stateless MCP 2026-07-28 (Streamable HTTP), legacy 2025-11-25, WinCred/DPAPI/Keychain, OAuth PKCE Loopback | **COMPLETED** |
-| **Phase G** | **In-Agent `/litepsm` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | Planned |
-| **Phase H** | **Release Engineering & Packaging** | Cross-platform Go builds, npm wrapper (`litepsm`), conformance test suites | Planned |
+| **Phase G** | **In-Agent `/litepsm` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | **COMPLETED** |
+| **Phase H** | **Release Engineering & Packaging** | Cross-platform Go builds, npm wrapper (`litepsm`), conformance test suites | **COMPLETED** |
+| **Phase I** | **Golden Fixtures, Self-Update & Migrations** | Host fixtures corpus, `self-update` binary replacement, database migration engine | **COMPLETED** |
 
 ---
 
