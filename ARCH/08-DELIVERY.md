@@ -44,7 +44,7 @@ To ensure stability and prevent architectural regressions, LitePSM follows an 8-
 *   **Deliverables:**
     *   `internal/domain`: Pure types, canonical JSON (RFC 8785), SHA-256 hashing.
     *   `internal/config`: Platform-standard paths across Windows, macOS, and Linux.
-    *   `internal/state`: SQLite 3 initialization in WAL mode, migration runner, 20 relational tables DDL.
+    *   `internal/state`: SQLite 3 initialization in WAL mode, migration runner, 22 relational tables DDL (including `auth_profiles` and `operation_trees`).
     *   `internal/ipc`: Windows Named Pipe and Unix domain socket JSON-RPC 2.0 transport.
 *   **Acceptance Gate:** 100% unit test coverage on pure domain types; database migration tests pass forward and backward; IPC throughput benchmark demonstrates sub-millisecond local latency.
 
@@ -58,18 +58,18 @@ To ensure stability and prevent architectural regressions, LitePSM follows an 8-
 
 ### Phase D: Safe Artifact Extraction & Skill Management
 *   **Deliverables:**
-    *   `internal/artifact`: Archive fetcher and extractor enforcing hard limits (256 MiB download, 1 GiB extracted, path traversal rejection).
-    *   `internal/resolver`: Pure DFS dependency resolver with Kahn's cycle detection.
-    *   `internal/install`: Two-phase atomic filesystem staging and SQLite commit engine.
+    *   `internal/artifact`: Archive fetcher and extractor enforcing hard limits (256 MiB download, 1 GiB extracted, case-fold checks, canonical tree digests, and path traversal rejection).
+    *   `internal/resolver`: Pure dependency resolver with constraint intersection and cycle detection.
+    *   `internal/install`: Two-phase atomic filesystem staging, safe CAS rollback, and SQLite commit engine.
     *   `internal/skills`: Progressive disclosure skill body and resource loader.
 *   **Acceptance Gate:** Extraction harness rejects all hostile zip-slip, zip-bomb, and symlink escape fixtures; aborted installations leave zero orphaned files.
 
 ### Phase E: Process Supervision, Bridge Shim & Host Adapters
 *   **Deliverables:**
-    *   `internal/provider`: Process supervisor with Windows Job Objects and Unix process groups.
-    *   `internal/policy`: 17-action effect taxonomy and approval engine.
+    *   `internal/provider`: Process supervisor with Windows Job Objects and Unix supervisor watchdog control pipe (`PR_SET_PDEATHSIG` on Linux).
+    *   `internal/policy`: 17-action effect taxonomy and approval engine with effect provenance.
     *   `internal/bridge`: Stdio MCP shim exposing the 12 core Bridge tools.
-    *   `internal/host`: Extensible adapter framework with automated config path discovery for Codex, Claude Code, Grok Build, OpenCode, Cline.
+    *   `internal/host`: Extensible adapter framework with automated config path discovery for Codex, Claude Code, Grok Build, OpenCode, Cline, and Pi Agent.
 *   **Acceptance Gate:** Terminating the daemon cleanly terminates all child provider processes; host adapters successfully merge Bridge entries into golden config fixtures without altering unrelated keys.
 
 ### Phase F: MCP Protocol Profiles, Secrets & OAuth

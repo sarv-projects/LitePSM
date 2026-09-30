@@ -14,7 +14,7 @@ PRAGMA encoding = 'UTF-8';
 
 ---
 
-## 2. Schema DDL: The 20 Core Relational Tables
+## 2. Schema DDL: The 22 Core Relational Tables
 
 ```sql
 -- 1. Schema Migrations Tracker
@@ -86,6 +86,9 @@ CREATE TABLE approvals (
     subject_hash TEXT NOT NULL,
     actor TEXT NOT NULL,
     channel TEXT NOT NULL CHECK(channel IN ('cli-tty', 'mcp-elicitation', 'native-host', 'preconfigured-policy')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'consumed', 'revoked', 'expired')),
+    consumed_at TIMESTAMP,
+    revoked_at TIMESTAMP,
     granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP,
     scope TEXT NOT NULL DEFAULT 'user'
@@ -138,6 +141,8 @@ CREATE TABLE installs (
     tree_digest TEXT NOT NULL, -- CAS tree digest
     install_path TEXT NOT NULL,
     scope TEXT NOT NULL CHECK(scope IN ('user', 'project')),
+    workspace_id TEXT, -- NULL for user scope; canonical workspace ID for project scope
+    project_root TEXT, -- Filesystem path to workspace root (for project scope)
     enabled INTEGER NOT NULL DEFAULT 1,
     installed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -161,7 +166,7 @@ CREATE TABLE providers (
     mode TEXT NOT NULL CHECK(mode IN ('local-stdio', 'remote-http', 'legacy-sse')),
     runtime_adapter TEXT NOT NULL,
     launch_spec_json TEXT NOT NULL,
-    auth_profile_id TEXT,
+    auth_profile_id TEXT REFERENCES auth_profiles(profile_id),
     enabled INTEGER NOT NULL DEFAULT 1,
     autostart INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -197,6 +202,10 @@ CREATE TABLE capability_grants (
     grant_id TEXT PRIMARY KEY,
     capability_id TEXT NOT NULL REFERENCES capabilities(capability_id) ON DELETE CASCADE,
     schema_fingerprint TEXT NOT NULL,
+    cas_tree_digest TEXT,       -- Binding for local provider: verified CAS tree SHA-256
+    endpoint_origin TEXT,       -- Binding for remote provider: verified HTTPS origin
+    server_version_digest TEXT, -- Binding for remote provider: upstream release digest
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'consumed', 'revoked', 'expired')),
     granted_by TEXT NOT NULL,
     granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP
@@ -204,19 +213,22 @@ CREATE TABLE capability_grants (
 
 -- 17. Host Agent Registrations
 CREATE TABLE host_registrations (
-    host_id TEXT NOT NULL, -- e.g. claude-code, codex
+    host_id TEXT NOT NULL, -- e.g. claude-code, codex, cline, pi, grok, opencode
     scope TEXT NOT NULL CHECK(scope IN ('user', 'project')),
+    workspace_id TEXT NOT NULL DEFAULT '', -- Empty string for user scope, canonical workspace ID for project scope
     config_path TEXT NOT NULL,
     managed_entry_key TEXT NOT NULL,
     entry_fingerprint TEXT NOT NULL,
     registered_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (host_id, scope)
+    PRIMARY KEY (host_id, scope, workspace_id)
 );
 
 -- 18. Host Config Backups
 CREATE TABLE host_backups (
     backup_id TEXT PRIMARY KEY,
     host_id TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'user' CHECK(scope IN ('user', 'project')),
+    workspace_id TEXT NOT NULL DEFAULT '',
     original_path TEXT NOT NULL,
     backup_path TEXT NOT NULL,
     pre_edit_digest TEXT NOT NULL,
@@ -238,16 +250,36 @@ CREATE TABLE audit_events (
 );
 CREATE INDEX idx_audit_time ON audit_events(timestamp);
 
--- 20. OAuth Sessions & Profiles
+-- 20. Persistent Auth Profiles
+CREATE TABLE auth_profiles (
+    profile_id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL,
+    profile_type TEXT NOT NULL CHECK(profile_type IN ('oauth2', 'api_key', 'bearer', 'basic', 'custom')),
+    secret_ref TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'valid' CHECK(status IN ('valid', 'expired', 'revoked', 'pending_auth')),
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 21. OAuth Sessions
 CREATE TABLE oauth_sessions (
     session_id TEXT PRIMARY KEY,
     provider_id TEXT NOT NULL REFERENCES providers(provider_id),
-    auth_profile_id TEXT NOT NULL,
+    auth_profile_id TEXT NOT NULL REFERENCES auth_profiles(profile_id),
     state_token TEXT NOT NULL UNIQUE,
     pkce_verifier TEXT,
     status TEXT NOT NULL CHECK(status IN ('pending', 'exchanged', 'failed', 'expired')),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL
+);
+
+-- 22. Operation Tree Ownership Tracker (CAS Safe Rollback)
+CREATE TABLE operation_trees (
+    operation_id TEXT NOT NULL REFERENCES operations(operation_id) ON DELETE CASCADE,
+    tree_digest TEXT NOT NULL,
+    created_by_op INTEGER NOT NULL DEFAULT 0, -- 1 if this operation created the tree, 0 if re-used pre-existing tree
+    PRIMARY KEY (operation_id, tree_digest)
 );
 ```
 
@@ -293,8 +325,10 @@ func (d *Daemon) RecoverIncompleteOperations(ctx context.Context) error {
                 d.db.FinalizeOperationCommit(ctx, op.OperationID)
                 d.db.UpdateOperationState(ctx, op.OperationID, "committed")
             } else {
-                // Target incomplete; roll back
-                _ = os.RemoveAll(d.fs.TreePath(op.ExpectedTreeDigest))
+                // Target incomplete; roll back ONLY trees created by this operation
+                if d.db.WasTreeCreatedByOperation(ctx, op.OperationID, op.ExpectedTreeDigest) {
+                    _ = os.RemoveAll(d.fs.TreePath(op.ExpectedTreeDigest))
+                }
                 stagingPath := filepath.Join(d.dataRoot, "staging", op.OperationID)
                 _ = os.RemoveAll(stagingPath)
                 d.db.UpdateOperationState(ctx, op.OperationID, "rolled_back")

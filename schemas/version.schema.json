@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litepsm.dev/schemas/v1/version.schema.json",
+  "title": "VersionRecord",
+  "type": "object",
+  "required": [
+    "listingId",
+    "version",
+    "sourceSnapshotId",
+    "artifacts",
+    "components",
+    "fetchedAt"
+  ],
+  "properties": {
+    "listingId": {
+      "type": "string",
+      "pattern": "^(plugin|mcp|skill|connector):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "immutableRef": {
+      "type": "string"
+    },
+    "sourceSnapshotId": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifactId", "type", "locator"],
+        "properties": {
+          "artifactId": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["git-tree", "archive", "npm", "pypi", "cargo", "oci", "nuget", "mcpb", "local-dir", "remote-only", "other"]
+          },
+          "locator": { "type": "string" },
+          "immutableRef": { "type": "string" },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "size": { "type": "integer", "minimum": 0 },
+          "mediaType": { "type": "string" },
+          "subpath": { "type": "string" },
+          "runtimeDescriptor": { "type": "string" },
+          "fetchPolicy": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "name", "declaredEffects", "supportedByLitePSM"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["skill", "mcp-provider", "hook", "command", "agent-definition", "asset", "host-app", "lsp", "other"]
+          },
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "sourceArtifactId": { "type": "string" },
+          "hostExtensions": { "type": "object" },
+          "runtime": { "type": "object" },
+          "declaredEffects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "supportedByLitePSM": {
+            "type": "string",
+            "enum": ["yes", "partial", "no", "unknown"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["listingId", "versionConstraint"],
+        "properties": {
+          "listingId": { "type": "string" },
+          "versionConstraint": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "name"],
+        "properties": {
+          "type": { "type": "string" },
+          "name": { "type": "string" },
+          "minVersion": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "permissionsDeclared": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["resource"],
+        "properties": {
+          "resource": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "compatibilityClaims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["host", "supported"],
+        "properties": {
+          "host": { "type": "string" },
+          "supported": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "testEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["testedAt", "environment", "result"],
+        "properties": {
+          "testedAt": { "type": "string", "format": "date-time" },
+          "environment": { "type": "string" },
+          "result": { "type": "string" },
+          "logRef": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "signatures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["keyId", "signature"],
+        "properties": {
+          "keyId": { "type": "string" },
+          "signature": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "publishedAt": { "type": "string", "format": "date-time" },
+    "fetchedAt": { "type": "string", "format": "date-time" },
+    "rawMetadataRef": { "type": "string" }
+  },
+  "additionalProperties": false
+}

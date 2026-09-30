@@ -63,6 +63,13 @@ func (s *StateDB) PutCapabilitiesSnapshot(ctx context.Context, caps []domain.Cap
 func (s *StateDB) PutCapabilityGrant(ctx context.Context, grant *domain.CapabilityGrant) error
 func (s *StateDB) RevokeCapabilityGrant(ctx context.Context, grantID string) error
 func (s *StateDB) PutHostRegistration(ctx context.Context, reg *domain.HostRegistration) error
+func (s *StateDB) GetHostRegistration(ctx context.Context, hostID, scope, workspaceID string) (*domain.HostRegistration, error)
+func (s *StateDB) PutAuthProfile(ctx context.Context, profile *domain.AuthProfile) error
+func (s *StateDB) GetAuthProfile(ctx context.Context, profileID string) (*domain.AuthProfile, error)
+func (s *StateDB) ListAuthProfiles(ctx context.Context, providerID string) ([]domain.AuthProfile, error)
+func (s *StateDB) RevokeAuthProfile(ctx context.Context, profileID string) error
+func (s *StateDB) RecordOperationTree(ctx context.Context, opID, treeDigest string, createdByOp bool) error
+func (s *StateDB) WasTreeCreatedByOperation(ctx context.Context, opID, treeDigest string) (bool, error)
 func (s *StateDB) AppendAuditEvent(ctx context.Context, ev *domain.AuditEvent) error
 ```
 
@@ -151,7 +158,7 @@ func ValidateNetworkDestination(ip net.IP) error
 func VerifyArtifactDigest(filePath, expectedDigest string) error
 func InspectArchive(filePath string) (*ArchiveInspection, error)
 func ValidateArchiveEntry(entryName string, size uint64) error
-func ExtractArchiveSafely(reader io.Reader, stagingDir string) (*domain.ExtractedTreeInfo, error)
+func ExtractArchiveSafely(r io.ReaderAt, size int64, stagingDir string) (*domain.ExtractedTreeInfo, error)
 func ComputeTreeDigest(treeDir string) (string, error)
 func CommitImmutableTree(stagingDir, casDir, digest string) error
 func PruneUnreferencedArtifacts(casDir string, activeDigests []string) error

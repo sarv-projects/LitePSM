@@ -65,3 +65,12 @@ When an MCP provider requires user authentication via OAuth 2.0:
 1.  **Loopback Binding:** The listener binds exclusively to `127.0.0.1:0` (never `0.0.0.0` or external network interfaces).
 2.  **State Parameter Verification:** Generates a cryptographically random 32-byte state token. Callbacks lacking an identical state token are rejected with HTTP 403.
 3.  **No URL Leaks:** Tokens exchanged in HTTP POST bodies are written directly to memory buffers and pushed to the `SecretStore`. No tokens are recorded in HTTP logs or terminal stdout.
+
+---
+
+## 4. Persistent Auth Profiles & Secret Linkage
+
+Successful authentication creates an `AuthProfile` in SQLite (`auth_profiles` table) linking non-sensitive profile state to the secure OS secret handle:
+*   **Database Record:** Persists `profile_id`, `provider_id`, `profile_type` (`oauth2`, `api_key`), `status` (`valid`, `expired`, `revoked`), and opaque `secret_ref`.
+*   **Decoupled Secrets:** Tokens and API keys are stored solely in `SecretStore`.
+*   **Revocation:** Calling `RevokeAuth(profileID)` purges the secret from the OS vault and updates the SQLite profile status to `revoked`.

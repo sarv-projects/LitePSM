@@ -85,11 +85,25 @@ Downstream MCP providers may update their tool definitions dynamically between r
 LitePSM prevents this via cryptographic schema fingerprinting:
 1.  **Schema Fingerprint:** Upon tool discovery, LitePSM generates a canonical SHA-256 digest of the tool's input JSON Schema:
     $$\text{schemaFingerprint} = \text{SHA-256}(\text{CanonicalizeJSON}(\text{ToolInputSchema}))$$
-2.  **Grant Binding:** User capability approvals are stored as `(capability_id, schemaFingerprint)` pairs.
-3.  **Drift Invalidation:** When a provider connects, LitePSM recalculates the fingerprint. If the new fingerprint diverges from the stored grant:
-    *   The existing grant is immediately invalidated (`status: "changed"`).
-    *   Further invocations are blocked with `LPSM-PROVIDER-SCHEMA-DRIFT`.
-    *   The user must review and approve the updated schema before execution resumes.
+2.  **Cryptographic Grant Binding:** User capability approvals are bound to strong identity tuples:
+    *   **Local Stdio Providers:** Stored as `(capability_id, schemaFingerprint, casTreeDigest)`. Both the tool input schema and the underlying unpacked disk tree are cryptographically bound.
+    *   **Remote HTTP Providers:** Stored as `(capability_id, schemaFingerprint, endpointOrigin, serverVersionDigest)`. The remote HTTPS origin and server version digest are bound.
+3.  **Drift Invalidation:** When a provider connects or is invoked:
+    *   If `tool.InputSchema` diverges from stored fingerprint: invalidated with `LPSM-PROVIDER-SCHEMA-DRIFT`.
+    *   If local files change: invalidated with `LPSM-PROVIDER-CODE-DRIFT`.
+    *   If remote origin or version changes: invalidated with `LPSM-PROVIDER-ENDPOINT-DRIFT`.
+    *   All drifted capabilities are blocked from execution until fresh user approval is granted.
+
+---
+
+## 5.1 Effect Provenance & Unknown Tools
+LitePSM tags every declared effect with an explicit classification provenance:
+*   `publisher_declared`: Unverified claims from the package author's manifest.
+*   `curated`: Reviewed and certified by catalog maintainers.
+*   `runtime_observed`: Dynamically observed in automated sandbox test runs.
+*   `user_classified`: Explicitly configured by the user in local policy.
+
+**Unknown Tools:** LitePSM **never** infers side effects by guessing from tool parameter names. Any tool with undeclared or unknown effects is treated as an atomic capability invocation that fails closed and requires explicit interactive user authorization.
 
 ---
 

@@ -33,46 +33,60 @@ The dependency resolver (`internal/resolver`) is a pure, side-effect-free functi
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1.1 Cycle Detection Algorithm
+### 1.1 Cycle Detection & Diamond Dependency Resolution Algorithm
+The resolver aggregates incoming constraints across all paths in the dependency DAG, verifies that a non-empty version intersection exists, and ensures the selected version satisfies every parent constraint:
+
 ```go
+type VersionConstraints struct {
+    ListingID   string
+    Constraints []string
+}
+
 func (r *Resolver) ResolveDependencies(ctx context.Context, root *domain.Listing, targetVer string) ([]domain.DependencyResolution, error) {
     resolved := make([]domain.DependencyResolution, 0)
-    visited := make(map[string]bool)
+    selected := make(map[string]*domain.VersionRecord)
+    aggregatedConstraints := make(map[string][]string)
     visiting := make(map[string]bool)
 
-    var dfs func(listingID, verConstraint string) error
-    dfs = func(listingID, verConstraint string) error {
+    // Phase 1: Collect and intersect all dependency constraints across the graph
+    var collectConstraints func(listingID, verConstraint string) error
+    collectConstraints = func(listingID, verConstraint string) error {
         if visiting[listingID] {
             return domain.NewError("LPSM-RESOLVE-CYCLE", fmt.Sprintf("Circular dependency detected at %s", listingID))
         }
-        if visited[listingID] {
-            return nil
-        }
+
+        aggregatedConstraints[listingID] = append(aggregatedConstraints[listingID], verConstraint)
 
         visiting[listingID] = true
         defer func() { visiting[listingID] = false }()
 
-        versionRecord, err := r.selectBestVersion(ctx, listingID, verConstraint)
+        // Select or verify candidate version against ALL accumulated constraints
+        candidate, err := r.selectBestVersionIntersect(ctx, listingID, aggregatedConstraints[listingID])
         if err != nil {
-            return err
+            return domain.NewError("LPSM-RESOLVE-CONFLICT", 
+                fmt.Sprintf("Constraint conflict for %s across incoming requirements %v: %v", 
+                    listingID, aggregatedConstraints[listingID], err))
         }
+        selected[listingID] = candidate
 
-        for _, dep := range versionRecord.Dependencies {
-            if err := dfs(dep.ListingID, dep.VersionConstraint); err != nil {
+        for _, dep := range candidate.Dependencies {
+            if err := collectConstraints(dep.ListingID, dep.VersionConstraint); err != nil {
                 return err
             }
         }
-
-        visited[listingID] = true
-        resolved = append(resolved, domain.DependencyResolution{
-            ListingID: listingID,
-            Selected:  versionRecord,
-        })
         return nil
     }
 
-    if err := dfs(root.ID, targetVer); err != nil {
+    if err := collectConstraints(root.ID, targetVer); err != nil {
         return nil, err
+    }
+
+    // Phase 2: Produce topologically sorted resolution slice
+    for id, verRec := range selected {
+        resolved = append(resolved, domain.DependencyResolution{
+            ListingID: id,
+            Selected:  verRec,
+        })
     }
     return resolved, nil
 }
@@ -82,16 +96,15 @@ func (r *Resolver) ResolveDependencies(ctx context.Context, root *domain.Listing
 
 ## 2. Safe Extraction Pipeline
 
-Once a plan is approved, the artifact engine (`internal/artifact`) downloads and extracts the software payload into an isolated staging directory:
+Once a plan is approved, the artifact engine (`internal/artifact`) verifies the archive hash, spools it safely to a bounded temporary file, and extracts the payload into an isolated staging directory using an `io.ReaderAt`:
 
 ```go
-func (e *ArtifactEngine) ExtractArchiveSafely(reader io.Reader, stagingDir string) (*domain.ExtractedTreeInfo, error) {
+func (e *ArtifactEngine) ExtractArchiveSafely(r io.ReaderAt, size int64, stagingDir string) (*domain.ExtractedTreeInfo, error) {
     var totalBytes int64
     var fileCount int
-    hasher := sha256.New()
-    multiReader := io.TeeReader(reader, hasher)
+    seenLower := make(map[string]string) // Case-fold collision detection
 
-    zr, err := zip.NewReader(multiReader, ...)
+    zr, err := zip.NewReader(r, size)
     if err != nil {
         return nil, domain.NewError("LPSM-ARTIFACT-MALFORMED", "Invalid archive format")
     }
@@ -102,21 +115,31 @@ func (e *ArtifactEngine) ExtractArchiveSafely(reader io.Reader, stagingDir strin
             return nil, domain.NewError("LPSM-ARTIFACT-LIMIT-EXCEEDED", "Archive exceeds max file count (20,000)")
         }
 
-        // Clean and normalize target relative path
-        cleaned := filepath.Clean(f.Name)
-        if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, ":") {
-            return nil, domain.NewError("LPSM-ARTIFACT-UNSAFE-PATH", fmt.Sprintf("Path traversal detected: %s", f.Name))
+        // Normalize slashes and backslashes
+        normalized := filepath.ToSlash(f.Name)
+        cleaned := filepath.Clean(normalized)
+
+        // Reject absolute paths, relative parent traversal, and Windows drive/colon identifiers
+        if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "../") || cleaned == ".." || strings.Contains(cleaned, ":") {
+            return nil, domain.NewError("LPSM-ARTIFACT-UNSAFE-PATH", fmt.Sprintf("Path traversal or illegal identifier detected: %s", f.Name))
         }
 
-        // Prohibit symlinks and special files
-        if f.Mode()&os.ModeSymlink != 0 || f.Mode()&os.ModeNamedPipe != 0 {
-            return nil, domain.NewError("LPSM-ARTIFACT-UNSUPPORTED-TYPE", "Symlinks and FIFOs are strictly forbidden")
+        // Check for case-fold collisions on case-insensitive filesystems (Windows/macOS)
+        lowerPath := strings.ToLower(cleaned)
+        if orig, exists := seenLower[lowerPath]; exists && orig != cleaned {
+            return nil, domain.NewError("LPSM-ARTIFACT-COLLISION", fmt.Sprintf("Case-fold collision detected: %s collides with %s", cleaned, orig))
+        }
+        seenLower[lowerPath] = cleaned
+
+        // Prohibit symlinks, hardlinks, and special device files
+        if f.Mode()&os.ModeSymlink != 0 || f.Mode()&os.ModeNamedPipe != 0 || f.Mode()&os.ModeDevice != 0 {
+            return nil, domain.NewError("LPSM-ARTIFACT-UNSUPPORTED-TYPE", "Symlinks, FIFOs, and devices are strictly forbidden")
         }
 
-        targetPath := filepath.Join(stagingDir, cleaned)
-        // Ensure path stays within stagingDir
+        targetPath := filepath.Join(stagingDir, filepath.FromSlash(cleaned))
+        // Boundary check: ensure target stays strictly within stagingDir
         if !strings.HasPrefix(targetPath, filepath.Clean(stagingDir)+string(filepath.Separator)) {
-            return nil, domain.NewError("LPSM-ARTIFACT-PATH-ESCAPE", "Extracted path escapes root")
+            return nil, domain.NewError("LPSM-ARTIFACT-PATH-ESCAPE", "Extracted path escapes staging root")
         }
 
         if f.FileInfo().IsDir() {
@@ -126,7 +149,7 @@ func (e *ArtifactEngine) ExtractArchiveSafely(reader io.Reader, stagingDir strin
             continue
         }
 
-        // Enforce max single file size (128 MiB) and total size (1 GiB)
+        // Enforce max single file size (128 MiB) and cumulative total size (1 GiB)
         if f.UncompressedSize64 > 128*1024*1024 {
             return nil, domain.NewError("LPSM-ARTIFACT-LIMIT-EXCEEDED", "File exceeds max single file limit (128 MiB)")
         }
@@ -140,23 +163,29 @@ func (e *ArtifactEngine) ExtractArchiveSafely(reader io.Reader, stagingDir strin
         }
     }
 
+    // Compute canonical Merkle TreeDigest over the extracted filesystem tree
+    canonicalTreeDigest, err := computeCanonicalTreeDigest(stagingDir)
+    if err != nil {
+        return nil, err
+    }
+
     return &domain.ExtractedTreeInfo{
         FileCount:  fileCount,
         TotalBytes: totalBytes,
-        TreeDigest: fmt.Sprintf("sha256:%x", hasher.Sum(nil)),
+        TreeDigest: canonicalTreeDigest,
     }, nil
 }
 ```
 
 ---
 
-## 3. Two-Phase Atomic Commit Pipeline
+## 3. Two-Phase Atomic Commit Pipeline & Safe CAS Rollback
 
 ```text
 Staging Directory (staging/<op-id>/)
         │
         ▼ 1. Compute Content-Addressed Tree Digest
-trees/sha256/a1/a1b2c3d4...
+trees/sha256/a1/a1b2c3d4... (Created if missing, tracked in operation_trees)
         │
         ▼ 2. Atomic Directory Rename (Same Filesystem)
 Target Tree Ready
@@ -166,11 +195,14 @@ Target Tree Ready
      INSERT INTO installs ...;
      INSERT INTO install_components ...;
      INSERT INTO providers ...;
+     INSERT INTO operation_trees (operation_id, tree_digest, created_by_op) VALUES (?, ?, 1);
      UPDATE operations SET state = 'committed' WHERE operation_id = ?;
    COMMIT;
 ```
 
-If an error occurs before the SQLite transaction commits, the daemon executes a rollback:
-1.  Removes the newly created tree directory in `trees/`.
-2.  Deletes the staging directory.
-3.  Marks the operation journal record as `rolled_back`.
+### Safe CAS Rollback Rules
+If an error occurs before or during commit:
+1.  **Check CAS Tree Ownership:** The engine queries `operation_trees` for `operation_id = ? AND created_by_op = 1`.
+2.  **Shared Tree Preservation:** If the target tree already existed before this operation (`created_by_op = 0`), the engine **NEVER deletes** the tree directory in `trees/`.
+3.  **Clean Staging:** The engine deletes `staging/<operation-id>`.
+4.  **Audit Rollback:** Marks the operation journal record as `rolled_back`.

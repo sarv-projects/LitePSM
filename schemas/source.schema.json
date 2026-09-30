@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litepsm.dev/schemas/v1/source.schema.json",
+  "title": "SourceConfiguration",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sourceId",
+    "name",
+    "sourceType",
+    "manifestFormat",
+    "endpointUrl",
+    "enabled"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "sourceId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{3,32}:[a-z0-9_-]{3,64}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "sourceType": {
+      "type": "string",
+      "enum": [
+        "mcp-registry",
+        "agent-skills",
+        "claude-marketplace",
+        "openai-plugins",
+        "grok-marketplace",
+        "git",
+        "local",
+        "custom"
+      ]
+    },
+    "manifestFormat": {
+      "type": "string",
+      "enum": [
+        "server.json",
+        "skill-md",
+        "claude-marketplace.json",
+        "plugin.json",
+        "grok-marketplace.json",
+        "litepsm-native"
+      ]
+    },
+    "endpointUrl": {
+      "type": "string",
+      "format": "uri"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "tag": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "authType": {
+      "type": "string",
+      "enum": ["none", "bearer", "basic", "oauth", "git-credentials"]
+    },
+    "authSecretRef": {
+      "type": "string"
+    },
+    "fetchPolicy": {
+      "type": "object",
+      "properties": {
+        "pollingIntervalSeconds": {
+          "type": "integer",
+          "minimum": 60
+        },
+        "maxResponseBytes": {
+          "type": "integer",
+          "default": 16777216
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "default": 30
+        },
+        "maxRedirects": {
+          "type": "integer",
+          "default": 3
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "type": "string",
+          "pattern": "^snap_[0-9A-Za-z]{26}$"
+        },
+        "adapterVersion": {
+          "type": "string"
+        },
+        "upstreamRevision": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["healthy", "partial", "failed", "stale"]
+        },
+        "itemCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "errorSummary": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

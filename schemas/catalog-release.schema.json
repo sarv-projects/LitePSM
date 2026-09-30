@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litepsm.dev/schemas/v1/catalog-release.schema.json",
+  "title": "CatalogRelease",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "releaseId",
+    "createdAt",
+    "itemCount",
+    "contentDigest",
+    "status",
+    "files"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "releaseId": {
+      "type": "string",
+      "pattern": "^rel_[0-9A-Za-z]{26}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "itemCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sourceSnapshots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "deprecated", "revoked"]
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["size", "digest"],
+        "properties": {
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "shards": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

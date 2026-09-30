@@ -53,8 +53,9 @@ LitePSM probes known default configuration locations by platform:
 | Target Agent | Linux / macOS Default Path | Windows Default Path |
 |---|---|---|
 | **Claude Code** | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
-| **OpenAI Codex** | `~/.codex/config.json` | `%APPDATA%\Codex\config.json` |
-| **Grok Build** | `~/.config/grok/config.toml` | `%APPDATA%\Grok\config.toml` |
+| **OpenAI Codex** | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` or `%APPDATA%\Codex\config.toml` |
+| **Grok Build** | `~/.grok/config.toml` (or project `.grok/config.toml`) | `%USERPROFILE%\.grok\config.toml` or `%APPDATA%\Grok\config.toml` |
+| **Pi Agent** | `~/.pi/agent/mcp.json` (or `~/.pi/config.json`) | `%USERPROFILE%\.pi\agent\mcp.json` or `%USERPROFILE%\.pi\config.json` |
 | **OpenCode** | `~/.config/opencode/opencode.json` | `%APPDATA%\OpenCode\opencode.json` |
 | **Cline** | `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/...` | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\...` |
 
@@ -95,7 +96,7 @@ LitePSM maintains all user state, database files, and package trees within platf
 
 ```text
 DATA_ROOT/
-  ├── state.db                     # SQLite database in WAL mode (20 core tables)
+  ├── state.db                     # SQLite database in WAL mode (22 core tables)
   ├── state.db-wal                 # SQLite Write-Ahead Log
   ├── state.db-shm                 # SQLite Shared Memory index
   ├── artifacts/                   # Content-Addressed Store (CAS) of raw downloads

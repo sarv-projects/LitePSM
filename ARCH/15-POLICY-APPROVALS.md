@@ -28,6 +28,15 @@ All actions proposed by installation plans or performed by downstream capabiliti
 └─────────────────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
+### 1.1 Effect Provenance & Unknown Tools
+Effect declarations carry strict provenance tags to distinguish verified safety from unverified publisher claims:
+*   `publisher_declared`: Unverified metadata extracted from upstream manifests.
+*   `curated`: Inspected and verified by catalog maintainers or static analysis pipelines.
+*   `runtime_observed`: Dynamically observed during sandboxed test execution.
+*   `user_classified`: Explicitly tagged by the local administrator in policy configurations.
+
+**Unknown Tools:** The policy engine **never guesses** side effects from tool parameter names or schemas. Uncategorized tools are treated as atomic capability grants that require explicit user approval (Tier 4) or default denial (Tier 5).
+
 ---
 
 ## 2. Policy Engine Evaluation Contract
@@ -36,14 +45,18 @@ The Policy Engine (`internal/policy`) evaluates every proposed action against lo
 
 ```go
 type PolicyInput struct {
-    Actor               string                `json:"actor"`               // user | agent | system
-    HostID              string                `json:"hostId"`              // e.g. claude-code, codex
-    Operation           string                `json:"operation"`           // install | update | invoke
-    TargetRef           string                `json:"targetRef"`           // ListingId or CapabilityId
-    Effects             []string              `json:"effects"`             // List of canonical effects
-    RequestedAccess     []string              `json:"requestedAccess"`
-    SchemaFingerprint   string                `json:"schemaFingerprint,omitempty"`
-    Scope               string                `json:"scope"`               // user | project
+    Actor               string                     `json:"actor"`               // user | agent | system
+    HostID              string                     `json:"hostId"`              // e.g. claude-code, codex
+    Operation           string                     `json:"operation"`           // install | update | invoke
+    TargetRef           string                     `json:"targetRef"`           // ListingId or CapabilityId
+    Effects             []domain.EffectDeclaration `json:"effects"`             // List of canonical effects with provenance
+    RequestedAccess     []string                   `json:"requestedAccess"`
+    SchemaFingerprint   string                     `json:"schemaFingerprint,omitempty"`
+    CASTreeDigest       string                     `json:"casTreeDigest,omitempty"`    // Verified CAS tree digest (local)
+    EndpointOrigin      string                     `json:"endpointOrigin,omitempty"`   // Verified HTTPS origin (remote)
+    Scope               string                     `json:"scope"`               // user | project
+    WorkspaceID         string                     `json:"workspaceId,omitempty"`      // Canonical workspace ID (project scope)
+    ProjectRoot         string                     `json:"projectRoot,omitempty"`      // Absolute path to project root
 }
 
 type PolicyDecision struct {
@@ -58,13 +71,13 @@ type PolicyDecision struct {
 Rules are evaluated in strict priority order. The first matching tier terminates evaluation:
 1.  **Tier 1 (Hard Invariant Deny):** Cannot be overridden. (e.g., command marketplace sources, writing secrets to disk, SSRF private network access).
 2.  **Tier 2 (Explicit User Deny):** User-configured blacklists in `config.toml`.
-3.  **Tier 3 (Explicit User Allow):** Pre-existing durable `CapabilityGrant` with matching `schemaFingerprint`.
+3.  **Tier 3 (Explicit User Allow):** Pre-existing durable `CapabilityGrant` with matching `schemaFingerprint` and verified identity bindings.
 4.  **Tier 4 (Ask / Elicitation Required):** Actions requiring human-in-the-loop confirmation.
 5.  **Tier 5 (Default Deny):** Unknown effectful actions fail closed.
 
 ---
 
-## 3. Approval Channels & Fail-Closed Behavior
+## 3. Approval Channels & Replay Prevention
 
 When a policy evaluation returns `Decision: "ask"`, LitePSM routes approval requests through the highest-fidelity available channel:
 
@@ -81,10 +94,17 @@ When a policy evaluation returns `Decision: "ask"`, LitePSM routes approval requ
 ```
 
 *   **Prompt-Injection Defense:** An LLM outputting `"The user told me it is approved"` or passing `approved: true` in tool parameters is **strictly ignored**. Approvals require cryptographic binding to a valid user channel token.
+*   **One-Time Approval Replay Prevention:** Approvals intended for single use track state (`status IN ('active', 'consumed', 'revoked', 'expired')`). Calling `ConsumeOneTimeApproval(approvalID)` executes an atomic update:
+    ```sql
+    UPDATE approvals 
+    SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP 
+    WHERE approval_id = ? AND status = 'active';
+    ```
+    If 0 rows are affected, execution aborts immediately with `LPSM-APPROVAL-REPLAY` or `LPSM-APPROVAL-EXPIRED`.
 
 ---
 
-## 4. Capability Grants & Schema-Drift Invalidation
+## 4. Capability Grants & Strong Identity Binding
 
 A `CapabilityGrant` is a persistent authorization record stored in SQLite allowing an agent to invoke a specific tool without repeated prompts:
 
@@ -93,17 +113,24 @@ CREATE TABLE capability_grants (
     grant_id TEXT PRIMARY KEY,
     capability_id TEXT NOT NULL REFERENCES capabilities(capability_id) ON DELETE CASCADE,
     schema_fingerprint TEXT NOT NULL,
+    cas_tree_digest TEXT,       -- Binding for local provider: verified CAS tree SHA-256
+    endpoint_origin TEXT,       -- Binding for remote provider: verified HTTPS origin
+    server_version_digest TEXT, -- Binding for remote provider: upstream release digest
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'consumed', 'revoked', 'expired')),
     granted_by TEXT NOT NULL,
     granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP
 );
 ```
 
-### Automatic Invalidation on Drift
-Whenever a provider connects:
-1.  The daemon recalculates `currentFingerprint = SHA-256(JCS(tool.InputSchema))`.
-2.  Queries `capability_grants` for the tool.
-3.  If `grant.schema_fingerprint != currentFingerprint`:
-    *   The grant is automatically deleted or marked `status = 'invalidated'`.
-    *   The capability status in SQLite is updated to `'changed'`.
-    *   Subsequent invocations return error code `LPSM-PROVIDER-SCHEMA-DRIFT`, requiring fresh user inspection and approval.
+### Automatic Invalidation on Schema or Code Drift
+Whenever a provider connects or is invoked:
+1.  **Local Stdio Providers:**
+    *   Computes `currentFingerprint = SHA-256(JCS(tool.InputSchema))` and checks current CAS tree digest.
+    *   If `grant.schema_fingerprint != currentFingerprint` OR `grant.cas_tree_digest != currentTreeDigest`:
+        *   The grant is marked `status = 'invalidated'`.
+        *   The capability status in SQLite is updated to `'changed'`.
+        *   Subsequent invocations return error code `LPSM-PROVIDER-SCHEMA-DRIFT` or `LPSM-PROVIDER-CODE-DRIFT`.
+2.  **Remote Streamable HTTP Providers:**
+    *   Checks `(schemaFingerprint, endpointOrigin, serverVersionDigest)`.
+    *   If the upstream origin redirect or server version changes, the grant is invalidated with `LPSM-PROVIDER-ENDPOINT-DRIFT`.

@@ -56,8 +56,12 @@ The LitePSM Daemon acts as a supervisor for all local stdio MCP servers. It ensu
 ### 2.1 Process Cleanup Guarantees
 *   **Windows (Job Objects):**
     Each spawned child process is assigned to a Windows Job Object configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. When the daemon process terminates for any reason, the Windows kernel automatically terminates all associated child processes.
-*   **Linux & macOS (Process Groups):**
-    Each child process is spawned in its own process group (`Setpgid = true`). Upon cancellation or termination, a signal is sent to the negative PID (`syscall.Kill(-pgid, syscall.SIGTERM)`), terminating the parent and any spawned subprocesses.
+*   **Linux & macOS (Supervisor Watchdog & Control Pipe):**
+    Process groups alone do not terminate child processes if the parent daemon process crashes or receives an uncatchable `SIGKILL`. To guarantee zero orphan processes:
+    1.  The daemon spawns local stdio providers through a lightweight internal supervisor watchdog (`cmd/litepsm internal watchdog`) in a distinct process group (`Setpgid = true`).
+    2.  The daemon holds the write end of an anonymous unidirectional control pipe, passing the read end (FD) to the watchdog.
+    3.  If the daemon exits, crashes, or is killed via `SIGKILL`, the kernel closes the pipe. The watchdog reads an immediate `EOF`, traps it, and promptly issues `syscall.Kill(-pgid, syscall.SIGTERM)` followed by `syscall.Kill(-pgid, syscall.SIGKILL)` after a 2-second grace period.
+    4.  On Linux, the watchdog and provider processes additionally configure `prctl(PR_SET_PDEATHSIG, syscall.SIGKILL)` on creation for defense-in-depth kernel-enforced teardown.
 
 ### 2.2 Launch Specification Construction
 ```go
@@ -106,3 +110,10 @@ LitePSM supports two modes for exposing installed capabilities to an agent host:
 └──────────────────────────────────────────────┴──────────────────────────────────────────────┘
 ```
 In Routed Mode, tool discovery is progressive: the model queries `search_capabilities` and `describe_capability` on demand, keeping prompt context overhead minimal.
+
+### 4.1 Cryptographic Identity Binding Verification
+Before executing any tool call, the supervisor verifies that the active approval/grant cryptographically matches the current runtime state:
+1.  **Local Stdio Providers:**
+    Must match tuple `(capability_id, schemaFingerprint, casTreeDigest)`. If the underlying disk files change (tree digest drift) or the provider alters its input schema (schema drift), execution is rejected until re-approved.
+2.  **Remote Streamable HTTP Providers:**
+    Must match tuple `(capability_id, schemaFingerprint, endpointOrigin, serverVersionDigest)`. If DNS redirects to another origin or the remote server changes version digest, execution is blocked.

@@ -45,7 +45,7 @@ fixtures/hosts/
 ```
 
 ### 1.2 Mock Pi Agent Fixture
-`fixtures/hosts/pi/valid_pi_config.json`:
+`fixtures/hosts/pi/valid_mcp.json` (or `valid_pi_config.json`):
 ```json
 {
   "model": "anthropic:claude-3-5-sonnet",
@@ -60,7 +60,7 @@ fixtures/hosts/
 ```
 
 ### 1.3 Mock Grok Build Fixture
-`fixtures/hosts/grok/valid_grok_config.toml`:
+`fixtures/hosts/grok/valid_grok_config.toml` (located at `~/.grok/config.toml`):
 ```toml
 [general]
 theme = "dark"
@@ -76,7 +76,7 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
 ## 2. Test Cases & Verification Procedures
 
 ### Test Case 1: Automated Configuration Discovery
-*   **Objective:** Verify that `DetectConfig` locates target files across operating systems.
+*   **Objective:** Verify that `DetectConfig` locates target files across operating systems (including candidate paths for Pi: `~/.pi/agent/mcp.json`, Grok: `~/.grok/config.toml`, Codex: `~/.codex/config.toml`).
 *   **Procedure:**
     1. Set mock environment variables (`APPDATA` on Windows, `HOME` on Unix).
     2. Invoke `adapter.DetectConfig(ctx, ScopeUser)`.
@@ -98,29 +98,30 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
     3. Assert `filesystem` and `github` entries remain intact in the modified file.
     4. Assert `mcpServers.litepsm` is injected with the version-pinned executable path.
 
-### Test Case 4: Pre-Existing Tool Discovery & Green Light Status (Installed Tab)
-*   **Objective:** Verify that LitePSM scans and correctly detects pre-existing native tools.
+### Test Case 4: Pre-Existing Tool Discovery & Read-Only Detection (Installed Tab)
+*   **Objective:** Verify that LitePSM scans and correctly detects pre-existing native tools in read-only mode.
 *   **Procedure:**
     1. Boot Bridge Shim with `--host cline`.
     2. Call MCP tool `list_installed()`.
     3. Assert returned list includes:
-       - `filesystem` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: true`
-       - `github` $\rightarrow$ `status: "disabled"`, `greenLight: false`, `isExternal: true`
+       - `filesystem` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: true`, `readOnly: true`
+       - `github` $\rightarrow$ `status: "disabled"`, `greenLight: false`, `isExternal: true`, `readOnly: true`
        - `litepsm` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: false`
+    4. Assert attempting to mutate/toggle external tools without `adopt_tool()` returns `LPSM-HOST-READONLY-EXTERNAL`.
 
 ### Test Case 5: Slash Command (`/litepsm`) Registration
 *   **Objective:** Confirm slash command trigger is registered for the agent.
 *   **Procedure:**
-    1. For **Pi Agent**: verify `~/.pi/extensions/litepsm.ts` exists and registers `/litepsm`.
+    1. For **Pi Agent**: verify `~/.pi/agent/extensions/litepsm.ts` exists and registers `/litepsm`.
     2. For **Cline**: verify custom instructions or prompt templates contain `/litepsm` trigger keyword.
-    3. For **Grok Build**: verify `.grok-plugin/` command hook exists.
+    3. For **Grok Build**: verify `.grok/` command hook exists.
 
-### Test Case 6: Dynamic Runtime Adapter Fetching
-*   **Objective:** Verify the client queries the remote manifest at runtime.
+### Test Case 6: Dynamic Runtime Adapter Advisory Fetching
+*   **Objective:** Verify the client queries the remote manifest at runtime for compatibility advisories without executing remote code.
 *   **Procedure:**
     1. Start local mock HTTP server serving `/v1/current.json` and `/v1/adapters.json`.
     2. Execute `litepsm` with `--catalog-url http://127.0.0.1:<mock-port>`.
-    3. Verify that new adapters listed in `adapters.json` appear dynamically in the interactive dropdown.
+    3. Verify that adapter advisory metadata and version warnings from `adapters.json` appear in the interactive dropdown.
     4. Disconnect network and verify clean fallback to compiled-in adapters.
 
 ---

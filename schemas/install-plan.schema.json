@@ -58,7 +58,9 @@
           "type": "string",
           "enum": ["user", "project"]
         },
-        "targetHost": { "type": "string" }
+        "targetHost": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "projectRoot": { "type": "string" }
       },
       "additionalProperties": false
     },

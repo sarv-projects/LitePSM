@@ -34,7 +34,7 @@ This architecture defines the complete specification for **LitePSM**, comprising
 |---|---|---|
 | [10 — Domain Model](10-DOMAIN-MODEL.md) | Canonical identifier grammars, domain entities, RFC 8785 canonical hashing | Normative |
 | [11 — Local Runtime & IPC](11-LOCAL-RUNTIME-IPC.md) | Daemon lifecycle, Windows named pipes, Unix domain sockets, JSON-RPC 2.0 framing | Normative |
-| [12 — Storage, Transactions & Recovery](12-STORAGE-TRANSACTIONS-RECOVERY.md) | SQLite WAL DDL (20 tables), CAS filesystem layout, 14-state operation journal, crash recovery | Normative |
+| [12 — Storage, Transactions & Recovery](12-STORAGE-TRANSACTIONS-RECOVERY.md) | SQLite WAL DDL (22 tables), CAS filesystem layout, 14-state operation journal, safe CAS rollback | Normative |
 | [13 — Resolver & Install Engine](13-RESOLVER-INSTALL-ENGINE.md) | Pure DFS resolver, cycle detection, artifact verification, two-phase atomic commit | Normative |
 | [14 — Bridge, Provider Supervisor & MCP](14-BRIDGE-PROVIDER-MCP.md) | Stdio Bridge shim, provider supervisor, Job Objects, dual-protocol MCP client | Normative |
 | [15 — Policy & Approvals Engine](15-POLICY-APPROVALS.md) | 17-action effect taxonomy, PolicyInput/Decision, approval channels, schema-drift invalidation | Normative |
@@ -68,8 +68,8 @@ This architecture defines the complete specification for **LitePSM**, comprising
 *   **SourceSnapshot:** A point-in-time capture of an upstream registry or marketplace, recording sync status (`healthy`, `partial`, `failed`, `stale`), upstream commit/revision, item count, and content digest.
 *   **CatalogRelease:** An immutable, sequence-numbered public catalog deployment (`/v1/releases/<release-id>/...`) verified by a top-level `manifest.json`.
 *   **InstallPlan (v2):** A cryptographically bound, immutable description of an install, update, or removal operation. It contains exact versions, artifact digests, local filesystem effects, declared permissions, and preconditions, hashed into a canonical SHA-256 `planHash`.
-*   **Approval:** An authorization record binding a specific user confirmation (or explicit policy grant) to an immutable `subjectHash` (e.g., `planHash` or `schemaFingerprint`).
-*   **CapabilityGrant:** A durable permission record authorizing an agent to invoke a specific provider tool, strictly bound to the tool's `schemaFingerprint`.
+*   **Approval:** An authorization record binding a specific user confirmation (or explicit policy grant) to an immutable `subjectHash` (e.g., `planHash` or `schemaFingerprint`), with replay prevention for one-time approvals.
+*   **CapabilityGrant:** A durable permission record authorizing an agent to invoke a specific provider tool, bound cryptographically to `(capability_id, schemaFingerprint, casTreeDigest)` for local providers or `(capability_id, schemaFingerprint, endpointOrigin, serverVersionDigest)` for remote providers.
 *   **Schema Fingerprint:** The canonical SHA-256 digest of an MCP tool's JSON Schema. Any modification to tool parameters alters the fingerprint, triggering schema-drift invalidation.
 *   **SourceAdapter:** Build-time adapter in CI responsible for fetching upstream discovery feeds and normalizing them into LitePSM Listing schemas without downloading package bytes.
 *   **ArtifactFetcher:** Client-side component responsible for downloading raw bytes and verifying integrity digests without executing scripts.

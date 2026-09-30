@@ -50,11 +50,13 @@ web/
 
 ## 3. Key UI Elements
 
-### 3.1 Header & Live Telemetry Badge
+### 3.1 Header & Dynamic Telemetry Badge
 *   **Sticky Header:** Displays the LitePSM logo, primary navigation links (**MCP Servers**, **Agent Skills**, **Plugins**, **Docs**), and a GitHub link.
-*   **Live Eyebrow Badge:** An animated status pill indicating catalog freshness:
+*   **Dynamic Telemetry Eyebrow Badge:** An animated status pill dynamically bound to `/v1/current.json` (never hard-coded):
+    *   **Live Capability Count:** Dynamically formatted from `current.json.itemCount` (e.g., `itemCount.toLocaleString() + " Capabilities"`).
+    *   **Relative Recency:** Dynamically calculated from `current.json.createdAt` against the client clock (e.g., `formatDistanceToNow(new Date(createdAt)) + " ago"`).
     ```text
-    ● 48,400+ Capabilities · Updated 2 hours ago
+    ● {itemCount.toLocaleString()} Capabilities · Updated {formatDistanceToNow(createdAt)} ago
     ```
 
 ### 3.2 Dynamic Omni-Search & Category Rail
@@ -83,7 +85,10 @@ Clicking any card opens an accessible slide-over sheet or dedicated page with 4 
 
 ## 4. Technical Stack & Deployment
 
-*   **Framework:** Next.js 15 (App Router with `output: 'export'`) or Vite + React 19.
+*   **Framework (Frozen):** **Next.js 15 (App Router with `output: 'export'`)** and React 19.
+*   **Static Generation:** Item pages use `generateStaticParams()` reading build-time catalog shards, with client-side fallback fetching from `/v1/releases/<release-id>/items/<id>.json`.
 *   **Styling:** Tailwind CSS v4 with CSS variables for dark/light themes.
+*   **Component Primitives:** Radix UI primitives (Dialog, Tabs, Tooltip, Sheet).
 *   **Icons:** Lucide React.
+*   **Search Engine:** Client-side Web Worker running MiniSearch over `index.json`.
 *   **Zero Server Infrastructure:** The web application is 100% static. It loads `/v1/current.json` and fetches shards on demand. Deployed alongside the static catalog on Cloudflare Pages.
