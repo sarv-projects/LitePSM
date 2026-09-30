@@ -55,10 +55,10 @@ Before implementing application code, all normative specifications, data contrac
 
 | ID | Task | Owner | Acceptance Evidence | Status |
 |---|---|---|---|---|
-| **LPSM-D001** | Implement `internal/artifact` fetcher and safe archive extractor with hard limit enforcement. | [ARCH/05](ARCH/05-SECURITY.md), [ARCH/13](ARCH/13-RESOLVER-INSTALL-ENGINE.md) | Rejection of directory traversal (`../`), zip bombs, absolute paths, and unauthorized symlinks. | Planned |
-| **LPSM-D002** | Implement `internal/resolver` (pure DFS dependency resolution with cycle detection). | [ARCH/13](ARCH/13-RESOLVER-INSTALL-ENGINE.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Topological order generated without side effects; dependency cycles return clean error. | Planned |
-| **LPSM-D003** | Implement `internal/install` atomic staging, CAS immutable tree placement, and SQLite commit. | [ARCH/12](ARCH/12-STORAGE-TRANSACTIONS-RECOVERY.md), [ARCH/13](ARCH/13-RESOLVER-INSTALL-ENGINE.md) | Staged install moves atomically; aborted install leaves zero orphaned files in live directories. | Planned |
-| **LPSM-D004** | Implement `internal/skills` loader (progressive disclosure: metadata first, body/resources on demand). | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/14](ARCH/14-BRIDGE-PROVIDER-MCP.md) | `load_skill` returns untrusted text instructions; zero script execution during loading or install. | Planned |
+| **LPSM-D001** | Implement `internal/artifact` fetcher and safe archive extractor with hard limit enforcement. | [ARCH/05](ARCH/05-SECURITY.md), [ARCH/13](ARCH/13-RESOLVER-INSTALL-ENGINE.md) | Rejection of directory traversal (`../`), zip bombs, absolute paths, case collisions, and unauthorized symlinks; Merkle tree digest verified. | Completed |
+| **LPSM-D002** | Implement `internal/resolver` (pure DFS dependency resolution with cycle detection). | [ARCH/13](ARCH/13-RESOLVER-INSTALL-ENGINE.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Topological order generated without side effects; diamond constraint intersection and cycle detection (`LPSM-RESOLVE-CYCLE`) verified. | Completed |
+| **LPSM-D003** | Implement `internal/install` atomic staging, CAS immutable tree placement, and SQLite commit. | [ARCH/12](ARCH/12-STORAGE-TRANSACTIONS-RECOVERY.md), [ARCH/13](ARCH/13-RESOLVER-INSTALL-ENGINE.md) | Staged install moves atomically; deduplicated CAS trees tracked; rollback deletes only trees created by operation, preserving shared pre-existing trees. | Completed |
+| **LPSM-D004** | Implement `internal/skills` loader (progressive disclosure: metadata first, body/resources on demand). | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/14](ARCH/14-BRIDGE-PROVIDER-MCP.md) | Progressive disclosure index formatted for agent prompts; full `SKILL.md` instruction expansion verified. | Completed |
 
 ---
 

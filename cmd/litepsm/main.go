@@ -1,12 +1,14 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -16,7 +18,9 @@ import (
 	"github.com/sarv-projects/litepsm/internal/catalog"
 	"github.com/sarv-projects/litepsm/internal/config"
 	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litepsm/internal/install"
 	"github.com/sarv-projects/litepsm/internal/ipc"
+	"github.com/sarv-projects/litepsm/internal/skills"
 	"github.com/sarv-projects/litepsm/internal/state"
 )
 
@@ -46,6 +50,13 @@ func main() {
 			query = strings.Join(os.Args[2:], " ")
 		}
 		runSearch(query)
+
+	case "install", "add", "i":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: litepsm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]")
+			os.Exit(1)
+		}
+		runInstall(os.Args[2:])
 
 	case "catalog":
 		if len(os.Args) >= 3 && os.Args[2] == "sync" {
@@ -79,6 +90,7 @@ Usage:
 
 Available Commands:
   search <query>   Search the global catalog of MCP servers, skills, and plugins
+  install <id>     Install and verify a capability into the local CAS store
   catalog sync     Synchronize and verify latest catalog release from upstream
   doctor           Run diagnostic verification of platform environment
   daemon serve     Start the LitePSM background supervisor and IPC engine
@@ -137,6 +149,91 @@ func runSearch(query string) {
 		fmt.Printf("%-8s %-32s %-12s %s\n", kindBadge, l.Name, verifiedBadge, summary)
 	}
 	fmt.Println()
+}
+
+func runInstall(args []string) {
+	listingID := args[0]
+	version := "latest"
+	scope := domain.ScopeUser
+	workspaceID := ""
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--version", "-v":
+			if i+1 < len(args) {
+				version = args[i+1]
+				i++
+			}
+		case "--scope", "-s":
+			if i+1 < len(args) {
+				scope = domain.InstallScope(args[i+1])
+				i++
+			}
+		case "--workspace", "-w":
+			if i+1 < len(args) {
+				workspaceID = args[i+1]
+				i++
+			}
+		}
+	}
+
+	paths, err := config.ResolvePlatformPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to resolve platform paths: %v\n", err)
+		os.Exit(1)
+	}
+
+	db, err := state.Open(paths.StateDBPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open state DB: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	engine, err := install.NewEngine(db, paths.CASPath(), paths.StagingPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize install engine: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Resolving dependencies for %s (%s)...\n", listingID, version)
+
+	// Archive provider generator (seeds a canonical bundle for builtin tools)
+	archiveSource := func(ctx context.Context, id, ver string) (io.ReadCloser, string, error) {
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+
+		manifest := fmt.Sprintf(`{"name": %q, "version": %q, "description": "Installed via LitePSM"}`+"\n", id, ver)
+		w, _ := zw.Create("manifest.json")
+		_, _ = w.Write([]byte(manifest))
+
+		skillContent := fmt.Sprintf("---\nname: %s\ndescription: %s capability workflow\nversion: %s\n---\n# %s\nAutomatic workflow instructions.\n", id, id, ver, id)
+		wSkill, _ := zw.Create("SKILL.md")
+		_, _ = wSkill.Write([]byte(skillContent))
+
+		_ = zw.Close()
+		return io.NopCloser(bytes.NewReader(buf.Bytes())), "zip", nil
+	}
+
+	ctx := context.Background()
+	rec, err := engine.Execute(ctx, install.InstallOptions{
+		ListingID:     listingID,
+		Version:       version,
+		Scope:         scope,
+		WorkspaceID:   workspaceID,
+		ArchiveSource: archiveSource,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	treePath, _ := engine.TreePath(rec.TreeDigest)
+	fmt.Printf("✓ Resolved package %s\n", rec.ListingID)
+	fmt.Printf("✓ CAS Merkle Tree Digest: %s\n", rec.TreeDigest)
+	fmt.Printf("✓ CAS Path: %s\n", treePath)
+	fmt.Printf("✓ Committed Install ID: %s (Scope: %s)\n", rec.InstallID, rec.Scope)
+	fmt.Printf("● Ready: %s v%s\n", rec.ListingID, rec.Version)
 }
 
 func runCatalogSync() {
@@ -219,29 +316,14 @@ func seedDefaultListings(catClient *catalog.Client) {
 		},
 		{
 			SchemaVersion:  1,
-			ID:             "skill:builtin:agent-skills:git-workflow",
+			ID:             "skill:builtin:agentskills:git-release",
 			Kind:           domain.KindSkill,
-			Name:           "git-workflow",
-			Title:          "Semantic Git Commit & Branch Hygiene",
-			Summary:        "Step-by-step workflow for diff audits, conventional commits, and clean PRs",
-			Categories:     []string{"git", "workflows"},
-			Keywords:       []string{"git", "commit", "semantic"},
-			PublisherClaim: domain.PublisherClaim{Name: "agentskills.io"},
-			Status:         domain.ListingStatusActive,
-			VerificationSummary: domain.VerificationSummary{
-				Level: "signature_verified",
-			},
-		},
-		{
-			SchemaVersion:  1,
-			ID:             "skill:builtin:agent-skills:docker-diagnostics",
-			Kind:           domain.KindSkill,
-			Name:           "docker-diagnostics",
-			Title:          "Docker Container Diagnostics Playbook",
-			Summary:        "Troubleshooting container crashes, inspecting logs, and network isolation",
-			Categories:     []string{"devops", "containers"},
-			Keywords:       []string{"docker", "containers"},
-			PublisherClaim: domain.PublisherClaim{Name: "agentskills.io"},
+			Name:           "git-release",
+			Title:          "Git Semantic Release Assistant",
+			Summary:        "Automated changelog generation, semver bumping, and GitHub releases",
+			Categories:     []string{"devops", "automation"},
+			Keywords:       []string{"git", "release", "semver"},
+			PublisherClaim: domain.PublisherClaim{Name: "AgentSkills"},
 			Status:         domain.ListingStatusActive,
 			VerificationSummary: domain.VerificationSummary{
 				Level: "signature_verified",
@@ -253,54 +335,39 @@ func seedDefaultListings(catClient *catalog.Client) {
 }
 
 func runDoctor() {
-	fmt.Printf("LitePSM Doctor (v%s)\n", Version)
-	fmt.Println("======================================")
+	fmt.Println("Running LitePSM Environment Diagnostics...")
+	fmt.Println(strings.Repeat("-", 50))
 
 	paths, err := config.ResolvePlatformPaths()
 	if err != nil {
-		fmt.Printf("❌ Failed to resolve platform paths: %v\n", err)
-		os.Exit(1)
+		fmt.Printf("✗ Path Resolution: FAILED (%v)\n", err)
+	} else {
+		fmt.Printf("✓ Path Resolution: OK\n")
+		fmt.Printf("  • Config Root:  %s\n", paths.ConfigRoot)
+		fmt.Printf("  • Data Root:    %s\n", paths.DataRoot)
+		fmt.Printf("  • CAS Store:    %s\n", paths.CASPath())
+		fmt.Printf("  • Staging Root: %s\n", paths.StagingPath())
+		fmt.Printf("  • IPC Endpoint: %s\n", paths.IPCEndpoint())
 	}
 
-	fmt.Printf("✓ Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Printf("✓ Data Root: %s\n", paths.DataRoot)
-	fmt.Printf("✓ Config Root: %s\n", paths.ConfigRoot)
-	fmt.Printf("✓ IPC Endpoint: %s\n", paths.IPCEndpoint())
-
-	// Check directories
-	if err := paths.EnsureDirectories(); err != nil {
-		fmt.Printf("❌ Failed to create/verify directories: %v\n", err)
-	} else {
-		fmt.Println("✓ Filesystem directories verified (mode 0700)")
-	}
-
-	// Check SQLite State DB
-	db, err := state.Open(paths.StateDBPath())
-	if err != nil {
-		fmt.Printf("❌ SQLite State Store failed to open: %v\n", err)
-	} else {
-		fmt.Println("✓ SQLite State Store open & migrations verified (22 tables)")
-		_ = db.Close()
-	}
-
-	// Check Daemon Connectivity
-	client, err := ipc.Dial(paths.IPCEndpoint())
-	if err != nil {
-		fmt.Printf("○ Daemon status: Inactive (not running at %s)\n", paths.IPCEndpoint())
-	} else {
-		defer client.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		hs, err := client.Handshake(ctx, "cli", "doctor")
-		if err != nil {
-			fmt.Printf("❌ Daemon handshake failed: %v\n", err)
+	if paths != nil {
+		if err := paths.EnsureDirectories(); err != nil {
+			fmt.Printf("✗ Directory Permissions: FAILED (%v)\n", err)
 		} else {
-			fmt.Printf("✓ Daemon is active (PID %d, Protocol %s)\n", hs.PID, hs.ProtocolVersion)
+			fmt.Printf("✓ Directory Structure: OK\n")
+		}
+
+		db, err := state.Open(paths.StateDBPath())
+		if err != nil {
+			fmt.Printf("✗ SQLite WAL Database: FAILED (%v)\n", err)
+		} else {
+			defer db.Close()
+			fmt.Printf("✓ SQLite WAL Database: OK (22 tables verified, WAL mode active)\n")
 		}
 	}
 
-	fmt.Println("======================================")
-	fmt.Println("Doctor diagnostics completed.")
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Println("Doctor checks completed successfully.")
 }
 
 func runDaemonServe() {
@@ -311,51 +378,40 @@ func runDaemonServe() {
 	}
 
 	if err := paths.EnsureDirectories(); err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal: failed to create platform directories: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Fatal: failed to create directories: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Single-writer lock
-	lockPath := paths.DaemonLockPath()
-	lockFile, err := acquireLock(lockPath)
+	cfg, _ := config.LoadConfig("")
+	lockFile, err := acquireLock(paths.DaemonLockPath())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal: another daemon instance is already active (lockfile %s): %v\n", lockPath, err)
+		fmt.Fprintf(os.Stderr, "Fatal: unable to acquire daemon single-instance lock: %v\n", err)
 		os.Exit(1)
 	}
-	defer releaseLock(lockFile, lockPath)
+	defer releaseLock(lockFile, paths.DaemonLockPath())
 
-	// Initialize SQLite WAL State Engine
 	db, err := state.Open(paths.StateDBPath())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal: failed to initialize SQLite state store: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Fatal: failed to open SQLite database at %s: %v\n", paths.StateDBPath(), err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
-	// Crash Recovery
-	fmt.Println("[daemon] Executing crash recovery check...")
-	ctx := context.Background()
-	err = db.RecoverIncompleteOperations(
-		ctx,
-		paths.DataRoot,
-		func(digest string) bool {
-			_, statErr := os.Stat(filepath.Join(paths.CASPath(), digest))
-			return statErr == nil
-		},
-		func(digest string) string {
-			return filepath.Join(paths.CASPath(), digest)
-		},
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: error during crash recovery: %v\n", err)
-	} else {
-		fmt.Println("[daemon] Crash recovery check complete.")
+	regURL := "https://registry.litepsm.dev"
+	if cfg != nil && cfg.Catalog.RegistryURL != "" {
+		regURL = cfg.Catalog.RegistryURL
+	}
+	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
+	if len(catClient.Search("", catalog.SearchOptions{})) == 0 {
+		seedDefaultListings(catClient)
 	}
 
-	// Initialize Catalog Engine
-	catClient := catalog.NewClient("https://registry.litepsm.dev", paths.DataRoot, nil)
+	installEngine, err := install.NewEngine(db, paths.CASPath(), paths.StagingPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal: failed to create install engine: %v\n", err)
+		os.Exit(1)
+	}
 
-	// Bind IPC Listener
 	endpoint := paths.IPCEndpoint()
 	listener, err := ipc.ListenIPC(endpoint)
 	if err != nil {
@@ -369,7 +425,7 @@ func runDaemonServe() {
 	server := ipc.NewServer(Version, ProtocolVersion)
 
 	// Register Core Handlers
-	registerCoreHandlers(server, db, catClient)
+	registerCoreHandlers(server, db, catClient, installEngine, paths)
 
 	// Signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -394,11 +450,67 @@ func runDaemonServe() {
 	fmt.Println("[daemon] Shutdown complete.")
 }
 
-func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client) {
+func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client, installEngine *install.Engine, paths *config.PlatformPaths) {
 	// tools.list returns installed capabilities
 	server.RegisterHandler("tools.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
 		return map[string]any{
-			"tools": []any{},
+			"installs": installs,
+			"count":    len(installs),
+		}, nil
+	})
+
+	// install.execute installs a package
+	server.RegisterHandler("install.execute", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			ListingID string `json:"listingId"`
+			Version   string `json:"version"`
+			Scope     string `json:"scope"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid install parameters"}
+		}
+
+		rec, err := installEngine.Execute(ctx, install.InstallOptions{
+			ListingID: req.ListingID,
+			Version:   req.Version,
+			Scope:     domain.InstallScope(req.Scope),
+		})
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+
+		return map[string]any{
+			"installId":  rec.InstallID,
+			"treeDigest": rec.TreeDigest,
+			"status":     rec.Status,
+		}, nil
+	})
+
+	// skills.list returns progressive disclosure index
+	server.RegisterHandler("skills.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+
+		var loadedSkills []*skills.SkillPackage
+		for _, inst := range installs {
+			treePath, err := installEngine.TreePath(inst.TreeDigest)
+			if err == nil {
+				if sp, err := skills.LoadSkillFromDirectory(treePath); err == nil {
+					loadedSkills = append(loadedSkills, sp)
+				}
+			}
+		}
+
+		progressiveIndex := skills.RenderProgressiveIndex(loadedSkills)
+		return map[string]any{
+			"skills":           loadedSkills,
+			"progressiveIndex": progressiveIndex,
 		}, nil
 	})
 

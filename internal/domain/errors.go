@@ -123,6 +123,18 @@ func ErrResolveConflict(listingID, reason string) *LPSMError {
 	}
 }
 
+func ErrResolveCycle(cyclePath string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-RESOLVE-CYCLE",
+		Message:   fmt.Sprintf("dependency cycle detected: %s", cyclePath),
+		Category:  "LPSM-RESOLVER",
+		Retryable: false,
+		Details: map[string]any{
+			"cycle": cyclePath,
+		},
+	}
+}
+
 func ErrApprovalConsumed(approvalID string) *LPSMError {
 	return &LPSMError{
 		Code:      "LPSM-POLICY-APPROVAL-CONSUMED",

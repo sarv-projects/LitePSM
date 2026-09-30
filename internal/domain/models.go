@@ -470,3 +470,29 @@ type CapabilityRecord struct {
 	DiscoveredAt      time.Time `json:"discoveredAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
 }
+
+// ExtractedTreeInfo encapsulates output metadata from safe archive extraction.
+type ExtractedTreeInfo struct {
+	FileCount  int    `json:"fileCount"`
+	TotalBytes int64  `json:"totalBytes"`
+	TreeDigest string `json:"treeDigest"` // sha256:<merkle-tree-hex>
+	RootPath   string `json:"rootPath"`
+}
+
+// DependencyResolution records a resolved dependency node in the installation graph.
+type DependencyResolution struct {
+	ListingID       string         `json:"listingId"`
+	SelectedVersion string         `json:"selectedVersion"`
+	VersionRecord   *VersionRecord `json:"versionRecord,omitempty"`
+	Direct          bool           `json:"direct"`
+	Depth           int            `json:"depth"`
+}
+
+// DependencyResolutionResult encapsulates the full graph resolution result.
+type DependencyResolutionResult struct {
+	RootListingID    string                          `json:"rootListingId"`
+	SelectedVersions map[string]string               `json:"selectedVersions"`
+	TopologicalOrder []string                        `json:"topologicalOrder"`
+	ResolvedRanges   map[string]string               `json:"resolvedRanges"`
+	Nodes            map[string]DependencyResolution `json:"nodes,omitempty"`
+}
