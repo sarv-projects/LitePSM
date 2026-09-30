@@ -15,9 +15,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sarv-projects/litepsm/internal/bridge"
 	"github.com/sarv-projects/litepsm/internal/catalog"
 	"github.com/sarv-projects/litepsm/internal/config"
 	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litepsm/internal/host"
 	"github.com/sarv-projects/litepsm/internal/install"
 	"github.com/sarv-projects/litepsm/internal/ipc"
 	"github.com/sarv-projects/litepsm/internal/skills"
@@ -73,6 +75,12 @@ func main() {
 		}
 		runDaemonServe()
 
+	case "bridge":
+		runBridge(os.Args[2:])
+
+	case "host":
+		runHost(os.Args[2:])
+
 	case "help", "--help", "-h":
 		printUsage()
 
@@ -89,17 +97,150 @@ Usage:
   litepsm <command> [arguments]
 
 Available Commands:
-  search <query>   Search the global catalog of MCP servers, skills, and plugins
-  install <id>     Install and verify a capability into the local CAS store
-  catalog sync     Synchronize and verify latest catalog release from upstream
-  doctor           Run diagnostic verification of platform environment
-  daemon serve     Start the LitePSM background supervisor and IPC engine
-  version          Print version and build details
-  help             Show this help text
+  search <query>          Search global catalog of MCP servers, skills, and plugins
+  install <id>            Install and verify a capability into the local CAS store
+  catalog sync            Synchronize latest catalog release from upstream
+  bridge stdio [--host h] Launch stateless stdio MCP bridge shim for host agent
+  host [list|detect|setup] Manage agent host adapters (Codex, Claude, OpenCode, Cline, Pi, Grok)
+  doctor                  Run diagnostic verification of platform environment
+  daemon serve            Start the LitePSM background supervisor and IPC engine
+  version                 Print version and build details
+  help                    Show this help text
 
 Documentation & Architecture:
   https://github.com/sarv-projects/litepsm
 `)
+}
+
+func runBridge(args []string) {
+	hostID := "generic"
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--host" && i+1 < len(args) {
+			hostID = args[i+1]
+			i++
+		}
+	}
+
+	paths, err := config.ResolvePlatformPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to resolve platform paths: %v\n", err)
+		os.Exit(1)
+	}
+
+	client, err := ipc.Dial(paths.IPCEndpoint())
+	if err != nil {
+		// Log warning to stderr (keeping stdout purely JSON-RPC for MCP hosts)
+		fmt.Fprintf(os.Stderr, "[litepsm-bridge] Daemon not reachable at %s (%v). Standalone bridge running.\n", paths.IPCEndpoint(), err)
+	} else {
+		defer client.Close()
+	}
+
+	shim := bridge.NewShim(hostID, client, os.Stdin, os.Stdout)
+	if err := shim.Serve(context.Background()); err != nil && err != io.EOF {
+		fmt.Fprintf(os.Stderr, "[litepsm-bridge] Bridge error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runHost(args []string) {
+	if len(args) == 0 || args[0] == "list" {
+		adapters := host.ListAdapters()
+		fmt.Println("Supported AI Agent Hosts:")
+		fmt.Println(strings.Repeat("-", 65))
+		fmt.Printf("%-15s %-28s %-8s %s\n", "HOST ID", "NAME", "FORMAT", "CONFIG FILE")
+		fmt.Println(strings.Repeat("-", 65))
+		for _, a := range adapters {
+			d := a.Descriptor()
+			fmt.Printf("%-15s %-28s %-8s %s\n", d.HostID, d.DisplayName, d.ConfigFormat, d.DefaultConfigFileName)
+		}
+		fmt.Println()
+		return
+	}
+
+	paths, err := config.ResolvePlatformPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to resolve paths: %v\n", err)
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "detect":
+		ctx := context.Background()
+		verifications, err := host.DetectInstalledHosts(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to detect hosts: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Detected Agent Host Status:")
+		fmt.Println(strings.Repeat("-", 70))
+		fmt.Printf("%-15s %-12s %-12s %s\n", "HOST ID", "REGISTERED", "STATUS", "CONFIG PATH")
+		fmt.Println(strings.Repeat("-", 70))
+		for _, v := range verifications {
+			regStr := "No"
+			if v.Registered {
+				regStr = "Yes"
+			}
+			fmt.Printf("%-15s %-12s %-12s %s\n", v.HostID, regStr, v.Status, v.ConfigPath)
+		}
+		fmt.Println()
+
+	case "setup":
+		if len(args) < 2 {
+			fmt.Println("Usage: litepsm host setup <host-id> [--apply]")
+			os.Exit(1)
+		}
+		hostID := args[1]
+		apply := false
+		for _, arg := range args[2:] {
+			if arg == "--apply" || arg == "-y" {
+				apply = true
+			}
+		}
+
+		adapter, err := host.GetAdapter(hostID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		binPath, err := os.Executable()
+		if err != nil {
+			binPath = "litepsm"
+		}
+
+		ctx := context.Background()
+		plan, err := adapter.PlanSetup(ctx, binPath, paths.BackupsPath())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to plan setup: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Agent Host Setup Plan for %s:\n", adapter.Descriptor().DisplayName)
+		fmt.Printf("• Target Config: %s\n", plan.ConfigPath)
+		fmt.Printf("• Backup Path:   %s\n", plan.BackupPath)
+		fmt.Println("\n--- Proposed Configuration Content ---")
+		fmt.Println(plan.ProposedContent)
+		fmt.Println("---------------------------------------")
+
+		if apply {
+			res, err := adapter.ApplySetup(ctx, plan)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to apply setup: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("✓ Successfully configured %s!\n", adapter.Descriptor().DisplayName)
+			fmt.Printf("✓ Backup preserved at: %s\n", res.BackupPath)
+		} else {
+			fmt.Println("\nTo apply these changes automatically, re-run with --apply:")
+			fmt.Printf("  litepsm host setup %s --apply\n\n", hostID)
+			fmt.Println("Or configure manually:")
+			fmt.Println(adapter.RenderManualSetup(binPath))
+		}
+
+	default:
+		fmt.Printf("Unknown host subcommand %q. Options: list, detect, setup <host-id> [--apply]\n", args[0])
+		os.Exit(1)
+	}
 }
 
 func runSearch(query string) {
@@ -346,6 +487,7 @@ func runDoctor() {
 		fmt.Printf("  • Config Root:  %s\n", paths.ConfigRoot)
 		fmt.Printf("  • Data Root:    %s\n", paths.DataRoot)
 		fmt.Printf("  • CAS Store:    %s\n", paths.CASPath())
+		fmt.Printf("  • Backups Root: %s\n", paths.BackupsPath())
 		fmt.Printf("  • Staging Root: %s\n", paths.StagingPath())
 		fmt.Printf("  • IPC Endpoint: %s\n", paths.IPCEndpoint())
 	}

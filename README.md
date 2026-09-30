@@ -16,7 +16,7 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/litepsm` | **COMPLETED** |
 | **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder), `internal/catalog` (Search) | **COMPLETED** |
 | **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver), `internal/install` (Atomic CAS), `internal/skills` | **COMPLETED** |
-| **Phase E** | **Process Supervision & First Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/bridge`, **Cline, Pi Agent, Grok Build** adapters | **IN PROGRESS** |
+| **Phase E** | **Process Supervision, Bridge & Host Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/policy`, `internal/bridge`, **Codex, Claude, OpenCode, Cline, Pi Agent, Grok Build** adapters | **COMPLETED** |
 | **Phase F** | **MCP Protocol Dual-Profile & Secrets** | Stateless MCP 2026-07-28 (Streamable HTTP), legacy 2025-11-25, WinCred/DPAPI/Keychain | Planned |
 | **Phase G** | **In-Agent `/litepsm` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | Planned |
 | **Phase H** | **Release Engineering & Packaging** | Cross-platform Go builds, npm wrapper (`litepsm`), conformance test suites | Planned |
