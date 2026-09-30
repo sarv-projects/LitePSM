@@ -3,7 +3,34 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
+
+const (
+	CodePolicyDenied          = "LPSM-POLICY-UNAUTHORIZED"
+	CodeProviderSchemaDrift   = "LPSM-PROVIDER-SCHEMA-DRIFT"
+	CodeProviderCodeDrift     = "LPSM-PROVIDER-CODE-DRIFT"
+	CodeProviderEndpointDrift = "LPSM-PROVIDER-ENDPOINT-DRIFT"
+	CodeAuthVaultUnavailable  = "LPSM-AUTH-VAULT-UNAVAILABLE"
+	CodeOAuthStateMismatch    = "LPSM-AUTH-OAUTH-STATE-MISMATCH"
+	CodeOAuthCallbackTimeout  = "LPSM-AUTH-CALLBACK-TIMEOUT"
+)
+
+// NewError creates a new LPSMError with standard code, message, and details.
+func NewError(code, message string, details map[string]any) *LPSMError {
+	category := "LPSM-CORE"
+	if idx := strings.Index(code, "-"); idx != -1 {
+		if idx2 := strings.Index(code[idx+1:], "-"); idx2 != -1 {
+			category = code[:idx+1+idx2]
+		}
+	}
+	return &LPSMError{
+		Code:     code,
+		Message:  message,
+		Category: category,
+		Details:  details,
+	}
+}
 
 // LPSMError represents a canonical, machine-readable structured error.
 // It strictly adheres to schemas/errors.schema.json.

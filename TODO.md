@@ -79,10 +79,10 @@ Before implementing application code, all normative specifications, data contrac
 
 | ID | Task | Owner | Acceptance Evidence | Status |
 |---|---|---|---|---|
-| **LPSM-F001** | Implement `internal/mcpclient` supporting stateless MCP 2026-07-28 (Streamable HTTP) and legacy 2025-11-25. | [ARCH/09](ARCH/09-RESEARCH.md), [ARCH/14](ARCH/14-BRIDGE-PROVIDER-MCP.md) | Dual-protocol conformance suite passes against mock and reference servers. | Planned |
-| **LPSM-F002** | Implement capability probing, schema fingerprinting, and drift detection. | [ARCH/14](ARCH/14-BRIDGE-PROVIDER-MCP.md), [ARCH/15](ARCH/15-POLICY-APPROVALS.md) | Altered downstream tool schema automatically invalidates prior grants and alerts user. | Planned |
-| **LPSM-F003** | Implement `internal/secrets` OS credential store wrapper (WinCred/DPAPI, Keychain, Secret Service). | [ARCH/05](ARCH/05-SECURITY.md), [ARCH/19](ARCH/19-SECRETS-OAUTH.md) | Can store, retrieve, and delete tokens; synthetic canaries confirm zero secrets leak into logs/DB. | Planned |
-| **LPSM-F004** | Implement `internal/auth` OAuth 2.0 PKCE loopback broker. | [ARCH/19](ARCH/19-SECRETS-OAUTH.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Loopback browser flow completes token exchange; stores credentials directly to OS vault. | Planned |
+| **LPSM-F001** | Implement `internal/mcpclient` supporting stateless MCP 2026-07-28 (Streamable HTTP) and legacy 2025-11-25. | [ARCH/09](ARCH/09-RESEARCH.md), [ARCH/14](ARCH/14-BRIDGE-PROVIDER-MCP.md) | Dual-protocol conformance suite passes against mock and reference servers. | Completed |
+| **LPSM-F002** | Implement capability probing, schema fingerprinting, and drift detection. | [ARCH/14](ARCH/14-BRIDGE-PROVIDER-MCP.md), [ARCH/15](ARCH/15-POLICY-APPROVALS.md) | Altered downstream tool schema automatically invalidates prior grants and alerts user. | Completed |
+| **LPSM-F003** | Implement `internal/secrets` OS credential store wrapper (WinCred/DPAPI, Keychain, Secret Service). | [ARCH/05](ARCH/05-SECURITY.md), [ARCH/19](ARCH/19-SECRETS-OAUTH.md) | Can store, retrieve, and delete tokens; synthetic canaries confirm zero secrets leak into logs/DB. | Completed |
+| **LPSM-F004** | Implement `internal/auth` OAuth 2.0 PKCE loopback broker. | [ARCH/19](ARCH/19-SECRETS-OAUTH.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Loopback browser flow completes token exchange; stores credentials directly to OS vault. | Completed |
 
 ---
 
