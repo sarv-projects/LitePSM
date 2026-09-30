@@ -107,7 +107,31 @@ func TestBridge_ToolDispatchAndErrorFormatting(t *testing.T) {
 		t.Errorf("unexpected content: %+v", toolRes)
 	}
 
-	// 2. Call non-existent tool -> returns structured error
+	// 2. Call list_installed
+	listParams, _ := json.Marshal(map[string]any{
+		"name":      "list_installed",
+		"arguments": map[string]any{},
+	})
+	listCallReq := &ipc.Request{
+		JSONRPC: "2.0",
+		ID:      &idRaw,
+		Method:  "tools/call",
+		Params:  listParams,
+	}
+
+	listCallResp := shim.HandleRequest(ctx, listCallReq)
+	var listToolRes MCPToolResult
+	if err := json.Unmarshal(listCallResp.Result, &listToolRes); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listToolRes.Content[0].Text, "LitePSM Capabilities") {
+		t.Errorf("expected 4-tab header, got: %s", listToolRes.Content[0].Text)
+	}
+	if !strings.Contains(listToolRes.Content[0].Text, "[External / Detected]") {
+		t.Errorf("expected external detected item, got: %s", listToolRes.Content[0].Text)
+	}
+
+	// 3. Call non-existent tool -> returns structured error
 	badCallParams, _ := json.Marshal(map[string]any{
 		"name":      "non_existent_tool",
 		"arguments": map[string]any{},

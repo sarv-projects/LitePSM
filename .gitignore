@@ -22,3 +22,8 @@ daemon.lock
 Thumbs.db
 .idea/
 .vscode/
+
+# Web frontend artifacts
+web/node_modules/
+web/.next/
+web/out/

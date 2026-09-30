@@ -1,0 +1,252 @@
+[
+  {
+    "id": "mcp:github:modelcontextprotocol:servers:postgres",
+    "name": "PostgreSQL MCP Server",
+    "slug": "postgres",
+    "kind": "mcp",
+    "summary": "Read and inspect schema, run queries, and analyze Postgres databases safely.",
+    "category": "Database Management",
+    "publisher": {
+      "name": "Model Context Protocol",
+      "verified": true,
+      "url": "https://github.com/modelcontextprotocol/servers"
+    },
+    "transport": "stdio",
+    "stars": 3420,
+    "version": "1.2.0",
+    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code"],
+    "readme": "# PostgreSQL MCP Server\n\nA secure Model Context Protocol server providing structured read and schema inspection operations for PostgreSQL databases.\n\n## Capabilities\n- `query`: Execute read-only SQL queries with automatic transaction rollback on failure\n- `list_tables`: List all database tables and column schemas\n- `describe_table`: Detailed table statistics and indexes",
+    "schemaFingerprint": "sha256:4a8e3d8f89b1c9e2b02e779a1d528b184ef11739c947514a387799518dcfc88a",
+    "tools": [
+      {
+        "name": "query",
+        "description": "Execute SQL queries with safety limits",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sql": { "type": "string" },
+            "limit": { "type": "integer", "default": 50 }
+          },
+          "required": ["sql"]
+        }
+      },
+      {
+        "name": "list_tables",
+        "description": "List all tables in the current schema",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "schema": { "type": "string", "default": "public" }
+          }
+        }
+      }
+    ],
+    "effects": [
+      { "effect": "net:outbound:db", "declaredBy": "publisher_declared" },
+      { "effect": "fs:read:config", "declaredBy": "curated" }
+    ]
+  },
+  {
+    "id": "mcp:github:modelcontextprotocol:servers:github",
+    "name": "GitHub Official MCP Server",
+    "slug": "github",
+    "kind": "mcp",
+    "summary": "Interact with GitHub repositories, pull requests, issues, commits, and workflow runs.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "GitHub",
+      "verified": true,
+      "url": "https://github.com/modelcontextprotocol/servers"
+    },
+    "transport": "stdio",
+    "stars": 5890,
+    "version": "2.1.0",
+    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code", "OpenCode"],
+    "readme": "# GitHub MCP Server\n\nOfficial GitHub MCP server allowing agents to read and manage repositories, review pull requests, create issues, and search code.",
+    "schemaFingerprint": "sha256:7c9e0a12f5678b89c0de1234567890abcdef1234567890abcdef1234567890ab",
+    "tools": [
+      {
+        "name": "get_file_contents",
+        "description": "Retrieve file contents from a repository at a given ref",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "path": { "type": "string" }
+          },
+          "required": ["owner", "repo", "path"]
+        }
+      },
+      {
+        "name": "create_pull_request",
+        "description": "Create a new pull request against the base branch",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "title": { "type": "string" },
+            "head": { "type": "string" },
+            "base": { "type": "string" }
+          },
+          "required": ["owner", "repo", "title", "head", "base"]
+        }
+      }
+    ],
+    "effects": [
+      { "effect": "net:outbound:https", "declaredBy": "publisher_declared" },
+      { "effect": "secret:token:github", "declaredBy": "publisher_declared" }
+    ]
+  },
+  {
+    "id": "mcp:github:modelcontextprotocol:servers:brave-search",
+    "name": "Brave Web & Local Search",
+    "slug": "brave-search",
+    "kind": "mcp",
+    "summary": "Real-time web search and local POI discovery powered by Brave Search API.",
+    "category": "Browser Automation",
+    "publisher": {
+      "name": "Brave Software",
+      "verified": true,
+      "url": "https://brave.com/search/api"
+    },
+    "transport": "Streamable HTTP",
+    "stars": 1840,
+    "version": "1.0.4",
+    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex"],
+    "readme": "# Brave Search MCP Server\n\nStreamable HTTP-enabled MCP server providing ultra-low latency real-time web search and local business directory search.",
+    "schemaFingerprint": "sha256:9f8e7d6c5b4a3210feebda9876543210abcdef9876543210abcdef9876543210",
+    "tools": [
+      {
+        "name": "brave_web_search",
+        "description": "Execute queries on the global Brave Search index",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "count": { "type": "integer", "default": 10 }
+          },
+          "required": ["query"]
+        }
+      }
+    ],
+    "effects": [
+      { "effect": "net:outbound:https", "declaredBy": "publisher_declared" }
+    ]
+  },
+  {
+    "id": "skill:builtin:agentskills:git-release",
+    "name": "Git Semantic Release Assistant",
+    "slug": "git-release",
+    "kind": "skill",
+    "summary": "Automated conventional commits analysis, changelog generation, and semver tagging.",
+    "category": "DevOps",
+    "publisher": {
+      "name": "AgentSkills.io",
+      "verified": true,
+      "url": "https://agentskills.io"
+    },
+    "stars": 920,
+    "version": "1.4.0",
+    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Claude Code", "OpenCode"],
+    "readme": "# Git Semantic Release Assistant\n\nA progressive disclosure agent skill implementing automated semver bumping, conventional commit audits, and GitHub release creation.",
+    "schemaFingerprint": "sha256:11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
+    "tools": [
+      {
+        "name": "bump_version",
+        "description": "Calculate next semver version from commit history",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "current": { "type": "string" }
+          },
+          "required": ["current"]
+        }
+      }
+    ],
+    "effects": [
+      { "effect": "fs:write:changelog", "declaredBy": "curated" }
+    ]
+  },
+  {
+    "id": "plugin:official:docker-k8s-toolkit",
+    "name": "Docker & Kubernetes Orchestrator",
+    "slug": "docker-k8s",
+    "kind": "plugin",
+    "summary": "Multi-component toolkit for container builds, pod inspection, log tailing, and helm deploys.",
+    "category": "DevOps",
+    "publisher": {
+      "name": "LitePSM Curated",
+      "verified": true,
+      "url": "https://litepsm.dev"
+    },
+    "stars": 2150,
+    "version": "2.0.1",
+    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex"],
+    "readme": "# Docker & Kubernetes Orchestrator Plugin\n\nFull-stack container management plugin providing stdio MCP bridges to docker daemon and k8s kubeconfig APIs.",
+    "schemaFingerprint": "sha256:33445566778899001122aabbccddeeff33445566778899001122aabbccddeeff",
+    "tools": [
+      {
+        "name": "docker_ps",
+        "description": "List running containers",
+        "inputSchema": { "type": "object" }
+      },
+      {
+        "name": "kubectl_get_pods",
+        "description": "List pods in given namespace",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "namespace": { "type": "string", "default": "default" }
+          }
+        }
+      }
+    ],
+    "effects": [
+      { "effect": "process:spawn", "declaredBy": "curated" },
+      { "effect": "fs:read:kubeconfig", "declaredBy": "curated" }
+    ]
+  },
+  {
+    "id": "mcp:github:modelcontextprotocol:servers:playwright",
+    "name": "Playwright Browser Automation",
+    "slug": "playwright",
+    "kind": "mcp",
+    "summary": "Headless Chromium/Firefox web automation, DOM snapshotting, accessibility auditing, and screenshot capture.",
+    "category": "Browser Automation",
+    "publisher": {
+      "name": "Microsoft",
+      "verified": true,
+      "url": "https://playwright.dev"
+    },
+    "transport": "stdio",
+    "stars": 4120,
+    "version": "1.3.2",
+    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Claude Code", "OpenCode"],
+    "readme": "# Playwright MCP Server\n\nAutomate browser sessions, take full-page screenshots, execute JavaScript snippets, and inspect accessibility trees.",
+    "schemaFingerprint": "sha256:55667788990011223344aabbccddeeff55667788990011223344aabbccddeeff",
+    "tools": [
+      {
+        "name": "navigate",
+        "description": "Navigate to a URL and wait for network idle",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" }
+          },
+          "required": ["url"]
+        }
+      },
+      {
+        "name": "screenshot",
+        "description": "Capture current page viewport screenshot as base64 PNG",
+        "inputSchema": { "type": "object" }
+      }
+    ],
+    "effects": [
+      { "effect": "process:spawn:browser", "declaredBy": "publisher_declared" },
+      { "effect": "net:outbound:all", "declaredBy": "publisher_declared" }
+    ]
+  }
+]

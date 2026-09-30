@@ -32,19 +32,19 @@ func TestClaudeMarketplaceAdapter(t *testing.T) {
 		]
 	}`)
 
-	adapter := &ClaudeMarketplaceAdapter{}
-	listings, err := adapter.Ingest(context.Background(), manifestJSON)
+	adapter := NewClaudeMarketplaceAdapter("")
+	res, err := adapter.Ingest(context.Background(), "snap_claude_01", manifestJSON)
 	if err != nil {
 		t.Fatalf("Ingest failed: %v", err)
 	}
 
 	// The command source item must be strictly rejected
-	if len(listings) != 1 {
-		t.Fatalf("expected exactly 1 listing (command source rejected), got %d", len(listings))
+	if len(res.Listings) != 1 {
+		t.Fatalf("expected exactly 1 listing (command source rejected), got %d", len(res.Listings))
 	}
 
-	if listings[0].Name != "web-search" || listings[0].ID != "plugin:claude:web-search" {
-		t.Errorf("unexpected listing: %+v", listings[0])
+	if res.Listings[0].Name != "web-search" || res.Listings[0].ID != "plugin:builtin:claude-plugins:web-search" {
+		t.Errorf("unexpected listing: %+v", res.Listings[0])
 	}
 }
 
@@ -59,23 +59,23 @@ func TestOpenAIPluginAdapter(t *testing.T) {
 		"mcp_servers": ["postgres-mcp"]
 	}`)
 
-	adapter := &OpenAIPluginAdapter{}
-	listings, err := adapter.Ingest(context.Background(), manifestJSON)
+	adapter := NewOpenAIPluginAdapter("")
+	res, err := adapter.Ingest(context.Background(), "snap_openai_01", manifestJSON)
 	if err != nil {
 		t.Fatalf("Ingest failed: %v", err)
 	}
 
-	if len(listings) != 1 {
-		t.Fatalf("expected 1 listing, got %d", len(listings))
+	if len(res.Listings) != 1 {
+		t.Fatalf("expected 1 listing, got %d", len(res.Listings))
 	}
 
-	listing := listings[0]
-	if listing.ID != "plugin:openai:postgres_tool" {
+	listing := res.Listings[0]
+	if listing.ID != "plugin:builtin:openai-plugins:postgres_tool" {
 		t.Errorf("unexpected listing ID: %s", listing.ID)
 	}
 
 	// Check decomposition of components
-	components := listing.Versions[0].Components
+	components := res.Versions[0].Components
 	if len(components) != 4 { // 1 main plugin + 2 skills + 1 mcp
 		t.Fatalf("expected 4 components, got %d", len(components))
 	}
@@ -97,17 +97,17 @@ func TestGrokMarketplaceAdapter(t *testing.T) {
 		]
 	}`)
 
-	adapter := &GrokMarketplaceAdapter{}
-	listings, err := adapter.Ingest(context.Background(), manifestJSON)
+	adapter := NewGrokMarketplaceAdapter("")
+	res, err := adapter.Ingest(context.Background(), "snap_grok_01", manifestJSON)
 	if err != nil {
 		t.Fatalf("Ingest failed: %v", err)
 	}
 
-	if len(listings) != 1 {
-		t.Fatalf("expected 1 listing, got %d", len(listings))
+	if len(res.Listings) != 1 {
+		t.Fatalf("expected 1 listing, got %d", len(res.Listings))
 	}
 
-	if listings[0].ID != "plugin:grok:code-analyzer" {
-		t.Errorf("unexpected listing ID: %s", listings[0].ID)
+	if res.Listings[0].ID != "plugin:builtin:grok-plugins:code-analyzer" {
+		t.Errorf("unexpected listing ID: %s", res.Listings[0].ID)
 	}
 }

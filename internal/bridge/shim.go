@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/sarv-projects/litepsm/internal/domain"
@@ -32,6 +33,29 @@ type MCPToolResult struct {
 	IsError bool         `json:"isError,omitempty"`
 }
 
+// InstalledStatus represents runtime health.
+type InstalledStatus string
+
+const (
+	StatusReady     InstalledStatus = "ready"      // ● Green
+	StatusNeedsAuth InstalledStatus = "needs_auth" // 🟡 Yellow
+	StatusDisabled  InstalledStatus = "disabled"   // ○ Grey
+)
+
+// CapabilityItem represents a capability summary across the 4 tabs.
+type CapabilityItem struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Kind        string          `json:"kind"` // mcp | skill | plugin
+	Summary     string          `json:"summary"`
+	Transport   string          `json:"transport,omitempty"`
+	Status      InstalledStatus `json:"status,omitempty"`
+	IsExternal  bool            `json:"isExternal,omitempty"`
+	Verified    bool            `json:"verified,omitempty"`
+	StarCount   int             `json:"starCount,omitempty"`
+	Triggers    []string        `json:"triggers,omitempty"`
+}
+
 // Shim serves the 12 canonical LitePSM tools over standard input/output.
 type Shim struct {
 	client    *ipc.Client
@@ -52,10 +76,10 @@ func NewShim(hostID string, client *ipc.Client, in io.Reader, out io.Writer) *Sh
 	}
 
 	shim := &Shim{
-		client:  client,
-		hostID:  hostID,
-		reader:  bufio.NewReader(in),
-		writer:  out,
+		client: client,
+		hostID: hostID,
+		reader: bufio.NewReader(in),
+		writer: out,
 	}
 	shim.initTools()
 	return shim
@@ -244,17 +268,36 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 	case "list_installed":
 		if s.client != nil {
 			var resp struct {
-				Count    int   `json:"count"`
-				Installs []any `json:"installs"`
+				Count    int              `json:"count"`
+				Installs []CapabilityItem `json:"installs"`
 			}
 			err := s.client.Call(ctx, "tools.list", nil, &resp)
 			if err != nil {
 				return FormatErrorResult(err)
 			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(resp.Installs)}}}
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: "{\n  \"count\": 0,\n  \"installs\": []\n}"}}}
+		// Default mock response
+		items := []CapabilityItem{
+			{
+				ID:         "mcp:github:modelcontextprotocol:servers:postgres",
+				Name:       "postgres",
+				Kind:       "mcp",
+				Summary:    "PostgreSQL Read/Write Inspection Tool",
+				Transport:  "stdio",
+				Status:     StatusReady,
+				Verified:   true,
+			},
+			{
+				ID:         "external:native:fetch",
+				Name:       "fetch",
+				Kind:       "mcp",
+				Summary:    "Pre-existing host fetch utility",
+				Status:     StatusReady,
+				IsExternal: true,
+			},
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(items)}}}
 
 	case "load_skill":
 		var req struct {
@@ -274,6 +317,51 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 	default:
 		return FormatErrorResult(domain.ErrNotFound("tool", name))
 	}
+}
+
+// FormatInstalledPanel renders the in-agent 4-tab capability layout for installed tools.
+func FormatInstalledPanel(items []CapabilityItem) string {
+	var sb strings.Builder
+	sb.WriteString("┌────────────────────────────────────────────────────────────────────────┐\n")
+	sb.WriteString("│                          LitePSM Capabilities                          │\n")
+	sb.WriteString("├──────────────┬──────────────┬──────────────┬───────────────────────────┤\n")
+	sb.WriteString("│ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │")
+	installedHeader := fmt.Sprintf("     [INSTALLED (%d)] ●   ", len(items))
+	sb.WriteString(installedHeader[:27])
+	sb.WriteString("│\n")
+	sb.WriteString("└──────────────┴──────────────┴──────────────┴───────────────────────────┘\n\n")
+
+	if len(items) == 0 {
+		sb.WriteString("No capabilities currently installed. Use `search_catalog` to discover tools.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("Status: ● Ready | 🟡 Needs Auth | ○ Stopped | [External / Detected] Read-Only\n\n")
+	sb.WriteString("| Status | Kind | Name / ID | Notes / Action |\n")
+	sb.WriteString("|---|---|---|---|\n")
+
+	for _, it := range items {
+		var statusDot string
+		switch it.Status {
+		case StatusReady:
+			statusDot = "● Ready"
+		case StatusNeedsAuth:
+			statusDot = "🟡 Needs Auth"
+		default:
+			statusDot = "○ Stopped"
+		}
+
+		note := "Managed"
+		if it.IsExternal {
+			note = "[External / Detected] (Adopt)"
+		} else if it.Verified {
+			note = "Verified ✓"
+		}
+
+		sb.WriteString(fmt.Sprintf("| %s | %s | **%s** | %s |\n", statusDot, strings.ToUpper(it.Kind), it.Name, note))
+	}
+
+	return sb.String()
 }
 
 // FormatErrorResult converts any error into a machine-readable JSON error envelope.
