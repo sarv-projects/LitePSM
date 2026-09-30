@@ -1,103 +1,92 @@
-# Catalog and source federation
+# Catalog and Source Federation
 
-## Source model
+## 1. Upstream Federation Model
 
-LitePSM is an **aggregator and compatibility layer**, not the owner of every upstream package. Each catalog record points to its publisher/registry source. LitePSM may cache normalized public metadata for search, but it should not silently replace the publisher's artifact or claim authority over it.
-
-```text
-source adapters ──► validated source records ──► normalized listings
-      │                                           │
-      ├─ official registry API                    ├─ web catalog
-      ├─ documented directory API                 ├─ static JSON API
-      ├─ Git marketplace manifest                 ├─ discovery MCP
-      └─ user-added local/private source           └─ install plan
-```
-
-## Upstream sources to support
-
-| Source family | Initial approach | Important limit |
-|---|---|---|
-| Official MCP Registry | Consume its documented registry API and preserve its server/version identifiers and package metadata. | It catalogs MCP server metadata, not every package type or the MCP runtime. |
-| Public Agent Skills directories | Consume documented search/detail APIs where available; otherwise use the skill's public Git source/manifest. Agent Skills folder format remains the artifact contract. | Counts and popularity are upstream signals, not quality or safety proof. |
-| Claude-format plugin marketplaces | Accept a user-supplied Git repository or marketplace manifest and parse the documented `.claude-plugin/marketplace.json` format. Index selected public repositories only when access is allowed. | There is no assumed global public marketplace API. Marketplace entries may point to private repositories and require the user's Git credentials. |
-| Codex/OpenAI plugin packages and marketplaces | Parse the portable Agent Plugins manifest and documented local/repository marketplace formats. Provide a source entry for the universal public directory only if a documented public feed/API is available. | The existence of a product directory does not grant LitePSM an API or permission to scrape it. Some plugin capabilities are host-specific. |
-| Grok plugin marketplaces | Parse `.grok-plugin/marketplace.json` and its optional generated component index; support remote Git sources pinned to full commit SHA. Also test Claude-format marketplace compatibility where documented. | Marketplace catalogs are Git sources; an index record does not mean every contained hook, agent, or MCP feature is portable. |
-| Generic Git/HTTP/local sources | Accept explicit source URLs and recognized manifest formats. Support private sources through the user's own local Git credential helper. | LitePSM never receives or stores a user's Git token. A private source cannot be public-searchable unless the publisher separately publishes metadata. |
-| Connector directories | Treat a connector as a user-facing app listing with one or more provider implementations, initially MCP or a plugin dependency. | Do not claim a universal connector registry or implement each SaaS API. Add a native provider only after an explicit need and decision. |
-
-The exact source facts and primary references are recorded in [09 — Research ledger](09-RESEARCH.md).
-
-## Normalized Listing
-
-Normalization is a **search/display projection**, not an attempt to erase upstream semantics. Preserve the original manifest and source reference (or a safe public subset) beside normalized fields.
+LitePSM is an **aggregator and compatibility layer**, not a monolithic proprietary repository. It ingests public metadata from established registries, directories, and Git repositories, normalizes this metadata into unified search schemas, and links directly back to upstream sources.
 
 ```text
-Listing
-  id: stable LitePSM id (namespace/source + upstream id)
-  kind: plugin | mcp | skill | connector
-  name, summary, categories, keywords
-  publisher identity claim + source URL
-  upstream format + manifest version
-  source locator + immutable ref when available
-  versions[] with content digest and publication time
-  components[] (skills, MCP configs, hooks, agents, commands, assets)
-  requirements[] (client capabilities, runtime, auth method)
-  permissions[] (filesystem/process/network/API access declarations)
-  host compatibility claims[] and LitePSM test evidence[]
-  provenance: imported-from, source timestamp, fetched-at
-  original metadata / unknown fields
+ Upstream Source Adapters ──► SourceSnapshot ──► Schema Normalization ──► Immutable Catalog Release
+            │
+            ├─ Official MCP Registry (server.json & API)
+            ├─ Agent Skills Specification (SKILL.md & Git repos)
+            ├─ Claude Code Marketplaces (.claude-plugin/marketplace.json)
+            ├─ OpenAI Portable Plugins (plugin.json)
+            ├─ Grok Build Marketplaces (.grok-plugin/marketplace.json)
+            └─ User-Configured Local / Private Git Repositories
 ```
 
-Unknown source fields must be retained in the raw record or explicitly marked unsupported; ingestion must not silently discard them and imply full format compatibility.
+---
 
-## Identity and duplicate handling
+## 2. Decoupling the Adapter Roles
 
-- Stable identity includes source namespace and upstream identifier; display name alone is never identity.
-- Exact artifact duplicates may be grouped when publisher/source and content digest prove sameness; show all source routes.
-- Forks and repackages remain distinct records, with duplicate/related links where evidence supports them.
-- Versions are immutable references where source allows: Git commit SHA, registry version plus integrity digest, or published archive digest.
-- Mutable branches/tags may be browsable but are not reproducible install targets until resolved to an immutable reference.
-
-## Compatibility model
-
-Compatibility is component- and host-specific, not a single percentage:
+Previous designs conflated metadata scraping, artifact downloading, and runtime execution into a single generic "adapter". LitePSM strictly decouples these into three distinct subsystem interfaces:
 
 ```text
-skill files             supported / unsupported / unknown
-MCP transport/auth      supported / unsupported / unknown
-plugin manifest         supported / partial / unsupported / unknown
-hooks                  supported only after explicit adapter and trust review
-agent definitions      supported only for recognized schemas
-host-specific apps      not portable unless a corresponding host integration exists
+┌─────────────────────────┐     ┌─────────────────────────┐     ┌─────────────────────────┐
+│      SourceAdapter      │     │     ArtifactFetcher     │     │     RuntimeAdapter      │
+│  (CI Build-Time Only)   │     │  (Client-Side Download) │     │  (Client-Side Runtime)  │
+│                         │     │                         │     │                         │
+│ Reads registry APIs     │     │ Downloads raw tar/zip   │     │ Prepares virtualenv/npm │
+│ Normalizes JSON schemas │ ──► │ Verifies SHA-256 digest │ ──► │ Configures process args │
+│ Generates catalog shards│     │ Enforces archive limits │     │ Builds LaunchSpec       │
+│ Never downloads bytes   │     │ Never executes scripts  │     │ Launches supervision    │
+└─────────────────────────┘     └─────────────────────────┘     └─────────────────────────┘
 ```
 
-Keep four separate facts: **listed**, **source-verified**, **format-compatible**, and **tested**. “Verified” must identify what was verified (publisher identity, artifact digest, protocol behavior, or a host test); never use a lone green badge for all of them.
+1.  **SourceAdapter (Build-Time):** Operates exclusively in CI or during explicit local catalog builds. Fetches upstream manifests, normalizes them into `Listing` records, and resolves immutable version references. It never downloads full package binaries or executes code.
+2.  **ArtifactFetcher (Client Download):** Runs on the user's workstation. Given an `ArtifactRef`, downloads archive bytes, verifies cryptographic digests, and unpacks files into the Content-Addressed Store under strict safety limits.
+3.  **RuntimeAdapter (Client Execution):** Manages the environment required to run an installed component (e.g., configuring Python paths, verifying Node.js runtimes, or launching native binaries).
 
-## Collection plan: 500–1,000 useful records
+---
 
-Reach catalog breadth through federation, not manual rewriting:
+## 3. Supported Upstream Source Families
 
-1. Import the Official MCP Registry's public metadata.
-2. Index the official Agent Skills format through documented skills feeds/APIs and direct public Git sources.
-3. Add selected public Git plugin marketplaces with user-visible source attribution.
-4. Allow users/organizations to register additional marketplaces without publishing their private listings globally.
-5. Deduplicate with source IDs/digests, track last-seen time, and flag stale/unavailable entries.
-6. Curate a smaller tested set separately; an imported listing does not enter the tested set automatically.
+| Source Family | Ingestion Interface | Supported Package Formats | Security & Compatibility Caveats |
+|---|---|---|---|
+| **Official MCP Registry** | Registry API (`registry.modelcontextprotocol.io`) | npm, PyPI, Cargo, OCI, NuGet, MCPB, Streamable HTTP | Registry metadata is discovery-only. Does not imply safe execution. Supports multiple runtimes. |
+| **Agent Skills** | `agentskills.io` directory API & Git repositories | Git tree containing `SKILL.md` + `scripts/`, `references/`, `assets/` | Progressive disclosure: loads metadata first, body on demand. `allowed-tools` frontmatter is **informational only** and confers no execution rights. |
+| **Claude Code Marketplaces** | Git repository / `.claude-plugin/marketplace.json` | `github`, `git-subdir`, `archive`, `npm` | Ingests static manifests. Sources of type `command` execute shell scripts during fetch and are **strictly rejected in v1**. |
+| **OpenAI Portable Plugins** | Root `plugin.json` format | `skills/`, `mcp.json`, `hooks/`, `assets/` | Portable components are normalized. Vendor-specific extensions under `extensions.com.openai` are preserved in raw metadata. |
+| **Grok Build Marketplaces** | `.grok-plugin/marketplace.json` | Remote Git sources pinned to full commit SHAs | Supports distinct component kinds (commands, agents, hooks, MCP, LSP). Pinned SHA-1/SHA-256 commits are required for reproducibility. |
+| **Generic Git / Local** | Local directories or authenticated Git repos | Any supported LitePSM manifest format | Uses the user's native Git credential helper or SSH agent. Credentials are never sent to LitePSM services. |
 
-The numeric target refers to searchable listings, not bespoke integrations, hosted runtimes, or quality certification.
+---
 
-## Ingestion lifecycle
+## 4. SourceSnapshot & Ingestion State Machine
 
-```text
-configured source
-   → fetch documented index/API
-   → bound bytes/time/count and validate schema
-   → preserve source URI, source version, and fetch timestamp
-   → normalize to Listing while retaining unknown data
-   → deduplicate only with evidence
-   → security/format checks and optional host tests
-   → generate static search/index/item JSON
-   → publish after CI validation / review
+Every ingestion cycle of an upstream source produces a durable, immutable `SourceSnapshot`:
+
+```json
+{
+  "$schema": "https://litepsm.dev/schemas/v1/source-snapshot.schema.json",
+  "snapshotId": "snap_01J9X8K2M4N5P6Q7R8S9T0U1V2",
+  "sourceId": "builtin:mcp-registry",
+  "adapterVersion": "1.0.0",
+  "upstreamRevision": "git:a1b2c3d4e5f67890",
+  "startedAt": "2026-09-30T10:00:00Z",
+  "completedAt": "2026-09-30T10:02:15Z",
+  "status": "healthy",
+  "itemCount": 642,
+  "cursor": "cursor_page_32",
+  "contentDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "errorSummary": null
+}
 ```
 
-Ingestion must not execute a listed server, plugin, script, or hook. User-submitted metadata is untrusted input and must be escaped in the website.
+### Freshness & Failure Semantics
+1.  **Partial / Failed Ingestion:** If an upstream source fails (HTTP 5xx, network timeout, schema validation errors), the snapshot status is marked `failed` or `partial`.
+2.  **No Silent Fallback to "Current":** The catalog builder **never** silently marks an old snapshot as `healthy` or current. If previous data is retained to allow continued searching, the published listing explicitly displays `status: "stale"`.
+3.  **Upstream Deletions & Deprecations:** If an item disappears from an upstream registry, it is marked `status: "withdrawn"` or `status: "unavailable"` in future releases. It is **never** silently expunged from historical release archives, and already-installed local copies on user devices are not automatically deleted.
+
+---
+
+## 5. Ingestion Security & SSRF Defense
+
+The build-time source ingestion runner operates under rigid security boundaries:
+*   **Protocol Restriction:** Only `https://` URLs are permitted for remote sources. All other schemes (`http://`, `file://`, `data:`, `ftp://`) are rejected.
+*   **SSRF Protection:** Outbound HTTP clients resolve hostnames and strictly reject IP addresses in private, link-local, loopback, or cloud-metadata ranges:
+    *   `127.0.0.0/8`, `::1` (Loopback)
+    *   `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (Private RFC 1918)
+    *   `169.254.0.0/16`, `fe80::/10` (Link-local & Cloud Metadata)
+    *   `fc00::/7` (IPv6 Unique Local)
+*   **Resource Bounds:** Maximum response body size per metadata query is capped at 16 MiB. Timeouts are enforced at 30 seconds per request. Maximum redirect depth is capped at 3 hops across identical origins.

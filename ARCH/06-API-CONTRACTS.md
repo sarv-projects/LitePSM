@@ -1,111 +1,194 @@
-# API and package contracts
+# API and Package Contracts
 
-All interfaces below are proposed contracts. Keep public catalog reading separate from local install authority.
+## 1. Static Catalog API (v1)
 
-## Static catalog API (v1)
-
-Static JSON is the initial public API; same-origin HTTPS URLs make it usable by a website, CLI, SDK, or other agent.
+Public discovery metadata is distributed via immutable HTTPS static JSON endpoints hosted on Cloudflare Pages.
 
 ```text
-GET /v1/catalog/index.json
-GET /v1/catalog/shards/{kind}/{category}.json
-GET /v1/items/{encoded-stable-id}.json
-GET /v1/items/{encoded-stable-id}/versions/{version}.json
-GET /v1/metadata.json
+/v1/current.json                                      # Lightweight pointer to active release
+/v1/releases/{release-id}/metadata.json               # Release provenance, sequence, builder version
+/v1/releases/{release-id}/manifest.json               # SHA-256 digests & byte counts of all files
+/v1/releases/{release-id}/index.json                  # Compact global search index
+/v1/releases/{release-id}/shards/{kind}/{cat}.json    # Category partition shards
+/v1/releases/{release-id}/items/{encoded-id}.json     # Full item detail & versions
 ```
 
-Requirements:
+### 1.1 Active Release Pointer (`/v1/current.json`)
+```json
+{
+  "$schema": "https://litepsm.dev/schemas/v1/catalog-pointer.schema.json",
+  "releaseId": "rel_01J9X8K2M4N5P6Q7R8S9T0U1V2",
+  "sequence": 142,
+  "manifestDigest": "sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
+  "createdAt": "2026-09-30T12:00:00Z",
+  "minClientVersion": "1.0.0"
+}
+```
+*   **Cache Policy:** `Cache-Control: public, no-cache, must-revalidate`. Clients check this file to detect catalog updates.
 
-- Every item response includes `schemaVersion`, stable ID, kind, source, upstream reference, version/ref, digest where available, compatibility facts, provenance, and `updatedAt`.
-- Mutable “latest” is a convenience display pointer only. Install plans resolve to an exact version/ref/digest.
-- Responses include ETag/Last-Modified and cache policy; clients cache valid prior metadata and can continue showing installed packages offline.
-- Catalog JSON never contains credentials, private source data, or undocumented authentication values.
-- Shards are bounded; search first downloads compact indexes and then fetches detail as needed.
-- Stable schema changes are additive; breaking changes use `/v2` and overlapping support.
+### 1.2 Immutable Release Files (`/v1/releases/{release-id}/...`)
+*   **Cache Policy:** `Cache-Control: public, max-age=31536000, immutable`.
+*   **Integrity Guarantee:** Before reading shards or item records, clients verify file sizes and SHA-256 digests against `manifest.json`.
 
-## InstallPlan
+---
 
-The resolver and local client share a serializable plan. The plan is not itself authorization to execute.
+## 2. InstallPlan v2 Specification
+
+The `InstallPlan` represents an immutable, verifiable contract describing all proposed modifications before execution.
 
 ```json
 {
-  "schemaVersion": 1,
-  "listingId": "skills.example/review-pr",
-  "kind": "skill",
-  "version": "1.2.0",
-  "source": { "type": "git", "url": "https://example.invalid/repo", "ref": "<immutable-ref>" },
-  "digest": "sha256:<digest>",
-  "target": { "manager": "litepsm", "scope": "user" },
-  "files": ["skills/review-pr/SKILL.md"],
-  "effects": [{ "type": "write-files", "paths": ["<resolved-local-skill-dir>"] }],
-  "requestedAccess": [],
-  "requiresUserApproval": true
+  "$schema": "https://litepsm.dev/schemas/v1/install-plan.schema.json",
+  "schemaVersion": 2,
+  "planId": "plan_01J9X9P3B1N4K8L7M6Q5R2T4W9",
+  "planHash": "sha256:4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b",
+  "createdAt": "2026-09-30T12:05:00Z",
+  "expiresAt": "2026-09-30T12:20:00Z",
+  "catalogReleaseId": "rel_01J9X8K2M4N5P6Q7R8S9T0U1V2",
+  "sourceSnapshots": ["snap_01J9X8K2M4N5P6Q7R8S9T0U1V2"],
+  "request": {
+    "listingId": "mcp:builtin:mcp-registry/postgresql",
+    "requestedVersion": "1.4.0",
+    "selectedComponents": ["mcp-provider/server"],
+    "targetScope": "user",
+    "targetHost": "claude-code"
+  },
+  "resolved": {
+    "version": "1.4.0",
+    "immutableRefs": ["git:7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c"],
+    "artifacts": [
+      {
+        "artifactId": "art_pg_server",
+        "type": "npm",
+        "locator": "https://registry.npmjs.org/@modelcontextprotocol/server-postgres/-/server-postgres-1.4.0.tgz",
+        "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 184520
+      }
+    ],
+    "dependencies": [],
+    "runtimeRequirements": [
+      { "type": "executable", "name": "node", "minVersion": "18.0.0" }
+    ]
+  },
+  "effects": [
+    { "type": "package.install", "target": "trees/sha256/e3/e3b0c4..." },
+    { "type": "provider.start", "target": "node dist/index.js" }
+  ],
+  "requestedAccess": [
+    { "resource": "network.outbound", "description": "Connect to PostgreSQL server on user-configured host/port" }
+  ],
+  "hostChanges": [],
+  "providerLaunches": [
+    {
+      "providerName": "postgresql",
+      "executable": "node",
+      "args": ["trees/sha256/e3/e3b0c4.../dist/index.js"],
+      "environmentVariables": ["POSTGRES_URL"]
+    }
+  ],
+  "collisions": [],
+  "warnings": [],
+  "preconditions": [
+    { "type": "path_not_exists", "target": "trees/sha256/e3/e3b0c4..." },
+    { "type": "catalog_release_matches", "expected": "rel_01J9X8K2M4N5P6Q7R8S9T0U1V2" }
+  ],
+  "approval": {
+    "required": true,
+    "reasonCodes": ["REQUIRES_EXTERNAL_NETWORK", "EXECUTES_LOCAL_BINARY"],
+    "minimumChannel": "cli-tty"
+  }
 }
 ```
 
-The local client resolves safe LitePSM-store paths. A host target is added only for a declared native-only component. Public metadata must never supply arbitrary absolute destination paths, shell strings to execute, or secret values.
+### Cryptographic Plan Hashing Rule
+`planHash` is computed over the RFC 8785 canonical JSON representation of all execution fields (excluding volatile fields `planId`, `createdAt`, `expiresAt`). Approval binds strictly to `planHash`.
 
-## Future dynamic Catalog API
+---
 
-If static querying becomes insufficient, a Cloudflare Worker may expose equivalent read routes and account-scoped write routes for publisher/private catalog operations. Public query endpoints remain read-only. Do not add server-side MCP invocation or credentials to this API.
+## 3. Local Daemon IPC Contract (JSON-RPC 2.0)
 
-## SDKs
+Local Bridge Shims, CLI sessions, and the diagnostic doctor interact with the Daemon over a versioned JSON-RPC 2.0 stream (Windows Named Pipe or Unix Domain Socket).
 
-### `@litepsm/catalog-client` (later)
-
-Thin typed client for search, item details, source resolution, and InstallPlan display. It must not read machine secrets or write agent config.
-
-### Local client library (later)
-
-An embedded wrapper over the `litepsm` executable or local protocol. It may request local installs only through the same plan/approval path as CLI. Do not create parallel installer logic in every SDK.
-
-### OpenAPI/schema
-
-Publish JSON Schema for listing, source, compatibility, and InstallPlan. Generate language bindings only after the schema and CLI behavior stabilize. A TS SDK is convenience, not the canonical source of truth.
-
-## Hosted Discovery MCP
-
-An optional remote MCP endpoint can serve catalog discovery without authentication for public data (subject to abuse limits). Read-only tools:
-
-```text
-search_extensions(query, kinds?, source?, compatible_client?, limit?)
-get_extension(id, version?)
-prepare_install(extension_id, version?, client?, scope?) -> InstallPlan + human-readable summary
+### 3.1 Initial Handshake (`daemon.handshake`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "daemon.handshake",
+  "params": {
+    "protocolVersion": "1.0",
+    "clientType": "bridge",
+    "clientVersion": "1.0.0",
+    "hostId": "claude-code",
+    "sessionId": "sess_01J9X9W4A5B6C7D8E9F0"
+  }
+}
 ```
 
-It must not expose `install`, `run`, `connect`, `call_tool`, credential write, or arbitrary fetch tools. It is public discovery only and has no machine access.
+### 3.2 Supported IPC Methods
+| Method | Description |
+|---|---|
+| `catalog.search` | Queries cached index with filters and limits |
+| `catalog.get_item` | Retrieves full listing metadata and version history |
+| `resolver.prepare_plan` | Pure dependency resolution generating `InstallPlan` v2 |
+| `install.execute` | Submits approval and begins transactional execution |
+| `install.update` | Prepares and executes update delta |
+| `install.remove` | Safe removal and unreferenced CAS pruning |
+| `skills.load_body` | Retrieves progressive `SKILL.md` body on demand |
+| `skills.read_resource` | Reads bounded skill supporting resource |
+| `provider.probe` | Checks provider health and probes tool schemas |
+| `provider.invoke` | Policy-evaluated tool execution |
+| `host.detect_config` | Probes default agent configuration file path |
+| `host.apply_setup` | Injects Bridge shim entry with atomic pre-edit backup |
+| `doctor.run_checks` | Runs 10 non-mutating system diagnostics |
 
-## Local LitePSM Bridge MCP
+---
 
-The local Bridge is registered once per supported host by `litepsm setup <client>`. Ordinary later installs update LitePSM's local store, not every agent's MCP configuration. The Bridge runtime is local; it may launch selected local MCP providers or connect to selected remote providers. Hosted LitePSM endpoints never proxy tool traffic.
+## 4. Bridge MCP Tool Surface (In-Agent Access)
 
-The Bridge's small stable surface may include:
-
-```text
-search_catalog(query, kinds?, limit?)
-get_extension(id, version?)
-prepare_install(id, version?, components?) -> constrained InstallPlan
-install_from_plan(plan_id) -> requires local user confirmation
-list_installed(kind?, enabled?)
-search_capabilities(query, limit?)
-describe_capability(capability_id) -> provider schema + access facts
-load_skill(skill_id, version?) -> skill instructions as untrusted content
-call_capability(capability_id, arguments) -> provider result
-```
-
-`install_from_plan` is unavailable unless the host has a reliable user-confirmation path; otherwise the Bridge returns a CLI command for the user to run. `call_capability` accepts only a locally installed and enabled capability ID, validates arguments against the resolved provider schema, enforces local scope and action policy, and never accepts arbitrary commands, URLs, destinations, or secret values. Risky operations require an explicit local approval path; if one cannot be provided, the operation is denied or exposed through the provider's native host integration instead. The Bridge must keep unselected provider schemas out of the agent's default tool list and search/load capability details on demand.
-
-## Source adapter interface
-
-Build-time source adapter (not an untrusted in-process runtime plugin):
+When an agent host (e.g., Claude Code, Codex, OpenCode) boots the LitePSM Bridge via stdio, the shim advertises 12 bounded tools:
 
 ```text
-source_type
-validate_source_config
-fetch_index(cursor)
-fetch_item(upstream_id, version?)
-normalize(raw) -> Listing + provenance
-resolve_artifact(listing, version) -> source locator + immutable digest
+┌──────────────────────┬────────────────────────────────────────────────────────┐
+│ Bridge MCP Tool      │ Operational Signature & Role                           │
+├──────────────────────┼────────────────────────────────────────────────────────┤
+│ search_catalog       │ (query: str, kinds?: str[], limit?: int) -> Listing[]  │
+│ get_extension        │ (id: str, version?: str) -> ListingDetail              │
+│ prepare_install      │ (id: str, version?: str) -> InstallPlanSummary         │
+│ request_install      │ (planId: str, approvalToken?: str) -> InstallResult    │
+│ list_installed       │ (kind?: str, enabled?: bool) -> InstalledComponent[]   │
+│ search_capabilities  │ (query: str, limit?: int) -> CapabilitySummary[]       │
+│ describe_capability  │ (capabilityId: str) -> CapabilityDetail                │
+│ load_skill           │ (skillId: str, version?: str) -> SkillBodyText         │
+│ read_skill_resource  │ (skillId: str, path: str) -> ResourceContent           │
+│ invoke_capability    │ (capabilityId: str, arguments: object) -> ToolResult   │
+│ get_invocation       │ (invocationId: str) -> InvocationStatus                │
+│ cancel_invocation    │ (invocationId: str) -> bool                            │
+└──────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-Adapters run in CI with bounded network access and strict time/size limits. No arbitrary extensions can register executable ingestion code in the hosted catalog service during v1.
+*   **Progressive Disclosure:** Tools return minimal structured tokens. Skill bodies and capability schemas are loaded only when requested.
+*   **Fail-Closed Invocations:** If `invoke_capability` targets an unapproved tool or if the tool's `schemaFingerprint` has drifted, the call fails closed and requests approval.
+
+---
+
+## 5. Standardized Machine Error Envelope
+
+All errors returned through the CLI, IPC, or Bridge MCP tools conform to a machine-readable JSON envelope:
+
+```json
+{
+  "code": "LPSM-PROVIDER-SCHEMA-DRIFT",
+  "message": "Downstream provider tool schema changed since approval was granted.",
+  "category": "LPSM-PROVIDER",
+  "retryable": false,
+  "correlationId": "corr_01J9XA12B3C4D5E6F7G8",
+  "causeCode": "SCHEMA_FINGERPRINT_MISMATCH",
+  "details": {
+    "providerId": "prov_postgres_1",
+    "capabilityId": "inst-1/db/query",
+    "previousFingerprint": "sha256:112233...",
+    "currentFingerprint": "sha256:445566..."
+  }
+}
+```

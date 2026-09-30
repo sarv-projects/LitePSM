@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litepsm.dev/schemas/v1/install-plan.schema.json",
+  "title": "InstallPlan",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "planId",
+    "planHash",
+    "createdAt",
+    "expiresAt",
+    "catalogReleaseId",
+    "request",
+    "resolved",
+    "effects",
+    "preconditions",
+    "approval"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "planId": {
+      "type": "string",
+      "pattern": "^plan_[0-9A-Za-z]{26}$"
+    },
+    "planHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "catalogReleaseId": {
+      "type": "string"
+    },
+    "sourceSnapshots": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "request": {
+      "type": "object",
+      "required": ["listingId", "targetScope"],
+      "properties": {
+        "listingId": { "type": "string" },
+        "requestedVersion": { "type": "string" },
+        "selectedComponents": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "targetScope": {
+          "type": "string",
+          "enum": ["user", "project"]
+        },
+        "targetHost": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "resolved": {
+      "type": "object",
+      "required": ["version", "artifacts"],
+      "properties": {
+        "version": { "type": "string" },
+        "immutableRefs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["artifactId", "type", "locator"],
+            "properties": {
+              "artifactId": { "type": "string" },
+              "type": { "type": "string" },
+              "locator": { "type": "string" },
+              "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+              "size": { "type": "integer" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "runtimeRequirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "name"],
+            "properties": {
+              "type": { "type": "string" },
+              "name": { "type": "string" },
+              "minVersion": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string" },
+          "target": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "requestedAccess": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["resource"],
+        "properties": {
+          "resource": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "hostChanges": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "providerLaunches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["providerName", "executable", "args"],
+        "properties": {
+          "providerName": { "type": "string" },
+          "executable": { "type": "string" },
+          "args": { "type": "array", "items": { "type": "string" } },
+          "environmentVariables": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "collisions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string" },
+          "target": { "type": "string" },
+          "expected": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "approval": {
+      "type": "object",
+      "required": ["required"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "reasonCodes": { "type": "array", "items": { "type": "string" } },
+        "minimumChannel": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

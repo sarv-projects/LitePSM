@@ -1,124 +1,169 @@
-# Client and installation design
+# Client and Installation Design
 
-## Entry points
+## 1. Entry Points and Interactive Workflows
 
-Every entry point resolves to the same listing/version and install-plan contract. Supported agents are connected once to the local LitePSM Bridge; installing an ordinary skill or MCP provider afterward does not add another MCP entry to each agent's configuration.
+LitePSM provides both an interactive terminal interface for humans and a structured programmatic interface for agent hosts.
 
-There is no universal protocol that makes a market automatically appear inside every agent. LitePSM provides MCP and API discovery for hosts that support them, plus native adapters where a host has a documented install surface. Other hosts receive a normal public catalog URL and generic package/config export until a supported integration exists.
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        User / Terminal Client                          │
+│                                                                        │
+│   $ litepsm (Interactive TUI Wizard)                                   │
+│     ├── Agent Selector Dropdown (Claude, Codex, Grok, OpenCode, Cline) │
+│     ├── Automated Host Configuration Path Detection                    │
+│     ├── Manual Path Prompt & Fallback Guidance                         │
+│     └── Passive Catalog Update Notice                                  │
+│                                                                        │
+│   $ litepsm setup <agent> (Scriptable Non-Interactive Setup)           │
+│   $ litepsm search / info / install / update / remove / doctor         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Agent Host Client                               │
+│                                                                        │
+│   In-Agent /litepsm Slash Command & Progressive Tool Discovery         │
+│     ├── search_catalog(query, kinds, limit)                            │
+│     ├── describe_capability(capability_id)                             │
+│     ├── prepare_install(listing_id, version) -> InstallPlan v2         │
+│     └── invoke_capability(capability_id, arguments)                    │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
-| Entry point | Role | First-release behavior |
+---
+
+## 2. Interactive Setup Wizard & Agent Auto-Detection
+
+Running `litepsm` without subcommands opens an interactive Terminal User Interface (TUI):
+
+### Step 1: Agent Selection Dropdown
+```text
+? Select your target AI Agent to configure:
+  [●] Claude Code
+  [ ] OpenAI Codex
+  [ ] Grok Build
+  [ ] OpenCode
+  [ ] Cline (VS Code Extension)
+  [ ] Generic MCP Configuration (Export JSON)
+```
+
+### Step 2: Automated Path Discovery & Detection Matrix
+LitePSM probes known default configuration locations by platform:
+
+| Target Agent | Linux / macOS Default Path | Windows Default Path |
 |---|---|---|
-| LitePSM Market website | Public discovery | Search, filter, inspect source/version/components/compatibility, choose target client, show install command or package download. No account required for public entries. |
-| `litepsm` CLI | Local install authority and agent setup | Search/info/install/list/status/update/remove/doctor plus one-time `setup <client>`; previews affected paths and provider launch details. Can run from a native binary or npm package. |
-| Static catalog API | Programmatic discovery | Read-only index and item resolution; no credentials or install mutation. |
-| Catalog SDK | Product integration | Typed client for search, item inspection, and install-plan display. It does not carry secrets or run tools. |
-| LitePSM Bridge (local MCP) | In-agent access | One host registration exposes catalog search, installed capability discovery, skill loading, and policy-checked invocation through the local runtime. It does not expose arbitrary filesystem writes or bypass approvals. |
-| Hosted Discovery MCP | Optional public discovery | Read-only `search`, `inspect`, and `prepare_install` tools. It cannot install locally or invoke third-party tools. |
-| Host adapter | One-time host setup | Detects the client and version, registers the single Bridge entry, preserves unrelated settings, or reports manual setup instructions. |
-| Extension adapter | Native-only package handling | Used only when a component needs a host-native plugin/skill surface that the Bridge cannot provide. |
+| **Claude Code** | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
+| **OpenAI Codex** | `~/.codex/config.json` | `%APPDATA%\Codex\config.json` |
+| **Grok Build** | `~/.config/grok/config.toml` | `%APPDATA%\Grok\config.toml` |
+| **OpenCode** | `~/.config/opencode/opencode.json` | `%APPDATA%\OpenCode\opencode.json` |
+| **Cline** | `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/...` | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\...` |
 
-No special website account is required to consume public records. Accounts may be introduced later for publisher management/private catalogs; that account credential is separate from downstream service credentials.
-
-## CLI distribution and commands
-
-The CLI is the main cross-client installation entry point. A native binary is the canonical distribution; npm can provide convenient `npx` and global installation for Node users.
-
-Illustrative command contract (package name/commands are proposed, not published):
-
-```sh
-litepsm search "postgres" --kind mcp
-litepsm info mcp:publisher/server
-litepsm setup codex                 # once per supported agent
-litepsm plan install skill:publisher/skill
-litepsm install skill:publisher/skill
-litepsm list
-litepsm update skill:publisher/skill --to 2.1.0
-litepsm remove skill:publisher/skill
-litepsm doctor [--client codex]
+### Step 3: Graceful Fallback Options
+If the configuration file is absent, LitePSM prompts the user:
+```text
+[!] Unable to locate default configuration file for Claude Code.
+? Choose an action:
+  > Enter path manually: [/path/to/claude.json]
+  > Print manual setup snippet (copy & paste into agent config)
+  > Retry detection
+  > Cancel
 ```
 
-For npm users:
+### Step 4: Safe Atomic Configuration Injection
+1.  **Backup:** Copies target configuration to `DATA_ROOT/backups/<host-id>/<timestamp>-<digest>/config.bak`.
+2.  **Parse & Merge:** Parses JSON/TOML, preserving comments and formatting where possible. Injects a single version-pinned entry:
+    ```json
+    {
+      "mcpServers": {
+        "litepsm": {
+          "command": "/usr/local/bin/litepsm",
+          "args": ["bridge", "stdio", "--host", "claude-code"]
+        }
+      }
+    }
+    ```
+3.  **Atomic Replacement:** Writes to a temporary file on the same filesystem, validates syntax, and renames atomically.
 
-```sh
-npx @litepsm/cli search "postgres" --kind mcp
-npx @litepsm/cli setup codex        # once per supported agent
-npx @litepsm/cli install skill:publisher/skill
-```
+---
 
-`setup <client>` is the only routine per-agent configuration step: it adds one LitePSM Bridge MCP entry and, where required, a small LitePSM bootstrap skill/instruction. That entry must invoke a locally installed, version-pinned executable; do not configure agents to download or run an unpinned `@latest` package on every launch. `install`, `update`, and `remove` operate on the LitePSM-managed store by default, not on each agent's config. `plan` is read-only. Mutations require the local client to show and receive confirmation unless the user configured a narrow explicit policy. Avoid shell-pipe installers; the CLI/Bridge package is the bootstrap dependency.
+## 3. Local Storage Layout (`DATA_ROOT`)
 
-## Core flows
-
-### Skill install
-
-1. Resolve listing and immutable skill version/digest.
-2. Fetch from upstream or LitePSM's static metadata endpoint; bound archive size/file count and reject path traversal/symlink escapes.
-3. Show source, files, scripts, install target, collision, and update policy.
-4. On approval, stage in a temp directory, verify digest, then atomically move under the LitePSM-managed skill store.
-5. The Bridge exposes skill metadata and loads selected skill text only when requested. A host-native export is optional and explicit, for clients whose native skill activation is preferred or required.
-6. Record local lock metadata: listing ID, source, version/ref, digest, enabled state, and installed path.
-7. Never run bundled scripts during installation. Skills are instructions/data; they can still influence agent behavior and require source review.
-
-### MCP install
-
-1. Resolve the upstream package/config and transport; show executable, arguments, endpoints, environment variable **names**, requested scopes, and filesystem/network implications.
-2. Choose local stdio vs direct remote endpoint. The local Bridge may manage either provider; LitePSM's hosted service never hosts or proxies MCP calls.
-3. Authenticate directly with the chosen provider using local OAuth or secret-store references where supported. Keep secrets out of LitePSM's host registration and public catalog.
-4. On approval, install the provider record into the LitePSM-managed store. Do not edit agent configuration again.
-5. Start/probe only after explicit approval; report negotiated server identity and tools without invoking action tools as a test. Enable selected capabilities separately under local policy.
-
-### Plugin/toolkit install
-
-1. Inspect components and per-host compatibility. Do not assume a plugin is portable because its skills are.
-2. Resolve dependencies to pinned versions and show the complete plan.
-3. Install portable components into the LitePSM-managed store and expose supported skills/MCP capabilities through the Bridge.
-4. Use a native client adapter only for components that require a host-native plugin surface; otherwise keep the package managed centrally. Report partial compatibility.
-5. Install selected toolkit members; never include every tool from a source by default.
-6. Start or enable hooks only in a separate approval step with declared events and effects. Hooks remain host-specific and may require native installation.
-
-### Agent-requested discovery/install
-
-An agent can query a public Discovery MCP/API or the local Bridge and produce an `InstallPlan` with listing ID, exact version/digest, selected components, and requested access. A local install can be initiated by the CLI or Bridge only through the same user-confirmed plan path. If a host does not provide reliable confirmation/elicitation, the Bridge returns the exact CLI command instead of silently installing. The hosted Discovery MCP has no machine path or secret access.
-
-After one-time setup, the local Bridge can expose a small, bounded tool surface (`search_catalog`, `list_installed`, `search_capabilities`, `load_skill`, and policy-checked `call_capability`). It must not publish every installed provider's tool schema to every request. Capability results are selected on demand; invocation arguments are validated against the provider schema locally. Writes, external communication, destructive actions, and credential changes are denied or require approval according to local policy.
-
-## Client adapters
-
-Each adapter has an explicit capability declaration:
+LitePSM maintains all user state, database files, and package trees within platform-standard data directories:
+*   **Windows:** `%LOCALAPPDATA%\LitePSM`
+*   **macOS:** `~/Library/Application Support/LitePSM`
+*   **Linux:** `$XDG_DATA_HOME/litepsm` (default: `~/.local/share/litepsm`)
 
 ```text
-client_id, supported_versions
-MCP config format + merge semantics for the one Bridge entry
-bridge registration / refresh / removal support
-native skills/plugins capabilities where available
-auth setup guidance
-can_configure / can_export / instructions_only
-trust requirements and restart/reload behavior
+DATA_ROOT/
+  ├── state.db                     # SQLite database in WAL mode (20 core tables)
+  ├── state.db-wal                 # SQLite Write-Ahead Log
+  ├── state.db-shm                 # SQLite Shared Memory index
+  ├── artifacts/                   # Content-Addressed Store (CAS) of raw downloads
+  │   └── sha256/<2-hex>/<digest>/raw
+  ├── trees/                       # Immutable unpacked package directories
+  │   └── sha256/<2-hex>/<tree-digest>/...
+  ├── runtimes/                    # Materialized runtime virtualenvs/caches
+  │   └── <runtime-id>/...
+  ├── staging/                     # In-flight installation scratch space
+  │   └── <operation-id>/...
+  ├── backups/                     # Pre-mutation host configuration backups
+  │   └── <host-id>/<timestamp>-<digest>/...
+  └── cache/                       # Cached catalog releases and search shards
+      └── catalog/<release-id>/...
+
+CONFIG_ROOT/                       # User configuration
+  └── config.toml
+
+RUNTIME_ROOT/                      # Ephemeral IPC sockets and daemon locks
+  ├── daemon.lock                  # Exclusive instance process lock
+  ├── daemon.pid                   # Current daemon process ID
+  └── daemon.sock                  # Unix domain socket (Linux/macOS)
+                                   # (Windows uses Named Pipe: \\.\pipe\litepsm-daemon-<hash>)
 ```
 
-Initial development should prioritize a small declared matrix, then expand from evidence. Proposed initial targets: Codex, Claude Code, Grok Build, OpenCode, plus generic MCP JSON/config export. Validate one-time Bridge registration first. Do not claim GUI/web surfaces are installable merely because their CLI counterpart is.
+---
 
-Adapters must preserve unrelated settings, create backups, avoid overwriting user-managed entries, and surface name collisions. All source/package formats stay intact unless a documented transformation is explicitly selected.
+## 4. Pure Dependency Resolver Algorithm
 
-## Update, pin, remove
+LitePSM's dependency resolver is pure and deterministic. It performs no disk I/O or network fetches during resolution:
+1.  **Input:** Target `ListingId` and requested version constraint.
+2.  **Breadth-First / Depth-First Traversal:** Recursively evaluates dependency declarations against the catalog release snapshot.
+3.  **Cycle Detection:** Maintains a visited traversal stack; if a dependency node re-occurs, halts with `LPSM-RESOLVE-CYCLE`.
+4.  **Constraint Intersection:** Determines if requested version ranges intersect.
+    *   If compatible versions exist, selects the highest stable immutable release.
+    *   If conflicting constraints exist without an intersection, halts immediately with `LPSM-RESOLVE-CONFLICT`.
+5.  **Output:** An immutable `InstallPlan` containing exact versions, content digests, and resolved dependency order.
 
-- Install pins a version and digest in a local lock record.
-- Updates are user-initiated with a file/config diff and permission-delta summary by default.
-- Optional auto-update can be enabled per package/source only after a later decision; never silently change executable MCP configuration or hooks.
-- Remove only LitePSM-owned files/config sections. If ownership is uncertain or the user's file has diverged, stop and offer a manual cleanup plan.
-- Disabling and uninstalling are distinct for hosts that support both states.
+---
 
-## Local state
+## 5. Update and Upstream Repack Handling
 
-Per user, outside the project by default:
+### 5.1 Passive Update Checks
+Whenever a user runs `litepsm` or an agent invokes `/litepsm`, the client performs a passive read of `/v1/current.json`.
+*   If the remote catalog release sequence exceeds the cached sequence, it downloads the release index.
+*   It compares installed versions against catalog versions.
+*   **Zero Local Mutation:** It displays update availability to the user or agent, but **never mutates local files** without an explicit update command.
 
-```text
-state/
-  installs.lock       # immutable package identity/version/digest and enabled state
-  providers/          # MCP provider config without secret values
-  bridge/             # local policy, audit records, and bridge version state
-  sources.json        # configured catalog URLs; no credentials
-  backups/            # bounded pre-edit client config backups
-```
+### 5.2 Update Delta Evaluation
+When `litepsm update <listing-id>` is invoked, the engine generates an update plan detailing:
+*   Version jump and artifact SHA-256 digest delta.
+*   Changes in declared effects (e.g., added filesystem or network access).
+*   Provider launch argument changes.
+*   New or removed tools and skills.
 
-The host Bridge registration points to a pinned local LitePSM executable/package version. Secrets are references into an OS secret store, not values in this state tree. Project-scoped installs are explicit and show files added to the repository. Native-only per-agent installs record the host and path in the lock file.
+### 5.3 Upstream Repack Detection
+If an upstream source re-publishes the same version string with a modified artifact digest:
+$$\text{Installed Digest } \neq \text{New Upstream Digest for identical version}$$
+1.  LitePSM flags the artifact as `status: "repacked/mutated-upstream"`.
+2.  Automatic installation is blocked.
+3.  The user is warned that upstream maintainers modified release artifacts in-place, requiring explicit confirmation to proceed.
+
+---
+
+## 6. Removal and Garbage Collection Algorithm
+
+1.  **Identify Install Record:** Queries SQLite for the target `InstallId` and resolves all associated components.
+2.  **Active Session Check:** Queries `provider_sessions`; if a managed provider process is currently running, stops the process gracefully (`SIGTERM` / `WM_CLOSE`).
+3.  **Database Commit:** In a single SQLite transaction, removes `installs`, `install_components`, `capabilities`, and `capability_grants` records.
+4.  **Unreferenced CAS Pruning:** Scans `trees/` and `artifacts/`. Deletes directories only if no remaining active installation references their content digests.
+5.  **Host Config Cleanup:** When uninstalling the Bridge entry from an agent host, checks if the configuration entry still matches LitePSM's recorded fingerprint. If modified by the user, leaves the file intact and prints manual cleanup instructions.

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://litepsm.dev/schemas/v1/listing.schema.json",
+  "title": "Listing",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "kind",
+    "name",
+    "summary",
+    "categories",
+    "source",
+    "versions",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^(plugin|mcp|skill|connector):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["plugin", "mcp", "skill", "connector"]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "description": { "type": "string" },
+    "categories": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "publisherClaim": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "namespace": { "type": "string" },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["sourceId", "upstreamId", "sourceType", "manifestFormat"],
+      "properties": {
+        "sourceId": { "type": "string" },
+        "upstreamId": { "type": "string" },
+        "sourceType": { "type": "string" },
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "manifestFormat": { "type": "string" },
+        "manifestSchemaVersion": { "type": "string" }
+      }
+    },
+    "versions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["version"],
+        "properties": {
+          "version": { "type": "string" },
+          "immutableRef": { "type": "string" },
+          "publishedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "componentsSummary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "name"],
+        "properties": {
+          "kind": { "type": "string" },
+          "name": { "type": "string" },
+          "supportedByLitePSM": { "type": "string", "enum": ["yes", "partial", "no", "unknown"] }
+        }
+      }
+    },
+    "requirementsSummary": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "compatibilitySummary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["host", "supported"],
+        "properties": {
+          "host": { "type": "string" },
+          "supported": { "type": "string" }
+        }
+      }
+    },
+    "verificationSummary": {
+      "type": "object",
+      "properties": {
+        "sourceVerified": { "type": "boolean" },
+        "formatCompatible": { "type": "boolean" },
+        "tested": { "type": "boolean" },
+        "lastTestedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "firstSeenAt": { "type": "string", "format": "date-time" },
+        "lastSeenAt": { "type": "string", "format": "date-time" },
+        "fetchedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "stale", "deprecated", "withdrawn", "unavailable"]
+    },
+    "rawMetadataRef": { "type": "string" }
+  },
+  "additionalProperties": false
+}

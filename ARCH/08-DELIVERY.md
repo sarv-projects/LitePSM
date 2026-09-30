@@ -1,74 +1,110 @@
-# Delivery plan
+# Delivery Plan & Quality Gates
 
-Every phase starts **proposed**. A phase becomes implemented only when code exists; verified only when a repeatable check passes on a recorded revision/environment; accepted only with a review/acceptance record.
+## 1. Staged Delivery Methodology
 
-## Phase 0 — Product and contracts
+To ensure stability and prevent architectural regressions, LitePSM follows an 8-phase delivery sequence (Phase A through Phase H). Each phase begins in a **Proposed** state and advances to **Verified** and **Accepted** only when automated quality gates and test suites pass.
 
-- Confirm LitePSM name/domain/npm identity.
-- Finalize listing, source, compatibility, version/digest, and InstallPlan schemas.
-- Define initial policy for public catalog ingestion, stale listings, duplicates, and “tested” badges.
-- Choose first client adapter targets and minimum supported versions.
+```text
+[Phase A] Architecture Freeze & Schemas
+    │
+    ▼
+[Phase B] Domain, SQLite Storage & Local IPC
+    │
+    ▼
+[Phase C] Source Ingestion & Static Catalog Builder
+    │
+    ▼
+[Phase D] Safe Extraction, DFS Resolver & Skill Store
+    │
+    ▼
+[Phase E] Process Supervision, Bridge Shim & Host Adapters
+    │
+    ▼
+[Phase F] MCP Protocols (Streamable HTTP), Secrets & OAuth
+    │
+    ▼
+[Phase G] Marketplace Federation, In-Agent /litepsm & CLI TUI
+    │
+    ▼
+[Phase H] Cross-Platform Build, Conformance & Packaging
+```
 
-Acceptance evidence: decision records approved; schema examples validate; source/version and credential boundaries are unambiguous.
+---
 
-## Phase 1 — Private source repo and public static catalog
+## 2. Phase Breakdown and Acceptance Gates
 
-- Private repository with source schemas, curation inputs, CI build, and public-site assets.
-- Cloudflare Pages deploys from that private repository to a public endpoint.
-- Public JSON index, per-kind/category shards, item records, cache validators, and public source links.
-- Manual/reviewed updates first; no accounts, API database, or ingestion jobs that execute upstream code.
+### Phase A: Architecture Freeze & Schemas (Prerequisite)
+*   **Deliverables:**
+    *   Author normative LLD specifications `ARCH/10` through `ARCH/24`.
+    *   Draft 2020-12 JSON Schemas for `listing`, `version`, `source`, `install-plan`, `catalog-release`, `errors`.
+    *   Publish hostile archive test fixtures and golden host configuration files.
+*   **Acceptance Gate:** All schema validation suites pass; no unresolved architectural questions remain.
 
-Acceptance evidence: anonymous clients fetch search/index/detail JSON; a public deployment reveals only intended static output; catalog build rejects invalid records and preserves source provenance.
+### Phase B: Foundation & Storage Layer
+*   **Deliverables:**
+    *   `internal/domain`: Pure types, canonical JSON (RFC 8785), SHA-256 hashing.
+    *   `internal/config`: Platform-standard paths across Windows, macOS, and Linux.
+    *   `internal/state`: SQLite 3 initialization in WAL mode, migration runner, 20 relational tables DDL.
+    *   `internal/ipc`: Windows Named Pipe and Unix domain socket JSON-RPC 2.0 transport.
+*   **Acceptance Gate:** 100% unit test coverage on pure domain types; database migration tests pass forward and backward; IPC throughput benchmark demonstrates sub-millisecond local latency.
 
-## Phase 2 — Local CLI and LitePSM-managed skill store
+### Phase C: Static Catalog & Discovery Plane
+*   **Deliverables:**
+    *   `internal/source`: Source adapters for Official MCP Registry and Agent Skills.
+    *   `internal/catalogbuild`: Deterministic CI compiler, manifest generator, and shard partitioner.
+    *   `internal/catalog`: Client release fetcher, ETag cache, and deterministic search index.
+    *   Cloudflare Pages deployment workflow with strict dist allowlist.
+*   **Acceptance Gate:** Two successive CI builds from identical source fixtures generate byte-for-byte identical output; public deployment reveals zero private repository files.
 
-- Ship CLI binary and one npm wrapper if packaging/name is available.
-- `search`, `info`, `plan install`, `install`, `list`, `remove`, and `doctor` for the LitePSM-managed skill store.
-- Keep skill loading separate from installation; return selected skill text through the local Bridge only when requested.
-- Lock exact source/version/digest; preview writes; stage, verify, atomically install; no script execution.
+### Phase D: Safe Artifact Extraction & Skill Management
+*   **Deliverables:**
+    *   `internal/artifact`: Archive fetcher and extractor enforcing hard limits (256 MiB download, 1 GiB extracted, path traversal rejection).
+    *   `internal/resolver`: Pure DFS dependency resolver with Kahn's cycle detection.
+    *   `internal/install`: Two-phase atomic filesystem staging and SQLite commit engine.
+    *   `internal/skills`: Progressive disclosure skill body and resource loader.
+*   **Acceptance Gate:** Extraction harness rejects all hostile zip-slip, zip-bomb, and symlink escape fixtures; aborted installations leave zero orphaned files.
 
-Acceptance evidence: reproducible skill fixture installs into a temporary user scope; malicious archive/path cases are refused; removal changes only LitePSM-owned files.
+### Phase E: Process Supervision, Bridge Shim & Host Adapters
+*   **Deliverables:**
+    *   `internal/provider`: Process supervisor with Windows Job Objects and Unix process groups.
+    *   `internal/policy`: 17-action effect taxonomy and approval engine.
+    *   `internal/bridge`: Stdio MCP shim exposing the 12 core Bridge tools.
+    *   `internal/host`: Extensible adapter framework with automated config path discovery for Codex, Claude Code, Grok Build, OpenCode, Cline.
+*   **Acceptance Gate:** Terminating the daemon cleanly terminates all child provider processes; host adapters successfully merge Bridge entries into golden config fixtures without altering unrelated keys.
 
-## Phase 3 — One-time host setup and local Bridge
+### Phase F: MCP Protocol Profiles, Secrets & OAuth
+*   **Deliverables:**
+    *   `internal/mcpclient`: Dual-protocol client supporting stateless 2026-07-28 (Streamable HTTP) and legacy 2025-11-25.
+    *   Capability schema fingerprinting and automatic drift invalidation.
+    *   `internal/secrets`: Native OS credential store backends (WinCred/DPAPI, Keychain, Secret Service).
+    *   `internal/auth`: OAuth 2.0 PKCE loopback listener on `127.0.0.1`.
+*   **Acceptance Gate:** Dual-protocol conformance suite passes against mock MCP servers; synthetic canary tokens confirm zero secret leaks in logs, database dumps, or error responses.
 
-- Implement `litepsm setup <client>` for the first host adapter(s); register one local LitePSM Bridge MCP entry per supported agent.
-- Preserve unrelated host settings and make setup idempotent; do not edit host MCP config for every provider.
-- Parse official MCP Registry metadata and supported generic MCP manifests; store selected providers in LitePSM-managed local state.
-- Design the Bridge's bounded, on-demand capability discovery, local schema validation, action policy, and approval behavior.
-- Separate one-time host setup from provider install, provider start, authentication, and tool invocation.
+### Phase G: Marketplace Federation, In-Agent `/litepsm` & CLI TUI
+*   **Deliverables:**
+    *   Federated source adapters for Claude Code, Codex, and Grok Build marketplaces (rejecting command sources).
+    *   Interactive CLI TUI wizard (`litepsm` runner with dropdown agent selector and passive update notices).
+    *   In-agent `/litepsm` command and progressive tool discovery workflow.
+    *   `internal/doctor`: Diagnostic checks and `--repair` plan generator.
+*   **Acceptance Gate:** Running `litepsm` in terminal allows seamless agent selection and configuration; agents can invoke `/litepsm` to search and propose verified installations.
 
-Acceptance evidence: config merge/rollback fixtures for each client version; repeated setup is idempotent; installing another provider does not modify host config; credentials absent from host config/log/state; provider start and risky calls are governed by explicit local policy.
+### Phase H: Cross-Platform Build, Conformance & Packaging
+*   **Deliverables:**
+    *   Go cross-compilation pipeline (`windows/amd64`, `windows/arm64`, `linux/amd64`, `darwin/arm64`).
+    *   npm distribution package (`litepsm` / `@litepsm/cli`) with native binary bootstrapping.
+    *   Comprehensive end-to-end integration and crash-injection test suite.
+*   **Acceptance Gate:** Full CI test matrix green across Windows, Ubuntu, and macOS runners; npm package boots correctly via `npx litepsm`.
 
-## Phase 4 — Plugin formats and federation
+---
 
-- Add portable plugin schema and adapters for agreed Claude-, Codex-, and Grok-compatible marketplace manifest formats.
-- Add documented skills APIs/Git and MCP Registry adapters.
-- Add user-supplied Git marketplace sources and connector-as-MCP listings.
-- Build compatibility matrix; retain raw format and report unsupported components.
+## 3. Explicitly Deferred Features (Non-Goals for v1)
 
-Acceptance evidence: pinned public fixtures parse and resolve to exact upstream refs; schema fixtures show correct per-host component support; source failures do not publish stale data as current.
-
-## Phase 5 — Agent access
-
-- Publish static Catalog API contract and optional hosted read-only `litepsm-discovery` MCP (`search`, `inspect`, `prepare_install`).
-- Add local Bridge tools for installed-item search, on-demand skill loading, capability description/invocation, and constrained install-plan approval where a host supports reliable confirmation.
-- Provide host-specific one-time setup instructions, capability limits, and a CLI fallback when in-agent confirmation is unavailable.
-
-Acceptance evidence: agents can search public entries and locally installed capabilities; hosted discovery cannot access machine state; local Bridge rejects uninstalled capabilities, arbitrary paths/commands, invalid schemas, and unapproved effects; each agent has evidence for one-time registration and confirmation behavior.
-
-## Phase 6 — SDK and publisher workflow
-
-- Release typed catalog SDK after API schema stabilizes.
-- Add reviewed publisher submissions and private catalog support only after data retention, auth, moderation, and threat model are approved.
-- Consider Worker/D1 for dynamic metadata. Consider R2 only for deliberate package mirroring.
-
-Acceptance evidence: API compatibility suite, publisher auth tests, audit/data-retention decisions, and documented hosting cost/limits.
-
-## Deferred
-
-- Native connector implementations for each SaaS.
-- Running MCP servers or hooks in LitePSM cloud.
-- Marketplace telemetry/rankings.
-- Automatic updates enabled by default.
-- Claims of complete coverage of private or proprietary vendor directories.
-- Beautiful production website beyond the first usable search/inspect/install surface.
+The following capabilities are deliberately excluded from the initial release to maintain architectural focus and security:
+*   Hosted cloud execution or proxying of third-party MCP servers.
+*   Cloud-hosted credential brokering or SaaS token management.
+*   Dynamic, third-party executable adapter scripting.
+*   General SAT dependency solvers with backtracking.
+*   Native connector runtimes for proprietary SaaS APIs.
+*   User telemetry, tracking, or popularity ranking metrics.
+*   Silent automatic extension updates by default.
+*   Full OS kernel sandboxing claims without platform sandbox integration.

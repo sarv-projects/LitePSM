@@ -1,70 +1,79 @@
-# Research ledger
+# Research Ledger & Ecosystem Ground Truth
 
-Research date: 2026-09-30. Upstream behaviors can change; recheck linked primary sources when implementing an adapter. The references below support design patterns and source-format claims. They do not authorize copying source code or imply that every feature is accessible through a public API.
+**Snapshot Date:** 2026-09-30  
+Upstream specifications, client interfaces, and protocol revisions evolve rapidly. This ledger documents verified facts from primary sources that govern LitePSM's architectural requirements.
 
-## Upstream registries and formats
+---
 
-### Model Context Protocol Registry
+## 1. Model Context Protocol (MCP)
 
-- [Official Registry](https://registry.modelcontextprotocol.io/) — public server discovery.
-- [Registry API reference](https://registry.modelcontextprotocol.io/docs) — documented API endpoints and schemas.
-- [Registry introduction](https://blog.modelcontextprotocol.io/posts/2025-09-08-mcp-registry-preview/) — describes the registry as a public server catalog/API intended as a primary source that sub-registries can build on.
-- Use: source adapter for MCP server metadata; never infer hosted execution or credential handling from a listing.
+### 1.1 The 2026-07-28 Protocol Revision
+*   **Stateless Request Architecture:** The historical stateful handshake (`initialize` followed by `initialized`) has been retired for stateless operations. Individual JSON-RPC requests carry protocol versioning, client identity, and capability negotiation within a top-level `_meta` field. This enables requests to be handled across independent, stateless instances behind load balancers.
+*   **Streamable HTTP Transport:** Recommended primary transport replacing legacy Server-Sent Events (SSE). Utilizes a unified HTTP endpoint where client requests are sent via HTTP POST, and server responses stream via chunked or request-scoped bodies.
+*   **Header Mirroring:** Key routing metadata (`Mcp-Method`, `Mcp-Name`) is mirrored into standard HTTP request headers, enabling reverse proxies and load balancers to route calls without deep packet payload inspection.
+*   **Centralized Subscriptions:** Replaced fragmented `resources/subscribe` with a unified `subscriptions/listen` RPC.
+*   **Server Discovery:** Optional `server/discover` RPC enabling clients to query supported protocol versions and capabilities upfront.
+*   **Architecture Consequence:** LitePSM must use an official MCP SDK and support a **dual-protocol matrix**: modern stateless 2026-07-28 and legacy 2025-11-25.
 
-### Agent Skills
+### 1.2 Official MCP Registry & `server.json`
+*   **Source Reference:** `https://registry.modelcontextprotocol.io/docs`
+*   **Metadata Scope:** Standardized `server.json` catalog format indexing packages across multiple package ecosystems (npm, PyPI, Cargo, OCI, NuGet, MCPB) and remote Streamable HTTP endpoints.
+*   **Architecture Consequence:** Registry metadata is strictly discovery data. The presence of a record does not imply that the user's workstation has the runtime prerequisites to execute the server.
 
-- [Agent Skills specification](https://agentskills.io/specification) — portable `SKILL.md` format and directory structure.
-- [skills.sh CLI](https://www.skills.sh/docs/cli) — `npx skills add` installation path.
-- [skills.sh API](https://www.skills.sh/docs/api) — documented search/detail API, stable IDs, install URLs, hashes, and duplicate marker.
-- Use: documented source adapter and local Agent Skills installer; popularity counts remain ranking metadata, not verification.
+---
 
-### Claude plugin marketplaces
+## 2. Agent Skills Specification
 
-- [Claude Code marketplace docs](https://code.claude.com/docs/en/plugin-marketplaces) — Git/URL/local marketplace sources and manifest workflow.
-- [Anthropic plugin marketplace repo](https://github.com/anthropics/claude-plugins-official) — official Git-hosted plugin catalog.
-- [Claude plugin usage help](https://support.claude.com/en/articles/13837440-use-plugins-in-claude) — curated sources and Git repository addition paths.
-- Use: parse public Git marketplace manifests or a source supplied by a user. No global discovery API is assumed. Private sources stay subject to the user's own Git access.
+*   **Source Reference:** `https://agentskills.io/specification`
+*   **Format:** A skill is a directory containing a mandatory `SKILL.md` file with YAML frontmatter and Markdown instruction content, accompanied by optional `scripts/`, `references/`, and `assets/`.
+*   **Progressive Disclosure:** To preserve LLM context windows, skills are loaded in three tiers:
+    1.  *Discovery:* Name and description only.
+    2.  *Activation:* Full `SKILL.md` body.
+    3.  *Execution:* Supporting files on demand.
+*   **`allowed-tools` Experimental Status:** The `allowed-tools` frontmatter field is an experimental proposal intended to declare pre-approved tools. In practice, many agent implementations do not enforce this restriction.
+*   **Architecture Consequence:** LitePSM treats `allowed-tools` strictly as informational metadata. It **never** treats this field as an automatic authorization grant.
 
-### Codex / portable Agent Plugins
+---
 
-- [Package your plugin](https://developers.openai.com/plugins/build/plugins) — portable `plugin.json`, skills, MCP config, optional assets/hooks, and repository/local marketplace formats.
-- [Plugin architecture](https://developers.openai.com/plugins/concepts/plugins) — plugins combine skills, MCP servers, and optional UI; ChatGPT and Codex share a public directory, while local/repository marketplaces are separate sources.
-- [MCP plugins API guide](https://developers.openai.com/api/docs/guides/agents-api/tools/plugins) — example plugin/MCP configuration and local package use.
-- Use: parse portable format and repo marketplaces. Do not assume a public third-party API for the universal directory; add an adapter only through documented access.
+## 3. Claude Code Plugin Marketplaces
 
-### Grok plugin marketplaces
+*   **Source Reference:** `https://code.claude.com/docs/en/plugin-marketplaces`
+*   **Format:** Git repositories containing `.claude-plugin/marketplace.json` defining a list of plugins.
+*   **Source Types:** Plugins can specify sources including `github`, `git-subdir`, `archive`, `npm`, and `command`.
+*   **Execution Hazard of `command` Sources:** The `command` source type executes an arbitrary local shell script to build or fetch the plugin.
+*   **Architecture Consequence:** During catalog ingestion, executing arbitrary publisher commands is a severe vulnerability. LitePSM strictly prohibits and rejects `command` sources in v1.
 
-- [Grok Build plugin guide](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/09-plugins.md) — Git/local marketplaces, `.grok-plugin/marketplace.json`, plugin component index, trust model, and supported source formats.
-- [Official Grok plugin marketplace repository](https://github.com/xai-org/plugin-marketplace) — index format and pinned remote commit SHAs.
-- Use: Git manifest adapter; preserve SHA pinning. Test Claude-format compatibility per feature rather than claiming whole-product parity.
+---
 
-## Comparable product flows (patterns only)
+## 4. OpenAI Portable Agent Plugins
 
-### Agent MCP client support and setup surfaces
+*   **Source Reference:** `https://developers.openai.com/plugins/build/plugins`
+*   **Format:** A root `plugin.json` manifest combining skills (`skills/`), MCP servers (`mcp.json`), hooks, and optional assets.
+*   **Architecture Consequence:** LitePSM decomposes portable plugins into their constituent components, normalizing portable skills and MCP servers while preserving proprietary OpenAI metadata under `extensions.com.openai`.
 
-- [Codex MCP setup](https://developers.openai.com/learn/docs-mcp) — Codex supports adding MCP servers by CLI or config file; the same configuration is used by CLI and IDE extension.
-- [Claude Code MCP](https://code.claude.com/docs/en/mcp) — supports adding and scoping MCP servers through its CLI/configuration.
-- [Cursor MCP](https://docs.cursor.com/context/model-context-protocol) — supports local and remote MCP, configuration files, and an extension API.
-- [OpenCode MCP servers](https://dev.opencode.ai/docs/mcp-servers/) — supports configured local and remote servers and exposes connected tools to the model.
-- [Grok Build MCP guide](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/07-mcp-servers.md) — supports local stdio and remote HTTP MCP servers.
-- [Gemini CLI MCP setup](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/tutorials/mcp-setup.md) — supports MCP servers through user/project settings.
-- Use: evidence that a one-time local MCP registration is a plausible integration surface for these hosts. It does **not** establish a universal install API or identical approval/elicitation behavior. Each adapter and confirmation path must be verified against the supported version.
+---
 
-- [MCP Market Hub](https://mcpmarket.com/hub) — versioned skills, MCP-backed toolkits, client plugin sync, team sharing. Its [plugin install docs](https://docs.mcpmarket.com/docs/plugins/installing-a-plugin) say install commands pipe a script to shell but can be inspected. Its [custom MCP deployment docs](https://docs.mcpmarket.com/docs/mcp-servers/deploying-a-custom-mcp-server) describe hosted deployments. Adapt toolkits/versioning/inspection; LitePSM keeps installation/runtime local.
-- [ahel catalog](https://ahel.ai/catalog) and [connector docs](https://ahel.ai/install?client=openai) — broad multi-kind catalog, one MCP endpoint, server-side credential attachment. Use as evidence the unified discovery/gateway concept exists; retain LitePSM's different credential/execution boundary.
-- [Glama](https://glama.ai/) — MCP directory, tool inspection, hosting, and MCP gateway. Adapt deep per-server discovery; don't require its gateway.
-- [Smithery CLI package](https://www.npmjs.com/package/smithery?activeTab=readme) — CLI verbs for search/add/list/inspect/call and a separate skill install path. Adapt discover/manage command ergonomics; local LitePSM owns installation.
+## 5. Grok Build Plugin Marketplaces
 
-## Hosting references
+*   **Source Reference:** `https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/09-plugins.md`
+*   **Format:** Marketplaces defined by `.grok-plugin/marketplace.json` combining distinct component kinds (commands, agents, hooks, MCP, LSP).
+*   **Pinning Requirement:** Remote plugin sources can be pinned to full 40-character commit SHAs.
+*   **Architecture Consequence:** Full Git commit SHAs are required for reproducibility; mutable branches or tags cannot serve as immutable installation targets.
 
-- [Cloudflare Pages Git integration](https://developers.cloudflare.com/pages/get-started/git-integration/) — supports public and private GitHub/GitLab source repositories.
-- [Cloudflare Pages limits](https://developers.cloudflare.com/pages/platform/limits/) — current static asset/build limits.
-- [Cloudflare Pages Functions pricing](https://developers.cloudflare.com/pages/functions/pricing/) and [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) — dynamic endpoints consume Workers quotas; defer them until needed.
-- [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) and [visibility behavior](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility) — private-source publication is plan-dependent; changing a GitHub Free repo to private can unpublish Pages. Cloudflare Pages is the proposed host for private-source/public-output.
+---
 
-## Research rules
+## 6. Supply-Chain Provenance & Metadata Verification
 
-- Prefer documented APIs and primary docs.
-- If only a Git marketplace manifest exists, ingest that manifest rather than scraping an application UI.
-- Keep “marketplace can list it,” “client can parse it,” “client can install it,” and “LitePSM tested it” as separate facts.
-- Recheck docs and source revisions at adapter implementation time; this ledger is a research snapshot, not an eternal guarantee.
+*   **The Update Framework (TUF):** `https://theupdateframework.io/`
+    *   Industry standard for secure software update systems, offering proven protection against key compromise, rollback attacks, and freeze attacks.
+    *   *Decision:* When signed catalog releases are introduced, LitePSM will adopt TUF rather than inventing a custom signature envelope.
+*   **Sigstore / Cosign:** `https://docs.sigstore.dev/cosign/`
+    *   Standard for keyless and key-based artifact signing and verification.
+    *   *Decision:* LitePSM supports Cosign artifact digest verification where upstreams publish verification evidence.
+
+---
+
+## 7. Static Hosting & Cloudflare Pages Limits
+
+*   **Limits:** Cloudflare Pages supports up to 20,000 files per project and up to 25 MiB per individual asset.
+*   **Implication for LitePSM:** For an initial catalog of 500–1,000 records, the partitioned shard structure (under 2,000 generated JSON files) is well within platform thresholds. Sharding by kind and category prevents single-file bloat.

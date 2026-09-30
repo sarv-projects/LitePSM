@@ -1,55 +1,89 @@
-# Architecture decisions
+# Architecture Decision Records (ADRs)
 
-## Accepted for this proposal
+## 1. Foundational Architecture Decisions (D-001 – D-010)
 
-### D-001 — Neutral shared product, local execution
+### D-001: Provider-Neutral Shared Product & Local Execution
+LitePSM is designed to serve multiple agent hosts (Codex, Claude Code, Grok Build, OpenCode, Cline). The hosted service provides catalog discovery only. Package installation, process supervision, and tool execution occur strictly on the user's workstation.
 
-LitePSM is usable by HorizonCode, AgentCowork, and future agents. The hosted service provides discovery/metadata. A client-side manager performs installs and runs an optional local Bridge. LitePSM does not host extensions, credentials, or tool execution in the cloud.
+### D-002: Product and Marketplace Naming
+The product and CLI binary are named **LitePSM** (`litepsm`). The public web catalog is **LitePSM Market**. `PSM` expands to Plugins, Skills, and MCP. Directory slug is `litePSM`.
 
-### D-002 — Product and market names
+### D-003: Client-Side Downstream Credentials
+Downstream credentials (API keys, OAuth tokens) reside in the operating system's native credential store and are never transmitted to LitePSM cloud services. Downstream providers receive tokens only at the time of user-authorized execution.
 
-Use **LitePSM** for the product/client/service and **LitePSM Market** for the public catalog. `PSM` expands to Plugins, Skills, and MCP. Directory slug is `litePSM` per request; confirm domain/npm availability before publication.
+### D-004: Static Catalog on Cloudflare Pages
+The public catalog is deployed as static, immutable JSON files via Cloudflare Pages from a private GitHub repository. No application server, database, or worker is required for public discovery.
 
-### D-003 — Client-side downstream credentials
+### D-005: Source Federation over Monolithic Rewriting
+LitePSM aggregates documented upstream feeds and Git marketplace manifests. It preserves original source attribution and upstream identifiers rather than attempting to hand-curate or rewrite thousands of packages.
 
-Downstream service credentials live in the local operating-system secret store and are never uploaded to LitePSM. The downstream provider may receive them when the user invokes its service. A provider-hosted credential gateway is an explicitly distinct opt-in integration, not LitePSM's default mode.
+### D-006: Preservation of Package Format Semantics
+Upstream package formats (Agent Skills, MCP servers, portable plugins) are preserved in their native structures. Incompatible or host-specific components are flagged explicitly rather than silently rewritten or dropped.
 
-### D-004 — Static catalog first
+### D-007: Mandatory Local Plan & User Approval
+Discovery is read-only. Installing, updating, or removing capabilities requires generating an immutable `InstallPlan` and obtaining explicit user confirmation before modifying local files or starting processes.
 
-Use a private GitHub source repository, CI-generated public JSON, and Cloudflare Pages as the initial public host. No backend/database is required for public listings. Add dynamic services only to satisfy a defined feature need.
+### D-008: No Silent Auto-Updates by Default
+Installed versions bind to immutable content digests. Updates are user-initiated, present delta diffs across code and permissions, and require explicit approval.
 
-### D-005 — Federate existing sources; do not hand-build every listing
+### D-009: Integration-Based Host Support
+LitePSM exposes standard MCP stdio, HTTPS APIs, and documented host adapters. It does not claim automatic integration with hosts that lack a documented MCP or configuration extension point.
 
-Use official/documented APIs and public Git manifests, preserve attribution and upstream IDs, and keep source adapters replaceable. Do not scrape private product directories or invent registry APIs. A target of 500–1,000 means federated searchable metadata, not 1,000 bespoke integrations or verified packages.
+### D-010: One-Time Host Bridge Registration
+For supported agents, LitePSM configures a single Bridge entry per host. Subsequent skills and MCP providers are managed within LitePSM's central local store, avoiding repeated edits to host configuration files.
 
-### D-006 — Formats remain distinct
+---
 
-Normalize metadata for discovery, but retain original package format and source semantics. Client adapters install compatible parts; unsupported components are reported rather than silently translated or discarded.
+## 2. Core Implementation Decisions (D-011 – D-020)
 
-### D-007 — Installation requires a local plan and approval
+### D-011: Single-Writer Local Control Plane (Daemon)
+*   **Context:** Multiple agent hosts (Codex, Claude, OpenCode) can run simultaneously. If each Bridge shim directly modified files or started child processes, concurrency races and state corruption would occur.
+*   **Decision:** All mutable SQLite transactions, provider process supervision, OS secret access, and filesystem commits are owned exclusively by a single local LitePSM Daemon per user account.
+*   **Status:** Accepted.
 
-Hosted discovery is read-only. Install/update/remove plans show affected files/config and permissions. The local LitePSM client owns effects. Download, LitePSM-managed placement, one-time Bridge configuration, provider start, and tool call remain distinct steps.
+### D-012: SQLite (WAL) + Content-Addressed Storage (CAS)
+*   **Context:** Flat lockfiles (`installs.lock`) cannot handle concurrent reads, transactional journals, or rollbacks.
+*   **Decision:** Structured metadata is stored in SQLite 3 with Write-Ahead Logging (`WAL`). Extracted package trees and raw downloads are stored in a Content-Addressed Store (`trees/` and `artifacts/`) indexed by SHA-256 digests.
+*   **Status:** Accepted.
 
-### D-008 — No automatic update by default
+### D-013: Split Bridge Architecture (Stateless Shims)
+*   **Context:** Host agents expect an MCP stdio server.
+*   **Decision:** The host-facing Bridge executable is a lightweight, stateless shim. It handles stdio JSON-RPC framing and forwards all state, discovery, and execution requests over authenticated local IPC to the Daemon.
+*   **Status:** Accepted.
 
-Pin installed version/digest. Show an update diff and permission delta and require user approval by default. Future policy-based auto-update requires its own decision.
+### D-014: Statically Linked Native Adapters in v1
+*   **Context:** Allowing dynamic third-party adapter scripts introduces supply-chain code execution risks during ingestion and resolution.
+*   **Decision:** All source adapters, artifact fetchers, runtime adapters, and host adapters are compiled directly into the LitePSM Go binary. No dynamic adapter code is downloaded or executed.
+*   **Status:** Accepted.
 
-### D-009 — Cross-agent access is integration-based, not automatic
+### D-015: Cryptographic Plan Binding (InstallPlan v2)
+*   **Context:** Time-of-Check to Time-of-Use (TOCTOU) attacks could alter package contents or permissions between plan creation and user confirmation.
+*   **Decision:** `InstallPlan` v2 computes an RFC 8785 canonical SHA-256 `planHash` across all execution fields. Approval binds strictly to `planHash`. Plans include mandatory expiration and precondition checks.
+*   **Status:** Accepted.
 
-LitePSM will expose stable MCP/API/SDK surfaces and client adapters so future agents can integrate. It will not claim direct access in a host that lacks a compatible protocol or install path. Each agent surface must be tested and documented separately.
+### D-016: Capability Schema-Drift Invalidates Grants
+*   **Context:** Downstream MCP providers could alter tool parameter schemas after receiving approval.
+*   **Decision:** Tool inputs are fingerprinted via SHA-256 digests of their JSON Schemas (`schemaFingerprint`). Any drift upon provider reconnection immediately invalidates pre-existing capability grants and halts execution until re-approved.
+*   **Status:** Accepted.
 
-### D-010 — One-time host bridge, centrally managed extensions
+### D-017: Official MCP SDK & Named Protocol Profiles
+*   **Context:** Custom wire protocol implementations risk subtle incompatibilities.
+*   **Decision:** LitePSM utilizes the official MCP Go SDK and explicitly tests two named protocol profiles:
+    1.  **Modern Profile:** 2026-07-28 stateless architecture with Streamable HTTP and header mirroring (`Mcp-Method`).
+    2.  **Legacy Profile:** 2025-11-25 stateful initialization for backwards compatibility.
+*   **Status:** Accepted.
 
-For supported MCP-capable agents, LitePSM registers one local LitePSM Bridge per agent. Skills and supported MCP providers are installed into a LitePSM-managed local store and made available through that Bridge, avoiding one agent-config edit per extension. Host-native plugin features remain adapter-specific and may require native installation. The Bridge is local, user-controlled, and subject to its own capability allowlist, action policy, and approval requirements; this decision does not authorize unrestricted generic tool execution.
+### D-018: TUF Metadata Framework for Future Signed Releases
+*   **Context:** Ad-hoc cryptographic signing schemes are vulnerable to rollback and freeze attacks.
+*   **Decision:** If cryptographic catalog signing is introduced, LitePSM will adopt The Update Framework (TUF) standard. V1 implements HTTPS origin verification and monotonic sequence verification.
+*   **Status:** Accepted.
 
-## Open decisions before implementation
+### D-019: Prohibition of Command Marketplace Sources
+*   **Context:** Claude Code and Grok Build manifests support `command` sources that execute shell scripts during catalog ingestion.
+*   **Decision:** Marketplace sources of type `command` are strictly prohibited in v1. They are flagged as unsupported to prevent arbitrary remote code execution during ingestion.
+*   **Status:** Accepted.
 
-- Public npm package name and release identity; `@litepsm/cli` is only illustrative.
-- First client adapter matrix and supported version ranges.
-- Bridge execution details: exact capability discovery and approval UX must be proven for each host. If a host cannot provide reliable confirmation for installs or risky actions, use the local CLI/native host path rather than silent in-agent mutation.
-- Whether the Discovery MCP is available from initial launch or after static catalog/API validation.
-- Catalog contribution and moderation policy; initial plan is reviewed catalog records/automated source ingestion, not public direct writes.
-- Signing format/key custody for LitePSM-generated metadata and artifacts; upstream digests are mandatory where available, but do not imply publisher identity.
-- Whether connectors remain an informational category in v1 or are omitted from the UI until MCP-backed entries can be clearly distinguished.
-- Compatibility badge evidence requirements and who can publish “tested” reports.
-- Product/domain/npm name availability and trademark review before public launch.
+### D-020: Five-Stage Support Taxonomy
+*   **Context:** Generic "verified" badges are ambiguous and misleading.
+*   **Decision:** All catalog listings explicitly and independently display five operational status values: `listed`, `resolvable`, `installable`, `runnable`, and `tested`.
+*   **Status:** Accepted.

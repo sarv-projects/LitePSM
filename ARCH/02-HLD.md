@@ -1,97 +1,241 @@
-# High-level design
+# High-Level Design (HLD)
 
-## Summary
+## 1. System Topology & Architecture
 
-LitePSM separates the **hosted catalog** from the **local extension manager and runtime**. The hosted surface serves public catalog data. A local client installs items into a LitePSM-managed store and, once per supported agent, registers one local LitePSM Bridge. The Bridge makes selected LitePSM-managed capabilities available to that agent. Secrets and execution stay on the user's device or with the selected upstream provider; the hosted market does not receive credentials or tool traffic.
+LitePSM is bifurcated into two strictly isolated environments:
+1.  **Public Discovery Plane (Cloud):** A static, read-only distribution architecture hosted on Cloudflare Pages, serving immutable catalog releases generated from a private source repository.
+2.  **Local Control Plane (Workstation):** A client-side system consisting of thin, host-specific **Bridge Shims** communicating via secure local IPC with a persistent, single-writer **LitePSM Daemon**.
 
 ```text
-                 PUBLIC CONTROL / DISCOVERY PLANE
-┌────────────────────────────────────────────────────────────┐
-│ Private GitHub source repo                                 │
-│  schemas · curated records · adapter definitions · site    │
-└────────────────────────────┬───────────────────────────────┘
-                             │ CI validates and builds
-                             ▼
-┌────────────────────────────────────────────────────────────┐
-│ Cloudflare Pages (public)                                   │
-│ website · static catalog API · search shards · release data│
-└───────────────┬───────────────────────────────┬────────────┘
-                │ HTTPS metadata                │ upstream link/digest
-                ▼                               ▼
-       LitePSM client on device          Publisher / registry / Git
-                │                               │
-       ┌─────────────┴──────────────┐
-       ▼                            ▼
- LitePSM-managed store       Native-only components
- skills · MCP · bundles     explicit host adapter/export
-       │                            │
-       ▼                            ▼
- Local LitePSM Bridge       Selected agent/client
-       │   ▲
-       │   └── one-time host MCP registration
-       ▼
- Selected local or remote MCP provider
+                                 PUBLIC DISCOVERY PLANE
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ Private GitHub Source Repository                                        │
+    │ (Curation inputs · Source Adapters · Builder CI · Schemas · Web app)    │
+    └────────────────────────────────────┬────────────────────────────────────┘
+                                         │ CI validates, deduplicates & builds
+                                         ▼
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ Cloudflare Pages (Static CDN)                                           │
+    │ /v1/current.json (Pointer)                                              │
+    │ /v1/releases/<release-id>/ (Immutable metadata · Shards · Manifests)     │
+    └────────────────────────────────────┬────────────────────────────────────┘
+                                         │ HTTPS (Read-only, cached)
+═════════════════════════════════════════╪══════════════════════════════════════════
+                                 LOCAL CONTROL PLANE
+                      (Isolated to User Workstation & OS User)
 
-Credentials: local OS secret store → local client/agent → provider as required.
-LitePSM hosted services do not receive credentials or proxy tool calls.
+    ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────────┐
+    │ Codex Host  │   │ Claude Code │   │  OpenCode   │   │  CLI / TUI App  │
+    └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └────────┬────────┘
+           │ stdio           │ stdio           │ stdio             │
+           ▼                 ▼                 ▼                   │
+    ┌─────────────┐   ┌─────────────┐   ┌─────────────┐            │
+    │ Bridge Shim │   │ Bridge Shim │   │ Bridge Shim │            │
+    └──────┬──────┘   └──────┬──────┘   └──────┬──────┘            │
+           │                 │                 │                   │
+           └─────────────────┼─────────────────┴───────────────────┘
+                             │ Local Authenticated IPC
+                             │ (Windows Named Pipe / Unix Domain Socket)
+                             ▼
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │                           LitePSM Daemon                                │
+    │ ┌─────────────────────────────────────────────────────────────────────┐ │
+    │ │ Session Manager & IPC Dispatcher                                    │ │
+    │ └──────────────┬──────────────────┬───────────────────┬───────────────┘ │
+    │                ▼                  ▼                   ▼                 │
+    │ ┌─────────────────────────┐ ┌───────────────┐ ┌───────────────────────┐ │
+    │ │ SQLite State (WAL mode) │ │ Policy Engine │ │ OS Secret Broker      │ │
+    │ │ (20 Relational Tables)  │ │ & Approvals   │ │ (WinCred/DPAPI/Keych) │ │
+    │ └─────────────────────────┘ └───────────────┘ └───────────────────────┘ │
+    │                │                  │                   │                 │
+    │                ▼                  ▼                   ▼                 │
+    │ ┌─────────────────────────┐ ┌─────────────────────────────────────────┐ │
+    │ │ Content-Addressed Store │ │ Provider Supervisor                     │ │
+    │ │ (trees/ & artifacts/)   │ │ (Process Groups / Windows Job Objects)  │ │
+    │ └─────────────────────────┘ └────────────────────┬────────────────────┘ │
+    └──────────────────────────────────────────────────┼──────────────────────┘
+                                                       │
+                                  ┌────────────────────┴────────────────────┐
+                                  ▼                                         ▼
+                      ┌───────────────────────┐                 ┌───────────────────────┐
+                      │ Local stdio Provider  │                 │ Remote Streamable     │
+                      │ (Node / Python / Bin) │                 │ HTTP Provider         │
+                      └───────────────────────┘                 └───────────────────────┘
 ```
 
-## Components
+---
 
-### 1. Catalog source repository
+## 2. Process Separation: Bridge Shim vs. Local Daemon
 
-The authoritative repository may be private. It contains schemas, curated/approved listing records, source adapter configuration, generated public catalog data, the website source, and client source. It must not contain credentials. The public deployment exposes only the built website and intended public metadata.
+To guarantee data integrity and prevent concurrency hazards across multiple simultaneous agent hosts, LitePSM strictly enforces a single-writer architecture:
 
-### 2. Catalog builder
+### 2.1 The Bridge Shim (Thin Client)
+*   **Role:** Stateless MCP stdio protocol translator.
+*   **Execution:** Spawned directly by the host agent (e.g., Codex or Claude Code) as a subprocess.
+*   **Responsibilities:**
+    1.  Speaks standard MCP JSON-RPC over `stdin`/`stdout`.
+    2.  Identifies host identity (`--host claude-code`) and session attributes.
+    3.  Establishes or reuses a local IPC connection to the LitePSM Daemon (launching the daemon in the background if not running).
+    4.  Translates MCP tool calls (`search_catalog`, `invoke_capability`) to internal IPC RPCs.
+    5.  Exits cleanly when the host agent terminates stdio.
+*   **Prohibitions:** The Bridge Shim **never** opens SQLite directly, never writes to configuration files, and never launches downstream provider child processes.
 
-Build-time code validates records, deduplicates only when identity evidence supports it, emits public JSON indexes and per-item records, and includes freshness/source timestamps. Source ingestion can run on a schedule or by reviewed pull request. The builder never executes MCP servers or plugin scripts.
+### 2.2 The LitePSM Daemon (Single Writer & Supervisor)
+*   **Role:** Authoritative local control plane and state owner.
+*   **Execution:** Runs as a background service per operating system user account.
+*   **Responsibilities:**
+    1.  **Sole SQLite Writer:** Exclusively holds SQLite write transactions in WAL mode, ensuring atomic commits and eliminating file-lock collisions.
+    2.  **Process Supervisor:** Launches, monitors, and terminates downstream MCP provider processes using Windows Job Objects or Unix process groups to prevent zombie processes.
+    3.  **Policy & Approval Authority:** Evaluates tool invocation permissions and validates plan hashes against user approvals.
+    4.  **Secret Store Broker:** Interacts with the platform's credential vault (Windows Credential Manager, macOS Keychain, Linux Secret Service).
+    5.  **Crash Recovery:** Executes the operation journal recovery algorithm on startup to resolve interrupted filesystem transitions.
 
-### 3. Public catalog and website
+---
 
-Cloudflare Pages serves static files from a private GitHub repository. The web experience is public and read-only for launch. Static catalog files are the service contract, so search and resolution work without a database or always-running process.
+## 3. Concurrency & Transaction Model
 
-### 4. LitePSM Client and local store
+*   **Read Concurrency:** SQLite in Write-Ahead Logging (WAL) mode enables concurrent, non-blocking reads. The Bridge Shims can query catalog caches, installed capability lists, and schema metadata simultaneously without lock contention.
+*   **Write Serialization:** All mutating operations (installing packages, modifying host configuration, granting capability approvals, launching providers) are serialized through the daemon's internal event queue.
+*   **Atomic Two-Phase Commits:** Filesystem mutations (extracting trees) and database state updates are synchronized via a two-phase journal (`commit_intent` $\rightarrow$ atomic directory rename $\rightarrow$ SQLite transaction commit $\rightarrow$ `committed`).
 
-The local CLI/client downloads public metadata and package artifacts, verifies identity/digests, previews changes, installs supported components into a versioned LitePSM-managed local store, and records a local lock. It owns local installation effects. It does not need to rewrite an agent's configuration for each MCP server, skill, or compatible bundle.
+---
 
-### 5. LitePSM Bridge and host adapters
+## 4. Architectural Sequence Workflows
 
-The LitePSM Bridge is a local MCP server/runtime configured once per agent through a small, versioned host adapter. After setup, the adapter does not need to edit the agent's configuration for every extension. The Bridge discovers LitePSM-managed skills and connected MCP providers, applies local enablement/permission policy, and exposes a bounded capability interface to the agent. It may launch local MCP processes or connect directly to selected remote MCP providers. Calls are mediated only on the user's device; they are never proxied by LitePSM's hosted market.
+### 4.1 Catalog Search & Plan Resolution
 
-Host adapters have a narrow purpose: register/update/remove the single LitePSM Bridge entry, preserve unrelated settings, verify supported client versions, and provide a fallback setup snippet when safe automation is unavailable. Extension adapters handle components that genuinely require a host-native plugin or skill installation. Those are exceptions, not the per-extension path for all MCPs and skills.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Host as Agent Host (e.g. Claude)
+    participant Shim as Bridge Shim (stdio)
+    participant Daemon as LitePSM Daemon
+    participant CDN as Cloudflare Pages (Catalog)
 
-### 6. Catalog API / SDK / Discovery MCP
+    User->>Host: "Search for postgres MCP"
+    Host->>Shim: MCP tools/call: search_catalog(query="postgres")
+    Shim->>Daemon: IPC: Catalog.Search("postgres")
+    alt Local cache expired or missing
+        Daemon->>CDN: HTTPS GET /v1/current.json
+        CDN-->>Daemon: { releaseId: "rel-2026-09-30", ... }
+        Daemon->>CDN: HTTPS GET /v1/releases/rel-2026-09-30/shards/mcp/db.json
+        CDN-->>Daemon: Shard JSON with item summaries
+        Daemon->>Daemon: Update local search index
+    end
+    Daemon-->>Shim: Matching listings summary
+    Shim-->>Host: MCP ToolResult: [{ id: "mcp:builtin:postgres", ... }]
+    Host-->>User: Displays search results
 
-Initially the hosted “API” is static HTTP JSON. Later an API-compatible Worker may add search, accounts, private catalogs, or publisher operations. A hosted Discovery MCP may offer public search/inspect/plan only. It has no machine access. The separately installed local Bridge can access the local store and configured providers under local policy.
+    User->>Host: "Install postgres"
+    Host->>Shim: MCP tools/call: prepare_install(id="mcp:builtin:postgres")
+    Shim->>Daemon: IPC: Resolver.ResolvePlan("mcp:builtin:postgres")
+    Daemon->>Daemon: Pure DFS dependency resolution
+    Daemon->>Daemon: Compute effects, permissions, preconditions
+    Daemon->>Daemon: Generate canonical planHash & Plan v2
+    Daemon-->>Shim: Return InstallPlan
+    Shim-->>Host: MCP ToolResult: InstallPlan summary + planId
+```
 
-“Accessible to future agents” means LitePSM offers stable integration surfaces (MCP, HTTPS API/SDK, and documented client adapters). It cannot make itself automatically available in an agent that does not support remote/local MCP, custom APIs, or a compatible installation adapter. Each host integration must be verified independently.
+### 4.2 Plan Approval & Transactional Installation
 
-## Hosting and data flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Host as Agent Host
+    participant Shim as Bridge Shim
+    participant Daemon as LitePSM Daemon
+    participant Store as Local CAS Store (trees/)
+    participant DB as SQLite (state.db)
 
-### Launch: static-only
+    alt Host supports reliable form elicitation
+        Host->>User: Prompts with Plan details & planHash
+        User->>Host: Approves installation
+        Host->>Shim: MCP tools/call: request_install(planId, approvalToken)
+        Shim->>Daemon: IPC: Install.Execute(planId, approvalToken)
+    else Host does not support elicitation (CLI fallback)
+        Shim-->>Host: Returns CLI command: "litepsm install --plan-id ..."
+        User->>Daemon: Terminal command: litepsm install --plan-id ...
+    end
 
-- Private GitHub repository is the source of truth.
-- Cloudflare Pages builds from that private repository and publishes the website plus catalog JSON.
-- Public packages remain at their upstream locations where practical; LitePSM stores references, versions, and digests rather than mirroring code.
-- The `litepsm` local client/Bridge can be distributed as a binary and/or npm package; npm is a bootstrap/distribution channel, not the catalog backend. The Bridge is installed once into each supported agent, not once per extension.
-- No database, login, marketplace account, Worker, R2 bucket, or credential storage is required.
+    Daemon->>Daemon: Verify planHash matches approval & plan not expired
+    Daemon->>DB: INSERT INTO operations (state='staging')
+    Daemon->>Store: Download artifact into staging/<op-id>/
+    Daemon->>Store: Verify SHA-256 digest & inspect archive limits
+    Daemon->>Store: Extract to staging tree (no symlinks, no scripts)
+    Daemon->>DB: UPDATE operations SET state='commit_intent'
+    Daemon->>Store: Atomic directory rename staging/ -> trees/<tree-digest>/
+    Daemon->>DB: BEGIN TRANSACTION; INSERT INTO installs; UPDATE operations SET state='committed'; COMMIT;
+    Daemon-->>User: Installation succeeded & verified
+```
 
-### Later: dynamic service only when needed
+### 4.3 Policy-Checked Capability Invocation & Schema Drift
 
-Add Cloudflare Worker + D1 for publisher accounts, private registries, review/moderation state, or dynamic query needs. Use R2 only if LitePSM deliberately mirrors artifacts. Keep runtime hosting and secret custody out of this service. Each added service feature requires a threat model and data-retention contract.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Host as Agent Host
+    participant Shim as Bridge Shim
+    participant Daemon as LitePSM Daemon
+    participant Sup as Provider Supervisor
+    participant Prov as MCP Provider Process
 
-## Trust boundaries
+    Host->>Shim: MCP tools/call: invoke_capability(capId="inst-1/db/query", args={...})
+    Shim->>Daemon: IPC: Provider.Invoke("inst-1/db/query", args)
+    Daemon->>Daemon: Evaluate Policy: Action 'external.read' requires approval?
+    alt Capability already granted with matching schemaFingerprint
+        Daemon->>Sup: Forward validated arguments to provider
+    else Capability unapproved or schema has changed
+        Daemon->>Sup: Probe provider tools/list
+        Sup->>Prov: MCP tools/list
+        Prov-->>Sup: Returns current ToolSchema
+        Sup-->>Daemon: Compute new schemaFingerprint
+        alt New fingerprint != Granted fingerprint (Schema Drift)
+            Daemon->>Daemon: Invalidate existing CapabilityGrant (status='changed')
+            Daemon-->>Shim: Error: LPSM-PROVIDER-SCHEMA-DRIFT (Approval required)
+            Shim-->>Host: MCP Error: Tool schema changed. User approval required.
+            Host->>User: Alerts user to schema change
+        end
+    end
+```
 
-1. Upstream listing content is untrusted data; it cannot command the LitePSM service or local client.
-2. Installing a package is a local side effect and requires a preview plus user approval.
-3. Starting an MCP provider or executing hooks/scripts is a separate local execution decision from downloading files. The Bridge only starts providers selected and enabled in local LitePSM state.
-4. LitePSM's hosted API and Discovery MCP are not capability grants. The local Bridge is a capability entry point, so it must enforce local allowlists, scope, action policy, and audit rules rather than trusting a model's choice of nested provider/tool.
-5. An advertised “compatible” or “verified” label must name the tested host, version, test date, and evidence.
+### 4.4 Daemon Startup & Crash Recovery
 
-## Availability and fallback
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Daemon as LitePSM Daemon Startup
+    participant DB as SQLite (state.db)
+    participant FS as Local Filesystem
 
-The client should cache catalog metadata and preserve installed package locks. If the public catalog is unavailable, already-installed Bridge capabilities continue to work from local state. New public search/resolution is unavailable until the catalog can be fetched or a configured source can be queried directly. If an agent is unsupported by a safe host adapter, LitePSM offers the website/CLI and native per-item export path without pretending the one-time Bridge setup succeeded.
+    Daemon->>DB: Open state.db (PRAGMA journal_mode = WAL)
+    Daemon->>DB: Run pending schema migrations
+    Daemon->>DB: SELECT * FROM operations WHERE state NOT IN ('committed', 'rolled_back', 'failed')
+    loop For each incomplete operation
+        alt Operation state == 'staging' or 'fetching'
+            Daemon->>FS: Clean up staging/<op-id>/ directory
+            Daemon->>DB: UPDATE operations SET state='rolled_back'
+        else Operation state == 'commit_intent'
+            alt Target tree directory exists and is complete
+                Daemon->>DB: Complete SQLite records & SET state='committed'
+            else Target tree directory missing or corrupted
+                Daemon->>FS: Remove incomplete target tree
+                Daemon->>DB: UPDATE operations SET state='rolled_back'
+            end
+        end
+    end
+    Daemon->>Daemon: Start IPC listener (Named Pipe / Domain Socket)
+```
 
-## Scaling
+---
 
-Thousands of records are small enough for a generated index plus category/search shards and per-item manifests. Clients cache shards with ETag/Last-Modified and fetch package payloads only after the user chooses install. Search can start as client-side filtering; a dynamic search backend is unnecessary until measured performance says otherwise.
+## 5. Trust Boundaries & Security Invariants
+
+1.  **Public Metadata is Untrusted:** Upstream package listings and catalog files are untrusted external inputs. The builder and client parse them with bounded memory, validate them against strict JSON schemas, and never execute scripts contained within them.
+2.  **No Dynamic Code Execution during Installation:** Installing a skill or MCP server never triggers post-install scripts (e.g., `npm postinstall`, shell hooks). Files are unpacked passively into the Content-Addressed Store.
+3.  **Local Daemon Security Descriptor:** The daemon IPC listener rejects connections from any other user account on the operating system:
+    *   **Windows:** Named Pipe secured with a DACL granting access strictly to the current user's Security Identifier (`SDDL: D:(A;;GA;;;OW)`).
+    *   **Unix / macOS:** Domain socket created in a directory with permissions `0700`, with socket file permissions `0600`.
+4.  **Credential Locality:** The public catalog API, discovery plane, and build infrastructure never receive or store user credentials. Downstream API keys and OAuth tokens are brokered strictly on-device through operating system secret stores.
