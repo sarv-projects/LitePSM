@@ -30,8 +30,12 @@ function fetchText(url, redirects = 0) {
       reject(new Error("too many redirects"));
       return;
     }
-    https
-      .get(url, (res) => {
+    request(url)
+      .on("error", reject)
+      .on("timeout", function () {
+        this.destroy(new Error("timeout"));
+      })
+      .on("response", (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
           resolve(fetchText(res.headers.location, redirects + 1));
@@ -48,8 +52,8 @@ function fetchText(url, redirects = 0) {
           data += chunk;
         });
         res.on("end", () => resolve(data));
-      })
-      .on("error", reject);
+        res.on("error", reject);
+      });
   });
 }
 
@@ -64,32 +68,68 @@ function checksumFor(sumsText, binName) {
   return null;
 }
 
+// Keep-alive is disabled deliberately: Node's default global agent keeps
+// sockets alive for ~5s, which leaves the postinstall process alive after the
+// binary is written and makes `npm install` look hung (it ends in SIGINT).
+const agent = new https.Agent({ keepAlive: false });
+
+// Guard against a stalled transfer: an npm lifecycle script must never hang.
+const REQUEST_TIMEOUT_MS = 120000;
+
+function request(url) {
+  return https.get(url, { agent, timeout: REQUEST_TIMEOUT_MS });
+}
+
 function downloadFile(url, targetPath) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) {
+        try {
+          fs.unlinkSync(targetPath);
+        } catch (e) {
+          /* best effort */
+        }
+        reject(err);
+      } else {
+        resolve();
+      }
+    };
+
     const handleResponse = (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        // Follow GitHub redirect
-        https.get(res.headers.location, handleResponse).on("error", reject);
+        // Follow GitHub redirect. The response MUST be drained, otherwise its
+        // socket is never released and the process cannot exit.
+        res.resume();
+        request(res.headers.location).on("error", done).on("timeout", function () {
+          this.destroy(new Error("download timeout"));
+        }).on("response", handleResponse);
         return;
       }
 
       if (res.statusCode !== 200) {
-        reject(new Error(`Download failed with status HTTP ${res.statusCode}`));
+        res.resume();
+        done(new Error(`Download failed with status HTTP ${res.statusCode}`));
         return;
       }
 
+      // `close` (not `finish`) is the reliable signal that the fd is closed.
       const file = fs.createWriteStream(targetPath);
+      file.on("close", () => done());
+      file.on("error", done);
+      res.on("error", done);
+      res.on("aborted", () => done(new Error("download aborted")));
       res.pipe(file);
-      file.on("finish", () => {
-        file.close(resolve);
-      });
-      file.on("error", (err) => {
-        fs.unlink(targetPath, () => {});
-        reject(err);
-      });
     };
 
-    https.get(url, handleResponse).on("error", reject);
+    request(url)
+      .on("error", done)
+      .on("timeout", function () {
+        this.destroy(new Error("download timeout"));
+      })
+      .on("response", handleResponse);
   });
 }
 
@@ -98,10 +138,24 @@ async function installBinary() {
   const targetDir = path.join(os.homedir(), ".litepsm", "bin");
   ensureDir(targetDir);
   const targetPath = path.join(targetDir, binName);
+  const stampPath = `${targetPath}.version`;
 
-  // 1. If already installed, skip
+  // 1. Skip only when the installed binary is the version we asked for.
+  //    Comparing versions (not mere existence) is what makes an npm upgrade
+  //    actually deliver the new binary.
   if (fs.existsSync(targetPath)) {
-    return;
+    let installed = "";
+    try {
+      installed = fs.readFileSync(stampPath, "utf8").trim();
+    } catch (e) {
+      installed = "";
+    }
+    if (installed === VERSION) {
+      return;
+    }
+    console.log(
+      `[litepsm] Updating ${binName} ${installed || "(unknown)"} -> ${VERSION}`
+    );
   }
 
   // 2. Check if dist/ contains the pre-compiled binary (e.g. local build or git checkout)
@@ -111,6 +165,7 @@ async function installBinary() {
     if (process.platform !== "win32") {
       fs.chmodSync(targetPath, 0o755);
     }
+    fs.writeFileSync(stampPath, "local\n");
     console.log(`[litepsm] Installed ${binName} to ${targetPath}`);
     return;
   }
@@ -147,6 +202,7 @@ async function installBinary() {
     if (process.platform !== "win32") {
       fs.chmodSync(targetPath, 0o755);
     }
+    fs.writeFileSync(stampPath, `${VERSION}\n`);
     console.log(`[litepsm] Successfully downloaded and installed ${binName} to ${targetPath}`);
   } catch (err) {
     console.warn(`[litepsm] Notice: Could not download native binary (${err.message}).`);
@@ -155,9 +211,18 @@ async function installBinary() {
 }
 
 if (require.main === module) {
-  installBinary().catch((err) => {
-    console.warn(`[litepsm] Postinstall notice: ${err.message}`);
-  });
+  installBinary()
+    .then(() => {
+      // Release the pooled sockets and exit explicitly: an npm lifecycle
+      // script must not linger waiting for keep-alive timeouts.
+      agent.destroy();
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.warn(`[litepsm] Postinstall notice: ${err.message}`);
+      agent.destroy();
+      process.exit(0);
+    });
 }
 
-module.exports = { installBinary, computeFileSHA256, checksumFor };
+module.exports = { installBinary, computeFileSHA256, checksumFor, agent };
