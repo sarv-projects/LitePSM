@@ -109,11 +109,22 @@ func main() {
 		runAgentCommand(os.Args[2:])
 
 	case "skills":
-		if len(os.Args) < 3 || os.Args[2] != "add" {
-			fmt.Println("Usage: litepsm skills add <source> [--skill <name>] [--agent <host-id>] [--global] [--yes] [--list] [--json]")
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: litepsm skills [add <source> | list | remove <name>|--all]")
 			os.Exit(1)
 		}
-		runSkillsAdd(os.Args[3:])
+		switch os.Args[2] {
+		case "add":
+			runSkillsAdd(os.Args[3:])
+		case "list":
+			runSkillsList(os.Args[3:])
+		case "remove":
+			runSkillsRemove(os.Args[3:])
+		default:
+			fmt.Printf("Unknown skills subcommand: %s\n", os.Args[2])
+			fmt.Println("Usage: litepsm skills [add <source> | list | remove <name>|--all]")
+			os.Exit(1)
+		}
 
 	case "help", "--help", "-h":
 		printUsage()
@@ -457,10 +468,12 @@ func runUninstall(ctx context.Context, args []string) {
 		removed, untouched, failed)
 
 	fmt.Println()
-	fmt.Println("Not touched by this command:")
+	fmt.Println("Still on disk:")
 	fmt.Println("  • Skill directories copied by `litepsm skills add`. They live inside each")
-	fmt.Println("    agent's own skills tree and may contain files you added yourself, so")
-	fmt.Println("    they are listed rather than deleted.")
+	fmt.Println("    agent's own skills tree and may hold files you added yourself, so this")
+	fmt.Println("    command does not delete them. See what is tracked, then remove it:")
+	fmt.Println("        litepsm skills list")
+	fmt.Println("        litepsm skills remove --all")
 	fmt.Println("  • Backups written next to each config. They are your restore points;")
 	fmt.Println("    delete them yourself once you are satisfied.")
 }

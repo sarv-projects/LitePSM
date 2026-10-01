@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sarv-projects/litepsm/internal/config"
 	"github.com/sarv-projects/litepsm/internal/skills"
 )
 
@@ -145,6 +146,12 @@ func runSkillsAdd(args []string) {
 
 	home, _ := os.UserHomeDir()
 	project, _ := os.Getwd()
+
+	platformPaths, err := config.ResolvePlatformPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving platform paths: %v\n", err)
+		os.Exit(1)
+	}
 
 	src, err := skills.ParseSkillSource(opts.source)
 	if err != nil {
@@ -411,13 +418,36 @@ func runSkillsAdd(args []string) {
 	}
 
 	// --- Install ---
+	//
+	// Every directory we create is recorded in the ledger. Without it the tool
+	// could write into a dozen agent trees and have no way to enumerate them
+	// again, which would make removal impossible.
+	ledger, ledgerErr := skills.OpenLedger(skills.LedgerPath(platformPaths.DataRoot))
+	if ledgerErr != nil {
+		fmt.Fprintf(os.Stderr, "Error opening the install ledger: %v\n", ledgerErr)
+		os.Exit(1)
+	}
+
 	var done []installedSkill
+	var recorded []skills.LedgerEntry
 	for _, op := range ops {
 		if err := skills.CopySkillDir(op.FromDir, op.ToDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Error installing %s to %s: %v\n", op.SkillName, op.ToDir, err)
 			os.Exit(1)
 		}
 		done = append(done, installedSkill{Skill: op.SkillName, To: op.ToDir, Host: op.HostLabel})
+		recorded = append(recorded, skills.LedgerEntry{
+			SkillName: op.SkillName,
+			AgentID:   op.HostLabel,
+			HostLabel: op.HostLabel,
+			DestDir:   op.ToDir,
+			Source:    src.Display,
+			Scope:     opts.scope,
+		})
+	}
+	if err := ledger.Add(recorded); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: skills were installed but the ledger could not be written: %v\n", err)
+		fmt.Fprintln(os.Stderr, "         `litepsm skills remove` will not be able to find them.")
 	}
 
 	if opts.jsonOut {
