@@ -5,6 +5,15 @@
   "bin": {
     "litepsm": "bin/litepsm.js"
   },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "postinstall": "node scripts/install-binary.js",
     "test": "node test_npm.js"
@@ -24,7 +33,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sarv-projects/LitePSM.git"
+    "url": "git+https://github.com/sarv-projects/LitePSM.git"
+  },
+  "homepage": "https://github.com/sarv-projects/LitePSM#readme",
+  "bugs": {
+    "url": "https://github.com/sarv-projects/LitePSM/issues"
   },
   "engines": {
     "node": ">=18.0.0"
