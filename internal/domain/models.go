@@ -11,7 +11,12 @@ const (
 	KindPlugin    ListingKind = "plugin"
 	KindMCP       ListingKind = "mcp"
 	KindSkill     ListingKind = "skill"
-	KindConnector ListingKind = "connector"
+	KindConnector ListingKind = "connector" // deprecated: deferred to v2
+	KindAgent     ListingKind = "agent"
+	KindRule      ListingKind = "rule"
+	KindHook      ListingKind = "hook"
+	KindTool      ListingKind = "tool"
+	KindLSP       ListingKind = "lsp"
 )
 
 // ListingStatus represents publication lifecycle status.
@@ -59,6 +64,10 @@ const (
 	ComponentHook            ComponentKind = "hook"
 	ComponentCommand         ComponentKind = "command"
 	ComponentAgentDefinition ComponentKind = "agent-definition"
+	ComponentAgent           ComponentKind = "agent"
+	ComponentRule            ComponentKind = "rule"
+	ComponentTool            ComponentKind = "tool"
+	ComponentLSP             ComponentKind = "lsp"
 	ComponentAsset           ComponentKind = "asset"
 )
 

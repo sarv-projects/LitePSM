@@ -64,7 +64,7 @@ The top-level public and internal abstraction is a neutral **`Package`** (user-f
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ Package                                                                        │
 │                                                                                │
-│  type          What the package IS  (mcp | skill | plugin | connector | ...)   │
+│  type          What the package IS  (mcp | skill | plugin | agent | ...)       │
 │  source        Where it came from   (registry | git | npm | pypi | oci | ...)  │
 │  compatibility Which hosts/runtimes/OSes can use it, with evidence level       │
 │  install       How it is materialised and launched (adapter strategy)          │
@@ -92,19 +92,64 @@ MCP is one `type` and one `source` family, not the root. Making MCP the root wou
 
 ### 3.4 Internal taxonomy (normative list)
 
-`type` is a closed enum. Initial membership:
+`type` is a closed enum with **eight** v1 members:
 
 ```text
-mcp | skill | plugin | connector | agent | mode | command | prompt | rule | hook |
-workflow | automation | tool | cli | lsp | provider | policy | context | ui |
-agent-runtime
+mcp | skill | plugin | agent | rule | hook | tool | lsp
 ```
 
+*   `mcp` — Model Context Protocol server (local stdio or remote HTTP).
+*   `skill` — portable `SKILL.md` + resources, loaded on demand.
+*   `plugin` — a bundle/packaging unit that may contain skills, mcp, rules, hooks, tools, lsp.
+*   `agent` — an ACP-style agent runtime that can itself be installed/launched, and/or an agent definition.
+*   `rule` — persistent instruction/guidance (`AGENTS.md`, cursor rules, etc.).
+*   `hook` — program run on agent/tool lifecycle events.
+*   `tool` — a native (non-MCP) tool extension.
+*   `lsp` — language server definition consumed by an agent/host.
+
 Notes:
-*   `plugin` means a *bundle*; its child components carry their own `type` (`skill`, `mcp`, `hook`, `command`, `agent`, `lsp`, ...).
-*   `agent-runtime` covers installable agent executables (including ACP agents); `agent` covers delegated subagent definitions.
-*   `tool`/`cli`/`lsp`/`provider`/`policy`/`context`/`ui`/`mode` are reserved types for objects already visible in the ecosystem snapshot; the catalog may hold zero rows for some initially. An empty type is preferable to a fabricated classification.
+*   `plugin` means a *bundle*; its child components carry their own `type` (`skill`, `mcp`, `hook`, `agent`, `lsp`, ...).
+*   `agent` covers both installable agent executables (including ACP agents) and delegated subagent definitions.
+*   `tool`/`lsp` are reserved v1 types for objects already visible in the ecosystem snapshot; the catalog may hold zero rows for some initially. An empty type is preferable to a fabricated classification.
 *   `type` must remain additive-only within a schema major version. Removing or renaming a type requires a major-version decision recorded in [07 — Decisions](07-DECISIONS.md) and [00 — Index](00-INDEX.md).
+
+### 3.4.1 Deferred to v2
+
+The following values appeared in earlier drafts of this taxonomy. They are documented for continuity only and are **NOT** implemented in v1; they **MUST NOT** appear as first-class filters or types in the v1 website or CLI (§7.2, §10).
+
+| Deferred value | Rationale |
+|---|---|
+| `connector` | First-party auth/data bridges remain vendor-specific; no portable v1 contract or catalog data. |
+| `mode` | Behavioural presets are config fragments, not independently installable packages. |
+| `command` | Slash commands are components carried by a plugin/skill, not a top-level package type. |
+| `prompt` | Prompt templates overlap with skills and lack a stable portable manifest. |
+| `workflow` | Multi-step automation graphs have no converged v1 format. |
+| `automation` | Triggered/cron tasks belong to the scheduler/runtime, not the package catalog. |
+| `cli` | Executable tool surfaces are materialised by an install adapter, not classified as a package type. |
+| `provider` | Model/provider integrations are a runtime concern, not a discoverable package type. |
+| `policy` | Security/governance rule packs have no v1 schema or ingestion adapter. |
+| `context` | Retrieval corpora / documentation overlap with sources and need a dedicated model. |
+| `ui` | Visual surfaces (themes, canvases, editor extensions) are out of the v1 discovery scope. |
+| `agent-runtime` | Folded into `agent` for v1; a separate runtime type can be split out in v2 if formats diverge. |
+
+The `agent-runtime` value is deferred as a *distinct* type only; v1 expresses installable agents through `type: agent` (§6.1).
+
+### 3.4.2 v1 type support status (data reality)
+
+Which v1 types are backed by real rows in the current 5,185-item catalog (`web/data/catalog.json`):
+
+| v1 type | v1 catalog data | Rendering rule |
+|---|---|---|
+| `mcp` | Yes — 4,079 rows | Normal listing |
+| `skill` | Yes — 1,103 rows | Normal listing |
+| `plugin` | Yes — 3 rows | Normal listing |
+| `agent` | No rows | Render as "no packages yet"; never fabricate entries |
+| `rule` | No rows | Render as "no packages yet"; never fabricate entries |
+| `hook` | No rows | Render as "no packages yet"; never fabricate entries |
+| `tool` | No rows | Render as "no packages yet"; never fabricate entries |
+| `lsp` | No rows | Render as "no packages yet"; never fabricate entries |
+
+The five zero-row types remain valid enum members and filters; selecting them must produce an explicit empty state ("no packages yet"), not a synthesized or placeholder entry.
 
 ### 3.5 Target v2 record shape (not yet implemented)
 
@@ -150,9 +195,9 @@ The current implementation is a v1 discovery catalog. The gaps below are factual
 
 | Concern | v1 reality | Evidence | Gap vs target |
 |---|---|---|---|
-| Top-level classification | Four-value enum: `{plugin, mcp, skill, connector}` | `internal/domain/models.go` (`KindPlugin`, `KindMCP`, `KindSkill`, `KindConnector`) | Target `type` enum of 20 values (§3.4); `connector` exists in Go but never appears in the shipped dataset |
+| Top-level classification | Four-value enum: `{plugin, mcp, skill, connector}` | `internal/domain/models.go` (`KindPlugin`, `KindMCP`, `KindSkill`, `KindConnector`) | Target `type` enum of eight v1 values (§3.4), with deferred values in §3.4.1; `connector` exists in Go but is a deferred v2 value and never appears in the shipped dataset |
 | Web kind set | Three values: `"mcp" \| "skill" \| "plugin"` | `web/lib/telemetry.ts` (`Listing["kind"]`) | Web drops `connector`; must align to the type taxonomy |
-| Shipped dataset kinds | 4,079 `mcp`, 1,103 `skill`, 3 `plugin` (5,185 total) | `web/data/catalog.json` | No `connector`, `agent`, `command`, `hook`, `lsp`, `policy`, … despite `ComponentKind` supporting some |
+| Shipped dataset kinds | 4,079 `mcp`, 1,103 `skill`, 3 `plugin` (5,185 total) | `web/data/catalog.json` | No rows for the other v1 types (`agent`, `rule`, `hook`, `tool`, `lsp`) despite `ComponentKind` supporting some; deferred values (§3.4.1) are not tracked in v1 |
 | Component kinds | `skill, mcp-provider, hook, command, agent-definition, asset` | `internal/domain/models.go` (`ComponentKind`) | Component kinds are closer to reality than listing kinds, but are not surfaced to web |
 
 ### 4.2 Dataset fields vs target
@@ -249,7 +294,7 @@ Normative constraints carried forward:
 Explore · Agents · Categories · Collections · Trending · Docs
 ```
 
-`Agents` here means the *consumer* clients a package is compatible with (e.g. Claude Code, Codex, OpenCode, Cline). It is not the ACP-registry object class; ACP agents are packages with `type: agent-runtime` and are reachable from `Explore`.
+`Agents` here means the *consumer* clients a package is compatible with (e.g. Claude Code, Codex, OpenCode, Cline). It is not the ACP-registry object class; ACP agents are packages with `type: agent` and are reachable from `Explore`.
 
 ### 6.2 Routes
 
@@ -304,7 +349,7 @@ Filter groups:
 
 | Group | Options |
 |---|---|
-| Package type | Any `type` from §3.4 |
+| Package type | Any of the eight v1 `type` values (§3.4); deferred values (§3.4.1) are **not** v1 filters |
 | Agent compatibility | Each supported host |
 | Source / registry | Per §5 (e.g. Official MCP Registry, GitHub, npm, ACP Registry) |
 | Official vs community | Derived from `source` + publisher verification |
@@ -338,7 +383,7 @@ Tabs:
 *   `Setup` — install + host bridge registration.
 *   `Compatibility` — matrix detail with evidence provenance.
 *   `Configuration` — env vars, secrets required, args (only when known).
-*   `Files` — bundle contents (skills/MCP/hooks/commands/agents) when the adapter exposes them.
+*   `Files` — bundle contents (skills, mcp, rules, hooks, tools, agents, lsp) when the adapter exposes them.
 *   `Versions` — version history with immutable refs when available.
 *   `Security` — separate provenance signals (§7.4).
 *   `Reviews` — user reviews; **empty state** until a backend exists (the site is static-only today, so this tab is a deliberate, clearly-labelled placeholder or is omitted entirely until storage/API exists).
@@ -418,7 +463,7 @@ Normative rules:
 
 ## 11. Change Ledger
 
-Organised by change class. Each row: **item · why · target milestone** (M1 website IA, M2 data model + source adapters, M3 trust/security signals, M4 publisher/collections, M5 TUI).
+Organised by change class. Each row: **item · why · target milestone** (M1 website IA, M2 data model + source adapters, M3 trust/security signals, M4 publisher/collections, M5 TUI, v2 post-v1 deferred capability types).
 
 ### 11.1 Design
 
@@ -436,7 +481,8 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 | Item | Why | Milestone |
 |---|---|---|
 | Routes: `/explore`, `/package`, `/categories(+/<slug>)`, `/agents(+/<id>)`, `/sources(+/<id>)`, `/publishers/<name>`, `/collections(+/<slug>)`, `/trending`, `/security`, `/docs`, `/download` | IA in §6 | M1 |
-| `type` taxonomy of 20 values | §3.4 | M2 |
+| Implement the eight v1 `type` values (`mcp`, `skill`, `plugin`, `agent`, `rule`, `hook`, `tool`, `lsp`) | §3.4 | M2 |
+| Extend the `type` enum with the v2-deferred values (`connector`, `mode`, `command`, `prompt`, `workflow`, `automation`, `cli`, `provider`, `policy`, `context`, `ui`, `agent-runtime`) | §3.4.1; explicitly **not** v1 | v2 |
 | `source` object with `sources[]` for multi-origin | "Available from" and provenance | M2 |
 | `compatibility` matrix with per-host evidence level | Differentiator; replaces `testedHosts` | M2 |
 | Install adapter registry (per-type strategy) | Decouple install from source/type | M2 |
@@ -496,7 +542,7 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 
 ### M2 — Data model + source adapters
 
-*   Deliver: `Package` v2 shape, `type` taxonomy, `source`/`sources[]`, `compatibility`, install adapter registry, new compiled source adapters.
+*   Deliver: `Package` v2 shape, the eight-value v1 `type` taxonomy (§3.4), `source`/`sources[]`, `compatibility`, install adapter registry, new compiled source adapters.
 *   Acceptance:
     *   `go build ./...` and `go test ./...` pass in the repo root.
     *   Builder emits v2 records; a schema/round-trip test proves every emitted record validates against the v2 contract.
@@ -525,6 +571,14 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 *   Acceptance:
     *   `go test ./...` passes.
     *   A documented manual run shows `/litepsm search` and install flows using the same `type`/`source`/`compatibility` vocabulary as the website.
+
+### v2 (post-v1) — Deferred capability types
+
+*   Deliver: promote one or more of the §3.4.1 deferred values (`connector`, `mode`, `command`, `prompt`, `workflow`, `automation`, `cli`, `provider`, `policy`, `context`, `ui`, `agent-runtime`) to first-class types only after a portable format, an ingestion adapter, and real data exist.
+*   Acceptance:
+    *   Each promoted value has a compiled source adapter and at least one real catalog row.
+    *   The enum change is recorded as an additive schema-major decision in [07 — Decisions](07-DECISIONS.md).
+    *   The eight v1 types remain stable; no v1 surface regresses.
 
 ### 12.4 Binding rule: do not fabricate usage/security data
 

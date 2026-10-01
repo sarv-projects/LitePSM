@@ -14,7 +14,7 @@
   "properties": {
     "listingId": {
       "type": "string",
-      "pattern": "^(plugin|mcp|skill|connector):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$"
+      "pattern": "^(plugin|mcp|skill|connector|agent|rule|hook|tool|lsp):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$"
     },
     "version": {
       "type": "string",
@@ -61,7 +61,7 @@
           "id": { "type": "string" },
           "kind": {
             "type": "string",
-            "enum": ["skill", "mcp-provider", "hook", "command", "agent-definition", "asset", "host-app", "lsp", "other"]
+            "enum": ["skill", "mcp-provider", "hook", "command", "agent-definition", "agent", "rule", "tool", "asset", "host-app", "lsp", "other"]
           },
           "name": { "type": "string" },
           "path": { "type": "string" },

@@ -14,7 +14,7 @@ var (
 
 	// RegexListingID validates <kind>:<source-id>:<percent-encoded-upstream-id>
 	// e.g. mcp:builtin:mcp-registry:%40modelcontextprotocol%2Fpg
-	RegexListingID = regexp.MustCompile(`^(plugin|mcp|skill|connector):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$`)
+	RegexListingID = regexp.MustCompile(`^(plugin|mcp|skill|connector|agent|rule|hook|tool|lsp):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$`)
 
 	// RegexInstallID validates inst_<26-char-ULID-or-UUIDv7>
 	// e.g. inst_01J9X8K2M4N5P6Q7R8S9T0U1V2

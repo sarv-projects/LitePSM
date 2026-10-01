@@ -21,11 +21,11 @@
     },
     "id": {
       "type": "string",
-      "pattern": "^(plugin|mcp|skill|connector):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$"
+      "pattern": "^(plugin|mcp|skill|connector|agent|rule|hook|tool|lsp):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$"
     },
     "kind": {
       "type": "string",
-      "enum": ["plugin", "mcp", "skill", "connector"]
+      "enum": ["plugin", "mcp", "skill", "agent", "rule", "hook", "tool", "lsp"]
     },
     "name": {
       "type": "string",
