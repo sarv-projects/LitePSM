@@ -86,6 +86,11 @@ func (a *ACPAgentAdapter) Ingest(ctx context.Context, snapshotID string) (*Inges
 			RawMetadataRef:      ag.Repository,
 		}
 
+		status := domain.ListingStatusActive
+		if agent.IsDeprecated(ag.ID) {
+			status = domain.ListingStatusDeprecated
+		}
+
 		listing := &domain.Listing{
 			SchemaVersion: 1,
 			ID:            listingID.String(),
@@ -119,7 +124,7 @@ func (a *ACPAgentAdapter) Ingest(ctx context.Context, snapshotID string) (*Inges
 				SourceSnapshotID: snapshotID,
 				IngestedAt:       now,
 			},
-			Status:         domain.ListingStatusActive,
+			Status:         status,
 			RawMetadataRef: ag.Repository,
 		}
 

@@ -61,7 +61,8 @@ type Registry struct {
 }
 
 // LaunchSpec is a fully resolved, executable agent launch description.
-// Archive and SHA256 are set only for binary distributions.
+// Archive and SHA256 are set only for binary distributions. Notes carries
+// verified caveats from the override layer; Deprecated marks retired agents.
 type LaunchSpec struct {
 	AgentID    string
 	Strategy   string // "npx" | "uvx" | "binary"
@@ -70,4 +71,6 @@ type LaunchSpec struct {
 	Env        map[string]string
 	Archive    string
 	SHA256     string
+	Notes      []string
+	Deprecated bool
 }

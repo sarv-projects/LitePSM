@@ -386,12 +386,17 @@ func runAgentCommand(args []string) {
 		for i := range reg.Agents {
 			a := reg.Agents[i]
 			strategy := "-"
+			deprecated := agent.IsDeprecated(a.ID)
 			if hasTarget {
 				if spec, rerr := adapter.Resolve(a, target, ""); rerr == nil {
 					strategy = spec.Strategy
 				}
 			}
-			fmt.Printf("%-22s %-22s %-12s %s\n", a.ID, truncate(a.Name, 22), a.Version, strategy)
+			marker := ""
+			if deprecated {
+				marker = "  [deprecated]"
+			}
+			fmt.Printf("%-22s %-22s %-12s %s%s\n", a.ID, truncate(a.Name, 22), a.Version, strategy, marker)
 		}
 
 	case "resolve":
@@ -435,6 +440,12 @@ func runAgentCommand(args []string) {
 		}
 		if len(spec.Env) > 0 {
 			fmt.Printf("Env:       %d variable(s)\n", len(spec.Env))
+		}
+		if spec.Deprecated {
+			fmt.Println("Warning:   this agent is deprecated upstream")
+		}
+		for _, note := range spec.Notes {
+			fmt.Printf("Note:      %s\n", note)
 		}
 
 	default:

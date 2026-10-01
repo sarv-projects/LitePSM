@@ -61,6 +61,80 @@ func TestMatchTarget(t *testing.T) {
 	}
 }
 
+func TestOverridesAgainstRegistry(t *testing.T) {
+	reg, err := LoadRegistryFile("../../fixtures/source/acp/registry.json")
+	if err != nil {
+		t.Fatalf("failed to load registry fixture: %v", err)
+	}
+	a := NewACPAdapter()
+
+	// sigit: registry ships no args; override must add --acp.
+	sigit, ok := reg.FindAgent("sigit")
+	if !ok {
+		t.Fatal("sigit missing from registry")
+	}
+	spec, err := a.Resolve(*sigit, TargetLinuxAMD64, "/tmp/bin")
+	if err != nil {
+		t.Fatalf("resolve sigit: %v", err)
+	}
+	if len(spec.Args) == 0 || spec.Args[len(spec.Args)-1] != "--acp" {
+		t.Fatalf("expected sigit --acp override, got %v", spec.Args)
+	}
+
+	// minimax-code: bin is `mcode`, so resolution must use `-p`.
+	mm, ok := reg.FindAgent("minimax-code")
+	if !ok {
+		t.Fatal("minimax-code missing from registry")
+	}
+	spec, err = a.Resolve(*mm, TargetLinuxAMD64, "/tmp/bin")
+	if err != nil {
+		t.Fatalf("resolve minimax-code: %v", err)
+	}
+	joined := strings.Join(spec.Args, " ")
+	if !strings.Contains(joined, "-p @minimax-ai/code@0.2.7 mcode") {
+		t.Fatalf("expected minimax bin override, got %v", spec.Args)
+	}
+
+	// github-copilot-cli: stdio server needs --stdio.
+	gh, ok := reg.FindAgent("github-copilot-cli")
+	if !ok {
+		t.Fatal("github-copilot-cli missing from registry")
+	}
+	spec, err = a.Resolve(*gh, TargetLinuxAMD64, "/tmp/bin")
+	if err != nil {
+		t.Fatalf("resolve copilot: %v", err)
+	}
+	if !strings.Contains(strings.Join(spec.Args, " "), "--stdio") {
+		t.Fatalf("expected --stdio override, got %v", spec.Args)
+	}
+
+	// kimi: marked deprecated.
+	kimi, ok := reg.FindAgent("kimi")
+	if !ok {
+		t.Fatal("kimi missing from registry")
+	}
+	spec, err = a.Resolve(*kimi, TargetLinuxAMD64, "/tmp/bin")
+	if err != nil {
+		t.Fatalf("resolve kimi: %v", err)
+	}
+	if !spec.Deprecated {
+		t.Fatal("expected kimi to be marked deprecated")
+	}
+
+	// cline: registry already correct; override must not change it.
+	cline, ok := reg.FindAgent("cline")
+	if !ok {
+		t.Fatal("cline missing from registry")
+	}
+	spec, err = a.Resolve(*cline, TargetLinuxAMD64, "/tmp/bin")
+	if err != nil {
+		t.Fatalf("resolve cline: %v", err)
+	}
+	if spec.Args[len(spec.Args)-1] != "--acp" {
+		t.Fatalf("expected cline --acp from registry, got %v", spec.Args)
+	}
+}
+
 func TestACPResolve(t *testing.T) {
 	reg, err := ParseRegistry([]byte(sampleRegistry))
 	if err != nil {

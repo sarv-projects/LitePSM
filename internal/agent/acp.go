@@ -68,50 +68,87 @@ func (a *ACPAdapter) Supports(ag Agent) bool {
 // Resolve builds a launch specification for the agent on the given target.
 // Resolution order is npx, then uvx, then a platform binary. binaryDir is the
 // directory where a binary distribution has been (or will be) extracted.
+// Verified registry corrections from the override layer are applied last.
 func (a *ACPAdapter) Resolve(ag Agent, target Target, binaryDir string) (*LaunchSpec, error) {
 	d := ag.Distribution
+	ov, hasOv := overrideFor(ag.ID)
 
-	if d.Npx != nil && d.Npx.Package != "" {
+	var spec *LaunchSpec
+
+	switch {
+	case d.Npx != nil && d.Npx.Package != "":
+		distArgs := d.Npx.Args
+		if hasOv && ov.Args != nil {
+			distArgs = ov.Args
+		}
 		exe := "npx"
 		if runtime.GOOS == "windows" {
 			exe = "npx.cmd"
 		}
-		args := append([]string{"-y", d.Npx.Package}, d.Npx.Args...)
-		return &LaunchSpec{
-			AgentID:    ag.ID,
-			Strategy:   "npx",
-			Executable: exe,
-			Args:       args,
-			Env:        d.Npx.Env,
-		}, nil
-	}
+		var args []string
+		if hasOv && ov.NpxBin != "" {
+			args = append([]string{"-y", "-p", d.Npx.Package, ov.NpxBin}, distArgs...)
+		} else {
+			args = append([]string{"-y", d.Npx.Package}, distArgs...)
+		}
+		env := d.Npx.Env
+		if hasOv {
+			env = mergeEnv(env, ov.Env)
+		}
+		spec = &LaunchSpec{AgentID: ag.ID, Strategy: "npx", Executable: exe, Args: args, Env: env}
 
-	if d.Uvx != nil && d.Uvx.Package != "" {
-		args := append([]string{d.Uvx.Package}, d.Uvx.Args...)
-		return &LaunchSpec{
+	case d.Uvx != nil && d.Uvx.Package != "":
+		distArgs := d.Uvx.Args
+		if hasOv && ov.Args != nil {
+			distArgs = ov.Args
+		}
+		env := d.Uvx.Env
+		if hasOv {
+			env = mergeEnv(env, ov.Env)
+		}
+		spec = &LaunchSpec{
 			AgentID:    ag.ID,
 			Strategy:   "uvx",
 			Executable: "uvx",
-			Args:       args,
-			Env:        d.Uvx.Env,
-		}, nil
-	}
+			Args:       append([]string{d.Uvx.Package}, distArgs...),
+			Env:        env,
+		}
 
-	if len(d.Binary) > 0 {
+	case len(d.Binary) > 0:
 		bt, ok := d.Binary[target]
 		if !ok {
 			return nil, fmt.Errorf("agent %s has no binary distribution for target %s", ag.ID, target)
 		}
-		return &LaunchSpec{
+		cmd := bt.Cmd
+		if hasOv && ov.Executable != "" {
+			cmd = ov.Executable
+		}
+		args := bt.Args
+		if hasOv && ov.Args != nil {
+			args = ov.Args
+		}
+		env := bt.Env
+		if hasOv {
+			env = mergeEnv(env, ov.Env)
+		}
+		spec = &LaunchSpec{
 			AgentID:    ag.ID,
 			Strategy:   "binary",
-			Executable: filepath.Join(binaryDir, bt.Cmd),
-			Args:       bt.Args,
-			Env:        bt.Env,
+			Executable: filepath.Join(binaryDir, cmd),
+			Args:       args,
+			Env:        env,
 			Archive:    bt.Archive,
 			SHA256:     bt.SHA256,
-		}, nil
+		}
+
+	default:
+		return nil, fmt.Errorf("agent %s has no supported distribution", ag.ID)
 	}
 
-	return nil, fmt.Errorf("agent %s has no supported distribution", ag.ID)
+	if hasOv {
+		spec.Notes = ov.Notes
+		spec.Deprecated = ov.Deprecated
+	}
+
+	return spec, nil
 }
