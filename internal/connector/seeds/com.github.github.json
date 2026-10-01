@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "com.github/github",
+  "title": "GitHub",
+  "description": "GitHub REST API via OAuth. Read scopes are granted first; write scopes require a separate consent step.",
+  "version": "1.0.0",
+  "repository": {
+    "url": "https://github.com/sarv-projects/litepsm",
+    "source": "litepsm-seed"
+  },
+  "reach": {
+    "openapi": {
+      "ref": "https://api.github.com/openapi.json",
+      "baseUrl": "https://api.github.com"
+    }
+  },
+  "auth": {
+    "schemes": [
+      {
+        "type": "oauth2",
+        "secret": true,
+        "scopes": {
+          "read": ["repo:read", "user:read"],
+          "write": ["repo:write", "user:write"]
+        },
+        "tokenUrl": "https://github.com/login/oauth/access_token",
+        "authorizeUrl": "https://github.com/login/oauth/authorize",
+        "clientMetadata": {
+          "token_endpoint_auth_method": "client_secret_post"
+        }
+      }
+    ]
+  },
+  "inputs": [],
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": true
+  }
+}

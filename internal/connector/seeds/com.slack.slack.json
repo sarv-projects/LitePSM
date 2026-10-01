@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "com.slack/slack",
+  "title": "Slack",
+  "description": "Slack Web API via OAuth. Starts with read scopes; chat:write is a separate consent step.",
+  "version": "1.0.0",
+  "repository": {
+    "url": "https://github.com/sarv-projects/litepsm",
+    "source": "litepsm-seed"
+  },
+  "reach": {
+    "openapi": {
+      "ref": "https://api.slack.com/openapi.json",
+      "baseUrl": "https://slack.com/api"
+    }
+  },
+  "auth": {
+    "schemes": [
+      {
+        "type": "oauth2",
+        "secret": true,
+        "scopes": {
+          "read": ["channels:read", "users:read"],
+          "write": ["chat:write", "channels:manage"]
+        },
+        "tokenUrl": "https://slack.com/api/oauth.v2.access",
+        "authorizeUrl": "https://slack.com/oauth/v2/authorize"
+      }
+    ]
+  },
+  "inputs": [],
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": true
+  }
+}
