@@ -4,7 +4,8 @@ import React from "react";
 import Link from "next/link";
 import { Listing } from "../../lib/telemetry";
 import { kindLabel, listingHref } from "../../lib/catalog";
-import { PublisherTile, StarCount, VerifiedMark } from "./PublisherMark";
+import { PublisherTile, VerifiedMark } from "./PublisherMark";
+import { hostsFor } from "../../lib/hosts";
 
 export type ExtensionItem = Listing;
 
@@ -23,9 +24,17 @@ const KIND_TAG: Record<Listing["kind"], string> = {
 /**
  * The primary listing unit: a ruled, 0-radius table row. Every row is a single
  * link to the package page, so the whole row is keyboard reachable.
+ *
+ * The row carries the description visibly. It used to appear only in the
+ * aria-label, which meant a sighted reader learned nothing about what a
+ * capability does without opening it.
+ *
+ * There is no star column: the catalog publishes no popularity figures (the
+ * upstream sources do not expose them), so a column that said "not published"
+ * on every one of 5,814 rows was noise.
  */
 export function ExtensionCard({ item, hostCount }: ExtensionCardProps) {
-  const hosts = item.testedHosts || [];
+  const hosts = hostsFor(item);
   const total = hostCount ?? hosts.length;
   const detail = [
     kindLabel(item.kind),
@@ -43,8 +52,9 @@ export function ExtensionCard({ item, hostCount }: ExtensionCardProps) {
       <span className="row-spine" aria-hidden="true" />
       <PublisherTile name={item.publisher?.name} kind={item.kind} />
 
-      <span className="min-w-0">
+      <span className="min-w-0 py-0.5">
         <span className="row-name">{item.name}</span>
+        {item.summary && <span className="row-summary">{item.summary}</span>}
         <span className="row-meta">
           <span>{item.publisher?.name || "not published"}</span>
           {item.publisher?.verified && <VerifiedMark />}
@@ -56,9 +66,6 @@ export function ExtensionCard({ item, hostCount }: ExtensionCardProps) {
       </span>
 
       <span className="row-side">
-        <span className="flex w-[86px] justify-end">
-          <StarCount stars={item.stars} />
-        </span>
         <span
           className="t-mono t-tabular w-[62px] whitespace-nowrap text-[11px] text-ink-3"
           title={`Declares compatibility with ${hosts.length} of the ${total} agent hosts named in this catalog. Publisher-declared, not a test result.`}

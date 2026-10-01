@@ -6,44 +6,50 @@ import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-POPULAR_SERVERS = {
-    "sqlite": 18500,
-    "filesystem": 24200,
-    "postgres": 19800,
-    "github": 31200,
-    "brave-search": 16500,
-    "slack": 14200,
-    "puppeteer": 22100,
-    "google-drive": 12800,
-    "git": 15400,
-    "docker": 17300,
-    "fetch": 21000,
-    "memory": 19100,
-    "superpowers": 29300,
-    "sentry": 11400,
-    "everything": 9800,
-    "sequential-thinking": 26400,
-    "playwright": 23500,
-    "context7": 15900,
-    "aws-kb-retrieval-mcp": 13200,
-    "everart": 8900
-}
+# NOTE ON POPULARITY DATA
+# This builder deliberately publishes NO star / download / popularity figures.
+# The upstream sources it reads (awesome-mcp-servers markdown lists, skills
+# directories) do not expose machine-readable star counts, and an earlier
+# revision of this file invented them -- a hard-coded table plus a
+# `hash(slug)`-derived fallback. That produced numbers that looked like real
+# adoption data, ranked the public index by them, and mis-attributed a
+# 41,200-star plugin to this project's own repository.
+#
+# The rule is: publish a signal only when it is measured. `stars` is therefore
+# null everywhere, and the web UI renders "not published" rather than a number.
+# If a real star signal is ever ingested from an API, set it here and nowhere
+# else.
 
-POPULAR_SKILLS = {
-    "frontend-design": 34500,
-    "web-artifacts-builder": 28900,
-    "mcp-builder": 27400,
-    "webapp-testing": 22100,
-    "docx": 19400,
-    "pdf": 18200,
-    "xlsx": 17800,
-    "pptx": 16200,
-    "algorithmic-art": 14800,
-    "brand-guidelines": 13100,
-    "skill-creator": 31000,
-    "agent-browser": 29000,
-    "github-pr-reviewer": 24500
-}
+# HOST COMPATIBILITY
+# A capability's host list must come from a registry, not from a constant typed
+# into this file. An earlier revision stamped the same seven host names onto
+# every one of 4,079 MCP servers and six onto every skill, so the public site
+# reported "9 agent hosts" while the binary shipped 50 adapters -- the catalog
+# understated the product by an order of magnitude, and the per-row claim was
+# asserted rather than derived.
+#
+# The two registries are different things and are kept apart:
+#   hosts.json          bridge adapters: hosts whose config file we can edit.
+#                       Every MCP server is installable into all of them.
+#   skill-targets.json  hosts with a skills directory we can write SKILL.md to.
+#
+# Both are generated from the Go source by scripts/gen_hosts_ts.go, so the
+# catalog cannot drift from the binary.
+
+def _load_registry(name, field):
+    path = os.path.join(os.path.dirname(__file__), "..", "web", "data", name)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            rows = json.load(f)
+    except (OSError, ValueError) as exc:
+        print(f"  WARNING: {name} unreadable ({exc}); host lists will be empty")
+        return []
+    return [r[field] for r in rows if r.get(field)]
+
+
+BRIDGE_HOSTS = _load_registry("hosts.json", "name")
+SKILL_TARGET_HOSTS = _load_registry("skill-targets.json", "displayName")
+
 
 def clean_desc(text):
     # Remove markdown badges [![...](...)]
@@ -166,7 +172,6 @@ def build_full_catalog():
                 item_id = f"mcp:modelcontextprotocol:{slug}"
                 if item_id not in seen_ids:
                     seen_ids.add(item_id)
-                    stars = POPULAR_SERVERS.get(slug, 35000)
                     items.append({
                         "id": item_id,
                         "name": f"{name} MCP Server",
@@ -181,9 +186,8 @@ def build_full_catalog():
                         },
                         "transport": "stdio",
                         "runtime": "typescript",
-                        "stars": stars,
+                        "stars": None,
                         "version": "1.0.0",
-                        "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code", "OpenCode", "Cursor"],
                         "command": "npx",
                         "args": ["-y", f"@modelcontextprotocol/server-{slug}"]
                     })
@@ -230,12 +234,6 @@ def build_full_catalog():
                 if not desc:
                     desc = f"Model Context Protocol server for {label}."
 
-                # Star assignment
-                base_stars = POPULAR_SERVERS.get(slug, 0)
-                if base_stars == 0:
-                    # Estimate reasonable stars based on position / length hash
-                    base_stars = max(42, (abs(hash(slug)) % 3800) + 120)
-
                 verified = owner.lower() in [
                     "modelcontextprotocol", "anthropic", "github", "cloudflare", "google",
                     "microsoft", "aws", "docker", "sentry", "supabase", "neon", "redis",
@@ -270,9 +268,8 @@ def build_full_catalog():
                     },
                     "transport": transport,
                     "runtime": runtime,
-                    "stars": base_stars,
+                    "stars": None,
                     "version": "1.0.0",
-                    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code", "OpenCode"],
                     "command": cmd,
                     "args": args
                 })
@@ -307,9 +304,6 @@ def build_full_catalog():
                     continue
                 seen_ids.add(item_id)
 
-                base_stars = POPULAR_SKILLS.get(slug, 0)
-                if base_stars == 0:
-                    base_stars = max(58, (abs(hash(slug)) % 4200) + 180)
 
                 verified = owner.lower() in ["anthropics", "openai", "google", "voltagent", "vercel", "cursor", "microsoft"]
 
@@ -325,9 +319,8 @@ def build_full_catalog():
                         "verified": verified,
                         "url": url
                     },
-                    "stars": base_stars,
+                    "stars": None,
                     "version": "1.0.0",
-                    "testedHosts": ["Claude Code", "Codex", "Cursor", "Antigravity", "OpenCode", "Windsurf"],
                     "skillSource": url
                 })
 
@@ -414,7 +407,6 @@ def build_full_catalog():
     def base_slug(name):
         return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
-    PORTABLE_SKILL_HOSTS = ["Claude Code", "Codex", "Cursor", "Antigravity", "OpenCode", "Windsurf"]
 
     for src in MARKETPLACE_SOURCES:
         try:
@@ -472,9 +464,11 @@ def build_full_catalog():
                 "summary": desc or f"Plugin '{name}' from {src['publisher']}.",
                 "category": category,
                 "publisher": {"name": src["publisher"], "verified": True, "url": upstream},
-                "stars": 0,
+                # The vendor manifests publish no star counts. null means
+                # "not published"; 0 would read as a measured zero.
+                "stars": None,
                 "version": "1.0.0",
-                "testedHosts": src["hosts"],
+                "compatibleHosts": src["hosts"],
             }
             if install_hint:
                 row["installHint"] = install_hint
@@ -493,9 +487,6 @@ def build_full_catalog():
                         continue
                     seen_ids.add(skill_id)
                     seen_slugs.add(skill_slug)
-                    skill_stars = POPULAR_SKILLS.get(skill, 0)
-                    if skill_stars == 0:
-                        skill_stars = max(58, (abs(hash(skill)) % 4200) + 180)
                     items.append({
                         "id": skill_id,
                         "name": skill.replace("-", " ").title(),
@@ -508,85 +499,35 @@ def build_full_catalog():
                             "verified": True,
                             "url": f"{src['repo']}/tree/main/skills/{skill}",
                         },
-                        "stars": skill_stars,
+                        "stars": None,
                         "version": "1.0.0",
-                        "testedHosts": PORTABLE_SKILL_HOSTS,
                         "skillSource": f"{src['repo']}/tree/main/skills/{skill}",
                         "installHint": f"npx skills add {src['repo']} --skill {skill}",
                     })
                     added += 1
         print(f"  {src['key']}: +{added} rows")
 
-    # --- Add Verified Core Plugins (aregistry.ai / litepsm curated) ---
-    curated_plugins = [
-        {
-            "id": "plugin:litepsm:autonomous-dev-suite",
-            "name": "Autonomous Dev Suite",
-            "slug": "autonomous-dev-suite",
-            "kind": "plugin",
-            "summary": "Full-stack development pack combining git-flow, automated docker containerization, browser QA, and architectural TDD loops.",
-            "category": "Plugins & Toolkits",
-            "publisher": {
-                "name": "litepsm",
-                "verified": True,
-                "url": "https://github.com/sarv-projects/LitePSM"
-            },
-            "stars": 41200,
-            "version": "1.2.0",
-            "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code", "OpenCode"],
-            "command": "litepsm",
-            "args": ["plugin", "install", "autonomous-dev-suite"]
-        },
-        {
-            "id": "plugin:agentregistry:browser-qa-toolkit",
-            "name": "Playwright QA & Auditing Toolkit",
-            "slug": "browser-qa-toolkit",
-            "kind": "plugin",
-            "summary": "Deep headless browser automation, visual regression testing, accessibility audits, and network request interception.",
-            "category": "Plugins & Toolkits",
-            "publisher": {
-                "name": "agentregistry",
-                "verified": True,
-                "url": "https://aregistry.ai"
-            },
-            "stars": 28700,
-            "version": "2.0.1",
-            "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code", "OpenCode"],
-            "command": "litepsm",
-            "args": ["plugin", "install", "browser-qa-toolkit"]
-        },
-        {
-            "id": "plugin:agentregistry:database-copilot",
-            "name": "Database & ORM Copilot",
-            "slug": "database-copilot",
-            "kind": "plugin",
-            "summary": "Multi-engine SQL schema inspector, safe migration planner, and read-only query analysis with row-level redaction.",
-            "category": "Plugins & Toolkits",
-            "publisher": {
-                "name": "agentregistry",
-                "verified": True,
-                "url": "https://aregistry.ai"
-            },
-            "stars": 33400,
-            "version": "1.4.0",
-            "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code", "OpenCode"],
-            "command": "litepsm",
-            "args": ["plugin", "install", "database-copilot"]
-        }
-    ]
-    for p in curated_plugins:
-        if p["id"] not in seen_ids:
-            seen_ids.add(p["id"])
-            items.append(p)
+    # --- No hand-curated "featured" plugins ---
+    # An earlier revision injected three hand-written plugin rows here, each
+    # carrying an invented star count (41,200 / 28,700 / 33,400) and one
+    # attributing a 41,200-star plugin to this project's own repository, which
+    # has none. Because the catalog was ranked by stars, those fabricated rows
+    # occupied the top of the public index. Removed: the catalog lists only
+    # capabilities that were actually ingested from a named upstream source.
 
-    # Sort catalog: Highest stars to top, verified publishers boosted
-    def rank_score(item):
-        score = item.get("stars", 0)
-        if item.get("publisher", {}).get("verified", False):
-            score += 50000
-        return score
-
-    items.sort(key=rank_score, reverse=True)
+    # Sort catalog deterministically.
+    #
+    # No popularity ranking: `stars` is null for every row (see the note at the
+    # top of this file), so there is nothing to rank by. Ordering is
+    # verified-publisher first, then kind, then name -- all measured facts, all
+    # stable across runs and machines.
+    kind_order = {"mcp": 0, "skill": 1, "plugin": 2}
+    items.sort(key=lambda i: (
+        0 if i.get("publisher", {}).get("verified", False) else 1,
+        kind_order.get(i.get("kind", ""), 9),
+        (i.get("name") or "").casefold(),
+        i.get("id", ""),
+    ))
 
     print(f"Total catalog capabilities indexed: {len(items)}")
     mcp_count = sum(1 for x in items if x["kind"] == "mcp")
@@ -604,20 +545,68 @@ def build_full_catalog():
     file_size_mb = os.path.getsize(out_path) / (1024 * 1024)
     print(f"Written successfully to {out_path} ({file_size_mb:.2f} MB)")
 
-    # Update public/v1/current.json with exact real telemetry
+    # Publish the release manifest.
+    #
+    # Two copies on purpose:
+    #   web/public/v1/current.json  served to clients that fetch it at runtime
+    #   web/data/release.json       imported at BUILD time so the static html
+    #                               already shows real numbers instead of a
+    #                               "checking release manifest..." placeholder
+    #                               that only resolves once JS runs
+    #
+    # itemCount and totalCapabilities previously disagreed (5185 vs 5814) because
+    # only one of them was maintained. They are now the same measurement.
+    import hashlib
+    import datetime
+
+    catalog_path = os.path.join(os.path.dirname(__file__), "..", "web", "data", "catalog.json")
+    with open(catalog_path, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+
+    # SOURCE_DATE_EPOCH keeps CI builds reproducible when set; otherwise the
+    # release is stamped with build time, the honest default for a release.
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    created = (
+        datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc)
+        if epoch
+        else datetime.datetime.now(datetime.timezone.utc)
+    )
+
     v1_path = os.path.join(os.path.dirname(__file__), "..", "web", "public", "v1", "current.json")
+    v1_data = {}
     if os.path.exists(v1_path):
         with open(v1_path, "r", encoding="utf-8") as f:
             v1_data = json.load(f)
-        
-        v1_data["totalCapabilities"] = len(items)
-        v1_data["mcpServersCount"] = mcp_count
-        v1_data["agentSkillsCount"] = skill_count
-        v1_data["pluginsCount"] = plugin_count
 
-        with open(v1_path, "w", encoding="utf-8") as f:
-            json.dump(v1_data, f, indent=2, ensure_ascii=False)
-        print(f"Updated public/v1/current.json telemetry: {len(items)} capabilities")
+    v1_data["itemCount"] = len(items)
+    v1_data["totalCapabilities"] = len(items)
+    v1_data["mcpServersCount"] = mcp_count
+    v1_data["agentSkillsCount"] = skill_count
+    v1_data["pluginsCount"] = plugin_count
+    v1_data["manifestDigest"] = f"sha256:{digest}"
+    # Host compatibility is a property of the KIND, not of each row: an MCP
+    # server is installable into every bridge adapter, a skill only into hosts
+    # with a documented skills directory. Storing the 50-name list on each of
+    # 4,079 rows cost 4.8 MB and said nothing the kind did not already say.
+    v1_data["hostCompatibility"] = {
+        "mcp": "all-bridge-adapters",
+        "skill": "all-skill-targets",
+        "plugin": "publisher-declared",
+    }
+    v1_data["createdAt"] = created.strftime("%Y-%m-%dT%H:%M:%SZ")
+    if os.environ.get("LITEPSM_RELEASE_ID"):
+        v1_data["releaseId"] = os.environ["LITEPSM_RELEASE_ID"]
+
+    with open(v1_path, "w", encoding="utf-8") as f:
+        json.dump(v1_data, f, indent=2)
+        f.write("\n")
+
+    bundled_path = os.path.join(os.path.dirname(__file__), "..", "web", "data", "release.json")
+    with open(bundled_path, "w", encoding="utf-8") as f:
+        json.dump(v1_data, f, indent=2)
+        f.write("\n")
+
+    print(f"Published release manifest: {len(items)} capabilities, sha256:{digest[:12]}")
 
 if __name__ == "__main__":
     build_full_catalog()

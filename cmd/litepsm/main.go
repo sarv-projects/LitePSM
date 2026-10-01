@@ -97,10 +97,13 @@ func main() {
 
 	case "host":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: litepsm host [list|detect|setup <host-id>]")
+			fmt.Println("Usage: litepsm host [list|detect|setup <host-id>|remove <host-id>|remove --all]")
 			os.Exit(1)
 		}
 		runHostCommand(os.Args[2:])
+
+	case "uninstall":
+		runUninstall(context.Background(), os.Args[2:])
 
 	case "agent":
 		runAgentCommand(os.Args[2:])
@@ -326,10 +329,140 @@ func runHostCommand(args []string) {
 			fmt.Printf("  • Backup:      %s\n", result.BackupPath)
 		}
 
+	case "remove":
+		runHostRemove(ctx, args[1:])
+
 	default:
 		fmt.Printf("Unknown host subcommand: %s\n", sub)
 		os.Exit(1)
 	}
+}
+
+// runHostRemove takes the bridge entry back out of one host, or out of every
+// host that currently has it. Installing is only defensible if uninstalling is
+// equally easy.
+func runHostRemove(ctx context.Context, args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: litepsm host remove <host-id> | --all")
+		os.Exit(1)
+	}
+
+	paths, _ := config.ResolvePlatformPaths()
+
+	if args[0] == "--all" || args[0] == "all" {
+		results := host.RemoveFromAll(ctx, paths.BackupsPath())
+		removed, absent, failed := 0, 0, 0
+		for _, r := range results {
+			switch {
+			case r.Removed:
+				removed++
+				fmt.Printf("✓ removed from %s (%s)\n", r.HostID, r.ConfigPath)
+			case r.Reason != "":
+				absent++
+				if r.ConfigPath == "" {
+					failed++
+					fmt.Printf("! %s: %s\n", r.HostID, r.Reason)
+				}
+			}
+		}
+		fmt.Printf("\n%d removed · %d had nothing to remove · %d could not be read\n",
+			removed, absent-failed, failed)
+		return
+	}
+
+	adapter, err := host.GetAdapter(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	result, err := host.RemoveSetup(ctx, adapter, paths.BackupsPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Removal failed: %v\n", err)
+		os.Exit(1)
+	}
+	if result == nil || !result.Removed {
+		reason := "nothing to do"
+		if result != nil && result.Reason != "" {
+			reason = result.Reason
+		}
+		fmt.Printf("○ %s was not modified: %s\n", adapter.Descriptor().DisplayName, reason)
+		return
+	}
+	fmt.Printf("✓ Removed the LitePSM bridge entry from %s\n", adapter.Descriptor().DisplayName)
+	fmt.Printf("  • Config File: %s\n", result.ConfigPath)
+	if result.BackupPath != "" {
+		fmt.Printf("  • Backup:      %s\n", result.BackupPath)
+	}
+}
+
+// runUninstall reverses everything LitePSM wrote: the bridge entry in every
+// host config it touched. Skill directories are reported rather than deleted,
+// because a skills directory may contain files the user added alongside ours.
+func runUninstall(ctx context.Context, args []string) {
+	dryRun := false
+	for _, a := range args {
+		if a == "--dry-run" {
+			dryRun = true
+		}
+	}
+
+	paths, err := config.ResolvePlatformPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving paths: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Removing the LitePSM bridge entry from every agent host config…")
+	fmt.Println()
+
+	// A dry run must not touch anything, so it plans without applying.
+	var removed, untouched, failed int
+	if dryRun {
+		for _, adapter := range host.ListAdapters() {
+			plan, result, err := host.PlanRemoval(ctx, adapter, paths.BackupsPath())
+			switch {
+			case err != nil:
+				failed++
+				fmt.Printf("  ! %-16s %v\n", adapter.Descriptor().HostID, err)
+			case plan != nil && result != nil && result.Removed:
+				removed++
+				fmt.Printf("  - %-16s would remove from %s\n", adapter.Descriptor().HostID, result.ConfigPath)
+			default:
+				untouched++
+			}
+		}
+	} else {
+		for _, r := range host.RemoveFromAll(ctx, paths.BackupsPath()) {
+			switch {
+			case r.Removed:
+				removed++
+				fmt.Printf("  ✓ %-16s removed from %s\n", r.HostID, r.ConfigPath)
+			case r.ConfigPath == "":
+				failed++
+				fmt.Printf("  ! %-16s %s\n", r.HostID, r.Reason)
+			default:
+				untouched++
+			}
+		}
+	}
+
+	fmt.Println()
+	if dryRun {
+		fmt.Printf("Dry run: %d host config(s) would be modified, %d had nothing to remove, %d could not be read.\n",
+			removed, untouched, failed)
+		fmt.Println("Re-run without --dry-run to apply.")
+		return
+	}
+	fmt.Printf("Done: %d host config(s) cleaned, %d had nothing to remove, %d could not be read.\n",
+		removed, untouched, failed)
+
+	fmt.Println()
+	fmt.Println("Not touched by this command:")
+	fmt.Println("  • Skill directories copied by `litepsm skills add`. They live inside each")
+	fmt.Println("    agent's own skills tree and may contain files you added yourself, so")
+	fmt.Println("    they are listed rather than deleted.")
+	fmt.Println("  • Backups written next to each config. They are your restore points;")
+	fmt.Println("    delete them yourself once you are satisfied.")
 }
 
 func runAgentCommand(args []string) {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +77,47 @@ func TestTargetBinaryName(t *testing.T) {
 	name := TargetBinaryName()
 	if name == "" {
 		t.Fatalf("expected non-empty target binary name")
+	}
+}
+
+// TestApplyUpdateFailsClosedWithoutChecksum pins the policy that replaced a
+// silent skip: an update with no expected checksum must be refused, because
+// "no integrity data" must never mean "no integrity check".
+func TestApplyUpdateFailsClosedWithoutChecksum(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	u := NewUpdater("")
+
+	targetPath := filepath.Join(tempDir, "bin", "litepsm_target")
+	_ = os.MkdirAll(filepath.Dir(targetPath), 0755)
+	if err := os.WriteFile(targetPath, []byte("original"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := u.ApplyUpdate(ctx, []byte("malicious payload"), "", targetPath, filepath.Join(tempDir, "staging"))
+	if err == nil {
+		t.Fatal("an update with no expected checksum was applied")
+	}
+
+	// The original binary must be untouched.
+	after, _ := os.ReadFile(targetPath)
+	if string(after) != "original" {
+		t.Fatalf("target was modified despite refusal: %q", after)
+	}
+}
+
+// TestApplyUpdateRejectsMismatch confirms a wrong checksum still fails.
+func TestApplyUpdateRejectsMismatch(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	u := NewUpdater("")
+
+	targetPath := filepath.Join(tempDir, "bin", "litepsm_target")
+	_ = os.MkdirAll(filepath.Dir(targetPath), 0755)
+	_ = os.WriteFile(targetPath, []byte("original"), 0755)
+
+	wrong := strings.Repeat("a", 64)
+	if err := u.ApplyUpdate(ctx, []byte("payload"), wrong, targetPath, filepath.Join(tempDir, "staging")); err == nil {
+		t.Fatal("a checksum mismatch was accepted")
 	}
 }

@@ -1,0 +1,408 @@
+[
+  {
+    "id": "adal",
+    "displayName": "AdaL",
+    "hasGlobal": true
+  },
+  {
+    "id": "aider-desk",
+    "displayName": "AiderDesk",
+    "hasGlobal": true
+  },
+  {
+    "id": "amp",
+    "displayName": "Amp",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "antigravity",
+    "displayName": "Antigravity",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "antigravity-cli",
+    "displayName": "Antigravity CLI",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "astrbot",
+    "displayName": "AstrBot",
+    "hasGlobal": true
+  },
+  {
+    "id": "augment",
+    "displayName": "Augment",
+    "hasGlobal": true
+  },
+  {
+    "id": "autohand-code",
+    "displayName": "Autohand Code CLI",
+    "hasGlobal": true
+  },
+  {
+    "id": "bob",
+    "displayName": "IBM Bob",
+    "hasGlobal": true
+  },
+  {
+    "id": "claude-code",
+    "displayName": "Claude Code",
+    "hasGlobal": true
+  },
+  {
+    "id": "cline",
+    "displayName": "Cline",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "codearts-agent",
+    "displayName": "CodeArts Agent",
+    "hasGlobal": true
+  },
+  {
+    "id": "codebuddy",
+    "displayName": "CodeBuddy",
+    "hasGlobal": true
+  },
+  {
+    "id": "codemaker",
+    "displayName": "Codemaker",
+    "hasGlobal": true
+  },
+  {
+    "id": "codestudio",
+    "displayName": "Code Studio",
+    "hasGlobal": true
+  },
+  {
+    "id": "codex",
+    "displayName": "Codex",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "command-code",
+    "displayName": "Command Code",
+    "hasGlobal": true
+  },
+  {
+    "id": "continue",
+    "displayName": "Continue",
+    "hasGlobal": true
+  },
+  {
+    "id": "cortex",
+    "displayName": "Cortex Code",
+    "hasGlobal": true
+  },
+  {
+    "id": "crush",
+    "displayName": "Crush",
+    "hasGlobal": true
+  },
+  {
+    "id": "cursor",
+    "displayName": "Cursor",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "deepagents",
+    "displayName": "Deep Agents",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "devin",
+    "displayName": "Devin for Terminal",
+    "hasGlobal": true
+  },
+  {
+    "id": "dexto",
+    "displayName": "Dexto",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "droid",
+    "displayName": "Droid",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "eve",
+    "displayName": "Eve",
+    "hasGlobal": false
+  },
+  {
+    "id": "firebender",
+    "displayName": "Firebender",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "forgecode",
+    "displayName": "ForgeCode",
+    "hasGlobal": true
+  },
+  {
+    "id": "fx",
+    "displayName": "fx",
+    "hasGlobal": true
+  },
+  {
+    "id": "gemini-cli",
+    "displayName": "Gemini CLI",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "github-copilot",
+    "displayName": "GitHub Copilot",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "goose",
+    "displayName": "Goose",
+    "hasGlobal": true
+  },
+  {
+    "id": "grok-build",
+    "displayName": "Grok Build",
+    "hasGlobal": true
+  },
+  {
+    "id": "hermes-agent",
+    "displayName": "Hermes Agent",
+    "hasGlobal": true
+  },
+  {
+    "id": "iflow-cli",
+    "displayName": "iFlow CLI",
+    "hasGlobal": true
+  },
+  {
+    "id": "inference-sh",
+    "displayName": "inference.sh",
+    "hasGlobal": true
+  },
+  {
+    "id": "jazz",
+    "displayName": "Jazz",
+    "hasGlobal": true
+  },
+  {
+    "id": "junie",
+    "displayName": "Junie",
+    "hasGlobal": true
+  },
+  {
+    "id": "kilo",
+    "displayName": "Kilo Code",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "kimchi",
+    "displayName": "Kimchi",
+    "hasGlobal": true
+  },
+  {
+    "id": "kimi-code-cli",
+    "displayName": "Kimi Code CLI",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "kiro-cli",
+    "displayName": "Kiro CLI",
+    "hasGlobal": true
+  },
+  {
+    "id": "kode",
+    "displayName": "Kode",
+    "hasGlobal": true
+  },
+  {
+    "id": "lingma",
+    "displayName": "Lingma",
+    "hasGlobal": true
+  },
+  {
+    "id": "loaf",
+    "displayName": "Loaf",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "mcpjam",
+    "displayName": "MCPJam",
+    "hasGlobal": true
+  },
+  {
+    "id": "minimax-code",
+    "displayName": "minimax Code",
+    "hasGlobal": true
+  },
+  {
+    "id": "mistral-vibe",
+    "displayName": "Mistral Vibe",
+    "hasGlobal": true
+  },
+  {
+    "id": "moxby",
+    "displayName": "Moxby",
+    "hasGlobal": true
+  },
+  {
+    "id": "mux",
+    "displayName": "Mux",
+    "hasGlobal": true
+  },
+  {
+    "id": "neovate",
+    "displayName": "Neovate",
+    "hasGlobal": true
+  },
+  {
+    "id": "ona",
+    "displayName": "Ona",
+    "hasGlobal": true
+  },
+  {
+    "id": "openclaw",
+    "displayName": "OpenClaw",
+    "hasGlobal": true
+  },
+  {
+    "id": "opencode",
+    "displayName": "OpenCode",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "openhands",
+    "displayName": "OpenHands",
+    "hasGlobal": true
+  },
+  {
+    "id": "pi-agent",
+    "displayName": "Pi Agent",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "pochi",
+    "displayName": "Pochi",
+    "hasGlobal": true
+  },
+  {
+    "id": "posit-assistant",
+    "displayName": "Posit Assistant",
+    "hasGlobal": true
+  },
+  {
+    "id": "promptscript",
+    "displayName": "PromptScript",
+    "universal": true,
+    "hasGlobal": false
+  },
+  {
+    "id": "qoder",
+    "displayName": "Qoder",
+    "hasGlobal": true
+  },
+  {
+    "id": "qoder-cn",
+    "displayName": "Qoder CN",
+    "hasGlobal": true
+  },
+  {
+    "id": "qwen-code",
+    "displayName": "Qwen Code",
+    "hasGlobal": true
+  },
+  {
+    "id": "reasonix",
+    "displayName": "Reasonix",
+    "hasGlobal": true
+  },
+  {
+    "id": "replit",
+    "displayName": "Replit",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "roo",
+    "displayName": "Roo Code",
+    "hasGlobal": true
+  },
+  {
+    "id": "rovodev",
+    "displayName": "Rovo Dev",
+    "hasGlobal": true
+  },
+  {
+    "id": "sarvam-code",
+    "displayName": "Sarvam Code",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "tabnine-cli",
+    "displayName": "Tabnine CLI",
+    "hasGlobal": true
+  },
+  {
+    "id": "terramind",
+    "displayName": "Terramind",
+    "hasGlobal": true
+  },
+  {
+    "id": "tinycloud",
+    "displayName": "Tinycloud",
+    "hasGlobal": true
+  },
+  {
+    "id": "trae",
+    "displayName": "Trae",
+    "hasGlobal": true
+  },
+  {
+    "id": "trae-cn",
+    "displayName": "Trae CN",
+    "hasGlobal": true
+  },
+  {
+    "id": "windsurf",
+    "displayName": "Windsurf",
+    "hasGlobal": true
+  },
+  {
+    "id": "zcode",
+    "displayName": "ZCode",
+    "hasGlobal": true
+  },
+  {
+    "id": "zed",
+    "displayName": "Zed",
+    "universal": true,
+    "hasGlobal": true
+  },
+  {
+    "id": "zencoder",
+    "displayName": "Zencoder",
+    "hasGlobal": true
+  },
+  {
+    "id": "zenflow",
+    "displayName": "Zenflow",
+    "hasGlobal": true
+  }
+]

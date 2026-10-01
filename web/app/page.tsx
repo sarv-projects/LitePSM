@@ -44,12 +44,13 @@ export default function Home() {
   );
 
   const sections = useMemo(() => {
-    const byStars = (list: Listing[]) =>
-      [...list].sort((a, b) => b.stars - a.stars || a.name.localeCompare(b.name));
+    // No popularity ordering exists: the catalog publishes no star, download or
+    // install figures. Each section is alphabetical, which is a fact.
+    const byName = (list: Listing[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
 
-    const official = byStars(verifiedItems(items.filter((i) => i.kind === "mcp"))).slice(0, SECTION_SIZE);
-    const skills = byStars(items.filter((i) => i.kind === "skill")).slice(0, SECTION_SIZE);
-    const plugins = byStars(items.filter((i) => i.kind === "plugin")).slice(0, SECTION_SIZE);
+    const official = byName(verifiedItems(items.filter((i) => i.kind === "mcp"))).slice(0, SECTION_SIZE);
+    const skills = byName(items.filter((i) => i.kind === "skill")).slice(0, SECTION_SIZE);
+    const plugins = byName(items.filter((i) => i.kind === "plugin")).slice(0, SECTION_SIZE);
     // The dataset carries no publish timestamps, so "new" is not derivable.
     // The tail of the manifest is the only ordering fact that exists.
     const tail = items.slice(-SECTION_SIZE).reverse();
@@ -117,7 +118,7 @@ export default function Home() {
             />
             <SectionRow
               title="Agent skills"
-              note="Portable SKILL.md workflows, ranked by publisher-repo stars."
+              note="Portable SKILL.md workflows that agents load on demand."
               items={sections.skills}
               hostCount={hostCount}
               viewAllHref="/explore/?kind=skill"
@@ -125,7 +126,7 @@ export default function Home() {
             />
             <SectionRow
               title="Plugins"
-              note="Multi-component toolkits. 631 of them publish no star count."
+              note="Multi-component toolkits that bundle skills, MCP servers and hooks."
               items={sections.plugins}
               hostCount={hostCount}
               viewAllHref="/explore/?kind=plugin"

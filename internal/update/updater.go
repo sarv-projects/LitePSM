@@ -66,9 +66,9 @@ func (u *Updater) CheckForUpdate(ctx context.Context, currentVersion string) (*U
 		Version:     latestVer,
 		ReleaseURL:  fmt.Sprintf("%s/v1/releases/rel-%s", u.baseURL, latestVer),
 		PublishedAt: time.Now().UTC(),
-		ChecksumsSHA256: map[string]string{
-			targetBin: "mocksha256checksum",
-		},
+		// No checksum is fabricated here. A manifest that does not publish one
+		// leaves this empty, and ApplyUpdate refuses to proceed in that case.
+		ChecksumsSHA256: map[string]string{},
 		DownloadURLs: map[string]string{
 			targetBin: fmt.Sprintf("%s/v1/binaries/%s/%s", u.baseURL, latestVer, targetBin),
 		},
@@ -78,18 +78,34 @@ func (u *Updater) CheckForUpdate(ctx context.Context, currentVersion string) (*U
 }
 
 // ApplyUpdate installs a downloaded replacement binary in-place safely across OS platforms.
+//
+// Verification policy: FAIL CLOSED.
+//
+// This used to skip verification entirely when `expectedSHA256` was empty, and
+// it carried a hard-coded `"mocksha256checksum"` escape hatch that disabled the
+// comparison. Both are removed. An update path that silently proceeds without
+// integrity data turns a missing manifest field into remote code execution, and
+// a bypass string in production code is a backdoor whatever its original intent.
+//
+// Note the honest limit of what this proves: the checksum travels in the same
+// release manifest as the binary, so it establishes integrity against transfer
+// corruption, NOT authenticity against a compromised release channel. Signed
+// releases are the missing piece; see SECURITY.md.
 func (u *Updater) ApplyUpdate(ctx context.Context, newBinaryBytes []byte, expectedSHA256 string, targetBinaryPath string, stagingDir string) error {
 	if len(newBinaryBytes) == 0 {
 		return fmt.Errorf("empty replacement binary payload")
 	}
 
-	// 1. Verify cryptographic SHA-256
-	if expectedSHA256 != "" {
-		hash := sha256.Sum256(newBinaryBytes)
-		actualSHA := hex.EncodeToString(hash[:])
-		if !strings.EqualFold(actualSHA, expectedSHA256) && expectedSHA256 != "mocksha256checksum" {
-			return domain.ErrChecksumMismatch(expectedSHA256, actualSHA)
-		}
+	expected := strings.TrimSpace(expectedSHA256)
+	if expected == "" {
+		return fmt.Errorf("refusing to apply an update with no expected SHA-256 checksum: " +
+			"the release manifest did not publish one for this platform")
+	}
+
+	hash := sha256.Sum256(newBinaryBytes)
+	actualSHA := hex.EncodeToString(hash[:])
+	if !strings.EqualFold(actualSHA, expected) {
+		return domain.ErrChecksumMismatch(expected, actualSHA)
 	}
 
 	if err := os.MkdirAll(stagingDir, 0700); err != nil {

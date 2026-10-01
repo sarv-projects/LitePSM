@@ -4,11 +4,11 @@ import "time"
 
 // ReleaseInfo holds metadata about an available release.
 type ReleaseInfo struct {
-	Version        string            `json:"version"`
-	ReleaseURL     string            `json:"releaseUrl"`
-	PublishedAt    time.Time         `json:"publishedAt"`
+	Version         string            `json:"version"`
+	ReleaseURL      string            `json:"releaseUrl"`
+	PublishedAt     time.Time         `json:"publishedAt"`
 	ChecksumsSHA256 map[string]string `json:"checksumsSha256"` // filename -> sha256
-	DownloadURLs   map[string]string `json:"downloadUrls"`     // filename -> url
+	DownloadURLs    map[string]string `json:"downloadUrls"`    // filename -> url
 }
 
 // UpdateStatus describes update availability.

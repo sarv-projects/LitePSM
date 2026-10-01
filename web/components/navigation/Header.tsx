@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Github, SquareTerminal } from "lucide-react";
+import { SquareTerminal } from "lucide-react";
 import { formatCount } from "../../lib/format";
 
 export interface HeaderCounts {
@@ -25,7 +25,7 @@ const PRIMARY_NAV = [
   { href: "/explore/", label: "Explore" },
   { href: "/agents/", label: "Agents" },
   { href: "/categories/", label: "Categories" },
-  { href: "/trending/", label: "Leaderboards" },
+  { href: "/trending/", label: "Coverage" },
 ];
 
 const KIND_TABS: Array<{ id: string; label: string; key: keyof HeaderCounts }> = [
@@ -75,16 +75,6 @@ export function Header({ activeTab = "all", setActiveTab, counts, onNavigate }: 
             );
           })}
         </nav>
-
-        <a
-          href="https://github.com/sarv-projects/LitePSM"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn hidden shrink-0 lg:inline-flex"
-        >
-          <Github className="h-3.5 w-3.5" aria-hidden="true" />
-          Repository
-        </a>
       </div>
 
       {showKindTabs && (

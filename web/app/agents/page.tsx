@@ -88,9 +88,9 @@ export default function AgentsPage() {
 
                   <code
                     className="t-mono hidden truncate text-[11px] text-ink-3 md:order-4 md:block"
-                    title={host ? host.paths.linux : undefined}
+                    title={host ? host.userPath : undefined}
                   >
-                    {host ? host.paths.linux : "not managed by LitePSM"}
+                    {host ? host.userPath : "not managed by LitePSM"}
                   </code>
                 </Link>
               </li>

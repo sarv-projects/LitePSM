@@ -6,9 +6,17 @@
  * LitePSM Market design tokens.
  *
  * The subject is a manifest index, so colour is reserved for data: three kind
- * hues and one popularity hue. Everything else is ink on paper. There is no
- * green in this palette by design - nothing in the catalog data supports a
- * "safe / verified" claim, and an accent that means nothing is decoration.
+ * hues and one accent. There is no green in this palette by design - nothing in
+ * the catalog data supports a "safe / verified" claim, and an accent that means
+ * nothing is decoration.
+ *
+ * Palette revision: the first pass was a cold blue-grey "ink on paper" that read
+ * as austere. This one keeps the same structure and roles but warms the neutrals
+ * and lets the kind hues carry more saturation, so the page reads as a friendly
+ * index rather than a spec sheet. Every text/background pair below was checked
+ * against WCAG: --ink-3 clears 4.5:1 on --paper, --rule-2 clears 3:1 on
+ * --surface (WCAG 1.4.11, for control boundaries), and each kind hue clears
+ * 4.5:1 on its own wash for 11px tile text.
  *
  * Radius is assigned per element role, not globally:
  *   0px  table rows and ruled lists
@@ -19,39 +27,47 @@
  */
 @layer base {
   :root {
-    --paper: #edf0f3;
+    --paper: #f5f7fb;
     --surface: #ffffff;
-    --sunken: #f4f6f8;
-    --sunken-2: #e9edf1;
-    --hover: #f0f3f6;
-    --sel: #d8e2f7;
+    --sunken: #eef2f9;
+    --sunken-2: #e4eaf5;
+    --hover: #eef3fd;
+    --sel: #cfe0ff;
 
-    --rule: #c9d0d8;
+    --rule: #dfe5ef;
     /* Clears 3:1 on --surface, so --rule-2 can bound anything that has to be
        locatable rather than merely separated. */
     --rule-2: #8794a1;
 
-    --ink: #101722;
-    --ink-2: #414c59;
+    --ink: #17202f;
+    --ink-2: #48566c;
     /* 4.8:1 on --paper, so 11px meta text still clears AA. */
-    --ink-3: #5f6a76;
+    --ink-3: #616e84;
 
-    --mcp: #1f3fa8;
-    --mcp-wash: #e7ebf7;
+    /* Primary interactive colour. Selected chips and solid buttons use this
+       instead of near-black, which is what made the first pass read as
+       black-and-white. White on --accent clears 6.6:1. */
+    --accent: #1f4fd8;
+    --accent-wash: #eaf0ff;
+
+    --mcp: #1f4fd8;
+    --mcp-wash: #eaf0ff;
     --skill: #0b6b72;
-    --skill-wash: #e2f0f0;
-    --plugin: #7a3e9d;
-    --plugin-wash: #f0e9f6;
+    --skill-wash: #e2f5f2;
+    --plugin: #7c3ad4;
+    --plugin-wash: #f2eafd;
 
     --pop: #9a5b08;
-    --pop-wash: #f8f0e2;
+    --pop-wash: #fdf1e0;
 
-    --dark: #12171e;
-    --dark-2: #1b222c;
-    --dark-rule: #2a323d;
-    --dark-ink: #e9eef4;
-    --dark-ink-2: #a6b1c0;
-    --dark-signal: #9db6f5;
+    --dark: #1b2436;
+    --dark-2: #243049;
+    --dark-rule: #34415c;
+    --dark-ink: #eef2f9;
+    --dark-ink-2: #b0bcd2;
+    --dark-signal: #9dc0ff;
+
+    --shadow-panel: 0 1px 2px rgba(23, 32, 47, 0.04), 0 8px 24px -12px rgba(23, 32, 47, 0.22);
 
     --r-chip: 2px;
     --r-ctl: 4px;
@@ -191,7 +207,7 @@
     gap: 16px;
     flex-wrap: wrap;
     padding-bottom: 8px;
-    border-bottom: 1px solid var(--ink);
+    border-bottom: 1px solid var(--rule-2);
     margin-bottom: 0;
   }
   .section-head h2 {
@@ -258,6 +274,24 @@
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 1px;
+  }
+
+  /*
+   * The description line. It was previously present only in the row's
+   * aria-label, so a sighted reader saw a name and a spec line and nothing
+   * about what the capability actually does. Clamped to two lines so rows stay
+   * scannable in a dense index.
+   */
+  .row-summary {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-top: 2px;
+    max-width: 82ch;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--ink-2);
   }
 
   /* Meta is a monospace token row with hairline gaps - never middle dots. */
@@ -364,9 +398,9 @@
   }
   .chip[aria-pressed="true"],
   .chip[aria-current="true"] {
-    background-color: var(--ink);
-    border-color: var(--ink);
-    color: var(--surface);
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
   }
   .chip[aria-pressed="true"] .chip-count,
   .chip[aria-current="true"] .chip-count {
@@ -400,14 +434,14 @@
     color: var(--ink);
   }
   .btn-solid {
-    background-color: var(--ink);
-    border-color: var(--ink);
-    color: var(--surface);
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
   }
   .btn-solid:hover {
-    background-color: var(--ink-2);
-    border-color: var(--ink-2);
-    color: var(--surface);
+    background-color: #1a43b8;
+    border-color: #1a43b8;
+    color: #ffffff;
   }
 
   .field {
@@ -426,6 +460,7 @@
     background-color: var(--dark);
     color: var(--dark-ink);
     padding: 18px;
+    box-shadow: var(--shadow-panel);
   }
 
   /* ---- "no data" is stated, never filled in ------------------------- */
@@ -470,7 +505,8 @@
     text-decoration-thickness: 1px;
   }
   .link:hover {
-    text-decoration-color: var(--ink);
+    color: var(--accent);
+    text-decoration-color: var(--accent);
     text-decoration-thickness: 2px;
   }
 }

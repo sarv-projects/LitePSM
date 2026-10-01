@@ -1,11 +1,12 @@
 "use client";
 
-// Catalog derivation helpers shared by Explore, Trending, Agents and Categories.
-// Everything is computed from the static catalog; no usage/download data exists
-// in the v1 dataset, so popularity means stars only.
+// Catalog derivation helpers shared by Explore, Coverage, Agents and Categories.
+// Everything is computed from the static catalog. No usage, download, install or
+// star data exists in the dataset, so no helper here ranks by popularity.
 
 import { Listing } from "./telemetry";
 import catalogData from "../data/catalog.json";
+import { hostsFor } from "./hosts";
 
 export const KIND_ORDER: Listing["kind"][] = ["mcp", "skill", "plugin"];
 
@@ -24,20 +25,35 @@ export function kindLabel(kind: string): string {
   }
 }
 
-export type SortMode = "stars" | "name" | "newest";
+/**
+ * Sort modes are limited to axes the data actually carries.
+ *
+ * "stars" and "newest" were removed: the catalog publishes no star counts (the
+ * upstream sources do not expose them) and carries no publish timestamps, so
+ * both modes were ordering by nothing while their labels claimed otherwise.
+ */
+export type SortMode = "index" | "name" | "publisher";
 
 export function sortListings<T extends Listing>(items: T[], mode: SortMode): T[] {
   const copy = [...items];
   if (mode === "name") return copy.sort((a, b) => a.name.localeCompare(b.name));
-  if (mode === "newest") return copy.reverse();
-  return copy.sort((a, b) => b.stars - a.stars || a.name.localeCompare(b.name));
+  if (mode === "publisher") {
+    return copy.sort(
+      (a, b) =>
+        (a.publisher?.name || "").localeCompare(b.publisher?.name || "") ||
+        a.name.localeCompare(b.name)
+    );
+  }
+  // "index" is the builder's own order: verified publishers first, then kind,
+  // then name. Deterministic and identical to the release artifact.
+  return copy;
 }
 
-/** Distinct agents advertised across `testedHosts`, with compatible package counts. */
+/** Distinct agents this catalog can install into, with compatible package counts. */
 export function agentFacets(items: Listing[]): Array<{ name: string; slug: string; count: number }> {
   const counts = new Map<string, number>();
   for (const item of items) {
-    for (const host of item.testedHosts || []) {
+    for (const host of hostsFor(item)) {
       const key = host.trim();
       if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -54,7 +70,7 @@ export function slugifyAgent(name: string): string {
 export function matchesHost(item: Listing, agentName: string | null): boolean {
   if (!agentName) return true;
   const target = agentName.toLowerCase();
-  return (item.testedHosts || []).some((h) => h.toLowerCase() === target);
+  return hostsFor(item).some((h) => h.toLowerCase() === target);
 }
 
 export function publisherFacets(items: Listing[], limit = 24): Array<{ name: string; count: number }> {
@@ -69,8 +85,8 @@ export function publisherFacets(items: Listing[], limit = 24): Array<{ name: str
     .slice(0, limit);
 }
 
-export function topStarred(items: Listing[], n: number): Listing[] {
-  return sortListings(items, "stars").slice(0, n);
+export function topByPublisher(items: Listing[], n: number): Listing[] {
+  return sortListings(items, "publisher").slice(0, n);
 }
 
 export function verifiedItems(items: Listing[]): Listing[] {
@@ -81,7 +97,7 @@ export function verifiedItems(items: Listing[]): Listing[] {
 export function hostUniverse(items: Listing[]): string[] {
   const hosts = new Set<string>();
   for (const item of items) {
-    for (const host of item.testedHosts || []) {
+    for (const host of hostsFor(item)) {
       const key = host.trim();
       if (key) hosts.add(key);
     }

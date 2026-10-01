@@ -3,6 +3,7 @@
 // Catalog telemetry + client-side search model shared across the Market UI.
 
 import { useEffect, useMemo, useState } from "react";
+import bundledRelease from "../data/release.json";
 
 export interface Listing {
   id: string;
@@ -14,9 +15,21 @@ export interface Listing {
   publisher: { name: string; verified: boolean; url?: string; avatarUrl?: string };
   transport?: string;
   runtime?: string;
-  stars: number;
+  /**
+   * Always null in this dataset. The upstream sources expose no
+   * machine-readable star, download or install counts, so the builder publishes
+   * none. Kept in the type because the field exists in the wire format and a
+   * future source may legitimately populate it.
+   */
+  stars: number | null;
   version: string;
-  testedHosts: string[];
+  /**
+   * Publisher-declared host list. Only plugins carry one. MCP servers and
+   * skills derive their compatibility from the kind (see lib/hosts.ts
+   * `hostsFor`), because an MCP server is installable into every bridge
+   * adapter and a skill into every host with a skills directory.
+   */
+  compatibleHosts?: string[];
   readme?: string;
   command?: string;
   args?: string[];
@@ -41,10 +54,32 @@ export type TelemetryState =
   | { status: "ready"; data: Telemetry }
   | { status: "offline"; data: Telemetry };
 
-const EMPTY: Telemetry = {
-  itemCount: 0,
-  counts: { all: 0, mcp: 0, skill: 0, plugin: 0 },
-};
+/**
+ * The release manifest is bundled at build time, so the STATIC html can state
+ * real release facts instead of a "checking release manifest…" placeholder that
+ * only resolves once JavaScript runs. A crawler, a no-JS reader, or anyone
+ * reading view-source previously saw the placeholder and nothing else.
+ *
+ * The runtime fetch below still runs, so a manifest published after this build
+ * is picked up without a redeploy.
+ */
+function bundledTelemetry(): Telemetry {
+  const raw = bundledRelease as Record<string, unknown>;
+  const itemCount = Number(raw.itemCount ?? raw.totalCapabilities ?? 0) || 0;
+  return {
+    itemCount,
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
+    releaseId: typeof raw.releaseId === "string" ? raw.releaseId : undefined,
+    sequence: typeof raw.sequence === "number" ? raw.sequence : undefined,
+    manifestDigest: typeof raw.manifestDigest === "string" ? raw.manifestDigest : undefined,
+    counts: {
+      all: itemCount,
+      mcp: Number(raw.mcpServersCount ?? 0) || 0,
+      skill: Number(raw.agentSkillsCount ?? 0) || 0,
+      plugin: Number(raw.pluginsCount ?? 0) || 0,
+    },
+  };
+}
 
 function deriveCounts(listings: Listing[]) {
   let mcp = 0;
@@ -64,7 +99,11 @@ function deriveCounts(listings: Listing[]) {
  */
 export function useTelemetry(listings: Listing[]): TelemetryState {
   const derived = useMemo(() => deriveCounts(listings), [listings]);
-  const [state, setState] = useState<TelemetryState>({ status: "loading", data: EMPTY });
+  // Seed from the bundled manifest so server-rendered html carries real facts.
+  const [state, setState] = useState<TelemetryState>(() => ({
+    status: "ready",
+    data: bundledTelemetry(),
+  }));
 
   useEffect(() => {
     let cancelled = false;

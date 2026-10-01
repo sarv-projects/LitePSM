@@ -15,13 +15,13 @@ const items = catalogData as unknown as Listing[];
 
 const KINDS = ["all", "mcp", "skill", "plugin"] as const;
 const SORTS: Array<{ id: SortMode; label: string }> = [
-  { id: "stars", label: "Popularity" },
+  { id: "index", label: "Index order" },
   { id: "name", label: "Name" },
-  { id: "newest", label: "Manifest order" },
+  { id: "publisher", label: "Publisher" },
 ];
 
 const KINDS_SET = new Set<string>(["all", "mcp", "skill", "plugin"]);
-const SORTS_SET = new Set<string>(["stars", "name", "newest"]);
+const SORTS_SET = new Set<string>(["index", "name", "publisher"]);
 
 /**
  * Filters are seeded from the query string after mount rather than through
@@ -37,7 +37,7 @@ function useQueryFilters() {
     category: "all",
     agent: "all",
     verifiedOnly: false,
-    sort: "stars" as SortMode,
+    sort: "index" as SortMode,
   });
 
   useEffect(() => {
@@ -49,7 +49,7 @@ function useQueryFilters() {
       category: p.get("category") ?? "all",
       agent: p.get("host") ?? "all",
       verifiedOnly: p.get("verified") === "1",
-      sort: SORTS_SET.has(sort) ? (sort as SortMode) : "stars",
+      sort: SORTS_SET.has(sort) ? (sort as SortMode) : "index",
     });
   }, []);
 
@@ -88,7 +88,7 @@ function ExploreContent() {
   }, [results, agent, verifiedOnly, sort]);
 
   const hasFilters =
-    query !== "" || kind !== "all" || category !== "all" || agent !== "all" || verifiedOnly || sort !== "stars";
+    query !== "" || kind !== "all" || category !== "all" || agent !== "all" || verifiedOnly || sort !== "index";
 
   const clear = () => {
     setQuery("");
@@ -96,7 +96,7 @@ function ExploreContent() {
     setCategory("all");
     setAgent("all");
     setVerifiedOnly(false);
-    setSort("stars");
+    setSort("index");
   };
 
   return (

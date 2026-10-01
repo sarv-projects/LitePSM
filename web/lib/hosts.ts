@@ -1,89 +1,151 @@
 // Canonical agent-host integration model for the Market UI.
-// This MUST stay in sync with the compiled-in Go adapters in internal/host/*.go:
-// cline, pi-agent, grok-build, claude-code, codex, opencode.
 //
-// LitePSM registers ONE `litepsm` bridge entry per host. Individual
-// capabilities are resolved by the daemon at runtime, so per-listing snippets
-// are intentionally identical regardless of the capability being viewed.
+// The host list is GENERATED from the compiled-in Go registry, not hand-written.
+// Regenerate with:
+//
+//     go run scripts/gen_hosts_ts.go
+//
+// It used to be a hand-maintained array of six hosts while the registry had
+// grown to fifty, so the public site understated its own capability by 8x. A
+// generated file cannot drift, and `npm run type-check` plus the catalog build
+// both read the same source.
+//
+// LitePSM registers ONE `litepsm` bridge entry per host. Individual capabilities
+// are resolved by the daemon at runtime, so per-listing snippets are identical
+// regardless of the capability being viewed.
 
+import generated from "../data/hosts.json";
+import generatedSkillTargets from "../data/skill-targets.json";
 import { jsonKey, tomlKey } from "./format";
 
 export type PlatformOS = "win" | "mac" | "linux";
+export type HostFormat = "json" | "toml";
+export type HostShape = "object" | "local-array" | "command-string" | "";
 
 export interface HostAdapter {
   /** Registry id passed to `litepsm bridge stdio --host <id>`. */
   id: string;
   name: string;
-  kind: "json" | "toml";
-  /** Config file path per platform. */
-  paths: Record<PlatformOS, string>;
-  /** v2 nested layout (opencode only). */
-  nested?: boolean;
+  kind: HostFormat;
+  /** Dotted key path that holds MCP server definitions. */
+  keyPath: string;
+  /** How one server entry is written for this host. */
+  shape: HostShape;
+  /**
+   * Unix-resolved user-scope config path, with the home directory shown as "~".
+   * Windows paths are intentionally absent: the registry refuses to guess them
+   * (see ARCH/30), so the UI does not either.
+   */
+  userPath: string;
+  /** True when the host only documents repo-local configuration. */
+  projectOnly?: boolean;
+  /** The upstream source this adapter was verified against. */
+  docsUrl?: string;
+  /** True when the adapter is data-driven rather than hand-written. */
+  generic: boolean;
+  /** True when the MCP key is nested below another object. */
+  nested: boolean;
 }
 
-export const HOSTS: HostAdapter[] = [
-  {
-    id: "claude-code",
-    name: "Claude Code",
-    kind: "json",
-    paths: {
-      win: "%USERPROFILE%\\.claude.json",
-      mac: "~/.claude.json",
-      linux: "~/.claude.json",
-    },
+/** Shape of one row in the generated web/data/hosts.json. */
+interface GeneratedHost {
+  id: string;
+  name: string;
+  format: string;
+  keyPath?: string;
+  shape?: string;
+  userPath?: string;
+  projectOnly?: boolean;
+  docsUrl?: string;
+  generic: boolean;
+}
+
+/**
+ * Curated per-OS path overrides. Only hosts whose Windows and macOS locations
+ * were read from vendor documentation appear here. Everything else falls back
+ * to `userPath` (the Unix form), and the UI labels it as such rather than
+ * inventing a Windows location.
+ */
+const PATH_OVERRIDES: Record<string, Partial<Record<PlatformOS, string>>> = {
+  "claude-code": { win: "%USERPROFILE%\\.claude.json" },
+  codex: { win: "%USERPROFILE%\\.codex\\config.toml" },
+  opencode: { win: "%USERPROFILE%\\.config\\opencode\\opencode.json" },
+  cline: {
+    win: "%APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_mcp_settings.json",
+    mac: "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
   },
-  {
-    id: "codex",
-    name: "OpenAI Codex",
-    kind: "toml",
-    paths: {
-      win: "%USERPROFILE%\\.codex\\config.toml",
-      mac: "~/.codex/config.toml",
-      linux: "~/.codex/config.toml",
-    },
-  },
-  {
-    id: "opencode",
-    name: "OpenCode",
-    kind: "json",
-    paths: {
-      win: "%USERPROFILE%\\.config\\opencode\\opencode.json",
-      mac: "~/.config/opencode/opencode.json",
-      linux: "~/.config/opencode/opencode.json",
-    },
-    nested: true,
-  },
-  {
-    id: "cline",
-    name: "Cline",
-    kind: "json",
-    paths: {
-      win: "%APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_mcp_settings.json",
-      mac: "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
-      linux: "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
-    },
-  },
-  {
-    id: "pi-agent",
-    name: "Pi Agent",
-    kind: "json",
-    paths: {
-      win: "%USERPROFILE%\\.pi\\agent\\mcp.json",
-      mac: "~/.pi/agent/mcp.json",
-      linux: "~/.pi/agent/mcp.json",
-    },
-  },
-  {
-    id: "grok-build",
-    name: "Grok Build",
-    kind: "toml",
-    paths: {
-      win: "%USERPROFILE%\\.grok\\config.toml",
-      mac: "~/.grok/config.toml",
-      linux: "~/.grok/config.toml",
-    },
-  },
-];
+  "pi-agent": { win: "%USERPROFILE%\\.pi\\agent\\mcp.json" },
+  "grok-build": { win: "%USERPROFILE%\\.grok\\config.toml" },
+};
+
+export const HOSTS: HostAdapter[] = (generated as GeneratedHost[]).map((h) => {
+  // Hand-written adapters (codex, claude-code, opencode, cline, pi-agent,
+  // grok-build) do not expose a key path, so fall back to the format's
+  // conventional default rather than an empty string.
+  const fallback = h.format === "toml" ? "mcp_servers" : "mcpServers";
+  const keyPath = h.keyPath || fallback;
+  return {
+    id: h.id,
+    name: h.name,
+    kind: h.format === "toml" ? "toml" : "json",
+    keyPath,
+    shape: (h.shape as HostShape) || "object",
+    userPath: h.userPath || "",
+    projectOnly: h.projectOnly,
+    docsUrl: h.docsUrl,
+    generic: h.generic,
+    nested: keyPath.includes("."),
+  };
+});
+
+/** Resolve the documented config path for one host on one platform. */
+export function hostPath(host: HostAdapter, os: PlatformOS): string {
+  const override = PATH_OVERRIDES[host.id]?.[os];
+  if (override) return override;
+  return host.userPath;
+}
+
+/**
+ * Skill install targets, generated from internal/skills/agents.go. A different
+ * registry from bridge adapters: these are hosts with a skills directory we can
+ * write a SKILL.md into, which is a smaller and differently-shaped set than
+ * "hosts whose MCP config we can edit".
+ */
+export const SKILL_TARGETS: Array<{ id: string; displayName: string; universal?: boolean }> =
+  generatedSkillTargets as Array<{ id: string; displayName: string; universal?: boolean }>;
+
+/**
+ * Which agent hosts a capability can be installed into.
+ *
+ * This is a property of the KIND, not of the individual row:
+ *
+ *   mcp     every bridge adapter — the bridge is one stdio entry, so any host
+ *           whose config we can edit can run any MCP server.
+ *   skill   every skill target — only hosts with a documented skills directory.
+ *   plugin  publisher-declared, because a bundle's reach genuinely varies.
+ *
+ * The builder previously stamped the same seven host names onto all 4,079 MCP
+ * servers, which made the public site report nine hosts while the binary shipped
+ * fifty. Deriving it here means the claim cannot drift from the registries.
+ */
+export function hostsFor(item: { kind: string; compatibleHosts?: string[] }): string[] {
+  if (item.kind === "mcp") return HOSTS.map((h) => h.name);
+  if (item.kind === "skill") return SKILL_TARGETS.map((t) => t.displayName);
+  return item.compatibleHosts || [];
+}
+
+/** Every distinct host name this catalog can install into. */
+export function allHostNames(): string[] {
+  const set = new Set<string>();
+  for (const h of HOSTS) set.add(h.name);
+  for (const t of SKILL_TARGETS) set.add(t.displayName);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+/** True when the path shown for `os` came from vendor docs rather than expansion. */
+export function hasDocumentedPath(host: HostAdapter, os: PlatformOS): boolean {
+  return Boolean(PATH_OVERRIDES[host.id]?.[os]);
+}
 
 export function getHost(id: string): HostAdapter {
   return HOSTS.find((h) => h.id === id) ?? HOSTS[0];
@@ -93,49 +155,85 @@ export function getHost(id: string): HostAdapter {
  * The catalog names hosts as its publishers wrote them ("Codex"), while the
  * adapter table uses display names ("OpenAI Codex"). Aliases are what let a
  * "managed" badge be attached to the right row instead of being silently
- * dropped for want of an exact string match.
+ * dropped for want of an exact string match. Built from the generated table so
+ * every registered host is resolvable without a hand-kept list.
  */
-const HOST_ALIASES: Record<string, string> = {
-  codex: "codex",
-  "openai codex": "codex",
-  "claude code": "claude-code",
-  claudecode: "claude-code",
-  opencode: "opencode",
-  cline: "cline",
-  "pi agent": "pi-agent",
-  piagent: "pi-agent",
-  "grok build": "grok-build",
-  grokbuild: "grok-build",
-};
+const HOST_ALIASES: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const h of HOSTS) {
+    const add = (key: string) => {
+      const k = key.trim().toLowerCase();
+      if (k && !map[k]) map[k] = h.id;
+    };
+    add(h.id);
+    add(h.id.replace(/-/g, " "));
+    add(h.name);
+    add(h.name.replace(/\s+/g, ""));
+  }
+  // Publisher spellings that differ from both the id and the display name.
+  Object.assign(map, {
+    "openai codex": "codex",
+    claudecode: "claude-code",
+    "claude code": "claude-code",
+    piagent: "pi-agent",
+    "pi agent": "pi-agent",
+    grokbuild: "grok-build",
+    "grok build": "grok-build",
+    "kilo code": "kilo",
+    "roo code": "roo",
+    "github copilot": "github-copilot",
+    "gemini cli": "gemini-cli",
+  });
+  return map;
+})();
 
 export function resolveHost(name: string): HostAdapter | undefined {
-  const key = name.trim().toLowerCase();
-  const id = HOST_ALIASES[key];
+  const id = HOST_ALIASES[name.trim().toLowerCase()];
   if (!id) return undefined;
   return HOSTS.find((h) => h.id === id);
 }
 
-/** Correct, host-accurate configuration for the single litepsm bridge entry. */
-export function bridgeSnippet(host: HostAdapter, binary = "litepsm"): string {
+/**
+ * Nest `leaf` under a dotted key path, e.g. ("mcp.servers", v) →
+ * `{ mcp: { servers: v } }`. Hosts genuinely differ here (OpenCode uses
+ * mcp.servers, Amp uses amp.mcpServers), so the path comes from the registry
+ * rather than being assumed.
+ */
+function nest(keyPath: string, leaf: unknown): Record<string, unknown> {
+  const parts = keyPath.split(".").filter(Boolean);
+  if (parts.length === 0) return leaf as Record<string, unknown>;
+  let acc: unknown = leaf;
+  for (let i = parts.length - 1; i >= 0; i -= 1) {
+    acc = { [parts[i]]: acc };
+  }
+  return acc as Record<string, unknown>;
+}
+
+/** The single `litepsm` server entry, in this host's own shape. */
+export function bridgeEntry(host: HostAdapter, binary = "litepsm"): unknown {
   const args = ["bridge", "stdio", "--host", host.id];
+  switch (host.shape) {
+    case "local-array":
+      return { type: "local", command: [binary, ...args] };
+    case "command-string":
+      return `${binary} ${args.join(" ")}`;
+    default:
+      return { command: binary, args };
+  }
+}
+
+/** Correct, host-accurate configuration for the single litepsm bridge entry. */
+export function bridgeSnippet(host: HostAdapter, binary = "litepsm", os: PlatformOS = "linux"): string {
+  const path = hostPath(host, os);
+  const keyPath = host.keyPath || "mcpServers";
 
   if (host.kind === "toml") {
-    return `# ${host.paths.linux}\n[mcp_servers.litepsm]\ncommand = "${binary}"\nargs = [${args
-      .map((a) => `"${a}"`)
-      .join(", ")}]\n`;
+    const table = keyPath === "mcp_servers" ? "mcp_servers.litepsm" : `${keyPath}.litepsm`;
+    return `# ${path}\n[${table}]\ncommand = "${binary}"\nargs = ["bridge", "stdio", "--host", "${host.id}"]\n`;
   }
 
-  if (host.id === "opencode") {
-    // OpenCode requires a single command array plus an explicit transport type,
-    // nested under mcp.servers in the v2 layout.
-    return JSON.stringify(
-      { mcp: { servers: { litepsm: { type: "local", command: [binary, ...args] } } } },
-      null,
-      2
-    );
-  }
-
-  return JSON.stringify({ mcpServers: { litepsm: { command: binary, args } } }, null, 2);
+  const body = nest(keyPath, { litepsm: bridgeEntry(host, binary) });
+  return `# ${path}\n${JSON.stringify(body, null, 2)}`;
 }
 
 /** Native (unmanaged) snippet, shown only when the user opts into raw config. */
@@ -143,25 +241,25 @@ export function nativeSnippet(
   host: HostAdapter,
   slug: string,
   command: string | undefined,
-  args: string[] | undefined
+  args: string[] | undefined,
+  os: PlatformOS = "linux"
 ): string {
   const cmd = command || "npx";
   const argv = args && args.length ? args : [cmd === "npx" ? "-y" : "", slug].filter(Boolean);
+  const path = hostPath(host, os);
 
   if (host.kind === "toml") {
     const key = tomlKey(slug);
-    return `# ${host.paths.linux}\n[mcp_servers.${key}]\ncommand = "${cmd}"\nargs = [${argv
+    return `# ${path}\n[mcp_servers.${key}]\ncommand = "${cmd}"\nargs = [${argv
       .map((a) => `"${a}"`)
       .join(", ")}]\n`;
   }
 
-  if (host.id === "opencode") {
-    return JSON.stringify(
-      { mcp: { servers: { [jsonKey(slug)]: { type: "local", command: [cmd, ...argv] } } } },
-      null,
-      2
-    );
-  }
-
-  return JSON.stringify({ mcpServers: { [jsonKey(slug)]: { command: cmd, args: argv } } }, null, 2);
+  const entry =
+    host.shape === "local-array"
+      ? { type: "local", command: [cmd, ...argv] }
+      : { command: cmd, args: argv };
+  const keyPath = host.keyPath || "mcpServers";
+  const body = nest(keyPath, { [jsonKey(slug)]: entry });
+  return `# ${path}\n${JSON.stringify(body, null, 2)}`;
 }

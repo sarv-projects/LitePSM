@@ -6,10 +6,11 @@ import { Copy, ExternalLink, ChevronRight, Info, SearchX, Check } from "lucide-r
 import { Header } from "../../components/navigation/Header";
 import { SiteFooter } from "../../components/layout/SiteFooter";
 import { Listing } from "../../lib/telemetry";
-import { HOSTS, bridgeSnippet, nativeSnippet, PlatformOS } from "../../lib/hosts";
+import { HOSTS, bridgeSnippet, nativeSnippet, hostPath, PlatformOS } from "../../lib/hosts";
 import { copyText } from "../../lib/clipboard";
-import { formatCount, formatStars } from "../../lib/format";
+import { formatCount } from "../../lib/format";
 import { hostUniverse, kindLabel, listingHref, sortListings } from "../../lib/catalog";
+import { hostsFor } from "../../lib/hosts";
 import { VerifiedMark } from "../../components/catalog/PublisherMark";
 import catalogData from "../../data/catalog.json";
 
@@ -91,7 +92,7 @@ function PackageIndexShell() {
           </Link>
         </div>
         <ul>
-          {sortListings(items, "stars")
+          {sortListings(items, "index")
             .slice(0, 12)
             .map((item) => (
               <li key={item.id}>
@@ -113,7 +114,7 @@ function PackageIndexShell() {
                     </span>
                   </span>
                   <span className="t-mono t-tabular shrink-0 text-[11px] text-pop">
-                    {item.stars > 0 ? item.stars.toLocaleString("en-US") : "—"}
+                    not published
                   </span>
                 </Link>
               </li>
@@ -194,7 +195,7 @@ function PackageContent() {
     if (!item) return [];
     return sortListings(
       items.filter((i) => i.id !== item.id && i.category === item.category),
-      "stars"
+      "index"
     ).slice(0, 6);
   }, [item]);
 
@@ -221,7 +222,7 @@ function PackageContent() {
     );
   }
 
-  const hosts = item.testedHosts || [];
+  const hosts = hostsFor(item);
   const installCommand = `${INSTALL_COMMAND_PREFIX}${item.id}`;
 
   // Rendered client-side because the entry is keyed off `?slug=`. Every field
@@ -416,10 +417,10 @@ function PackageContent() {
                   <p className="t-mono text-[10px] text-ink-3">Config file</p>
                   <div className="mt-1 flex items-start gap-2">
                     <code className="t-mono min-w-0 flex-1 break-all border border-rule-2 bg-sunken px-2.5 py-2 text-[11px] text-ink-2">
-                      {host.paths[platformOs]}
+                      {hostPath(host, platformOs)}
                     </code>
                     <CopyButton
-                      text={host.paths[platformOs]}
+                      text={hostPath(host, platformOs)}
                       label="Copy configuration file path"
                       message="Config path copied"
                     />
@@ -523,8 +524,8 @@ function PackageContent() {
                             <span className="truncate">{r.summary}</span>
                           </span>
                         </span>
-                        <span className="t-mono t-tabular shrink-0 text-[11px] text-pop">
-                          {r.stars > 0 ? formatStars(r.stars) : "—"}
+                        <span className="t-mono t-tabular shrink-0 text-[11px] text-ink-3">
+                          {r.kind}
                         </span>
                       </Link>
                     </li>
@@ -632,19 +633,14 @@ function PackageContent() {
                 </dd>
               </div>
               <div>
-                <dt>Stars</dt>
+                <dt>Popularity</dt>
                 <dd>
-                  {item.stars > 0 ? (
-                    <span
-                      className="t-mono t-tabular text-[12px] text-pop"
-                      title={`${formatCount(item.stars)} publisher-repo stars. Illustrative popularity, not install telemetry.`}
-                    >
-                      {formatCount(item.stars)}
-                      <span className="ml-2 font-sans !text-[12px] text-ink-3">illustrative popularity</span>
-                    </span>
-                  ) : (
-                    <span className="absent">not published</span>
-                  )}
+                  <span
+                    className="absent"
+                    title="The upstream sources expose no machine-readable star, download or install counts, so this catalog publishes none rather than an estimate."
+                  >
+                    not published
+                  </span>
                 </dd>
               </div>
             </dl>

@@ -30,3 +30,4 @@ web/.next/
 web/out/
 pages-dist/
 *.tsbuildinfo
+__pycache__/

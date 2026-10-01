@@ -213,7 +213,7 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
 ```text
 /
   ├── README.md                                         # This master technical specification
-  ├── TODO.md                                           # Master delivery ledger (Phases A through H)
+  ├── TODO.md                                           # Master delivery ledger (Phases A through I)
   ├── AGENTS.md                                         # Supported AI agents guide & /marketplace UX
   ├── TEST.md                                           # Test scenarios for Cline, Pi Agent, Grok Build
   │
