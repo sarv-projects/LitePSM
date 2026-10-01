@@ -488,7 +488,7 @@ func seedDefaultListings(catClient *catalog.Client) {
 			PublisherClaim: domain.PublisherClaim{Name: "Model Context Protocol"},
 			Status:         domain.ListingStatusActive,
 			VerificationSummary: domain.VerificationSummary{
-				Level: "signature_verified",
+				Level: "unverified",
 			},
 		},
 		{
@@ -503,7 +503,7 @@ func seedDefaultListings(catClient *catalog.Client) {
 			PublisherClaim: domain.PublisherClaim{Name: "GitHub"},
 			Status:         domain.ListingStatusActive,
 			VerificationSummary: domain.VerificationSummary{
-				Level: "security_audited",
+				Level: "unverified",
 			},
 		},
 		{
@@ -518,7 +518,7 @@ func seedDefaultListings(catClient *catalog.Client) {
 			PublisherClaim: domain.PublisherClaim{Name: "AgentSkills"},
 			Status:         domain.ListingStatusActive,
 			VerificationSummary: domain.VerificationSummary{
-				Level: "signature_verified",
+				Level: "unverified",
 			},
 		},
 	}

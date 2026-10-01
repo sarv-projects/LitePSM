@@ -138,7 +138,7 @@ func (a *OpenAIPluginAdapter) Ingest(ctx context.Context, snapshotID string, raw
 		RequirementsSummary:  []string{},
 		CompatibilitySummary: []domain.CompatibilityFact{},
 		VerificationSummary: domain.VerificationSummary{
-			Level: "signature_verified",
+			Level: "unverified",
 		},
 		Provenance: domain.ProvenanceRecord{
 			SourceSnapshotID: snapshotID,

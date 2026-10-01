@@ -251,7 +251,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 			RequirementsSummary:  reqSummaries,
 			CompatibilitySummary: []domain.CompatibilityFact{},
 			VerificationSummary: domain.VerificationSummary{
-				Level: "signature_verified",
+				Level: "unverified",
 			},
 			Provenance: domain.ProvenanceRecord{
 				SourceSnapshotID: snapshotID,
