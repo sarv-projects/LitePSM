@@ -21,21 +21,21 @@ export function ToastViewport() {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2"
+      className="pointer-events-none fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2"
     >
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-medium shadow-lg backdrop-blur ${
+          className={`flex items-center gap-2 rounded-ctl border px-3 py-2 text-[12px] font-medium ${
             t.kind === "error"
-              ? "border-rose-200 bg-rose-50/95 text-rose-800"
-              : "border-emerald-200 bg-emerald-50/95 text-emerald-800"
+              ? "border-pop bg-pop text-white"
+              : "border-ink bg-ink text-surface"
           }`}
         >
           {t.kind === "error" ? (
-            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
           ) : (
-            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
           )}
           {t.message}
         </div>

@@ -1,30 +1,41 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { SlidersHorizontal, PackageSearch, ArrowDown } from "lucide-react";
+import { SearchX } from "lucide-react";
 import { ExtensionCard } from "./ExtensionCard";
 import { Listing } from "../../lib/telemetry";
+import { formatCount } from "../../lib/format";
 
 interface ExtensionGridProps {
   items: Listing[];
   query: string;
   loading?: boolean;
   onClearFilters?: () => void;
+  /** Rendered above the rows; the caller owns the sort control. */
+  toolbar?: React.ReactNode;
+  hostCount?: number;
 }
 
-const ITEMS_PER_PAGE = 48;
-const SUGGESTIONS = ["postgres", "github", "playwright", "memory", "browser", "code review"];
+const PAGE = 48;
+const SUGGESTIONS = ["postgres", "github", "playwright", "browser", "memory", "docx"];
 
-export function ExtensionGrid({ items, query, loading, onClearFilters }: ExtensionGridProps) {
-  const [sortBy, setSortBy] = useState<"stars" | "name">("stars");
-  const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
-  const [showSkeleton, setShowSkeleton] = useState(false);
+export function ExtensionGrid({
+  items,
+  query,
+  loading,
+  onClearFilters,
+  toolbar,
+  hostCount,
+}: ExtensionGridProps) {
+  const [visible, setVisible] = useState(PAGE);
 
   useEffect(() => {
-    setVisibleCount(ITEMS_PER_PAGE);
+    setVisible(PAGE);
   }, [query, items]);
 
-  // Only show skeletons if the (already deferred) result stays empty briefly.
+  // Only show skeleton rows if the (already deferred) result stays empty. A
+  // search that is fast should never flash a loading state.
+  const [showSkeleton, setShowSkeleton] = useState(false);
   useEffect(() => {
     if (!loading) {
       setShowSkeleton(false);
@@ -34,102 +45,99 @@ export function ExtensionGrid({ items, query, loading, onClearFilters }: Extensi
     return () => window.clearTimeout(t);
   }, [loading]);
 
-  const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
-      if (sortBy === "stars") return b.stars - a.stars || a.name.localeCompare(b.name);
-      return a.name.localeCompare(b.name);
-    });
-  }, [items, sortBy]);
-
-  const displayedItems = useMemo(() => sortedItems.slice(0, visibleCount), [sortedItems, visibleCount]);
-  const hasMore = visibleCount < sortedItems.length;
+  const shown = useMemo(() => items.slice(0, visible), [items, visible]);
+  const remaining = items.length - shown.length;
 
   return (
-    <section className="mx-auto max-w-7xl px-4 pb-20 lg:px-8">
-      <div className="mb-6 flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-bold tracking-tight text-slate-900">Discovered Capabilities</h2>
-          <span
-            aria-live="polite"
-            className="rounded-full border border-emerald-300 bg-emerald-100/80 px-2.5 py-0.5 font-mono text-xs font-semibold text-emerald-800"
-          >
-            {sortedItems.length.toLocaleString()} Total
+    <section className="shell pb-16">
+      <div className="section-head sticky top-[var(--stack-top)] z-20 -mx-px bg-paper/95 px-px backdrop-blur-sm">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h2>
+            {query ? `Results for “${query}”` : "All capabilities"}
+          </h2>
+          <span className="t-mono t-tabular text-[12px] text-ink-3" aria-live="polite">
+            {formatCount(items.length)} {items.length === 1 ? "entry" : "entries"}
           </span>
         </div>
-
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <label className="flex items-center gap-1.5">
-            <SlidersHorizontal className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-            <span>Sort by:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as "stars" | "name")}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="stars">Most Popular / Stars</option>
-              <option value="name">Alphabetical (A-Z)</option>
-            </select>
-          </label>
-        </div>
+        {toolbar}
       </div>
 
-      {displayedItems.length > 0 ? (
-        <div className="space-y-10">
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {displayedItems.map((item) => (
-              <ExtensionCard key={item.id} item={item} />
-            ))}
+      {shown.length > 0 ? (
+        <>
+          <div className="t-mono hidden border-b border-rule px-3 py-1.5 text-[10px] text-ink-3 lg:grid lg:grid-cols-[3px_22px_minmax(0,1fr)_auto] lg:gap-x-3">
+            <span />
+            <span />
+            {/* Column labels name the meta fields they sit above, so a reader
+                knows what the hairline-separated tokens in a row mean. */}
+            <span>Name, then publisher, kind, transport, runtime, category</span>
+            <span className="flex gap-[18px] pr-0.5">
+              <span className="w-[86px] text-right">Popularity</span>
+              <span className="w-[62px] text-right">Hosts</span>
+            </span>
           </div>
 
-          {hasMore && (
-            <div className="pt-4 text-center">
-              <button
-                type="button"
-                onClick={() => setVisibleCount((prev) => prev + ITEMS_PER_PAGE)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-6 py-3 text-xs font-bold text-slate-800 shadow-sm transition-all hover:bg-slate-900 hover:text-white hover:shadow-lg"
-              >
-                <span>Load More Capabilities ({sortedItems.length - visibleCount} remaining)</span>
-                <ArrowDown className="h-4 w-4" aria-hidden="true" />
+          {shown.map((item) => (
+            <ExtensionCard key={item.id} item={item} hostCount={hostCount} />
+          ))}
+
+          {remaining > 0 && (
+            <div className="flex items-center justify-center gap-3 pt-6">
+              <button type="button" onClick={() => setVisible((v) => v + PAGE)} className="btn">
+                Show {formatCount(Math.min(PAGE, remaining))} more
               </button>
+              <span className="t-mono t-tabular text-[11px] text-ink-3">
+                {formatCount(shown.length)} of {formatCount(items.length)}
+              </span>
             </div>
           )}
-        </div>
+        </>
       ) : showSkeleton ? (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-44 animate-pulse rounded-2xl border border-slate-200 bg-slate-100/70" />
-          ))}
-        </div>
-      ) : (
-        <div className="mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <PackageSearch className="mx-auto mb-3 h-12 w-12 text-slate-400" aria-hidden="true" />
-          <h4 className="mb-1 text-base font-bold text-slate-900">No capabilities found</h4>
-          <p className="text-xs leading-relaxed text-slate-500">
-            {query ? (
-              <>
-                Nothing matched <span className="font-mono text-slate-700">&ldquo;{query}&rdquo;</span>. Try one of
-                these:
-              </>
-            ) : (
-              <>No capabilities match the current filters. Try one of these:</>
-            )}
-          </p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {SUGGESTIONS.map((s) => (
-              <span key={s} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 font-mono text-[11px] text-slate-600">
-                {s}
+        <ul className="pt-px" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <li key={i} className="row">
+              <span className="row-spine bg-rule" />
+              <span className="tile bg-sunken-2" />
+              <span className="min-w-0">
+                <span className="block h-3 w-2/5 animate-pulse bg-sunken-2" />
+                <span className="mt-2 block h-2.5 w-1/3 animate-pulse bg-sunken" />
               </span>
-            ))}
+              <span className="row-side">
+                <span className="block h-2.5 w-12 animate-pulse bg-sunken" />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="border-b border-rule py-14">
+          <div className="flex max-w-prose flex-col items-start gap-3">
+            <SearchX className="h-6 w-6 text-ink-3" aria-hidden="true" />
+            <h3 className="text-[15px] font-semibold">Nothing matches that search</h3>
+            <p className="text-[13px] text-ink-2">
+              {query ? (
+                <>
+                  No entry in the bundled catalog contains “{query}”. Search covers names, summaries,
+                  publishers, categories, runtimes and transports.
+                </>
+              ) : (
+                <>No entry matches the current filters. Widen the kind, category or agent filter.</>
+              )}
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-[12px] text-ink-3">Try</span>
+              {SUGGESTIONS.map((s) => (
+                <span key={s} className="chip pointer-events-none">
+                  {s}
+                </span>
+              ))}
+            </div>
+
+            {onClearFilters && (
+              <button type="button" onClick={onClearFilters} className="btn btn-solid mt-2">
+                Clear search and filters
+              </button>
+            )}
           </div>
-          {onClearFilters && (
-            <button
-              type="button"
-              onClick={onClearFilters}
-              className="mt-5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 transition-all hover:bg-slate-900 hover:text-white"
-            >
-              Clear all filters
-            </button>
-          )}
         </div>
       )}
     </section>

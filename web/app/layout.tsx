@@ -1,24 +1,116 @@
 import type { Metadata } from "next";
+import { IBM_Plex_Sans, IBM_Plex_Sans_Condensed, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastViewport } from "../components/ui/Toast";
 
+/**
+ * IBM Plex: an engineered grotesque with squared terminals, which reads as
+ * infrastructure software rather than startup. The condensed cut carries table
+ * row names so 63-character capability names stay legible in a narrow column.
+ * Mono is reserved for content that is genuinely machine-readable.
+ */
+const sans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const cond = IBM_Plex_Sans_Condensed({
+  subsets: ["latin"],
+  weight: ["600"],
+  variable: "--font-cond",
+  display: "swap",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
+  display: "swap",
+});
+
+const SITE_URL = "https://litepsm.market";
+
 export const metadata: Metadata = {
-  title: "LitePSM Market - Universal AI Agent Capability Registry",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "LitePSM Market — a capability index for coding agents",
+    template: "%s · LitePSM Market",
+  },
   description:
-    "Discover, verify, and seamlessly install MCP servers, portable skills, and plugins for Claude Code, Codex, OpenCode, and many more.",
-  icons: {
-    icon: "/favicon.ico",
+    "A static index of MCP servers, portable agent skills, and plugins. Browse 5,000+ capabilities by kind, category, publisher, runtime and agent host, and install them through a single LitePSM bridge entry.",
+  applicationName: "LitePSM Market",
+  keywords: [
+    "MCP",
+    "Model Context Protocol",
+    "agent skills",
+    "SKILL.md",
+    "plugins",
+    "LitePSM",
+    "capability registry",
+    "Claude Code",
+    "Codex",
+    "OpenCode",
+  ],
+  openGraph: {
+    type: "website",
+    siteName: "LitePSM Market",
+    title: "LitePSM Market — a capability index for coding agents",
+    description:
+      "Browse MCP servers, agent skills, and plugins by kind, category, publisher, runtime and agent host.",
+    url: SITE_URL,
+  },
+  twitter: {
+    card: "summary",
+    title: "LitePSM Market",
+    description: "A static capability index for coding agents.",
+  },
+  robots: { index: true, follow: true },
+  // app/icon.svg supplies the icon; a separate /favicon.ico request 404s.
+  icons: { icon: [{ url: "/icon.svg", type: "image/svg+xml" }] },
+};
+
+export const viewport = {
+  themeColor: "#edf0f3",
+};
+
+/**
+ * Site-level structured data. This lives in the layout rather than on the
+ * package page because `/package/` resolves its entry from `?slug=` in the
+ * browser, so anything keyed to one entry cannot be prerendered. Stating the
+ * site once, truthfully, is what a crawler can actually verify.
+ */
+const SITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "LitePSM Market",
+  url: SITE_URL,
+  description:
+    "A static index of MCP servers, portable agent skills, and plugins for AI coding agents.",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: `${SITE_URL}/explore/?q={search_term_string}`,
+    "query-input": "required name=search_term_string",
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-[#f0f2f6] text-slate-900 antialiased bg-grid-pattern selection:bg-emerald-500 selection:text-black">
+    <html lang="en" className={`${sans.variable} ${cond.variable} ${mono.variable}`}>
+      <body className="min-h-screen bg-paper text-ink">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_JSON_LD) }}
+        />
+        {/* Skip link: the header is 12rem of tab stops before the first
+            content on every page. */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-ctl focus:bg-ink focus:px-3 focus:py-2 focus:text-[13px] focus:text-surface"
+        >
+          Skip to content
+        </a>
         {children}
         <ToastViewport />
       </body>

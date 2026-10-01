@@ -89,6 +89,32 @@ export function getHost(id: string): HostAdapter {
   return HOSTS.find((h) => h.id === id) ?? HOSTS[0];
 }
 
+/**
+ * The catalog names hosts as its publishers wrote them ("Codex"), while the
+ * adapter table uses display names ("OpenAI Codex"). Aliases are what let a
+ * "managed" badge be attached to the right row instead of being silently
+ * dropped for want of an exact string match.
+ */
+const HOST_ALIASES: Record<string, string> = {
+  codex: "codex",
+  "openai codex": "codex",
+  "claude code": "claude-code",
+  claudecode: "claude-code",
+  opencode: "opencode",
+  cline: "cline",
+  "pi agent": "pi-agent",
+  piagent: "pi-agent",
+  "grok build": "grok-build",
+  grokbuild: "grok-build",
+};
+
+export function resolveHost(name: string): HostAdapter | undefined {
+  const key = name.trim().toLowerCase();
+  const id = HOST_ALIASES[key];
+  if (!id) return undefined;
+  return HOSTS.find((h) => h.id === id);
+}
+
 /** Correct, host-accurate configuration for the single litepsm bridge entry. */
 export function bridgeSnippet(host: HostAdapter, binary = "litepsm"): string {
   const args = ["bridge", "stdio", "--host", host.id];

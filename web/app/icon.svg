@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The mark is a terminal prompt chevron on the ink field: the same shape
+       the header uses, so the favicon and the masthead are one idea. -->
+  <rect width="32" height="32" rx="5" fill="#101722" />
+  <path d="M9 11l5 5-5 5" fill="none" stroke="#edf0f3" stroke-width="2.75" stroke-linecap="square" />
+  <rect x="17" y="19" width="7" height="2.5" fill="#1f3fa8" />
+</svg>

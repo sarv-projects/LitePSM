@@ -32,6 +32,7 @@ export interface Telemetry {
   createdAt?: string;
   releaseId?: string;
   sequence?: number;
+  manifestDigest?: string;
   counts: { all: number; mcp: number; skill: number; plugin: number };
 }
 
@@ -82,6 +83,8 @@ export function useTelemetry(listings: Listing[]): TelemetryState {
             createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
             releaseId: typeof raw.releaseId === "string" ? raw.releaseId : undefined,
             sequence: typeof raw.sequence === "number" ? raw.sequence : undefined,
+            manifestDigest:
+              typeof raw.manifestDigest === "string" ? raw.manifestDigest : undefined,
             counts: {
               all: itemCount,
               mcp: Number(raw.mcpServersCount ?? derived.mcp) || derived.mcp,

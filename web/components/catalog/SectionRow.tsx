@@ -2,56 +2,61 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { Listing } from "../../lib/telemetry";
 import { ExtensionCard } from "./ExtensionCard";
 
 interface SectionRowProps {
   title: string;
-  subtitle?: string;
+  note?: string;
   items: Listing[];
+  hostCount?: number;
   viewAllHref?: string;
   viewAllLabel?: string;
   onViewAll?: () => void;
 }
 
-/** A single mcpmarket-style discovery row with a header and "View all" action. */
+/**
+ * A discovery section. The head is a rule with a sentence-case label left and a
+ * counted link right, so the count is part of the signposting rather than a
+ * separate badge.
+ */
 export function SectionRow({
   title,
-  subtitle,
+  note,
   items,
+  hostCount,
   viewAllHref,
-  viewAllLabel = "View all",
+  viewAllLabel,
   onViewAll,
 }: SectionRowProps) {
   if (!items.length) return null;
 
-  const viewAllClass =
-    "inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 transition-colors hover:text-emerald-600";
-
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pb-10 lg:px-8">
-      <div className="mb-4 flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold tracking-tight text-slate-900">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+    <section className="shell pb-9">
+      <div className="section-head">
+        <div className="min-w-0">
+          <h2>{title}</h2>
+          {note && <p className="section-note mt-0.5">{note}</p>}
         </div>
+
         {viewAllHref ? (
-          <Link href={viewAllHref} className={viewAllClass}>
-            {viewAllLabel}
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          <Link href={viewAllHref} className="t-mono shrink-0 text-[12px] text-ink-2 hover:text-ink hover:underline">
+            {viewAllLabel || `see all ${items.length}`}
           </Link>
-        ) : onViewAll ? (
-          <button type="button" onClick={onViewAll} className={viewAllClass}>
+        ) : onViewAll && viewAllLabel ? (
+          <button
+            type="button"
+            onClick={onViewAll}
+            className="t-mono shrink-0 text-[12px] text-ink-2 hover:text-ink hover:underline"
+          >
             {viewAllLabel}
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+      <div className="border-t border-transparent">
         {items.map((item) => (
-          <ExtensionCard key={item.id} item={item} />
+          <ExtensionCard key={item.id} item={item} hostCount={hostCount} />
         ))}
       </div>
     </section>

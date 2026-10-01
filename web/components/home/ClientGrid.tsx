@@ -1,34 +1,60 @@
 "use client";
 
 import React from "react";
-import { Terminal } from "lucide-react";
+import Link from "next/link";
+import { SquareTerminal } from "lucide-react";
 import { HOSTS } from "../../lib/hosts";
 
-/** "Works with" row listing the six host adapters LitePSM supports. */
+/**
+ * Not a logo wall. This is the host-adapter table: which config file each
+ * agent uses, which format, and the exact bridge command LitePSM writes. That
+ * is the information a reader needs before choosing an agent.
+ */
 export function ClientGrid() {
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pb-10 lg:px-8">
-      <div className="mb-4">
-        <h2 className="text-lg font-bold tracking-tight text-slate-900">Works with your agents</h2>
-        <p className="mt-0.5 text-xs text-slate-500">
-          One bridge per host. Capabilities are resolved centrally at runtime.
-        </p>
+    <section className="shell pb-10">
+      <div className="section-head">
+        <div>
+          <h2>Host adapters</h2>
+          <p className="section-note mt-0.5">
+            One <code className="t-mono">litepsm</code> bridge entry per host. Capabilities resolve centrally.
+          </p>
+        </div>
+        <Link href="/agents/" className="t-mono shrink-0 text-[12px] text-ink-2 hover:text-ink hover:underline">
+          agent compatibility
+        </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <ul>
         {HOSTS.map((host) => (
-          <div
-            key={host.id}
-            className="flex flex-col items-start gap-2 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-colors hover:border-slate-300"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900">
-              <Terminal className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+          <li key={host.id} className="row">
+            <span className="row-spine bg-rule" aria-hidden="true" />
+            <span
+              aria-hidden="true"
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-chip bg-sunken-2"
+            >
+              <SquareTerminal className="h-3 w-3 text-ink-2" />
             </span>
-            <span className="text-sm font-semibold text-slate-900">{host.name}</span>
-            <span className="font-mono text-[10px] uppercase text-slate-400">{host.kind}</span>
-          </div>
+
+            <span className="min-w-0">
+              <span className="row-name">{host.name}</span>
+              <span className="row-meta">
+                <span className="uppercase">{host.kind}</span>
+                {host.nested && <span>nested v2 layout</span>}
+                <span className="truncate">{host.paths.linux}</span>
+              </span>
+            </span>
+
+            {/* The literal command is the thing a reader would otherwise have
+                to go look up, so it belongs on the row. */}
+            <span className="row-side">
+              <code className="t-mono hidden text-[11px] text-ink-3 xl:inline">
+                litepsm bridge stdio --host {host.id}
+              </code>
+            </span>
+          </li>
         ))}
-      </div>
+      </ul>
     </section>
   );
 }

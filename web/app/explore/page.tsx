@@ -1,32 +1,77 @@
 "use client";
 
-import React, { Suspense, useDeferredValue, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { SlidersHorizontal, X } from "lucide-react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { Header } from "../../components/navigation/Header";
 import { SearchBar } from "../../components/navigation/SearchBar";
 import { ExtensionGrid } from "../../components/catalog/ExtensionGrid";
-import { Listing, categoryFacets, useTelemetry } from "../../lib/telemetry";
+import { SiteFooter } from "../../components/layout/SiteFooter";
+import { Listing, categoryFacets } from "../../lib/telemetry";
 import { useCatalogSearch } from "../../lib/useCatalogSearch";
-import { agentFacets, kindLabel, matchesHost } from "../../lib/catalog";
+import { agentFacets, hostUniverse, kindLabel, matchesHost, sortListings, SortMode } from "../../lib/catalog";
 import catalogData from "../../data/catalog.json";
 
 const items = catalogData as unknown as Listing[];
 
-function ExploreContent() {
-  const params = useSearchParams();
-  const search = useTelemetry(items);
+const KINDS = ["all", "mcp", "skill", "plugin"] as const;
+const SORTS: Array<{ id: SortMode; label: string }> = [
+  { id: "stars", label: "Popularity" },
+  { id: "name", label: "Name" },
+  { id: "newest", label: "Manifest order" },
+];
 
-  const [query, setQuery] = useState(params.get("q") ?? "");
-  const [kind, setKind] = useState<string>(params.get("kind") ?? "all");
-  const [category, setCategory] = useState<string>(params.get("category") ?? "all");
-  const [agent, setAgent] = useState<string>(params.get("host") ?? "all");
-  const [verifiedOnly, setVerifiedOnly] = useState(false);
+const KINDS_SET = new Set<string>(["all", "mcp", "skill", "plugin"]);
+const SORTS_SET = new Set<string>(["stars", "name", "newest"]);
+
+/**
+ * Filters are seeded from the query string after mount rather than through
+ * `useSearchParams`. Reading search params during render would opt this route
+ * out of static prerendering, and the whole point of the build is that the
+ * catalog ships as HTML. The trade-off is one frame of the unfiltered state on
+ * a deep link, which is cheaper than an empty page.
+ */
+function useQueryFilters() {
+  const [filters, setFilters] = useState({
+    query: "",
+    kind: "all",
+    category: "all",
+    agent: "all",
+    verifiedOnly: false,
+    sort: "stars" as SortMode,
+  });
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const sort = p.get("sort") ?? "";
+    setFilters({
+      query: p.get("q") ?? "",
+      kind: KINDS_SET.has(p.get("kind") ?? "") ? (p.get("kind") as string) : "all",
+      category: p.get("category") ?? "all",
+      agent: p.get("host") ?? "all",
+      verifiedOnly: p.get("verified") === "1",
+      sort: SORTS_SET.has(sort) ? (sort as SortMode) : "stars",
+    });
+  }, []);
+
+  return [filters, setFilters] as const;
+}
+
+function ExploreContent() {
+  const [filters, setFilters] = useQueryFilters();
+  const { query, kind, category, agent, verifiedOnly, sort } = filters;
+
+  const setQuery = (q: string) => setFilters((f) => ({ ...f, query: q }));
+  const setKind = (k: string) => setFilters((f) => ({ ...f, kind: k }));
+  const setCategory = (c: string) => setFilters((f) => ({ ...f, category: c }));
+  const setAgent = (a: string) => setFilters((f) => ({ ...f, agent: a }));
+  const setVerifiedOnly = (v: boolean) => setFilters((f) => ({ ...f, verifiedOnly: v }));
+  const setSort = (s: SortMode) => setFilters((f) => ({ ...f, sort: s }));
 
   const deferredQuery = useDeferredValue(query);
 
-  const categories = useMemo(() => categoryFacets(items, 60), []);
+  const categories = useMemo(() => categoryFacets(items, 200), []);
   const agents = useMemo(() => agentFacets(items), []);
+  const hostCount = useMemo(() => hostUniverse(items).length, []);
 
   const { results, searching } = useCatalogSearch(items, deferredQuery, {
     kind: kind === "all" ? null : kind,
@@ -34,15 +79,16 @@ function ExploreContent() {
   });
 
   const filtered = useMemo(() => {
-    return results.filter((item) => {
+    const scoped = results.filter((item) => {
       if (agent !== "all" && !matchesHost(item, agent)) return false;
       if (verifiedOnly && !item.publisher?.verified) return false;
       return true;
     });
-  }, [results, agent, verifiedOnly]);
+    return sortListings(scoped, sort);
+  }, [results, agent, verifiedOnly, sort]);
 
   const hasFilters =
-    query !== "" || kind !== "all" || category !== "all" || agent !== "all" || verifiedOnly;
+    query !== "" || kind !== "all" || category !== "all" || agent !== "all" || verifiedOnly || sort !== "stars";
 
   const clear = () => {
     setQuery("");
@@ -50,65 +96,68 @@ function ExploreContent() {
     setCategory("all");
     setAgent("all");
     setVerifiedOnly(false);
+    setSort("stars");
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f0f2f6]">
+    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
       <Header />
 
-      <main className="mx-auto w-full max-w-7xl px-4 pt-8 lg:px-8">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">Explore</h1>
-            <p className="mt-0.5 text-sm text-slate-500">
-              {items.length.toLocaleString()} capabilities across MCP servers, agent skills, and plugins.
+      <main id="main" className="flex-1">
+        <div className="shell pt-8">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Explore</h1>
+            <p className="t-mono text-[11px] text-ink-3">
+              {items.length.toLocaleString("en-US")} entries · {categories.length} categories ·{" "}
+              {hostCount} hosts
             </p>
           </div>
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={clear}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" /> Clear filters
-            </button>
-          )}
-        </div>
 
-        <div className="mb-4 max-w-none">
-          <SearchBar
-            query={query}
-            setQuery={setQuery}
-            totalMatches={deferredQuery ? filtered.length : undefined}
-            totalCount={search.data.itemCount || items.length}
-          />
-        </div>
-
-        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 lg:flex-row lg:items-center">
-          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 text-xs" role="group" aria-label="Package type">
-            {["all", "mcp", "skill", "plugin"].map((k) => (
-              <button
-                key={k}
-                type="button"
-                aria-pressed={kind === k}
-                onClick={() => setKind(k)}
-                className={`rounded-lg px-3 py-1.5 font-semibold transition-all ${
-                  kind === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {k === "all" ? "All types" : kindLabel(k)}
-              </button>
-            ))}
+          <div className="mt-4 max-w-2xl">
+            <SearchBar
+              query={query}
+              setQuery={setQuery}
+              totalMatches={deferredQuery ? filtered.length : undefined}
+              totalCount={items.length}
+            />
           </div>
 
-          <div className="flex flex-1 flex-wrap items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-slate-500">
-              <SlidersHorizontal className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+          {/* Filters are a single ruled row. Kind is segmented; category and
+              agent are selects because 63 and 9 options do not fit as chips. */}
+          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-rule py-3">
+            <div
+              className="flex items-center gap-0.5 border border-ink-3 bg-sunken p-0.5"
+              role="group"
+              aria-label="Capability kind"
+            >
+              {KINDS.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={kind === k}
+                  onClick={() => setKind(k)}
+                  className={`flex h-7 items-center gap-1.5 rounded-[3px] px-2.5 text-[12px] font-medium transition-colors ${
+                    kind === k ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"
+                  }`}
+                >
+                  {k !== "all" && (
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-[3px] rounded-[1px]"
+                      style={{ backgroundColor: kind === k ? "currentColor" : `var(--${k})` }}
+                    />
+                  )}
+                  {k === "all" ? "All types" : kindLabel(k)}
+                </button>
+              ))}
+            </div>
+
+            <label className="flex items-center gap-2 text-[12px] text-ink-2">
               Category
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none"
+                className="field"
               >
                 <option value="all">All categories</option>
                 {categories.map((c) => (
@@ -119,13 +168,9 @@ function ExploreContent() {
               </select>
             </label>
 
-            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            <label className="flex items-center gap-2 text-[12px] text-ink-2">
               Works with
-              <select
-                value={agent}
-                onChange={(e) => setAgent(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none"
-              >
+              <select value={agent} onChange={(e) => setAgent(e.target.value)} className="field">
                 <option value="all">Any agent</option>
                 {agents.map((a) => (
                   <option key={a.slug} value={a.name}>
@@ -135,33 +180,60 @@ function ExploreContent() {
               </select>
             </label>
 
-            <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+            <label className="flex items-center gap-2 text-[12px] text-ink-2">
               <input
                 type="checkbox"
                 checked={verifiedOnly}
                 onChange={(e) => setVerifiedOnly(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                className="h-3.5 w-3.5 accent-ink"
               />
               Verified publishers only
             </label>
+
+            {hasFilters && (
+              <button type="button" onClick={clear} className="btn ml-auto">
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                Reset
+              </button>
+            )}
           </div>
+        </div>
+
+        <div className="pt-7">
+          <ExtensionGrid
+            items={filtered}
+            query={deferredQuery}
+            loading={searching}
+            onClearFilters={clear}
+            hostCount={hostCount}
+            toolbar={
+              <div className="flex shrink-0 items-center gap-2">
+                <label htmlFor="explore-sort" className="t-mono text-[11px] text-ink-3">
+                  Sort
+                </label>
+                <select
+                  id="explore-sort"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SortMode)}
+                  className="field !h-7 !py-0 text-[12px]"
+                >
+                  {SORTS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            }
+          />
         </div>
       </main>
 
-      <ExtensionGrid
-        items={filtered}
-        query={deferredQuery}
-        loading={searching}
-        onClearFilters={clear}
-      />
+      <SiteFooter />
     </div>
   );
 }
 
 export default function ExplorePage() {
-  return (
-    <Suspense fallback={<div className="p-12 text-center font-mono text-slate-500">Loading explore...</div>}>
-      <ExploreContent />
-    </Suspense>
-  );
+  return <ExploreContent />;
 }

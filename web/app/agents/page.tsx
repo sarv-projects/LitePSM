@@ -2,62 +2,109 @@
 
 import React, { useMemo } from "react";
 import Link from "next/link";
-import { ArrowRight, Terminal, ShieldCheck } from "lucide-react";
+import { SquareTerminal, Check } from "lucide-react";
 import { Header } from "../../components/navigation/Header";
+import { SiteFooter } from "../../components/layout/SiteFooter";
 import { Listing } from "../../lib/telemetry";
-import { agentFacets } from "../../lib/catalog";
-import { HOSTS } from "../../lib/hosts";
+import { agentFacets, hostUniverse } from "../../lib/catalog";
+import { HOSTS, resolveHost } from "../../lib/hosts";
+import { formatCount } from "../../lib/format";
 import catalogData from "../../data/catalog.json";
 
 const items = catalogData as unknown as Listing[];
 
 export default function AgentsPage() {
   const agents = useMemo(() => agentFacets(items), []);
-  const managed = new Set(HOSTS.map((h) => h.name));
+  const hostCount = useMemo(() => hostUniverse(items).length, []);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f0f2f6]">
+    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
       <Header />
-      <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Works with your agents</h1>
-        <p className="mt-1 max-w-2xl text-sm text-slate-500">
-          LitePSM registers a single bridge entry per agent and resolves capabilities centrally at runtime. Counts show
-          how many catalog capabilities advertise compatibility with each agent.
-        </p>
 
-        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {agents.map((agent) => (
-            <Link
-              key={agent.slug}
-              href={`/explore/?host=${encodeURIComponent(agent.name)}`}
-              className="group flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
-                  <Terminal className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-                </span>
-                {managed.has(agent.name) && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                    <ShieldCheck className="h-3 w-3" aria-hidden="true" /> Managed
-                  </span>
-                )}
-              </div>
-              <div className="mt-4">
-                <h2 className="text-base font-bold text-slate-900 group-hover:text-emerald-600">{agent.name}</h2>
-                <p className="mt-0.5 font-mono text-xs text-slate-500">{agent.count.toLocaleString()} compatible</p>
-              </div>
-              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                Browse <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </span>
-            </Link>
-          ))}
+      <main id="main" className="shell flex-1 pt-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Agent hosts</h1>
+          <p className="t-mono text-[11px] text-ink-3">
+            {formatCount(hostCount)} hosts named · {HOSTS.length} with compiled-in adapters
+          </p>
         </div>
 
-        <p className="mt-8 text-xs text-slate-500">
-          Managed adapters with compiled-in config support: {HOSTS.map((h) => h.name).join(", ")}. Other agents appear
-          when catalog publishers declare compatibility.
+        <p className="mt-2 max-w-prose text-[13px] leading-relaxed text-ink-2">
+          An entry&rsquo;s compatibility list is what its publisher declared. LitePSM adds a bridge entry to
+          the hosts it has compiled-in adapters for; the remaining hosts are indexed because publishers list
+          them, not because LitePSM can edit their configuration.
+        </p>
+
+        <div className="mt-7 border-b border-ink pb-2">
+          <h2 className="sr-only">Agent hosts, compatible entry counts, and config adapters</h2>
+          {/* Column order must match the rendered cell order, which the rows
+              set with md:order-2 (adapter) and md:order-3 (compatible count). */}
+          <div className="t-mono hidden grid-cols-[minmax(0,1fr)_92px_84px_minmax(0,1fr)] items-center gap-3 text-[10px] text-ink-3 md:grid">
+            <span>Host</span>
+            <span>Adapter</span>
+            <span className="text-right">Compatible</span>
+            <span>Config file this host uses</span>
+          </div>
+        </div>
+
+        <ul>
+          {agents.map((agent) => {
+            const host = resolveHost(agent.name);
+            return (
+              <li key={agent.slug}>
+                <Link
+                  href={`/explore/?host=${encodeURIComponent(agent.name)}`}
+                  className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-rule py-3 transition-colors hover:bg-hover md:grid-cols-[minmax(0,1fr)_92px_84px_minmax(0,1fr)]"
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-chip bg-sunken-2"
+                    >
+                      <SquareTerminal className="h-3 w-3 text-ink-2" />
+                    </span>
+                    <span className="t-cond truncate text-[14px] font-medium text-ink">{agent.name}</span>
+                  </span>
+
+                  <span className="t-mono t-tabular text-right text-[12px] text-ink-2 md:order-3">
+                    {formatCount(agent.count)}
+                  </span>
+
+                  <span className="hidden md:order-2 md:block">
+                    {host ? (
+                      <span
+                        className="inline-flex items-center gap-1 text-[11px] text-ink"
+                        title="LitePSM has a compiled-in adapter that can write this host's config file"
+                      >
+                        <Check className="h-3 w-3" aria-hidden="true" />
+                        managed
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-ink-3" title="No compiled-in adapter; publishers declare compatibility themselves">
+                        declared
+                      </span>
+                    )}
+                  </span>
+
+                  <code
+                    className="t-mono hidden truncate text-[11px] text-ink-3 md:order-4 md:block"
+                    title={host ? host.paths.linux : undefined}
+                  >
+                    {host ? host.paths.linux : "not managed by LitePSM"}
+                  </code>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+
+        <p className="mt-6 max-w-prose text-[12px] leading-relaxed text-ink-3">
+          Compatibility is publisher-declared. It is not a test result, and this site does not run these
+          capabilities.
         </p>
       </main>
+
+      <SiteFooter />
     </div>
   );
 }

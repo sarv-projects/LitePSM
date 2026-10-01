@@ -1,63 +1,99 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { HOSTS } from "../../lib/hosts";
 
-const FAQS: Array<{ q: string; a: string }> = [
+/** Derived from the adapter table, so the copy cannot drift from the data. */
+const HOST_NAMES = `${HOSTS.slice(0, -1).map((h) => h.name).join(", ")}, and ${HOSTS[HOSTS.length - 1].name}`;
+
+const FAQS: Array<{ q: string; a: React.ReactNode }> = [
   {
     q: "What is LitePSM?",
-    a: "LitePSM is a local package manager and federated catalog for AI agent capabilities — MCP servers, Agent Skills, and plugins. It connects once to each agent host and manages everything from a single local control plane.",
+    a: (
+      <>
+        A local package manager and federated catalog for agent capabilities. It connects to each agent host
+        once, writes a single version-pinned bridge entry into that host's config, and resolves individual
+        capabilities at runtime.
+      </>
+    ),
   },
   {
-    q: "Do my API keys or tokens leave my machine?",
-    a: "No. Credentials live in your operating system's native vault (Windows Credential Manager / DPAPI, macOS Keychain, Linux Secret Service). LitePSM's hosted catalog is read-only and never receives or proxies credentials.",
+    q: "What do the star counts mean?",
+    a: (
+      <>
+        They are the publisher's own repository star count, carried through from the upstream registry. They
+        are a popularity signal only. LitePSM does not collect install counts, and entries whose source
+        publishes no star count are shown as <span className="absent">not published</span> rather than zero.
+      </>
+    ),
   },
   {
     q: "Which agents are supported?",
-    a: "Claude Code, OpenAI Codex, OpenCode, Cline, and many more. Each host gets a single version-pinned litepsm bridge entry.",
+    a: (
+      <>
+        {HOST_NAMES} have compiled-in config adapters that LitePSM can write directly. The catalog names more
+        hosts than that, because publishers declare compatibility themselves; those entries are indexed but
+        LitePSM will not edit that host's config for you.
+      </>
+    ),
   },
   {
-    q: "Is installing a capability dangerous?",
-    a: "Installation is passive: files are checksum-verified and unpacked into a content-addressed store with hard limits against path traversal, zip bombs, symlink escapes, and case collisions. No post-install scripts are executed.",
+    q: "Do my API keys leave my machine?",
+    a: (
+      <>
+        No. Credentials are held in your operating system's native vault. This site is a static export — it
+        fetches exactly one file, <code className="t-mono">/v1/current.json</code>, for release metadata, and
+        runs search entirely in your browser.
+      </>
+    ),
   },
   {
-    q: "Can an AI agent install or run tools on its own?",
-    a: "No. Effectful actions are fail-closed and require explicit, cryptographically bound user approval. Approvals are tied to the tool's schema fingerprint and content digest, so drift forces re-confirmation.",
-  },
-  {
-    q: "How do I update the binary?",
-    a: "Run `litepsm self-update`. It fetches the release manifest, verifies the SHA-256 checksum, and atomically replaces the binary.",
+    q: "Is this page's data live?",
+    a: (
+      <>
+        The listings are a fixed catalog snapshot baked into the build, so every listing is pre-rendered and
+        reachable without JavaScript. Only the release manifest is fetched at runtime, and the header states
+        plainly whether that fetch succeeded.
+      </>
+    ),
   },
 ];
 
 export function FaqSection() {
-  const [open, setOpen] = useState<number | null>(0);
+  const [open, setOpen] = useState<string | null>(FAQS[0].q);
 
   return (
-    <section className="mx-auto w-full max-w-3xl px-4 pb-16 lg:px-8">
-      <h2 className="mb-4 text-center text-lg font-bold tracking-tight text-slate-900">Frequently asked questions</h2>
-      <div className="divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        {FAQS.map((item, i) => {
-          const isOpen = open === i;
+    <section className="shell pb-14">
+      <div className="section-head">
+        <h2>Questions this index has to answer honestly</h2>
+      </div>
+
+      <dl className="grid gap-x-10 md:grid-cols-2">
+        {FAQS.map((item) => {
+          const isOpen = open === item.q;
           return (
-            <div key={item.q}>
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                onClick={() => setOpen(isOpen ? null : i)}
-                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
-              >
-                {item.q}
-                <ChevronDown
-                  className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                />
-              </button>
-              {isOpen && <p className="px-5 pb-4 text-xs leading-relaxed text-slate-600">{item.a}</p>}
+            <div key={item.q} className="border-b border-rule py-4">
+              <dt>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setOpen(isOpen ? null : item.q)}
+                  className="flex w-full items-start justify-between gap-4 text-left"
+                >
+                  <span className="text-[13px] font-semibold leading-snug text-ink">{item.q}</span>
+                  <span
+                    aria-hidden="true"
+                    className="t-mono mt-px shrink-0 text-[11px] text-ink-3 tabular-nums"
+                  >
+                    {isOpen ? "−" : "+"}
+                  </span>
+                </button>
+              </dt>
+              {isOpen && <dd className="mt-2 text-[13px] leading-relaxed text-ink-2">{item.a}</dd>}
             </div>
           );
         })}
-      </div>
+      </dl>
     </section>
   );
 }

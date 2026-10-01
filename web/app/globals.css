@@ -2,99 +2,479 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #f0f2f6;
-  --foreground: #0f172a;
-  --surface: #ffffff;
-  --surface-muted: #f8fafc;
-  --surface-hover: #f1f5f9;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --accent: #10b981;
-  --accent-muted: rgba(16, 185, 129, 0.12);
-  --text-muted: #64748b;
-  --text-secondary: #475569;
-}
+/*
+ * LitePSM Market design tokens.
+ *
+ * The subject is a manifest index, so colour is reserved for data: three kind
+ * hues and one popularity hue. Everything else is ink on paper. There is no
+ * green in this palette by design - nothing in the catalog data supports a
+ * "safe / verified" claim, and an accent that means nothing is decoration.
+ *
+ * Radius is assigned per element role, not globally:
+ *   0px  table rows and ruled lists
+ *   2px  letter tiles (a stamped chip)
+ *   4px  interactive controls
+ *   6px  the snippet terminal
+ *   8px  the single dark install panel
+ */
+@layer base {
+  :root {
+    --paper: #edf0f3;
+    --surface: #ffffff;
+    --sunken: #f4f6f8;
+    --sunken-2: #e9edf1;
+    --hover: #f0f3f6;
+    --sel: #d8e2f7;
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  overflow-x: hidden;
-}
+    --rule: #c9d0d8;
+    /* Clears 3:1 on --surface, so --rule-2 can bound anything that has to be
+       locatable rather than merely separated. */
+    --rule-2: #8794a1;
 
-/* MCPMarket signature micro-dither accent strip (subtle, 2px) */
-.card-dither-strip {
-  background-color: #f8fafc;
-  background-image: radial-gradient(circle at center, rgba(16, 185, 129, 0.28) 0 0.6px, transparent 1px);
-  background-size: 4px 4px;
-}
+    --ink: #101722;
+    --ink-2: #414c59;
+    /* 4.8:1 on --paper, so 11px meta text still clears AA. */
+    --ink-3: #5f6a76;
 
-/* Lift only on devices that actually support hover (avoids touch jank). */
-@media (hover: hover) and (pointer: fine) {
-  .lift-on-hover:hover {
-    transform: translateY(-4px);
+    --mcp: #1f3fa8;
+    --mcp-wash: #e7ebf7;
+    --skill: #0b6b72;
+    --skill-wash: #e2f0f0;
+    --plugin: #7a3e9d;
+    --plugin-wash: #f0e9f6;
+
+    --pop: #9a5b08;
+    --pop-wash: #f8f0e2;
+
+    --dark: #12171e;
+    --dark-2: #1b222c;
+    --dark-rule: #2a323d;
+    --dark-ink: #e9eef4;
+    --dark-ink-2: #a6b1c0;
+    --dark-signal: #9db6f5;
+
+    --r-chip: 2px;
+    --r-ctl: 4px;
+    --r-panel: 6px;
+    --r-hero: 8px;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--sel);
+    color: var(--ink);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-wrap: balance;
+    letter-spacing: -0.012em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /*
+   * One focus treatment for the whole site. Ink ring on paper, paper ring on
+   * the dark panel. No extra hue, so focus never competes with data colour.
+   */
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: var(--r-chip);
+  }
+
+  .on-dark :focus-visible {
+    outline-color: var(--dark-ink);
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+    font-variant-ligatures: none;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule-2) transparent;
+  }
+
+  /* The UA's own clear affordance is a second, unlabelled X sitting on top of
+     the real one. Suppress it and keep the labelled control. */
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-decoration {
+    appearance: none;
+    display: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--rule-2);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-3);
   }
 }
 
-/* Subtle background architectural dot grid */
-.bg-grid-pattern {
-  background-size: 32px 32px;
-  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+@layer components {
+  /* ---- typography helpers ------------------------------------------- */
+  .t-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .t-cond {
+    font-family: var(--font-cond), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .t-mono {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+  }
+
+  /* Horizontal rails (kind tabs, host switchers) opt out of the scrollbar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ---- page frame --------------------------------------------------- */
+  .shell {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    padding-inline: 16px;
+  }
+  @media (min-width: 768px) {
+    .shell {
+      padding-inline: 24px;
+    }
+  }
+  @media (min-width: 1280px) {
+    .shell {
+      padding-inline: 32px;
+    }
+  }
+
+  /* ---- section head: sentence case, count right-aligned on the rule -- */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--ink);
+    margin-bottom: 0;
+  }
+  .section-head h2 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .section-head .section-note {
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  /* ---- listing row: 0 radius, hairline, hover = paper shift ---------- */
+  .row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 3px 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 12px;
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--rule);
+    background-color: var(--surface);
+    transition: background-color 90ms linear;
+  }
+  .row:hover {
+    background-color: var(--hover);
+  }
+  .row-spine {
+    align-self: stretch;
+    background-color: var(--rule);
+    transition: background-color 90ms linear;
+  }
+  .row:hover .row-spine,
+  .row:focus-visible .row-spine {
+    background-color: var(--ink-3);
+  }
+  .row[data-kind="mcp"] .row-spine {
+    background-color: var(--mcp);
+  }
+  .row[data-kind="skill"] .row-spine {
+    background-color: var(--skill);
+  }
+  .row[data-kind="plugin"] .row-spine {
+    background-color: var(--plugin);
+  }
+  .row:hover .row-spine[data-kind],
+  .row:focus-visible .row-spine[data-kind] {
+    filter: saturate(1.35) brightness(0.82);
+  }
+
+  .row-name {
+    display: block;
+    font-family: var(--font-cond), var(--font-sans), sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row:hover .row-name {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+  }
+
+  /* Meta is a monospace token row with hairline gaps - never middle dots. */
+  .row-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0 8px;
+    margin-top: 2px;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--ink-3);
+  }
+  /*
+   * Meta tokens are separated by a 1px rule rather than a middle dot, so the
+   * row reads as a spec line. The rule is inset into the gap instead of
+   * overlapping either token.
+   */
+  .row-meta > * {
+    position: relative;
+    white-space: nowrap;
+  }
+  /* Only the trailing token yields space. Everything before it is a short
+     identifier, so shrinking those would just produce four truncated stubs
+     instead of one readable ellipsis at the end. */
+  .row-meta > *:not(:last-child) {
+    flex: none;
+  }
+  .row-meta > *:last-child {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row-meta > * + *::before {
+    content: "";
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    width: 1px;
+    height: 10px;
+    transform: translateY(-50%);
+    background-color: var(--rule-2);
+  }
+
+  .row-side {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    justify-self: end;
+    text-align: right;
+  }
+
+  /* ---- letter tile: 2px, the stamped-chip radius -------------------- */
+  .tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--r-chip);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    flex: none;
+  }
+  .tile[data-kind="mcp"] {
+    background-color: var(--mcp-wash);
+    color: var(--mcp);
+  }
+  .tile[data-kind="skill"] {
+    background-color: var(--skill-wash);
+    color: var(--skill);
+  }
+  .tile[data-kind="plugin"] {
+    background-color: var(--plugin-wash);
+    color: var(--plugin);
+  }
+
+  /* ---- chips and controls: 4px -------------------------------------- */
+  /* Controls are bounded by --ink-3, not --rule: a control boundary is the
+     only thing identifying a control, so it needs 3:1 (WCAG 1.4.11). Rows and
+     sections are bounded by --rule, which is decoration between records. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--ink-3);
+    border-radius: var(--r-ctl);
+    background-color: var(--surface);
+    font-size: 12px;
+    color: var(--ink-2);
+    white-space: nowrap;
+    transition: background-color 90ms linear, border-color 90ms linear, color 90ms linear;
+  }
+  .chip:hover {
+    border-color: var(--ink-2);
+    background-color: var(--hover);
+    color: var(--ink);
+  }
+  .chip[aria-pressed="true"],
+  .chip[aria-current="true"] {
+    background-color: var(--ink);
+    border-color: var(--ink);
+    color: var(--surface);
+  }
+  .chip[aria-pressed="true"] .chip-count,
+  .chip[aria-current="true"] .chip-count {
+    color: var(--dark-ink-2);
+  }
+  .chip-count {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--ink-3);
+    border-radius: var(--r-ctl);
+    background-color: var(--surface);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-2);
+    transition: background-color 90ms linear, border-color 90ms linear, color 90ms linear;
+  }
+  .btn:hover {
+    border-color: var(--ink-2);
+    background-color: var(--hover);
+    color: var(--ink);
+  }
+  .btn-solid {
+    background-color: var(--ink);
+    border-color: var(--ink);
+    color: var(--surface);
+  }
+  .btn-solid:hover {
+    background-color: var(--ink-2);
+    border-color: var(--ink-2);
+    color: var(--surface);
+  }
+
+  .field {
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--ink-3);
+    border-radius: var(--r-ctl);
+    background-color: var(--surface);
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  /* ---- the one dark surface: 8px ------------------------------------ */
+  .panel-dark {
+    border-radius: var(--r-hero);
+    background-color: var(--dark);
+    color: var(--dark-ink);
+    padding: 18px;
+  }
+
+  /* ---- "no data" is stated, never filled in ------------------------- */
+  .absent {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+
+  .spec-list {
+    display: grid;
+    gap: 0;
+  }
+  .spec-list > div {
+    display: grid;
+    grid-template-columns: 108px minmax(0, 1fr);
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .spec-list dt {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+    padding-top: 1px;
+  }
+  .spec-list dd {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- link that behaves like a link, not a button ------------------- */
+  .link {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: var(--ink-3);
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+  .link:hover {
+    text-decoration-color: var(--ink);
+    text-decoration-thickness: 2px;
+  }
 }
 
-/* Clean Studio Glassmorphism */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border);
-}
-
-/* Typography & Legibility */
-h1, h2, h3, h4, h5, h6 {
-  text-wrap: balance;
-}
-
-p, .pretty-text {
-  text-wrap: pretty;
-}
-
-/* Modern standard scrollbar */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Horizontal scroll mask for category rail */
-.category-rail-mask {
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
-}
-
-/* View Transitions Support */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 0.2s;
-  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Reduced Motion Preference */
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
