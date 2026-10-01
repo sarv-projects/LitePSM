@@ -1,83 +1,106 @@
 "use client";
 
 import React from "react";
-import { Terminal, Shield, Sparkles, Github, Layers, BookOpen } from "lucide-react";
+import Link from "next/link";
+import { Terminal, Github, Sparkles, Box, Layers, Code } from "lucide-react";
 
 interface HeaderProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  counts?: {
+    all: number;
+    mcp: number;
+    skill: number;
+    plugin: number;
+  };
 }
 
-export function Header({ activeTab, setActiveTab }: HeaderProps) {
+export function Header({
+  activeTab,
+  setActiveTab,
+  counts = { all: 5185, mcp: 4079, skill: 1103, plugin: 3 },
+}: HeaderProps) {
   return (
-    <header className="sticky top-0 z-40 w-full glass-panel border-b border-[#232734] px-4 lg:px-8 py-3.5">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
+    <header className="sticky top-0 z-40 w-full bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-8 py-3 transition-colors">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         {/* Brand */}
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab("all")}>
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <Terminal className="w-4 h-4 text-black stroke-[2.5]" />
+        <Link
+          href="/"
+          onClick={() => setActiveTab("all")}
+          className="flex items-center gap-3 cursor-pointer group"
+        >
+          <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-md shadow-slate-900/10 group-hover:scale-105 transition-transform">
+            <Terminal className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold tracking-tight text-white font-mono">LitePSM</span>
-            <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/20">
+            <span className="text-lg font-black tracking-tight text-slate-900 font-sans">
+              LitePSM
+            </span>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-mono font-semibold border border-emerald-200/80">
               v0.1.0
             </span>
           </div>
-        </div>
+        </Link>
 
-        {/* Center Nav Links */}
-        <nav className="flex items-center gap-1 bg-[#11131a]/90 p-1 rounded-xl border border-[#232734]">
+        {/* Center Kind Filter Tabs */}
+        <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/80">
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all ${
               activeTab === "all"
-                ? "bg-emerald-500 text-black shadow font-semibold"
-                : "text-gray-400 hover:text-white"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            All (28)
+            All ({counts.all.toLocaleString()})
           </button>
+
           <button
             onClick={() => setActiveTab("mcp")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all ${
               activeTab === "mcp"
-                ? "bg-emerald-500 text-black shadow font-semibold"
-                : "text-gray-400 hover:text-white"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            MCP Servers (15)
+            <Code className="w-3.5 h-3.5 text-blue-600" />
+            MCP Servers ({counts.mcp.toLocaleString()})
           </button>
+
           <button
             onClick={() => setActiveTab("skill")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all ${
               activeTab === "skill"
-                ? "bg-emerald-500 text-black shadow font-semibold"
-                : "text-gray-400 hover:text-white"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            Agent Skills (8)
+            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+            Agent Skills ({counts.skill.toLocaleString()})
           </button>
+
           <button
             onClick={() => setActiveTab("plugin")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all ${
               activeTab === "plugin"
-                ? "bg-emerald-500 text-black shadow font-semibold"
-                : "text-gray-400 hover:text-white"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            Plugins (5)
+            <Box className="w-3.5 h-3.5 text-amber-600" />
+            Plugins ({counts.plugin})
           </button>
         </nav>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <a
             href="https://github.com/sarv-projects/LitePSM"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#171a23] hover:bg-[#232734] text-xs font-medium text-gray-300 hover:text-white border border-[#232734] transition-all"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 hover:text-slate-900 border border-slate-200 shadow-sm transition-all"
           >
-            <Github className="w-4 h-4" />
+            <Github className="w-4 h-4 text-slate-700" />
             <span className="hidden sm:inline">GitHub</span>
           </a>
         </div>

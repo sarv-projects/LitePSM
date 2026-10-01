@@ -2,7 +2,7 @@
   "releaseId": "rel-2026-09-30-01",
   "sequence": 142,
   "createdAt": "2026-09-30T21:00:00Z",
-  "itemCount": 4208,
+  "itemCount": 5185,
   "manifestDigest": "sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
   "advisories": [
     {
@@ -20,5 +20,9 @@
       "status": "supported",
       "minVersion": "1.0.0"
     }
-  ]
+  ],
+  "totalCapabilities": 5185,
+  "mcpServersCount": 4079,
+  "agentSkillsCount": 1103,
+  "pluginsCount": 3
 }

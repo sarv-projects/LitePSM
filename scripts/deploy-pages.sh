@@ -11,10 +11,8 @@ mkdir -p "${PAGES_DIR}"
 echo "● Building Next.js Static Export..."
 (
     cd web
-    if [ ! -d "node_modules" ]; then
-        echo "● Installing web dependencies..."
-        npm ci || npm install
-    fi
+    echo "● Installing web dependencies..."
+    npm ci || npm install
     npm run build
 )
 

@@ -3,14 +3,17 @@
 @tailwind utilities;
 
 :root {
-  --background: #090a0f;
-  --foreground: #f3f4f6;
-  --surface: #11131a;
-  --surface-hover: #171a23;
-  --border: #232734;
+  --background: #f0f2f6;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-hover: #f1f5f9;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
   --accent: #10b981;
-  --accent-muted: rgba(16, 185, 129, 0.15);
-  --text-muted: #9ca3af;
+  --accent-muted: rgba(16, 185, 129, 0.12);
+  --text-muted: #64748b;
+  --text-secondary: #475569;
 }
 
 body {
@@ -20,22 +23,28 @@ body {
   overflow-x: hidden;
 }
 
-/* Subtle background grid */
-.bg-grid-pattern {
-  background-size: 40px 40px;
-  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+/* MCPMarket signature micro-dither accent strip */
+.card-dither-strip {
+  background-color: #f8fafc;
+  background-image: radial-gradient(circle at center, rgba(16, 185, 129, 0.35) 0 0.75px, transparent 1px);
+  background-size: 4px 4px;
 }
 
-/* Glassmorphism */
+/* Subtle background architectural dot grid */
+.bg-grid-pattern {
+  background-size: 32px 32px;
+  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+}
+
+/* Clean Studio Glassmorphism */
 .glass-panel {
-  background: rgba(17, 19, 26, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border);
 }
 
-/* Typography & Legibility (modern-web-guidance) */
+/* Typography & Legibility */
 h1, h2, h3, h4, h5, h6 {
   text-wrap: balance;
 }
@@ -44,62 +53,41 @@ p, .pretty-text {
   text-wrap: pretty;
 }
 
-/* Modern standard scrollbar with webkit fallback */
+/* Modern standard scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--background);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: #cbd5e1;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: #94a3b8;
+}
+
+/* Horizontal scroll mask for category rail */
+.category-rail-mask {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
 }
 
 /* View Transitions Support */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 0.25s;
+  animation-duration: 0.2s;
   animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Top Layer Drawer Transition Behaviors */
-.drawer-backdrop {
-  opacity: 1;
-  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              display 0.25s allow-discrete,
-              overlay 0.25s allow-discrete;
-}
-
-.drawer-panel {
-  transform: translateX(0);
-  opacity: 1;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 0.25s ease-out,
-              display 0.3s allow-discrete,
-              overlay 0.3s allow-discrete;
-}
-
-@starting-style {
-  .drawer-backdrop {
-    opacity: 0;
-  }
-  .drawer-panel {
-    transform: translateX(100%);
-    opacity: 0.8;
-  }
-}
-
-/* Reduced Motion Preference (modern-web-guidance) */
+/* Reduced Motion Preference */
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
@@ -108,15 +96,5 @@ p, .pretty-text {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-
-  .drawer-panel {
-    transform: none !important;
-  }
-
-  @starting-style {
-    .drawer-panel {
-      transform: none !important;
-    }
   }
 }

@@ -224,9 +224,9 @@ export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
               {/* Tools List */}
               <div className="space-y-3">
                 <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Exposed Tool Functions ({item.tools.length})
+                  Exposed Tool Functions ({(item.tools || []).length})
                 </h4>
-                {item.tools.map((t) => (
+                {(item.tools || []).map((t) => (
                   <div
                     key={t.name}
                     className="p-4 rounded-xl bg-[#11131a] border border-[#232734] space-y-2"
@@ -268,7 +268,7 @@ export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
               </h4>
 
               <div className="space-y-2">
-                {item.effects.map((eff, idx) => (
+                {(item.effects || []).map((eff, idx) => (
                   <div
                     key={idx}
                     className="p-3 rounded-xl bg-[#11131a] border border-[#232734] flex items-center justify-between"

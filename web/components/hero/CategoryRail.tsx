@@ -11,20 +11,25 @@ import {
   Workflow,
   Sparkles,
   Layers,
+  Coins,
+  Search,
+  Terminal,
+  Box
 } from "lucide-react";
 
 export const CATEGORIES = [
   { id: "all", label: "All Categories", icon: Layers },
+  { id: "Official Core", label: "Official Core", icon: ShieldCheck },
   { id: "Developer Tools", label: "Developer Tools", icon: Code },
   { id: "Database Management", label: "Database Management", icon: Database },
   { id: "Browser Automation", label: "Browser Automation", icon: Globe },
   { id: "Productivity & Workflow", label: "Productivity & Workflow", icon: Sparkles },
-  { id: "Deployment & DevOps", label: "Deployment & DevOps", icon: Workflow },
+  { id: "Agent Skills", label: "Agent Skills", icon: Wrench },
+  { id: "Cloud Infrastructure", label: "Cloud Infrastructure", icon: Cpu },
   { id: "Security & Testing", label: "Security & Testing", icon: ShieldCheck },
-  { id: "Analytics & Monitoring", label: "Analytics & Monitoring", icon: Cpu },
-  { id: "Cloud Infrastructure", label: "Cloud Infrastructure", icon: Globe },
-  { id: "Learning & Documentation", label: "Docs & Learning", icon: Wrench },
-  { id: "API Development", label: "API Development", icon: Code },
+  { id: "Finance & Crypto", label: "Finance & Crypto", icon: Coins },
+  { id: "Search & Retrieval", label: "Search & Retrieval", icon: Search },
+  { id: "Plugins & Toolkits", label: "Plugins & Toolkits", icon: Box },
 ];
 
 interface CategoryRailProps {
@@ -34,27 +39,29 @@ interface CategoryRailProps {
 
 export function CategoryRail({ selectedCategory, onSelectCategory }: CategoryRailProps) {
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 mb-8 overflow-x-auto no-scrollbar py-2 overscroll-x-contain snap-x snap-mandatory">
-      <div className="flex items-center gap-2 min-w-max justify-start md:justify-center">
-        {CATEGORIES.map((cat) => {
-          const Icon = cat.icon;
-          const isSelected = selectedCategory === cat.id;
+    <div className="w-full max-w-6xl mx-auto px-4 mb-8">
+      <div className="category-rail-mask overflow-x-auto no-scrollbar py-2 overscroll-x-contain snap-x snap-mandatory">
+        <div className="flex items-center gap-2 min-w-max px-4">
+          {CATEGORIES.map((cat) => {
+            const Icon = cat.icon;
+            const isSelected = selectedCategory === cat.id;
 
-          return (
-            <button
-              key={cat.id}
-              onClick={() => onSelectCategory(cat.id)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium border transition-all snap-start ${
-                isSelected
-                  ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-400 shadow-sm shadow-emerald-950"
-                  : "glass-panel border-[#232734] text-gray-400 hover:text-gray-200 hover:border-gray-700"
-              }`}
-            >
-              <Icon className={`w-3.5 h-3.5 ${isSelected ? "text-emerald-400" : "text-gray-400"}`} />
-              <span>{cat.label}</span>
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={cat.id}
+                onClick={() => onSelectCategory(cat.id)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all snap-start ${
+                  isSelected
+                    ? "bg-slate-900 border-slate-900 text-white shadow-sm"
+                    : "bg-white border-slate-200/90 text-slate-600 hover:text-slate-900 hover:border-slate-300 shadow-sm"
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
+                <span>{cat.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

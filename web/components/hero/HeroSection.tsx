@@ -2,26 +2,27 @@
 
 import React, { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Sparkles, Terminal, Shield, Zap } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 
 interface CurrentTelemetry {
-  itemCount: number;
-  createdAt: string;
-  releaseId: string;
-  sequence: number;
+  totalCapabilities?: number;
+  itemCount?: number;
+  createdAt?: string;
+  releaseId?: string;
+  sequence?: number;
 }
 
 export function HeroSection() {
   const [telemetry, setTelemetry] = useState<CurrentTelemetry>({
-    itemCount: 4208,
+    totalCapabilities: 5185,
     createdAt: new Date().toISOString(),
-    releaseId: "rel-2026-09-30-01",
+    releaseId: "rel-2026-10-01-01",
     sequence: 142,
   });
   const [relativeTime, setRelativeTime] = useState<string>("just now");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // Dynamic runtime fetch from /v1/current.json
     fetch("/v1/current.json")
       .then((res) => {
         if (res.ok) return res.json();
@@ -38,54 +39,71 @@ export function HeroSection() {
         }
       })
       .catch(() => {
-        // Fallback gracefully
         setRelativeTime("recently");
       });
   }, []);
 
-  return (
-    <section className="relative pt-12 pb-8 px-4 text-center max-w-4xl mx-auto">
-      {/* Background glow orb */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -z-10" />
+  const count = telemetry.totalCapabilities || telemetry.itemCount || 5185;
 
+  const copyQuickstart = () => {
+    navigator.clipboard.writeText("npm install -g litepsm && litepsm");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <section className="relative pt-12 sm:pt-16 pb-8 px-4 text-center max-w-4xl mx-auto">
       {/* Dynamic Telemetry Eyebrow Pill */}
-      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 text-xs font-mono mb-6 shadow-sm shadow-emerald-900/20 backdrop-blur-md">
+      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200/90 text-slate-700 text-xs font-mono mb-6 shadow-sm">
         <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
         </span>
-        <span>
-          {telemetry.itemCount.toLocaleString()} Capabilities · Updated {relativeTime}
+        <span className="font-semibold text-slate-900">
+          {count.toLocaleString()} Capabilities
         </span>
+        <span className="text-slate-400">·</span>
+        <span className="text-slate-500">Updated {relativeTime}</span>
       </div>
 
       {/* Main Headline */}
-      <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white mb-4">
-        The Capability Layer for{" "}
-        <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+      <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 mb-4 font-sans">
+        The Capability Catalog for{" "}
+        <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 bg-clip-text text-transparent">
           AI Coding Agents
         </span>
       </h1>
 
       {/* Subtitle */}
-      <p className="text-base sm:text-lg text-gray-400 max-w-2xl mx-auto mb-6 leading-relaxed">
-        Discover, verify, and seamlessly install MCP servers, portable skills, and plugins across{" "}
-        <span className="text-gray-200 font-medium">Cline</span>,{" "}
-        <span className="text-gray-200 font-medium">Pi Agent</span>,{" "}
-        <span className="text-gray-200 font-medium">Grok Build</span>,{" "}
-        <span className="text-gray-200 font-medium">Codex</span>, and{" "}
-        <span className="text-gray-200 font-medium">Claude Code</span>.
+      <p className="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto mb-8 leading-relaxed">
+        Comprehensive registry of every verified MCP server, portable Agent Skill, and plugin across{" "}
+        <strong className="text-slate-800 font-semibold">Cline</strong>,{" "}
+        <strong className="text-slate-800 font-semibold">Cursor</strong>,{" "}
+        <strong className="text-slate-800 font-semibold">Pi Agent</strong>,{" "}
+        <strong className="text-slate-800 font-semibold">Grok Build</strong>,{" "}
+        <strong className="text-slate-800 font-semibold">Codex</strong>, and{" "}
+        <strong className="text-slate-800 font-semibold">Claude Code</strong>.
       </p>
 
       {/* Quick Terminal Quickstart Banner */}
-      <div className="inline-flex items-center gap-3 bg-[#11131a] border border-[#232734] px-4 py-2 rounded-xl text-xs font-mono text-gray-300 shadow-lg">
-        <span className="text-emerald-400 font-bold">$</span>
-        <span>npm install -g litepsm && litepsm</span>
+      <div className="inline-flex items-center gap-3 bg-[#0d1117] border border-slate-800 px-4 py-2.5 rounded-2xl text-xs font-mono text-slate-300 shadow-xl max-w-full overflow-x-auto">
+        <span className="text-emerald-400 font-bold select-none">$</span>
+        <span className="text-slate-100 select-all font-semibold">npm install -g litepsm && litepsm</span>
         <button
-          onClick={() => navigator.clipboard.writeText("npm install -g litepsm && litepsm")}
-          className="ml-2 px-2 py-0.5 rounded bg-[#1f2330] hover:bg-emerald-500 hover:text-black text-gray-400 transition-all font-sans text-[11px]"
+          onClick={copyQuickstart}
+          className="ml-2 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#21262d] hover:bg-emerald-500 hover:text-slate-950 text-slate-300 transition-all font-sans text-xs border border-slate-700"
         >
-          Copy
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5 text-slate-400" />
+              <span>Copy</span>
+            </>
+          )}
         </button>
       </div>
     </section>
