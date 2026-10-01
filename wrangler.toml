@@ -1,0 +1,8 @@
+name = "litepsm"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "pages-dist"
+
+# Support for Cloudflare Workers Static Assets
+[assets]
+directory = "./pages-dist"
+not_found_handling = "404-page"
