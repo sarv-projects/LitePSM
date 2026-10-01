@@ -108,6 +108,10 @@ func TestPlanInstall(t *testing.T) {
 	}
 	home := t.TempDir()
 	project := t.TempDir()
+
+	// Same XDG isolation as TestAgentSkillDirResolution: without it, CI runners
+	// resolve XDG-style agents into /home/runner/.config instead of the sandbox.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	ops := PlanInstall(found, []string{"claude-code", "codex"}, "project", project, home)
 
 	byHost := map[string]string{}

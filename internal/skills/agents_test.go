@@ -61,6 +61,12 @@ func TestAgentSkillDirResolution(t *testing.T) {
 	home := t.TempDir()
 	project := t.TempDir()
 
+	// XDG-style agents resolve through XDG_CONFIG_HOME when it is set. CI
+	// runners export it (to the runner account), which would make resolution
+	// ignore the temp `home` this test passes in and silently assert against a
+	// path outside the sandbox. Pin it to the temp tree.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
 	cases := []struct {
 		agent string
 		scope string
