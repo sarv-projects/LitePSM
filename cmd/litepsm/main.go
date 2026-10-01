@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/sarv-projects/litepsm/internal/agent"
 	"github.com/sarv-projects/litepsm/internal/bridge"
 	"github.com/sarv-projects/litepsm/internal/catalog"
 	"github.com/sarv-projects/litepsm/internal/config"
@@ -97,6 +98,9 @@ func main() {
 		}
 		runHostCommand(os.Args[2:])
 
+	case "agent":
+		runAgentCommand(os.Args[2:])
+
 	case "help", "--help", "-h":
 		printUsage()
 
@@ -121,6 +125,8 @@ Available Commands:
   catalog sync                Synchronize latest catalog release from upstream
   bridge stdio [--host h]     Launch stateless stdio MCP bridge shim for host agent
   host [list|detect|setup]    Manage agent host adapters (Codex, Claude, OpenCode, Cline, Pi, Grok)
+  agent list [--json]         List installable ACP agents from the registry
+  agent resolve <id>          Resolve an ACP agent launch spec for this host
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
   self-update                 Check for and apply binary updates
   daemon serve                Start the LitePSM background supervisor and IPC engine
@@ -312,6 +318,139 @@ func runHostCommand(args []string) {
 		fmt.Printf("Unknown host subcommand: %s\n", sub)
 		os.Exit(1)
 	}
+}
+
+func runAgentCommand(args []string) {
+	ctx := context.Background()
+
+	if len(args) == 0 {
+		fmt.Println("Usage: litepsm agent [list|resolve <id>] [--registry <url>] [--file <path>] [--json]")
+		os.Exit(1)
+	}
+
+	sub := args[0]
+	registryURL := agent.RegistryURL
+	filePath := ""
+	jsonOut := false
+	id := ""
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--registry":
+			if i+1 < len(args) {
+				registryURL = args[i+1]
+				i++
+			}
+		case "--file":
+			if i+1 < len(args) {
+				filePath = args[i+1]
+				i++
+			}
+		case "--json":
+			jsonOut = true
+		default:
+			if id == "" {
+				id = args[i]
+			}
+		}
+	}
+
+	var (
+		reg *agent.Registry
+		err error
+	)
+	if filePath != "" {
+		reg, err = agent.LoadRegistryFile(filePath)
+	} else {
+		reg, err = agent.FetchRegistry(ctx, nil, registryURL, agent.DefaultMaxRegistryBytes)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load ACP registry: %v\n", err)
+		os.Exit(1)
+	}
+
+	adapter := agent.NewACPAdapter()
+	target, hasTarget := agent.HostTarget()
+
+	switch sub {
+	case "list":
+		if jsonOut {
+			payload, _ := json.Marshal(reg.Agents)
+			fmt.Println(string(payload))
+			return
+		}
+
+		fmt.Printf("Installable ACP Agents (%d):\n\n", len(reg.Agents))
+		fmt.Printf("%-22s %-22s %-12s %s\n", "ID", "NAME", "VERSION", "STRATEGY")
+		fmt.Println(strings.Repeat("-", 76))
+		for i := range reg.Agents {
+			a := reg.Agents[i]
+			strategy := "-"
+			if hasTarget {
+				if spec, rerr := adapter.Resolve(a, target, ""); rerr == nil {
+					strategy = spec.Strategy
+				}
+			}
+			fmt.Printf("%-22s %-22s %-12s %s\n", a.ID, truncate(a.Name, 22), a.Version, strategy)
+		}
+
+	case "resolve":
+		if id == "" {
+			fmt.Println("Usage: litepsm agent resolve <id>")
+			os.Exit(1)
+		}
+		a, ok := reg.FindAgent(id)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Unknown ACP agent: %s\n", id)
+			os.Exit(1)
+		}
+		if !hasTarget {
+			fmt.Fprintf(os.Stderr, "No ACP distribution target for %s/%s\n", runtime.GOOS, runtime.GOARCH)
+			os.Exit(1)
+		}
+
+		paths, _ := config.ResolvePlatformPaths()
+		binaryDir := filepath.Join(paths.DataRoot, "agents", a.ID)
+		spec, rerr := adapter.Resolve(*a, target, binaryDir)
+		if rerr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to resolve %s: %v\n", id, rerr)
+			os.Exit(1)
+		}
+
+		if jsonOut {
+			payload, _ := json.Marshal(spec)
+			fmt.Println(string(payload))
+			return
+		}
+		fmt.Printf("Agent:     %s (%s v%s)\n", a.Name, a.ID, a.Version)
+		fmt.Printf("Target:    %s\n", target)
+		fmt.Printf("Strategy:  %s\n", spec.Strategy)
+		fmt.Printf("Executable:%s\n", spec.Executable)
+		if len(spec.Args) > 0 {
+			fmt.Printf("Args:      %s\n", strings.Join(spec.Args, " "))
+		}
+		if spec.Archive != "" {
+			fmt.Printf("Archive:   %s\n", spec.Archive)
+			fmt.Printf("SHA-256:   %s\n", spec.SHA256)
+		}
+		if len(spec.Env) > 0 {
+			fmt.Printf("Env:       %d variable(s)\n", len(spec.Env))
+		}
+
+	default:
+		fmt.Printf("Unknown agent subcommand: %s\n", sub)
+		os.Exit(1)
+	}
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	if max <= 1 {
+		return s[:max]
+	}
+	return s[:max-1] + "…"
 }
 
 func runSearch(query string) {
