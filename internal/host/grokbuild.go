@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -17,7 +16,7 @@ type GrokBuildAdapter struct{}
 
 func (a *GrokBuildAdapter) Descriptor() HostDescriptor {
 	return HostDescriptor{
-		HostID:                 "grok",
+		HostID:                 "grok-build",
 		DisplayName:            "Grok Build (xAI Dev Tool)",
 		SupportedVersions:      []string{">=0.1.0"},
 		DefaultConfigFileName:  "config.toml",
@@ -29,24 +28,16 @@ func (a *GrokBuildAdapter) Descriptor() HostDescriptor {
 }
 
 func (a *GrokBuildAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	usr, _ := user.Current()
-	homeDir := ""
-	if usr != nil {
-		homeDir = usr.HomeDir
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOME")
-		if homeDir == "" {
-			homeDir = os.Getenv("USERPROFILE")
-		}
-	}
+	homeDir := resolveHomeDir()
 
 	var candidatePaths []string
 	if runtime.GOOS == "windows" {
+		// Native Windows user scope is %USERPROFILE%\.grok\config.toml.
+		// %APPDATA% is retained only as a legacy fallback for older installs.
+		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".grok", "config.toml"))
 		if appData := os.Getenv("APPDATA"); appData != "" {
 			candidatePaths = append(candidatePaths, filepath.Join(appData, "Grok", "config.toml"))
 		}
-		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".grok", "config.toml"))
 	} else {
 		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".grok", "config.toml"))
 	}
@@ -74,13 +65,13 @@ func (a *GrokBuildAdapter) PlanSetup(ctx context.Context, binaryPath string, bac
 		origContent = string(data)
 	}
 
-	backupPath, err := CreateAtomicBackup(configPath, backupDir, "grok")
+	backupPath, err := CreateAtomicBackup(configPath, backupDir, "grok-build")
 	if err != nil {
 		return nil, err
 	}
 
 	cleanBin := filepath.ToSlash(binaryPath)
-	entry := fmt.Sprintf("\n[mcp_servers.litepsm]\ncommand = %q\nargs = [\"bridge\", \"stdio\", \"--host\", \"grok\"]\n", cleanBin)
+	entry := fmt.Sprintf("\n[mcp_servers.litepsm]\ncommand = %q\nargs = [\"bridge\", \"stdio\", \"--host\", \"grok-build\"]\n", cleanBin)
 
 	proposed := origContent
 	if strings.Contains(origContent, "[mcp_servers.litepsm]") {
@@ -106,7 +97,7 @@ func (a *GrokBuildAdapter) PlanSetup(ctx context.Context, binaryPath string, bac
 	}
 
 	return &HostChangePlan{
-		HostID:          "grok",
+		HostID:          "grok-build",
 		ConfigPath:      configPath,
 		OriginalContent: origContent,
 		ProposedContent: proposed,
@@ -135,12 +126,12 @@ func (a *GrokBuildAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan)
 func (a *GrokBuildAdapter) VerifySetup(ctx context.Context) (*HostVerification, error) {
 	configPath, err := a.DetectConfig(ctx, domain.ScopeUser)
 	if err != nil {
-		return &HostVerification{HostID: "grok", Status: "missing"}, nil
+		return &HostVerification{HostID: "grok-build", Status: "missing"}, nil
 	}
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return &HostVerification{HostID: "grok", ConfigPath: configPath, Status: "missing"}, nil
+		return &HostVerification{HostID: "grok-build", ConfigPath: configPath, Status: "missing"}, nil
 	}
 
 	content := string(data)
@@ -151,7 +142,7 @@ func (a *GrokBuildAdapter) VerifySetup(ctx context.Context) (*HostVerification, 
 	}
 
 	return &HostVerification{
-		HostID:     "grok",
+		HostID:     "grok-build",
 		ConfigPath: configPath,
 		Registered: registered,
 		Status:     status,
@@ -177,6 +168,6 @@ func (a *GrokBuildAdapter) RenderManualSetup(binaryPath string) string {
 	return fmt.Sprintf(`# Add to ~/.grok/config.toml
 [mcp_servers.litepsm]
 command = %q
-args = ["bridge", "stdio", "--host", "grok"]
+args = ["bridge", "stdio", "--host", "grok-build"]
 `, cleanBin)
 }

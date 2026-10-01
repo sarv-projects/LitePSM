@@ -7,18 +7,29 @@ interface SearchBarProps {
   query: string;
   setQuery: (q: string) => void;
   totalMatches?: number;
+  totalCount: number;
 }
 
-export function SearchBar({ query, setQuery, totalMatches }: SearchBarProps) {
+function isEditableTarget(el: EventTarget | null): boolean {
+  const node = el as HTMLElement | null;
+  if (!node) return false;
+  const tag = node.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
+}
+
+export function SearchBar({ query, setQuery, totalMatches, totalCount }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const typing = isEditableTarget(document.activeElement);
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         inputRef.current?.focus();
+        return;
       }
-      if (e.key === "/" && document.activeElement !== inputRef.current) {
+      // "/" focuses search only when not already typing somewhere else.
+      if (e.key === "/" && !typing) {
         e.preventDefault();
         inputRef.current?.focus();
       }
@@ -26,40 +37,42 @@ export function SearchBar({ query, setQuery, totalMatches }: SearchBarProps) {
         inputRef.current?.blur();
       }
     };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   return (
-    <div className="w-full max-w-2xl mx-auto mb-6 px-4">
-      <div className="relative flex items-center bg-white rounded-2xl border border-slate-200/90 shadow-[0_2px_8px_rgba(15,23,42,0.04)] focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-500/10 transition-all overflow-hidden">
-        <Search className="w-5 h-5 text-slate-400 ml-4 pointer-events-none" />
+    <div className="mx-auto mb-6 w-full max-w-2xl px-4">
+      <div className="relative flex items-center overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-all focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-500/10">
+        <Search className="pointer-events-none ml-4 h-5 w-5 text-slate-400" aria-hidden="true" />
         <input
           ref={inputRef}
-          type="text"
+          type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search 5,185 MCP servers, skills, and plugins (e.g. postgres, github, docx)..."
+          aria-label="Search capabilities"
+          placeholder={`Search ${totalCount.toLocaleString()} MCP servers, skills, and plugins (e.g. postgres, github, docx)...`}
           className="w-full bg-transparent px-4 py-3.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
         />
         {query ? (
-          <div className="flex items-center gap-2 mr-3">
+          <div className="mr-3 flex items-center gap-2">
             {totalMatches !== undefined && (
-              <span className="text-[11px] font-mono text-slate-400">
+              <span className="font-mono text-[11px] text-slate-400" aria-live="polite">
                 {totalMatches} matches
               </span>
             )}
             <button
+              type="button"
               onClick={() => setQuery("")}
-              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100 transition-all"
+              aria-label="Clear search"
+              className="rounded-md p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         ) : (
-          <div className="hidden sm:flex items-center gap-1 mr-4 pointer-events-none">
-            <kbd className="px-2 py-0.5 text-[10px] font-mono bg-slate-100 text-slate-500 rounded border border-slate-200 shadow-sm font-semibold">
+          <div className="pointer-events-none mr-4 hidden items-center gap-1 sm:flex">
+            <kbd className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-500 shadow-sm">
               ⌘K
             </kbd>
           </div>

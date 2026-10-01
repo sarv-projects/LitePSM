@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -29,24 +28,16 @@ func (a *CodexAdapter) Descriptor() HostDescriptor {
 }
 
 func (a *CodexAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	usr, _ := user.Current()
-	homeDir := ""
-	if usr != nil {
-		homeDir = usr.HomeDir
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOME")
-		if homeDir == "" {
-			homeDir = os.Getenv("USERPROFILE")
-		}
-	}
+	homeDir := resolveHomeDir()
 
 	var candidatePaths []string
 	if runtime.GOOS == "windows" {
+		// Native Windows user scope is %USERPROFILE%\.codex\config.toml.
+		// %APPDATA% is retained only as a legacy fallback for older installs.
+		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".codex", "config.toml"))
 		if appData := os.Getenv("APPDATA"); appData != "" {
 			candidatePaths = append(candidatePaths, filepath.Join(appData, "Codex", "config.toml"))
 		}
-		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".codex", "config.toml"))
 	} else {
 		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".codex", "config.toml"))
 	}

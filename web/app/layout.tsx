@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ToastViewport } from "../components/ui/Toast";
 
 export const metadata: Metadata = {
   title: "LitePSM Market - Universal AI Agent Capability Registry",
@@ -19,6 +20,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="min-h-screen bg-[#f0f2f6] text-slate-900 antialiased bg-grid-pattern selection:bg-emerald-500 selection:text-black">
         {children}
+        <ToastViewport />
       </body>
     </html>
   );

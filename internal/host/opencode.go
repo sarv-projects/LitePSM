@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 
@@ -30,24 +29,16 @@ func (a *OpenCodeAdapter) Descriptor() HostDescriptor {
 }
 
 func (a *OpenCodeAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	usr, _ := user.Current()
-	homeDir := ""
-	if usr != nil {
-		homeDir = usr.HomeDir
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOME")
-		if homeDir == "" {
-			homeDir = os.Getenv("USERPROFILE")
-		}
-	}
+	homeDir := resolveHomeDir()
 
 	var candidates []string
 	if runtime.GOOS == "windows" {
+		// Native Windows user scope is %USERPROFILE%\.config\opencode\opencode.json.
+		// %APPDATA% is retained only as a legacy fallback for older installs.
+		candidates = append(candidates, filepath.Join(homeDir, ".config", "opencode", "opencode.json"))
 		if appData := os.Getenv("APPDATA"); appData != "" {
 			candidates = append(candidates, filepath.Join(appData, "OpenCode", "opencode.json"))
 		}
-		candidates = append(candidates, filepath.Join(homeDir, ".config", "opencode", "opencode.json"))
 		candidates = append(candidates, filepath.Join(homeDir, ".opencode.json"))
 	} else {
 		candidates = append(candidates, filepath.Join(homeDir, ".config", "opencode", "opencode.json"))
@@ -88,8 +79,10 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 	}
 
 	bridgeEntry := map[string]any{
-		"command": filepath.ToSlash(binaryPath),
-		"args":    []string{"bridge", "stdio", "--host", "opencode"},
+		"type": "local",
+		// OpenCode local servers use a combined string array command
+		// (executable followed by its arguments).
+		"command": append([]string{filepath.ToSlash(binaryPath)}, "bridge", "stdio", "--host", "opencode"),
 	}
 
 	// Detect whether v2 (mcp.servers) or v1 (mcp.<name>) is in use
@@ -253,8 +246,24 @@ func (a *OpenCodeAdapter) extractComponent(name string, details any, configPath 
 		SourcePath: configPath,
 	}
 	if dMap, ok := details.(map[string]any); ok {
-		if cmd, ok := dMap["command"].(string); ok {
+		// OpenCode local entries store the executable and its arguments as a
+		// single string array under "command"; older entries may use a string
+		// "command" plus a separate "args" array.
+		switch cmd := dMap["command"].(type) {
+		case string:
 			comp.Command = cmd
+		case []any:
+			for i, item := range cmd {
+				s, ok := item.(string)
+				if !ok {
+					continue
+				}
+				if i == 0 {
+					comp.Command = s
+				} else {
+					comp.Args = append(comp.Args, s)
+				}
+			}
 		}
 		if args, ok := dMap["args"].([]any); ok {
 			for _, arg := range args {
@@ -273,8 +282,8 @@ func (a *OpenCodeAdapter) RenderManualSetup(binaryPath string) string {
 "mcp": {
   "servers": {
     "litepsm": {
-      "command": %q,
-      "args": ["bridge", "stdio", "--host", "opencode"]
+      "type": "local",
+      "command": [%q, "bridge", "stdio", "--host", "opencode"]
     }
   }
 }

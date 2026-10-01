@@ -9,7 +9,7 @@ LitePSM provides both an interactive terminal interface for humans and a structu
 │                        User / Terminal Client                          │
 │                                                                        │
 │   $ litepsm (Interactive TUI Wizard)                                   │
-│     ├── Agent Selector Dropdown (Claude, Codex, Grok, OpenCode, Cline) │
+│     ├── Agent Selector Dropdown (Claude Code, Codex, Grok Build, OpenCode, Cline) │
 │     ├── Automated Host Configuration Path Detection                    │
 │     ├── Manual Path Prompt & Fallback Guidance                         │
 │     └── Passive Catalog Update Notice                                  │
@@ -52,12 +52,12 @@ LitePSM probes known default configuration locations by platform:
 
 | Target Agent | Linux / macOS Default Path | Windows Default Path |
 |---|---|---|
-| **Claude Code** | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
-| **OpenAI Codex** | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` or `%APPDATA%\Codex\config.toml` |
-| **Grok Build** | `~/.grok/config.toml` (or project `.grok/config.toml`) | `%USERPROFILE%\.grok\config.toml` or `%APPDATA%\Grok\config.toml` |
-| **Pi Agent** | `~/.pi/agent/mcp.json` (or `~/.pi/config.json`) | `%USERPROFILE%\.pi\agent\mcp.json` or `%USERPROFILE%\.pi\config.json` |
-| **OpenCode** | `~/.config/opencode/opencode.json` | `%APPDATA%\OpenCode\opencode.json` |
-| **Cline** | `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/...` | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\...` |
+| **Claude Code** | `~/.claude.json` (project `.mcp.json`; local scope entry inside `~/.claude.json`) | `%USERPROFILE%\.claude.json` (`CLAUDE_CONFIG_DIR` overrides) |
+| **OpenAI Codex** | `~/.codex/config.toml` (project `.codex/config.toml`) | `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback; `$CODEX_HOME` overrides) |
+| **Grok Build** | `~/.grok/config.toml` (project `.grok/config.toml`) | `%USERPROFILE%\.grok\config.toml` (`%APPDATA%\Grok\config.toml` is a legacy fallback) |
+| **Pi Agent** | `~/.pi/agent/mcp.json` (project `.pi/mcp.json`, trust-gated; legacy `~/.pi/config.json` / `~/.pi/mcp.json`) | `%USERPROFILE%\.pi\agent\mcp.json` (legacy `%USERPROFILE%\.pi\config.json` / `%USERPROFILE%\.pi\mcp.json`) |
+| **OpenCode** | `~/.config/opencode/opencode.json` (project `opencode.json` or `.opencode/`) | `%USERPROFILE%\.config\opencode\opencode.json` (`%APPDATA%\OpenCode\opencode.json` is a legacy fallback) |
+| **Cline** | `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/...` (Cline CLI: `~/.cline/data/settings/cline_mcp_settings.json`, not managed) | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\...` (Cline CLI: `~/.cline/data/settings/cline_mcp_settings.json`, not managed) |
 
 ### Step 3: Graceful Fallback Options
 If the configuration file is absent, LitePSM prompts the user:
@@ -72,7 +72,7 @@ If the configuration file is absent, LitePSM prompts the user:
 
 ### Step 4: Safe Atomic Configuration Injection
 1.  **Backup:** Copies target configuration to `DATA_ROOT/backups/<host-id>/<timestamp>-<digest>/config.bak`.
-2.  **Parse & Merge:** Parses JSON/TOML, preserving comments and formatting where possible. Injects a single version-pinned entry:
+2.  **Parse & Merge:** Parses JSON/TOML, preserving comments and formatting where possible. Injects a single version-pinned `litepsm` bridge entry for the selected host (below shown for `claude-code`):
     ```json
     {
       "mcpServers": {
@@ -83,6 +83,7 @@ If the configuration file is absent, LitePSM prompts the user:
       }
     }
     ```
+    Only this one `litepsm` entry is registered per host; the `--host <agent-id>` argument tells the daemon which host is calling, and individual capabilities are resolved by the daemon at runtime (no per-capability host snippets are generated).
 3.  **Atomic Replacement:** Writes to a temporary file on the same filesystem, validates syntax, and renames atomically.
 
 ---

@@ -7,14 +7,12 @@ LitePSM connects to AI agent hosts through a strongly typed, compiled-in `HostAd
 ```go
 type HostAdapter interface {
     Descriptor() HostDescriptor
-    DetectConfig(ctx context.Context, scope Scope) (string, error)
-    PlanSetup(ctx context.Context, reg BridgeRegistration) (*HostChangePlan, error)
+    DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error)
+    PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error)
     ApplySetup(ctx context.Context, plan *HostChangePlan) (*HostApplyResult, error)
     VerifySetup(ctx context.Context) (*HostVerification, error)
-    PlanRemove(ctx context.Context) (*HostChangePlan, error)
-    ApplyRemove(ctx context.Context, plan *HostChangePlan) (*HostApplyResult, error)
-    RenderManualSetup(ctx context.Context) (string, error)
     DetectPreExistingComponents(ctx context.Context) ([]PreExistingComponent, error)
+    RenderManualSetup(binaryPath string) string
 }
 
 type HostDescriptor struct {
@@ -42,7 +40,7 @@ When a user runs `litepsm`, the client queries the remote catalog release pointe
 
 ## 3. Supported Agent Adapters
 
-### 3.1 Cline (VS Code Extension) (`internal/host/cline`)
+### 3.1 Cline (VS Code Extension) (`internal/host/cline.go`)
 *   **Host ID:** `cline`
 *   **Target Configuration:**
     *   **Windows:** `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
@@ -50,47 +48,49 @@ When a user runs `litepsm`, the client queries the remote catalog release pointe
     *   **Linux:** `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
 *   **Format:** JSON.
 *   **Managed Injection:** Injects under `mcpServers.litepsm`.
+*   **Cline CLI:** The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LitePSM does not currently manage.
 *   **Detected External Capabilities:** Scans sibling keys in `mcpServers` (e.g., `filesystem`, `postgres`, `github`) as read-only detected entries.
 
-### 3.2 Pi Agent (`pi-coding-agent`) (`internal/host/piagent`)
+### 3.2 Pi Agent (`pi-coding-agent`) (`internal/host/piagent.go`)
 *   **Host ID:** `pi-agent`
 *   **Target Configuration Candidate Paths:**
-    *   Candidate 1: `~/.pi/agent/mcp.json` (Unix/macOS) or `%USERPROFILE%\.pi\agent\mcp.json` (Windows)
-    *   Candidate 2: `~/.pi/config.json`
-    *   Candidate 3: `~/.pi/agent/extensions/`
+    *   User scope: `~/.pi/agent/mcp.json` (Unix/macOS) or `%USERPROFILE%\.pi\agent\mcp.json` (Windows)
+    *   Project scope: `.pi/mcp.json` (trust-gated)
+    *   Legacy fallback: `~/.pi/config.json` / `~/.pi/mcp.json`
 *   **Format:** JSON.
-*   **Managed Injection:** Registers LitePSM in Pi's MCP config (`mcp.servers.litepsm`) and writes a companion command extension (`~/.pi/agent/extensions/litepsm.ts`).
+*   **Managed Injection:** Registers LitePSM under the `mcpServers` key in Pi's MCP config and writes a companion command extension (`~/.pi/agent/extensions/litepsm.ts`).
 *   **Detected External Capabilities:** Detects external tools from the discovered config file in read-only mode.
 
-### 3.3 Grok Build (`internal/host/grokbuild`)
+### 3.3 Grok Build (`internal/host/grokbuild.go`)
 *   **Host ID:** `grok-build`
 *   **Target Configuration:**
     *   **Unix / macOS:** `~/.grok/config.toml` (global) or `.grok/config.toml` (project)
-    *   **Windows:** `%USERPROFILE%\.grok\config.toml` or `%APPDATA%\Grok\config.toml`
+    *   **Windows:** `%USERPROFILE%\.grok\config.toml` (`%APPDATA%\Grok\config.toml` is a legacy fallback)
 *   **Format:** TOML.
 *   **Managed Injection:** Injects under `[mcp_servers.litepsm]`.
 *   **Detected External Capabilities:** Parses declared external `[mcp_servers.*]` sections in read-only mode.
 
-### 3.4 Claude Code (`internal/host/claudecode`)
+### 3.4 Claude Code (`internal/host/claudecode.go`)
 *   **Host ID:** `claude-code`
-*   **Target Configuration:** `~/.claude.json` (Unix) or `%USERPROFILE%\.claude.json` (Windows).
+*   **Target Configuration:** User scope `~/.claude.json` (Windows `%USERPROFILE%\.claude.json`), project scope `.mcp.json` in the project root, and a per-project local entry inside `~/.claude.json`. `CLAUDE_CONFIG_DIR` overrides the config directory.
 *   **Format:** JSON.
 *   **Managed Injection:** Injects under `mcpServers.litepsm`.
 *   **Detected External Capabilities:** Scans existing `mcpServers` and `.claude/skills/` in read-only mode.
 
-### 3.5 OpenAI Codex (`internal/host/codex`)
+### 3.5 OpenAI Codex (`internal/host/codex.go`)
 *   **Host ID:** `codex`
 *   **Target Configuration:**
-    *   **Unix / macOS:** `~/.codex/config.toml`
-    *   **Windows:** `%USERPROFILE%\.codex\config.toml` or `%APPDATA%\Codex\config.toml`
+    *   **Unix / macOS:** `~/.codex/config.toml` (project `.codex/config.toml`)
+    *   **Windows:** `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback; `$CODEX_HOME` overrides the directory)
 *   **Format:** TOML.
 *   **Managed Injection:** Injects under `[mcp_servers.litepsm]`.
 *   **Detected External Capabilities:** Parses declared external `[mcp_servers.*]` sections in read-only mode.
 
-### 3.6 OpenCode (`internal/host/opencode`)
+### 3.6 OpenCode (`internal/host/opencode.go`)
 *   **Host ID:** `opencode`
-*   **Target Configuration:** `~/.config/opencode/opencode.json` (Unix) or `%APPDATA%\OpenCode\opencode.json` (Windows).
+*   **Target Configuration:** `~/.config/opencode/opencode.json` (Unix/macOS) or `%USERPROFILE%\.config\opencode\opencode.json` (native Windows; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback). Project scope supports `opencode.json` in the project root or `.opencode/`.
 *   **Format:** JSON.
+*   **Local Entry Shape:** Local MCP entries require `"type": "local"` and a combined string array `"command"`, e.g. `{"mcp":{"servers":{"litepsm":{"type":"local","command":["litepsm","bridge","stdio","--host","opencode"]}}}}`.
 *   **Version Mapping Profile:**
     *   `v1.x`: Uses root `mcp` dictionary (`mcp.litepsm`).
     *   `v2.x`: Uses nested `mcp.servers` object (`mcp.servers.litepsm`).
@@ -141,7 +141,7 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 
 ### Tab 3: Plugins
 *   Curated plugins and bundles combining MCP servers, skills, and tools.
-*   Reports per-host compatibility badges (`Claude`, `Codex`, `Cline`, `Grok`).
+*   Reports per-host compatibility badges (`Claude`, `Codex`, `Cline`, `Grok Build`).
 
 ### Tab 4: Installed & Detected External Capabilities
 The final tab provides complete situational visibility across the host environment:
@@ -176,4 +176,4 @@ To guarantee that `/litepsm` is immediately accessible the next time the agent o
 1.  **Cline:** Registers a custom prompt/workflow or workspace command triggering the LitePSM MCP bridge.
 2.  **Pi Agent:** Writes a TypeScript command extension to `~/.pi/agent/extensions/litepsm.ts` (or `~/.pi/extensions/litepsm.ts`) registering `/litepsm`.
 3.  **Claude Code & Codex:** Installs a companion bootstrap skill `litepsm.skill.md` with trigger keyword `/litepsm`.
-4.  **Grok Build:** Registers a custom command hook in `.grok/` or project configuration.
+4.  **Grok Build:** Registers a custom command hook in `.grok/config.toml` (project scope).

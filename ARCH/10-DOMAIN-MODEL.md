@@ -133,7 +133,7 @@ type InstallRecord struct {
 Tracks integration bindings injected into agent host configurations:
 ```go
 type HostRegistrationRecord struct {
-    HostID           string           `json:"hostId"` // "cline" | "codex" | "grok" | "claude-code" | "pi" | "opencode"
+    HostID           string           `json:"hostId"` // "cline" | "codex" | "grok-build" | "claude-code" | "pi-agent" | "opencode"
     Scope            InstallScope     `json:"scope"` // "user" | "project"
     WorkspaceID      string           `json:"workspaceId"` // "" for user scope, workspace ID for project scope
     ConfigPath       string           `json:"configPath"` // Normalized filesystem path

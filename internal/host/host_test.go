@@ -163,8 +163,8 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
       "args": ["mcp-server-fetch"]
     },
     "litepsm": {
-      "command": "litepsm",
-      "args": ["bridge", "stdio", "--host", "opencode"]
+      "type": "local",
+      "command": ["litepsm", "bridge", "stdio", "--host", "opencode"]
     }
   }
 }`,
@@ -199,8 +199,8 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
         "command": "mcp-git"
       },
       "litepsm": {
-        "command": "litepsm",
-        "args": ["bridge", "stdio", "--host", "opencode"]
+        "type": "local",
+        "command": ["litepsm", "bridge", "stdio", "--host", "opencode"]
       }
     }
   }
@@ -216,6 +216,108 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
 	if !strings.Contains(manual, "servers") {
 		t.Errorf("v2 manual render expected servers key")
 	}
+}
+
+func TestOpenCodePlanSetup_EmitsLocalTypeAndArrayCommand(t *testing.T) {
+	ctx := context.Background()
+
+	// Redirect every home/config override into a throwaway directory so the test
+	// never reads or writes the real user configuration. PlanSetup performs no
+	// writes itself (ApplySetup does).
+	newHermeticHome := func(t *testing.T) string {
+		t.Helper()
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+		return home
+	}
+
+	assertLocalEntry := func(t *testing.T, content string, nested bool) {
+		t.Helper()
+		if !strings.Contains(content, `"type": "local"`) {
+			t.Fatalf("proposed content missing explicit local server type:\n%s", content)
+		}
+		var root map[string]any
+		if err := json.Unmarshal([]byte(content), &root); err != nil {
+			t.Fatalf("proposed content is not valid JSON: %v", err)
+		}
+		mcpMap, ok := root["mcp"].(map[string]any)
+		if !ok {
+			t.Fatalf("proposed content missing mcp object:\n%s", content)
+		}
+		container := mcpMap
+		if servers, ok := mcpMap["servers"].(map[string]any); ok {
+			if !nested {
+				t.Fatalf("expected a flat v1 layout but found mcp.servers:\n%s", content)
+			}
+			container = servers
+		} else if nested {
+			t.Fatalf("expected a nested v2 layout with mcp.servers:\n%s", content)
+		}
+		entry, ok := container["litepsm"].(map[string]any)
+		if !ok {
+			t.Fatalf("proposed content missing litepsm entry:\n%s", content)
+		}
+		if entry["type"] != "local" {
+			t.Errorf("expected litepsm type %q, got %v", "local", entry["type"])
+		}
+		command, ok := entry["command"].([]any)
+		if !ok {
+			t.Fatalf("expected command to be a JSON array, got %T (%v)", entry["command"], entry["command"])
+		}
+		if len(command) < 2 {
+			t.Fatalf("expected command array to include the executable and its args, got %v", command)
+		}
+		var gotTail []string
+		for _, item := range command[1:] {
+			s, _ := item.(string)
+			gotTail = append(gotTail, s)
+		}
+		if strings.Join(gotTail, " ") != "bridge stdio --host opencode" {
+			t.Errorf("unexpected bridge args: got %v", gotTail)
+		}
+		if _, hasArgs := entry["args"]; hasArgs {
+			t.Errorf("local entry must not use a separate args key: %v", entry["args"])
+		}
+	}
+
+	t.Run("v2_default", func(t *testing.T) {
+		newHermeticHome(t)
+		adapter := &OpenCodeAdapter{}
+		plan, err := adapter.PlanSetup(ctx, "/opt/litepsm/litepsm", t.TempDir())
+		if err != nil {
+			t.Fatalf("PlanSetup failed: %v", err)
+		}
+		if plan.HostID != "opencode" {
+			t.Errorf("unexpected plan HostID: %s", plan.HostID)
+		}
+		assertLocalEntry(t, plan.ProposedContent, true)
+	})
+
+	t.Run("v1_existing", func(t *testing.T) {
+		home := newHermeticHome(t)
+		configDir := filepath.Join(home, ".config", "opencode")
+		if err := os.MkdirAll(configDir, 0700); err != nil {
+			t.Fatalf("failed to create config dir: %v", err)
+		}
+		v1 := `{"mcp":{"weather":{"type":"local","command":["python","-m","weather_mcp"]}}}`
+		if err := os.WriteFile(filepath.Join(configDir, "opencode.json"), []byte(v1), 0600); err != nil {
+			t.Fatalf("failed to write v1 config: %v", err)
+		}
+
+		adapter := &OpenCodeAdapter{}
+		plan, err := adapter.PlanSetup(ctx, "/opt/litepsm/litepsm", t.TempDir())
+		if err != nil {
+			t.Fatalf("PlanSetup failed: %v", err)
+		}
+		assertLocalEntry(t, plan.ProposedContent, false)
+		// The pre-existing v1 entry must be preserved by the merge.
+		if !strings.Contains(plan.ProposedContent, "weather_mcp") {
+			t.Errorf("existing v1 entry was not preserved:\n%s", plan.ProposedContent)
+		}
+	})
 }
 
 func TestPiAgentAdapter(t *testing.T) {
@@ -258,11 +360,11 @@ func TestGrokBuildAdapter(t *testing.T) {
 
 	adapter := &GrokBuildAdapter{}
 	plan := &HostChangePlan{
-		HostID:     "grok",
+		HostID:     "grok-build",
 		ConfigPath: configFile,
 		ProposedContent: `[mcp_servers.litepsm]
 command = "litepsm"
-args = ["bridge", "stdio", "--host", "grok"]
+args = ["bridge", "stdio", "--host", "grok-build"]
 `,
 	}
 
@@ -275,7 +377,7 @@ args = ["bridge", "stdio", "--host", "grok"]
 	}
 
 	desc := adapter.Descriptor()
-	if desc.HostID != "grok" || desc.ConfigFormat != "toml" {
+	if desc.HostID != "grok-build" || desc.ConfigFormat != "toml" {
 		t.Errorf("unexpected descriptor: %+v", desc)
 	}
 }
@@ -312,8 +414,15 @@ func TestRegistry(t *testing.T) {
 	}
 
 	grok, err := GetAdapter("grok-build")
-	if err != nil || grok.Descriptor().HostID != "grok" {
+	if err != nil || grok.Descriptor().HostID != "grok-build" {
 		t.Errorf("failed to get grok adapter: %v", err)
+	}
+
+	// The legacy "grok" registry alias must continue to resolve to the same
+	// canonical grok-build adapter.
+	grokAlias, err := GetAdapter("grok")
+	if err != nil || grokAlias.Descriptor().HostID != "grok-build" {
+		t.Errorf("failed to get grok alias adapter: %v", err)
 	}
 
 	_, err = GetAdapter("nonexistent")
@@ -410,5 +519,38 @@ func TestGoldenFixturesCompliance(t *testing.T) {
 			t.Fatalf("unexpected memory command/args: %+v", comps[0])
 		}
 	})
-}
 
+	// 5. OpenCode Golden Fixtures (explicit local type + array command)
+	t.Run("OpenCode_LocalShape", func(t *testing.T) {
+		for _, name := range []string{"opencode_v1.json", "opencode_v2.json"} {
+			data, err := os.ReadFile(filepath.Join("../../fixtures/hosts/opencode", name))
+			if err != nil {
+				t.Fatalf("failed to read fixture %s: %v", name, err)
+			}
+			var root map[string]any
+			if err := json.Unmarshal(data, &root); err != nil {
+				t.Fatalf("fixture %s is not valid JSON: %v", name, err)
+			}
+			mcpMap, ok := root["mcp"].(map[string]any)
+			if !ok {
+				t.Fatalf("fixture %s missing mcp object", name)
+			}
+			servers := mcpMap
+			if nested, ok := mcpMap["servers"].(map[string]any); ok {
+				servers = nested
+			}
+			for entryName, raw := range servers {
+				entry, ok := raw.(map[string]any)
+				if !ok {
+					t.Fatalf("fixture %s entry %s is not an object", name, entryName)
+				}
+				if entry["type"] != "local" {
+					t.Errorf("fixture %s entry %s missing type=local", name, entryName)
+				}
+				if _, ok := entry["command"].([]any); !ok {
+					t.Errorf("fixture %s entry %s command must be a JSON array", name, entryName)
+				}
+			}
+		}
+	})
+}

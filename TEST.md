@@ -10,16 +10,19 @@ Golden fixtures and test files are maintained in `fixtures/hosts/`:
 
 ```text
 fixtures/hosts/
+  ├── claude/
+  │   └── claude.json
   ├── cline/
-  │   ├── valid_cline_mcp_settings.json
-  │   ├── with_comments_cline_mcp_settings.json
   │   └── existing_servers_cline_mcp_settings.json
-  ├── pi/
-  │   ├── valid_pi_config.json
-  │   └── with_extensions_pi_config.json
-  └── grok/
-      ├── valid_grok_config.toml
-      └── complex_grok_config.toml
+  ├── codex/
+  │   └── config.toml
+  ├── grok/
+  │   └── valid_grok_config.toml
+  ├── opencode/
+  │   ├── opencode_v1.json
+  │   └── opencode_v2.json
+  └── pi/
+      └── valid_mcp.json
 ```
 
 ### 1.1 Mock Cline Fixture with Pre-Existing Servers
@@ -36,7 +39,7 @@ fixtures/hosts/
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_mocktoken"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_mocktoken12345"
       },
       "disabled": true
     }
@@ -45,23 +48,26 @@ fixtures/hosts/
 ```
 
 ### 1.2 Mock Pi Agent Fixture
-`fixtures/hosts/pi/valid_mcp.json` (or `valid_pi_config.json`):
+`fixtures/hosts/pi/valid_mcp.json`:
 ```json
 {
   "model": "anthropic:claude-3-5-sonnet",
   "mcp": {
     "servers": {
       "local_bash": {
-        "command": "/bin/bash"
+        "command": "/bin/bash",
+        "args": ["-l"]
       }
     }
   }
 }
 ```
+Pi's current configuration key is `mcpServers`; this fixture exercises the nested `mcp.servers` shape. Project scope is `.pi/mcp.json` (trust-gated).
 
 ### 1.3 Mock Grok Build Fixture
-`fixtures/hosts/grok/valid_grok_config.toml` (located at `~/.grok/config.toml`):
+`fixtures/hosts/grok/valid_grok_config.toml` (located at `~/.grok/config.toml`; project scope `.grok/config.toml`):
 ```toml
+# Grok Build configuration file
 [general]
 theme = "dark"
 auto_reload = true
@@ -71,15 +77,21 @@ command = "uvx"
 args = ["mcp-server-sqlite", "--db-path", "test.db"]
 ```
 
+### 1.4 Additional Host Fixtures
+*   `fixtures/hosts/claude/claude.json` — user-scope `mcpServers` layout for Claude Code.
+*   `fixtures/hosts/codex/config.toml` — `[mcp_servers.*]` layout for OpenAI Codex.
+*   `fixtures/hosts/opencode/opencode_v1.json` — flat `mcp.<name>` layout.
+*   `fixtures/hosts/opencode/opencode_v2.json` — nested `mcp.servers` layout.
+
 ---
 
 ## 2. Test Cases & Verification Procedures
 
 ### Test Case 1: Automated Configuration Discovery
-*   **Objective:** Verify that `DetectConfig` locates target files across operating systems (including candidate paths for Pi: `~/.pi/agent/mcp.json`, Grok: `~/.grok/config.toml`, Codex: `~/.codex/config.toml`).
+*   **Objective:** Verify that `DetectConfig` locates target files across operating systems (including candidate paths for Pi: `~/.pi/agent/mcp.json`, Grok: `~/.grok/config.toml`, Codex: `~/.codex/config.toml`, Claude Code: `~/.claude.json`, OpenCode: `~/.config/opencode/opencode.json`).
 *   **Procedure:**
     1. Set mock environment variables (`APPDATA` on Windows, `HOME` on Unix).
-    2. Invoke `adapter.DetectConfig(ctx, ScopeUser)`.
+    2. Invoke `adapter.DetectConfig(ctx, domain.ScopeUser)`.
     3. Assert returned path matches the platform specification.
 
 ### Test Case 2: Missing Configuration Fallback Flow
@@ -114,7 +126,7 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
 *   **Procedure:**
     1. For **Pi Agent**: verify `~/.pi/agent/extensions/litepsm.ts` exists and registers `/litepsm`.
     2. For **Cline**: verify custom instructions or prompt templates contain `/litepsm` trigger keyword.
-    3. For **Grok Build**: verify `.grok/` command hook exists.
+    3. For **Grok Build**: verify `.grok/config.toml` command hook exists.
 
 ### Test Case 6: Dynamic Runtime Adapter Advisory Fetching
 *   **Objective:** Verify the client queries the remote manifest at runtime for compatibility advisories without executing remote code.
@@ -134,10 +146,9 @@ Run the adapter test suite:
 # Run unit tests for all host adapters
 go test -v ./internal/host/...
 
-# Run specific tests for Cline, Pi Agent, and Grok Build
-go test -v ./internal/host/cline/...
-go test -v ./internal/host/piagent/...
-go test -v ./internal/host/grokbuild/...
+# Adapters are separate files in the single `host` package (not subpackages),
+# so adapter-specific tests are selected with -run filters, e.g.:
+go test -v ./internal/host/... -run 'Test(PiAgent|GrokBuild|Codex|ClaudeCode|OpenCode)Adapter'
 
 # Run end-to-end integration harness
 go test -v ./tests/e2e/hosts_test.go

@@ -1,63 +1,53 @@
 "use client";
 
 import React from "react";
-import {
-  Code,
-  Database,
-  Globe,
-  Wrench,
-  ShieldCheck,
-  Cpu,
-  Workflow,
-  Sparkles,
-  Layers,
-  Coins,
-  Search,
-  Terminal,
-  Box
-} from "lucide-react";
 
-export const CATEGORIES = [
-  { id: "all", label: "All Categories", icon: Layers },
-  { id: "Official Core", label: "Official Core", icon: ShieldCheck },
-  { id: "Developer Tools", label: "Developer Tools", icon: Code },
-  { id: "Databases", label: "Databases", icon: Database },
-  { id: "Browser Automation", label: "Browser Automation", icon: Globe },
-  { id: "Productivity & Workflow", label: "Productivity & Workflow", icon: Sparkles },
-  { id: "Agent Skills", label: "Agent Skills", icon: Wrench },
-  { id: "Cloud Infrastructure", label: "Cloud Infrastructure", icon: Cpu },
-  { id: "Security & Testing", label: "Security & Testing", icon: ShieldCheck },
-  { id: "Finance & Crypto", label: "Finance & Crypto", icon: Coins },
-  { id: "Search & Retrieval", label: "Search & Retrieval", icon: Search },
-  { id: "Plugins & Toolkits", label: "Plugins & Toolkits", icon: Box },
-];
+export interface CategoryFacet {
+  name: string;
+  count: number;
+}
 
 interface CategoryRailProps {
   selectedCategory: string;
   onSelectCategory: (cat: string) => void;
+  facets: CategoryFacet[];
+  total: number;
 }
 
-export function CategoryRail({ selectedCategory, onSelectCategory }: CategoryRailProps) {
-  return (
-    <div className="w-full max-w-6xl mx-auto px-4 mb-8">
-      <div className="category-rail-mask overflow-x-auto no-scrollbar py-2 overscroll-x-contain snap-x snap-mandatory">
-        <div className="flex items-center gap-2 min-w-max px-4">
-          {CATEGORIES.map((cat) => {
-            const Icon = cat.icon;
-            const isSelected = selectedCategory === cat.id;
+export function CategoryRail({ selectedCategory, onSelectCategory, facets, total }: CategoryRailProps) {
+  const items: CategoryFacet[] = [
+    { name: "all", count: total },
+    ...facets,
+  ];
 
+  return (
+    <div className="mx-auto mb-8 w-full max-w-6xl px-4">
+      <div className="category-rail-mask no-scrollbar snap-x snap-mandatory overflow-x-auto overscroll-x-contain py-2">
+        <div className="flex min-w-max items-center gap-2 px-4" role="group" aria-label="Filter by category">
+          {items.map((cat) => {
+            const isSelected = selectedCategory === cat.name;
+            const label = cat.name === "all" ? "All Categories" : cat.name;
             return (
               <button
-                key={cat.id}
-                onClick={() => onSelectCategory(cat.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all snap-start ${
+                key={cat.name}
+                type="button"
+                aria-pressed={isSelected}
+                aria-current={isSelected ? "true" : undefined}
+                onClick={() => onSelectCategory(cat.name)}
+                className={`flex snap-start items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
                   isSelected
-                    ? "bg-slate-900 border-slate-900 text-white shadow-sm"
-                    : "bg-white border-slate-200/90 text-slate-600 hover:text-slate-900 hover:border-slate-300 shadow-sm"
+                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                    : "border-slate-200/90 bg-white text-slate-600 shadow-sm hover:border-slate-300 hover:text-slate-900"
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
-                <span>{cat.label}</span>
+                <span className="truncate">{label}</span>
+                <span
+                  className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] ${
+                    isSelected ? "bg-slate-800 text-emerald-400" : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {cat.count.toLocaleString()}
+                </span>
               </button>
             );
           })}

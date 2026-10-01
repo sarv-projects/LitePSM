@@ -1,519 +1,340 @@
 "use client";
 
-import React, { useState, useEffect, Suspense, useMemo } from "react";
+import React, { useEffect, useMemo, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
   Copy,
-  Check,
   Star,
   ShieldCheck,
   ExternalLink,
-  Terminal,
-  Sparkles,
-  Box,
-  Code2,
-  Shield,
-  Layers,
-  FileCode,
   FolderOpen,
   ChevronRight,
-  Info
+  Info,
+  PackageSearch,
 } from "lucide-react";
 import { Header } from "../../components/navigation/Header";
-import { ExtensionItem } from "../../components/catalog/ExtensionCard";
+import { Listing } from "../../lib/telemetry";
+import { HOSTS, bridgeSnippet, nativeSnippet, PlatformOS } from "../../lib/hosts";
+import { copyText } from "../../lib/clipboard";
+import { formatStars } from "../../lib/format";
 import catalogData from "../../data/catalog.json";
+
+const items = catalogData as unknown as Listing[];
+
+function deriveCounts() {
+  let mcp = 0;
+  let skill = 0;
+  let plugin = 0;
+  for (const i of items) {
+    if (i.kind === "mcp") mcp += 1;
+    else if (i.kind === "skill") skill += 1;
+    else if (i.kind === "plugin") plugin += 1;
+  }
+  return { all: items.length, mcp, skill, plugin };
+}
+
+function NotFound() {
+  return (
+    <div className="mx-auto max-w-lg px-4 py-24 text-center">
+      <PackageSearch className="mx-auto mb-4 h-12 w-12 text-slate-400" aria-hidden="true" />
+      <h1 className="mb-2 text-xl font-bold text-slate-900">Capability not found</h1>
+      <p className="mb-6 text-sm text-slate-500">
+        This listing is not part of the current catalog release. It may have been renamed or withdrawn.
+      </p>
+      <Link
+        href="/"
+        className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white transition-all hover:bg-slate-700"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to catalog
+      </Link>
+    </div>
+  );
+}
 
 function ItemDetailContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const itemId = searchParams.get("id");
 
-  const items = catalogData as ExtensionItem[];
-  const item = useMemo(() => {
-    if (!itemId) return items[0];
-    return items.find((i) => i.id === itemId) || items[0];
-  }, [itemId, items]);
+  const item = useMemo(() => (itemId ? items.find((i) => i.id === itemId) ?? null : null), [itemId]);
 
   const [activeHost, setActiveHost] = useState<string>("claude-code");
-  const [platformOs, setPlatformOs] = useState<"win" | "mac" | "linux">("win");
+  const [platformOs, setPlatformOs] = useState<PlatformOS>("linux");
   const [snippetMode, setSnippetMode] = useState<"bridge" | "native">("bridge");
-  const [copiedPath, setCopiedPath] = useState(false);
-  const [copiedSnippet, setCopiedSnippet] = useState(false);
-  const [copiedInstall, setCopiedInstall] = useState(false);
 
-  // Auto-detect OS in browser if possible
   useEffect(() => {
-    if (typeof window !== "undefined" && window.navigator) {
-      const ua = window.navigator.userAgent.toLowerCase();
-      if (ua.includes("mac")) setPlatformOs("mac");
-      else if (ua.includes("linux")) setPlatformOs("linux");
-      else setPlatformOs("win");
-    }
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent.toLowerCase() : "";
+    setPlatformOs(ua.includes("mac") ? "mac" : ua.includes("linux") ? "linux" : "win");
   }, []);
 
-  const hosts = [
-    { id: "claude-code", name: "Claude Code", ext: "CLI", type: "json" },
-    { id: "codex", name: "OpenAI Codex", ext: "Terminal", type: "toml" },
-    { id: "opencode", name: "OpenCode", ext: "CLI", type: "json" },
-    { id: "cursor", name: "Cursor", ext: "Editor", type: "json" },
-    { id: "cline", name: "Cline", ext: "VS Code", type: "json" },
-    { id: "claude-desktop", name: "Claude Desktop", ext: "Desktop", type: "json" },
-    { id: "pi-agent", name: "Pi Agent", ext: "Terminal", type: "json" },
-    { id: "grok-build", name: "Grok Build", ext: "Terminal", type: "toml" },
-  ];
+  const host = HOSTS.find((h) => h.id === activeHost) ?? HOSTS[0];
 
-  // Resolve exact config file path based on host and OS
-  const getResolvedConfigPath = (hostId: string, os: "win" | "mac" | "linux") => {
-    switch (hostId) {
-      case "cline":
-        if (os === "win") return "%APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_mcp_settings.json";
-        if (os === "mac") return "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json";
-        return "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json";
-      case "cursor":
-        return os === "win" ? "%USERPROFILE%\\.cursor\\mcp.json" : "~/.cursor/mcp.json";
-      case "claude-desktop":
-        if (os === "win") return "%APPDATA%\\Claude\\claude_desktop_config.json";
-        if (os === "mac") return "~/Library/Application Support/Claude/claude_desktop_config.json";
-        return "~/.config/Claude/claude_desktop_config.json";
-      case "pi-agent":
-        return os === "win" ? "%USERPROFILE%\\.pi\\agent\\mcp.json" : "~/.pi/agent/mcp.json";
-      case "grok-build":
-        return os === "win" ? "%USERPROFILE%\\.grok\\config.toml" : "~/.grok/config.toml";
-      case "codex":
-        return os === "win" ? "%USERPROFILE%\\.codex\\config.toml" : "~/.codex/config.toml";
-      case "claude-code":
-        return os === "win" ? "%USERPROFILE%\\.claude.json" : "~/.claude.json";
-      case "opencode":
-        return os === "win" ? "%APPDATA%\\OpenCode\\opencode.json" : "~/.config/opencode/opencode.json";
-      default:
-        return "litepsm.config.json";
-    }
-  };
+  const snippet = item
+    ? snippetMode === "bridge"
+      ? bridgeSnippet(host)
+      : nativeSnippet(host, item.slug, item.command, item.args)
+    : "";
 
-  // Generate exact ready-to-fill snippet
-  const getGeneratedSnippet = () => {
-    if (!item) return "";
-    const isToml = activeHost === "grok-build" || activeHost === "codex";
-
-    if (item.kind === "skill") {
-      if (activeHost === "claude-code") {
-        return `// Copy into ~/.claude/skills/${item.slug}/SKILL.md\n# ${item.name}\n\n${item.summary}\n\n<!-- Installed via litepsm install ${item.id} -->`;
-      }
-      return `// Universal Skill Directory:\n// Project: .agents/skills/${item.slug}/SKILL.md\n// Global:  ~/.gemini/config/skills/${item.slug}/SKILL.md\n\n# Direct Setup Command:\nlitepsm install ${item.id}`;
-    }
-
-    if (snippetMode === "bridge") {
-      // LitePSM Bridge Managed Mode
-      if (isToml) {
-        return `# Generated for ${activeHost.toUpperCase()} via LitePSM Stdio Bridge\n[mcp_servers.${item.slug.replace(/[-.]/g, "_")}]\ncommand = "litepsm"\nargs = ["bridge", "stdio", "--host", "${activeHost}"]`;
-      }
-      if (activeHost === "opencode") {
-        return `{\n  "mcp": {\n    "servers": {\n      "${item.slug}": {\n        "command": "litepsm",\n        "args": ["bridge", "stdio", "--host", "opencode"]\n      }\n    }\n  }\n}`;
-      }
-      return `{\n  "mcpServers": {\n    "${item.slug}": {\n      "command": "litepsm",\n      "args": ["bridge", "stdio", "--host", "${activeHost}"]\n    }\n  }\n}`;
-    } else {
-      // Direct Native Mode
-      const cmd = item.command || "npx";
-      const args = item.args || ["-y", `@modelcontextprotocol/server-${item.slug}`];
-
-      if (isToml) {
-        const formattedArgs = args.map((a) => `"${a}"`).join(", ");
-        return `# Standalone Native Configuration\n[mcp_servers.${item.slug.replace(/[-.]/g, "_")}]\ncommand = "${cmd}"\nargs = [${formattedArgs}]`;
-      }
-      if (activeHost === "opencode") {
-        return JSON.stringify(
-          {
-            mcp: {
-              servers: {
-                [item.slug]: {
-                  command: cmd,
-                  args: args,
-                },
-              },
-            },
-          },
-          null,
-          2
-        );
-      }
-      return JSON.stringify(
-        {
-          mcpServers: {
-            [item.slug]: {
-              command: cmd,
-              args: args,
-            },
-          },
-        },
-        null,
-        2
-      );
-    }
-  };
-
-  const copyConfigPath = () => {
-    navigator.clipboard.writeText(getResolvedConfigPath(activeHost, platformOs));
-    setCopiedPath(true);
-    setTimeout(() => setCopiedPath(false), 2000);
-  };
-
-  const copySnippet = () => {
-    navigator.clipboard.writeText(getGeneratedSnippet());
-    setCopiedSnippet(true);
-    setTimeout(() => setCopiedSnippet(false), 2000);
-  };
-
-  const copyInstallCommand = () => {
-    navigator.clipboard.writeText(`litepsm install ${item.id}`);
-    setCopiedInstall(true);
-    setTimeout(() => setCopiedInstall(false), 2000);
-  };
-
-  // Find related capabilities
   const relatedItems = useMemo(() => {
-    return items
-      .filter((i) => i.id !== item.id && (i.category === item.category || i.kind === item.kind))
-      .slice(0, 3);
-  }, [items, item]);
+    if (!item) return [];
+    return items.filter((i) => i.id !== item.id && i.category === item.category).slice(0, 3);
+  }, [item]);
+
+  if (!item) {
+    return (
+      <div className="flex min-h-screen flex-col justify-between bg-[#f0f2f6]">
+        <Header activeTab="all" setActiveTab={() => router.push("/")} counts={deriveCounts()} />
+        <NotFound />
+        <div className="h-16" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-[#f0f2f6] text-slate-800">
+    <div className="flex min-h-screen flex-col justify-between bg-[#f0f2f6] text-slate-800">
       <div>
-        <Header activeTab="all" setActiveTab={() => router.push("/")} />
+        <Header activeTab="all" setActiveTab={() => router.push("/")} counts={deriveCounts()} />
 
-        {/* Breadcrumb Bar */}
-        <div className="w-full bg-white/70 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-8 py-3">
-          <div className="max-w-6xl mx-auto flex items-center justify-between text-xs text-slate-500 font-mono">
-            <div className="flex items-center gap-2">
-              <Link
-                href="/"
-                className="flex items-center gap-1.5 text-slate-600 hover:text-emerald-600 transition-colors font-sans font-medium"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to Catalog
+        {/* Breadcrumb */}
+        <div className="w-full border-b border-slate-200/80 bg-white/70 px-4 py-3 backdrop-blur-md lg:px-8">
+          <div className="mx-auto flex max-w-6xl items-center justify-between font-mono text-xs text-slate-500">
+            <div className="flex min-w-0 items-center gap-2">
+              <Link href="/" className="flex items-center gap-1.5 font-sans font-medium text-slate-600 transition-colors hover:text-emerald-600">
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to Catalog
               </Link>
-              <span className="text-slate-300">/</span>
+              <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />
               <span className="capitalize">{item.kind}</span>
-              <span className="text-slate-300">/</span>
-              <span className="text-slate-900 font-semibold">{item.name}</span>
+              <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />
+              <span className="truncate font-semibold text-slate-900">{item.name}</span>
             </div>
-
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="hidden items-center gap-2 sm:flex">
               <span className="text-[11px] text-slate-400">ID:</span>
-              <code className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 border border-slate-200">
-                {item.id}
-              </code>
+              <code className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-slate-600">{item.id}</code>
             </div>
           </div>
         </div>
 
-        {/* Main Content Container */}
-        <main className="max-w-6xl mx-auto px-4 lg:px-8 py-8 space-y-8">
-          {/* Hero Capsule */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)] relative overflow-hidden">
-            {/* Top dither strip */}
-            <div className="card-dither-strip absolute top-0 left-0 right-0 h-1.5" />
-
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pt-2">
-              <div className="space-y-3 max-w-3xl">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 uppercase">
+        <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 lg:px-8">
+          {/* Hero */}
+          <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)] sm:p-8">
+            <div className="card-dither-strip absolute left-0 right-0 top-0 h-1.5" />
+            <div className="flex flex-col justify-between gap-6 pt-2 md:flex-row md:items-start">
+              <div className="max-w-3xl space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-2.5 py-1 font-mono text-xs font-medium uppercase text-emerald-700">
                     {item.kind}
                   </span>
-                  <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
+                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 font-mono text-xs text-slate-500">
                     {item.category}
                   </span>
-                  {item.runtime && (
-                    <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-200">
-                      Runtime: {item.runtime}
+                  {item.transport && (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-xs text-slate-500">
+                      {item.transport}
                     </span>
                   )}
-                  <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded-full border border-slate-200">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs text-slate-400">
                     v{item.version || "1.0.0"}
                   </span>
                 </div>
 
-                <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-                  {item.name}
-                </h1>
+                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">{item.name}</h1>
+                <p className="text-sm leading-relaxed text-slate-600 sm:text-base">{item.summary}</p>
 
-                <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
-                  {item.summary}
-                </p>
-
-                <div className="flex items-center gap-4 text-xs text-slate-500 pt-1 flex-wrap">
+                <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-500">
                   <div className="flex items-center gap-1.5">
                     <span>Published by</span>
-                    <strong className="text-slate-800 font-semibold">{item.publisher.name}</strong>
-                    {item.publisher.verified && (
-                      <span className="inline-flex items-center text-emerald-600 gap-0.5" title="Verified Publisher">
-                        <ShieldCheck className="w-4 h-4" />
-                      </span>
+                    <strong className="font-semibold text-slate-800">{item.publisher?.name || "unknown"}</strong>
+                    {item.publisher?.verified && (
+                      <ShieldCheck className="h-4 w-4 text-emerald-600" aria-label="Verified publisher" />
                     )}
                   </div>
-
-                  <div className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200/60 font-mono">
-                    <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                    <span className="font-semibold">{item.stars.toLocaleString()} Stars</span>
+                  <div className="flex items-center gap-1 rounded-full border border-amber-200/60 bg-amber-50 px-2.5 py-0.5 font-mono text-amber-600">
+                    <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" aria-hidden="true" />
+                    <span className="font-semibold">{formatStars(item.stars)} Stars</span>
                   </div>
-
-                  {item.publisher.url && (
+                  {item.publisher?.url && (
                     <a
                       href={item.publisher.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 underline underline-offset-4"
+                      className="inline-flex items-center gap-1 text-emerald-600 underline underline-offset-4 hover:text-emerald-700"
                     >
-                      Upstream Source <ExternalLink className="w-3 h-3" />
+                      Upstream Source <ExternalLink className="h-3 w-3" aria-hidden="true" />
                     </a>
                   )}
                 </div>
               </div>
 
-              {/* Fast Install Card */}
-              <div className="w-full md:w-80 shrink-0 bg-slate-900 rounded-2xl p-5 text-white shadow-xl border border-slate-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-emerald-400 font-semibold tracking-wider uppercase">
-                    One-Click Install
-                  </span>
-                  <span className="flex h-2 w-2 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                  </span>
-                </div>
-
-                <div className="bg-black/60 p-3 rounded-xl border border-slate-800 text-xs font-mono text-emerald-300 break-all select-all">
+              <div className="w-full shrink-0 space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-5 text-white shadow-xl md:w-80">
+                <span className="font-mono text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                  One-Click Install
+                </span>
+                <div className="select-all break-all rounded-xl border border-slate-800 bg-black/60 p-3 font-mono text-xs text-emerald-300">
                   litepsm install {item.id}
                 </div>
-
                 <button
-                  onClick={copyInstallCommand}
-                  className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2"
+                  type="button"
+                  onClick={() => copyText(`litepsm install ${item.id}`, "Install command copied")}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-xs font-bold text-slate-950 shadow-md transition-all hover:bg-emerald-400"
                 >
-                  {copiedInstall ? (
-                    <>
-                      <Check className="w-4 h-4" /> Copied Command!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" /> Copy Install Command
-                    </>
-                  )}
+                  <Copy className="h-4 w-4" aria-hidden="true" /> Copy Install Command
                 </button>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Dedicated Agent Setup Section */}
-          <section className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)] space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          {/* Agent setup */}
+          <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)] sm:p-8">
+            <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center">
               <div>
-                <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-                  Agent Configuration & File Path Matrix
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Select your agent host to view its exact configuration file path and ready-to-fill snippet for Claude Code, Codex, OpenCode, and many more.
+                <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Agent Configuration</h2>
+                <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
+                  LitePSM registers one bridge entry per host. Pick your agent and OS for the exact config file and snippet.
                 </p>
               </div>
-
-              {/* OS Selector Toggle */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 shrink-0 self-start sm:self-auto">
-                <button
-                  onClick={() => setPlatformOs("win")}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${
-                    platformOs === "win" ? "bg-white text-slate-900 shadow-sm font-semibold" : "hover:text-slate-900"
-                  }`}
-                >
-                  Windows
-                </button>
-                <button
-                  onClick={() => setPlatformOs("mac")}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${
-                    platformOs === "mac" ? "bg-white text-slate-900 shadow-sm font-semibold" : "hover:text-slate-900"
-                  }`}
-                >
-                  macOS
-                </button>
-                <button
-                  onClick={() => setPlatformOs("linux")}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${
-                    platformOs === "linux" ? "bg-white text-slate-900 shadow-sm font-semibold" : "hover:text-slate-900"
-                  }`}
-                >
-                  Linux
-                </button>
+              <div className="flex shrink-0 items-center gap-1 self-start rounded-xl border border-slate-200 bg-slate-100 p-1 text-xs font-medium text-slate-600 sm:self-auto">
+                {(["win", "mac", "linux"] as PlatformOS[]).map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    aria-pressed={platformOs === o}
+                    onClick={() => setPlatformOs(o)}
+                    className={`rounded-lg px-3 py-1.5 transition-all ${
+                      platformOs === o ? "bg-white font-semibold text-slate-900 shadow-sm" : "hover:text-slate-900"
+                    }`}
+                  >
+                    {o === "win" ? "Windows" : o === "mac" ? "macOS" : "Linux"}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Agent Switcher Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
-              {hosts.map((h) => {
+            <div className="no-scrollbar flex items-center gap-2 overflow-x-auto pb-2">
+              {HOSTS.map((h) => {
                 const isActive = activeHost === h.id;
                 return (
                   <button
                     key={h.id}
+                    type="button"
+                    aria-pressed={isActive}
                     onClick={() => setActiveHost(h.id)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border flex items-center gap-2 ${
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-xl border px-4 py-2.5 text-xs font-semibold transition-all ${
                       isActive
-                        ? "bg-slate-900 text-white border-slate-900 shadow-md"
-                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                        ? "border-slate-900 bg-slate-900 text-white shadow-md"
+                        : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100"
                     }`}
                   >
                     <span>{h.name}</span>
                     <span
-                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                        isActive ? "bg-slate-800 text-emerald-400" : "bg-white text-slate-400 border border-slate-200"
+                      className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                        isActive ? "bg-slate-800 text-emerald-400" : "border border-slate-200 bg-white text-slate-400"
                       }`}
                     >
-                      {h.type.toUpperCase()}
+                      {h.kind.toUpperCase()}
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Config File Path Bar */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/90 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-                <span className="flex items-center gap-1.5 font-mono text-slate-700">
-                  <FolderOpen className="w-4 h-4 text-emerald-600" />
-                  Target Configuration File Path:
+            <div className="space-y-2 rounded-2xl border border-slate-200/90 bg-slate-50 p-4">
+              <div className="flex items-center justify-between font-mono text-xs">
+                <span className="flex items-center gap-1.5 font-medium text-slate-700">
+                  <FolderOpen className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                  Target Configuration File
                 </span>
-                <span className="text-[11px] font-mono text-slate-400 uppercase">
-                  {platformOs.toUpperCase()} Filesystem
-                </span>
+                <span className="uppercase text-slate-400">{platformOs} filesystem</span>
               </div>
-
-              <div className="flex items-center justify-between gap-3 bg-white px-3.5 py-2.5 rounded-xl border border-slate-200 shadow-sm">
-                <code className="text-xs font-mono text-slate-800 break-all select-all">
-                  {getResolvedConfigPath(activeHost, platformOs)}
-                </code>
-
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm">
+                <code className="select-all break-all font-mono text-xs text-slate-800">{host.paths[platformOs]}</code>
                 <button
-                  onClick={copyConfigPath}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 text-xs font-medium transition-all shrink-0 border border-slate-200 shadow-sm"
-                  title="Copy full path"
+                  type="button"
+                  onClick={() => copyText(host.paths[platformOs], "Path copied")}
+                  aria-label="Copy configuration file path"
+                  className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-all hover:bg-emerald-600 hover:text-white"
                 >
-                  {copiedPath ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600 group-hover:text-white" />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Path</span>
-                    </>
-                  )}
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy Path
                 </button>
               </div>
             </div>
 
-            {/* Snippet Mode Toggle + Code Block */}
             <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    Configuration Snippet
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    ({activeHost === "grok-build" || activeHost === "codex" ? "TOML block" : "JSON block"})
-                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-900">Configuration Snippet</span>
+                  <span className="text-[11px] text-slate-400">({host.kind === "toml" ? "TOML" : "JSON"})</span>
                 </div>
-
-                {item.kind !== "skill" && (
-                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
-                    <button
-                      onClick={() => setSnippetMode("bridge")}
-                      className={`px-3 py-1 rounded-lg transition-all ${
-                        snippetMode === "bridge"
-                          ? "bg-emerald-600 text-white font-semibold shadow-sm"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                    >
-                      LitePSM Bridge (Recommended)
-                    </button>
-                    <button
-                      onClick={() => setSnippetMode("native")}
-                      className={`px-3 py-1 rounded-lg transition-all ${
-                        snippetMode === "native"
-                          ? "bg-slate-800 text-white font-semibold shadow-sm"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                    >
-                      Direct Native
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Code Box */}
-              <div className="relative rounded-2xl bg-[#0d1117] border border-slate-800 shadow-2xl overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-slate-800 text-xs font-mono text-slate-400">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#ff5f56]" />
-                    <span className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
-                    <span className="w-3 h-3 rounded-full bg-[#27c93f]" />
-                    <span className="ml-2 text-slate-300 font-semibold">{activeHost} configuration</span>
-                  </div>
-
+                <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 text-xs">
                   <button
-                    onClick={copySnippet}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#21262d] hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-xs font-sans transition-all border border-slate-700 shadow"
+                    type="button"
+                    aria-pressed={snippetMode === "bridge"}
+                    onClick={() => setSnippetMode("bridge")}
+                    className={`rounded-lg px-3 py-1 transition-all ${
+                      snippetMode === "bridge" ? "bg-emerald-600 font-semibold text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
-                    {copiedSnippet ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400 group-hover:text-slate-950" />
-                        <span>Copied Snippet!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Snippet</span>
-                      </>
-                    )}
+                    LitePSM Bridge (Recommended)
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={snippetMode === "native"}
+                    onClick={() => setSnippetMode("native")}
+                    className={`rounded-lg px-3 py-1 transition-all ${
+                      snippetMode === "native" ? "bg-slate-800 font-semibold text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Direct Native
                   </button>
                 </div>
+              </div>
 
-                <pre className="p-5 font-mono text-xs sm:text-sm text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed">
-                  {getGeneratedSnippet()}
+              <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-[#0d1117] shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-800 bg-[#161b22] px-4 py-2.5 font-mono text-xs text-slate-400">
+                  <span className="font-semibold text-slate-300">{host.name} · {host.kind === "toml" ? "config.toml" : "config.json"}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyText(snippet, "Snippet copied")}
+                    aria-label="Copy configuration snippet"
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-[#21262d] px-3 py-1 font-sans text-xs text-slate-200 transition-all hover:bg-emerald-500 hover:text-slate-950"
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy Snippet
+                  </button>
+                </div>
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-5 font-mono text-xs leading-relaxed text-slate-200 sm:text-sm">
+                  {snippet}
                 </pre>
               </div>
 
-              <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-xs text-amber-800">
-                <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200/80 bg-amber-50 p-3 text-xs text-amber-800">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
                 <span>
-                  <strong>Tip:</strong> With <code>litepsm</code> installed, simply running{" "}
-                  <code>litepsm</code> in your terminal automatically discovers your agent's config file and injects this snippet safely with automatic backup!
+                  <strong>Tip:</strong> running <code>litepsm</code> in your terminal discovers the host config, backs it
+                  up, and injects this single bridge entry safely.
                 </span>
               </div>
             </div>
           </section>
 
-          {/* Related Capabilities */}
           {relatedItems.length > 0 && (
             <section className="space-y-4 pt-4">
-              <h3 className="text-base font-bold text-slate-900">
-                Related Capabilities in {item.category}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <h2 className="text-base font-bold text-slate-900">Related in {item.category}</h2>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 {relatedItems.map((r) => (
                   <Link
                     key={r.id}
-                    href={`/item?id=${encodeURIComponent(r.id)}`}
-                    className="bg-white p-4 rounded-2xl border border-slate-200/80 hover:border-slate-300 shadow-sm hover:shadow-md transition-all group block"
+                    href={`/item/?id=${encodeURIComponent(r.id)}`}
+                    className="group block rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
                   >
-                    <div className="flex items-center justify-between text-xs mb-2">
-                      <span className="font-mono text-slate-500 text-[10px] uppercase">{r.kind}</span>
-                      <span className="text-amber-600 font-mono text-xs">★ {r.stars.toLocaleString()}</span>
+                    <div className="mb-2 flex items-center justify-between text-xs">
+                      <span className="font-mono text-[10px] uppercase text-slate-500">{r.kind}</span>
+                      <span className="font-mono text-xs text-amber-600">★ {formatStars(r.stars)}</span>
                     </div>
-                    <h4 className="text-sm font-bold text-slate-900 group-hover:text-emerald-600 transition-colors line-clamp-1">
+                    <h3 className="line-clamp-1 text-sm font-bold text-slate-900 transition-colors group-hover:text-emerald-600">
                       {r.name}
-                    </h4>
-                    <p className="text-xs text-slate-500 line-clamp-2 mt-1">
-                      {r.summary}
-                    </p>
+                    </h3>
+                    <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.summary}</p>
                   </Link>
                 ))}
               </div>
@@ -522,22 +343,21 @@ function ItemDetailContent() {
         </main>
       </div>
 
-      {/* Footer */}
-      <footer className="w-full bg-white border-t border-slate-200 py-8 text-center text-xs text-slate-500 font-mono mt-12">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <footer className="mt-12 w-full border-t border-slate-200 bg-white py-8 text-center font-mono text-xs text-slate-500">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 sm:flex-row">
           <div>LitePSM Architecture · Universal AI Agent Capability Manager</div>
           <div className="flex items-center gap-4">
             <a
               href="https://github.com/sarv-projects/LitePSM"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-emerald-600 transition-colors"
+              className="transition-colors hover:text-emerald-600"
             >
               GitHub
             </a>
             <span>·</span>
-            <Link href="/" className="hover:text-emerald-600 transition-colors">
-              Browse All 5,185 Capabilities
+            <Link href="/" className="transition-colors hover:text-emerald-600">
+              Browse All {items.length.toLocaleString()} Capabilities
             </Link>
           </div>
         </div>
@@ -548,7 +368,7 @@ function ItemDetailContent() {
 
 export default function ItemDetailPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-slate-500 font-mono">Loading Capability...</div>}>
+    <Suspense fallback={<div className="p-12 text-center font-mono text-slate-500">Loading capability...</div>}>
       <ItemDetailContent />
     </Suspense>
   );

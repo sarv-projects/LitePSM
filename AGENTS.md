@@ -23,12 +23,12 @@ LitePSM connects once to your AI agent host, enabling you to discover, install, 
 
 | Agent Host | Environment | Configuration Format | Default Config Path |
 |---|---|---|---|
-| **Cline** | VS Code Extension | JSON (`cline_mcp_settings.json`) | Windows: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\`<br>macOS: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/`<br>Linux: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/` |
-| **Pi Agent** | Terminal Coding Agent (`pi`) | JSON (`mcp.json` / `config.json`) + TS Extension | Unix: `~/.pi/agent/mcp.json` or `~/.pi/config.json`<br>Windows: `%USERPROFILE%\.pi\agent\mcp.json` or `%USERPROFILE%\.pi\config.json` |
-| **Grok Build** | Terminal / IDE (`grok`) | TOML (`config.toml`) | Unix: `~/.grok/config.toml` (or project `.grok/config.toml`)<br>Windows: `%USERPROFILE%\.grok\config.toml` or `%APPDATA%\Grok\config.toml` |
-| **Claude Code** | Terminal CLI (`claude`) | JSON (`~/.claude.json`) | Unix: `~/.claude.json`<br>Windows: `%USERPROFILE%\.claude.json` |
-| **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | Unix: `~/.codex/config.toml`<br>Windows: `%USERPROFILE%\.codex\config.toml` or `%APPDATA%\Codex\config.toml` |
-| **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.json` - v1 `mcp` / v2 `mcp.servers`) | Unix: `~/.config/opencode/opencode.json`<br>Windows: `%APPDATA%\OpenCode\opencode.json` |
+| **Cline** | VS Code Extension | JSON (`cline_mcp_settings.json`) | Windows: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\`<br>macOS: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/`<br>Linux: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/`<br>Cline CLI (not managed): `~/.cline/data/settings/cline_mcp_settings.json` |
+| **Pi Agent** | Terminal Coding Agent (`pi`) | JSON (`mcp.json` / `config.json`) + TS Extension | Unix: `~/.pi/agent/mcp.json`<br>Windows: `%USERPROFILE%\.pi\agent\mcp.json`<br>Project: `.pi/mcp.json` (trust-gated)<br>Legacy fallback: `~/.pi/config.json` / `~/.pi/mcp.json` |
+| **Grok Build** | Terminal / IDE (`grok`) [id: `grok-build`] | TOML (`config.toml`) | Unix: `~/.grok/config.toml`<br>Windows: `%USERPROFILE%\.grok\config.toml`<br>Project: `.grok/config.toml`<br>Legacy fallback: `%APPDATA%\Grok\config.toml` |
+| **Claude Code** | Terminal CLI (`claude`) | JSON (`~/.claude.json`) | Unix: `~/.claude.json`<br>Windows: `%USERPROFILE%\.claude.json`<br>Project: `.mcp.json` in project root (local scope entry in `~/.claude.json`)<br>`CLAUDE_CONFIG_DIR` overrides the config directory |
+| **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | Unix: `~/.codex/config.toml`<br>Windows: `%USERPROFILE%\.codex\config.toml`<br>Project: `.codex/config.toml`<br>Legacy fallback: `%APPDATA%\Codex\config.toml`; `$CODEX_HOME` overrides the directory |
+| **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.json` - v1 `mcp` / v2 `mcp.servers`) | Unix: `~/.config/opencode/opencode.json`<br>Windows: `%USERPROFILE%\.config\opencode\opencode.json`<br>Project: `opencode.json` or `.opencode/`<br>Legacy fallback: `%APPDATA%\OpenCode\opencode.json` |
 
 ---
 
@@ -51,7 +51,7 @@ litepsm
     *   *Enter path manually*
     *   *Print copy-paste snippet*
     *   *Retry detection*
-5.  **Safe Atomic Merge:** LitePSM creates a backup in `DATA_ROOT/backups/`, preserves all existing entries and comments, injects the LitePSM Bridge entry, and writes the `/litepsm` command hook.
+5.  **Safe Atomic Merge:** LitePSM creates a backup in `DATA_ROOT/backups/`, preserves all existing entries and comments, injects a **single** version-pinned LitePSM Bridge entry (`litepsm bridge stdio --host <agent-id>`), and writes the `/litepsm` command hook. Individual capabilities are resolved by the daemon at runtime, so no per-capability host snippets are generated.
 
 ---
 
@@ -103,34 +103,38 @@ The **Installed** tab provides complete situational awareness of your tool ecosy
 ## 4. Agent-Specific Integration Guides
 
 ### 4.1 Cline (VS Code Extension)
-*   **How it works:** LitePSM adds itself to `cline_mcp_settings.json`.
+*   **How it works:** LitePSM adds itself to `cline_mcp_settings.json` under `mcpServers.litepsm`. This path is correct for the VS Code extension. The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LitePSM does not currently manage.
 *   **Accessing in Cline:**
     1.  Open VS Code and launch the Cline panel.
     2.  Click the MCP icon or type `/litepsm` in the prompt.
     3.  Browse available tools or view existing tools. Cline displays the green status dot in its MCP settings view.
 
 ### 4.2 Pi Agent (`pi-coding-agent`)
-*   **How it works:** Minimalist terminal agent by Mario Zechner. LitePSM registers in `~/.pi/agent/mcp.json` (or `~/.pi/config.json`) and creates `~/.pi/agent/extensions/litepsm.ts`.
+*   **How it works:** Minimalist terminal agent by Mario Zechner. LitePSM registers under the `mcpServers` key in `~/.pi/agent/mcp.json` (project scope `.pi/mcp.json` is trust-gated; the legacy `~/.pi/config.json` and `~/.pi/mcp.json` are fallbacks) and creates `~/.pi/agent/extensions/litepsm.ts`.
 *   **Accessing in Pi:**
     1.  Launch `pi` in terminal.
     2.  Type `/litepsm search <term>` or run `/litepsm` to trigger the interactive capability selector.
     3.  Pi uses its minimal token footprint to query LitePSM only on demand.
 
 ### 4.3 Grok Build
-*   **How it works:** LitePSM injects the stdio bridge into `~/.grok/config.toml` (or project `.grok/config.toml`).
+*   **How it works:** Host id is `grok-build`. LitePSM injects the stdio bridge under `[mcp_servers.litepsm]` in `~/.grok/config.toml` (project scope `.grok/config.toml`). On native Windows the config is `%USERPROFILE%\.grok\config.toml`; `%APPDATA%\Grok\config.toml` is only a legacy fallback.
 *   **Accessing in Grok Build:**
     1.  Launch `grok` in terminal.
     2.  Type `/litepsm` to open the capability browser.
     3.  Grok detects the companion command hook and loads selected tools directly into its execution loop.
 
 ### 4.4 OpenAI Codex
-*   **How it works:** LitePSM injects the stdio bridge into `~/.codex/config.toml` under `[mcp_servers.litepsm]`.
+*   **How it works:** LitePSM injects the stdio bridge into `~/.codex/config.toml` under `[mcp_servers.litepsm]`. Project scope is `.codex/config.toml`; native Windows user scope is `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback). The `$CODEX_HOME` environment variable overrides the config directory.
 *   **Accessing in Codex:** Launch `codex` and type `/litepsm` or use the registered companion skill.
 
 ### 4.5 OpenCode
-*   **How it works:** LitePSM injects into `~/.config/opencode/opencode.json`, supporting both v1 root `mcp` and v2 nested `mcp.servers` layouts.
+*   **How it works:** LitePSM injects into `~/.config/opencode/opencode.json` (native Windows `%USERPROFILE%\.config\opencode\opencode.json`; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback), supporting both v1 flat `mcp` and v2 nested `mcp.servers` layouts. Project scope also supports `opencode.json` in the project root or `.opencode/`.
+*   **Local entry shape:** OpenCode local MCP entries require `"type": "local"` and a combined string array `"command"`:
+    ```json
+    {"mcp":{"servers":{"litepsm":{"type":"local","command":["litepsm","bridge","stdio","--host","opencode"]}}}}
+    ```
 *   **Accessing in OpenCode:** Type `/litepsm` in the OpenCode CLI.
 
 ### 4.6 Claude Code
-*   **How it works:** LitePSM injects under `mcpServers.litepsm` in `~/.claude.json`.
+*   **How it works:** User-scope servers live under the top-level `mcpServers` object in `~/.claude.json` (Windows `%USERPROFILE%\.claude.json`). Project scope is `.mcp.json` in the project root; local scope is a per-project entry inside `~/.claude.json`. `CLAUDE_CONFIG_DIR` overrides the config directory.
 *   **Accessing in Claude Code:** Type `/litepsm` in the terminal to invoke the bootstrap skill.

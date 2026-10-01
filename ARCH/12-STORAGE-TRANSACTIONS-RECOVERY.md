@@ -213,7 +213,7 @@ CREATE TABLE capability_grants (
 
 -- 17. Host Agent Registrations
 CREATE TABLE host_registrations (
-    host_id TEXT NOT NULL, -- e.g. claude-code, codex, cline, pi, grok, opencode
+    host_id TEXT NOT NULL, -- e.g. claude-code, codex, cline, pi-agent, grok-build, opencode
     scope TEXT NOT NULL CHECK(scope IN ('user', 'project')),
     workspace_id TEXT NOT NULL DEFAULT '', -- Empty string for user scope, canonical workspace ID for project scope
     config_path TEXT NOT NULL,

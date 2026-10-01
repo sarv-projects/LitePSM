@@ -1,345 +1,389 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   X,
   Copy,
-  Check,
-  Shield,
   ShieldCheck,
   Star,
   FileText,
   Code2,
-  Lock,
+  Shield,
   Terminal,
-  ExternalLink,
+  Info,
 } from "lucide-react";
-import { ExtensionItem } from "./ExtensionCard";
+import { Listing } from "../../lib/telemetry";
+import { HOSTS, bridgeSnippet, nativeSnippet, PlatformOS } from "../../lib/hosts";
+import { copyText } from "../../lib/clipboard";
+import { formatStars } from "../../lib/format";
 
 interface DetailDrawerProps {
-  item: ExtensionItem | null;
+  item: Listing | null;
   onClose: () => void;
 }
 
+type TabId = "overview" | "schema" | "security" | "connect";
+
+const TABS: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
+  { id: "overview", label: "Overview", icon: FileText },
+  { id: "schema", label: "Tools & Schema", icon: Code2 },
+  { id: "security", label: "Security & Effects", icon: Shield },
+  { id: "connect", label: "Host Connect", icon: Terminal },
+];
+
 export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
-  const [activeTab, setActiveTab] = useState<"readme" | "schema" | "security" | "connect">("readme");
-  const [selectedHost, setSelectedHost] = useState<string>("cline");
-  const [copiedSnippet, setCopiedSnippet] = useState(false);
-  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [hostId, setHostId] = useState<string>("claude-code");
+  const [os, setOs] = useState<PlatformOS>("linux");
+  const [mode, setMode] = useState<"bridge" | "native">("bridge");
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
-  // Platform-controls-dismiss-dialog & Accessibility Focus Routing
-  React.useEffect(() => {
+  useEffect(() => {
     if (!item) return;
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
 
-    const previousFocusedElement = document.activeElement as HTMLElement | null;
-    closeButtonRef.current?.focus();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      // Focus trap within the drawer panel.
+      const root = panelRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), select, input, textarea'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent.toLowerCase() : "";
+    setOs(ua.includes("mac") ? "mac" : ua.includes("linux") ? "linux" : "win");
+
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      previousFocusedElement?.focus();
+      window.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
     };
   }, [item, onClose]);
 
+  const host = HOSTS.find((h) => h.id === hostId) ?? HOSTS[0];
+
+  const snippet = useCallback(
+    () =>
+      item
+        ? mode === "bridge"
+          ? bridgeSnippet(host)
+          : nativeSnippet(host, item.slug, item.command, item.args)
+        : "",
+    [item, mode, host]
+  );
+
+  const onCopySnippet = () => copyText(snippet(), "Configuration copied");
+  const onCopyInstall = () => item && copyText(`litepsm install ${item.id}`, "Install command copied");
+
   if (!item) return null;
 
-  const getHostSnippet = (host: string) => {
-    switch (host) {
-      case "cline":
-        return JSON.stringify(
-          {
-            mcpServers: {
-              [item.slug]: {
-                command: "litepsm",
-                args: ["bridge", "stdio", "--host", "cline"],
-              },
-            },
-          },
-          null,
-          2
-        );
-      case "pi-agent":
-        return `// ~/.pi/agent/mcp.json\n{\n  "mcpServers": {\n    "${item.slug}": {\n      "command": "litepsm",\n      "args": ["bridge", "stdio", "--host", "pi-agent"]\n    }\n  }\n}`;
-      case "grok-build":
-        return `# ~/.grok/config.toml\n[mcp_servers.${item.slug}]\ncommand = "litepsm"\nargs = ["bridge", "stdio", "--host", "grok-build"]`;
-      case "claude-code":
-        return `// ~/.claude.json\n{\n  "mcpServers": {\n    "${item.slug}": {\n      "command": "litepsm",\n      "args": ["bridge", "stdio", "--host", "claude-code"]\n    }\n  }\n}`;
-      case "codex":
-        return `# ~/.codex/config.toml\n[mcp_servers.${item.slug}]\ncommand = "litepsm"\nargs = ["bridge", "stdio", "--host", "codex"]`;
-      case "opencode":
-        return `// opencode.json\n{\n  "mcp": {\n    "${item.slug}": {\n      "command": "litepsm",\n      "args": ["bridge", "stdio", "--host", "opencode"]\n    }\n  }\n}`;
-      default:
-        return `litepsm install ${item.id}`;
-    }
-  };
-
-  const copyHostSnippet = () => {
-    navigator.clipboard.writeText(getHostSnippet(selectedHost));
-    setCopiedSnippet(true);
-    setTimeout(() => setCopiedSnippet(false), 2000);
-  };
+  const hasTools = Array.isArray(item.tools) && item.tools.length > 0;
+  const hasEffects = Array.isArray(item.effects) && item.effects.length > 0;
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="drawer-title"
-      aria-describedby="drawer-summary"
-      onClick={(e) => {
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm drawer-backdrop"
+      onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm drawer-backdrop"
     >
-      {/* Drawer Container */}
-      <div className="w-full max-w-2xl h-full bg-[#0d0f16] border-l border-[#232734] flex flex-col shadow-2xl overflow-hidden drawer-panel">
-        {/* Top Header */}
-        <div className="p-6 border-b border-[#232734] flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drawer-title"
+        className="drawer-panel flex h-full w-full max-w-2xl flex-col overflow-hidden border-l border-slate-200 bg-white shadow-2xl"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-6">
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[11px] uppercase text-emerald-700">
                 {item.kind}
               </span>
-              <span className="text-xs font-mono text-gray-500">v{item.version}</span>
-              <span className="flex items-center gap-1 text-xs text-amber-400 font-mono bg-[#171a23] px-2 py-0.5 rounded border border-[#232734]">
-                <Star className="w-3 h-3 fill-amber-400" />
-                {item.stars.toLocaleString()}
+              <span className="font-mono text-xs text-slate-500">v{item.version}</span>
+              <span className="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 font-mono text-xs text-amber-700">
+                <Star className="h-3 w-3 fill-amber-500 text-amber-500" aria-hidden="true" />
+                {formatStars(item.stars)}
               </span>
             </div>
-            <h2 id="drawer-title" className="text-xl font-bold text-white">{item.name}</h2>
-            <p id="drawer-summary" className="text-xs text-gray-400 mt-1">
-              Publisher:{" "}
-              <span className="text-gray-200 font-medium">{item.publisher.name}</span>
-              {item.publisher.verified && (
-                <span className="inline-flex items-center ml-1 text-emerald-400 text-xs">
-                  <ShieldCheck className="w-3.5 h-3.5 inline mr-0.5" /> Verified
+            <h2 id="drawer-title" className="truncate text-xl font-bold text-slate-900">
+              {item.name}
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Publisher: <span className="font-medium text-slate-700">{item.publisher?.name || "unknown"}</span>
+              {item.publisher?.verified && (
+                <span className="ml-1 inline-flex items-center text-xs text-emerald-600">
+                  <ShieldCheck className="mr-0.5 inline h-3.5 w-3.5" aria-hidden="true" /> Verified
                 </span>
               )}
             </p>
           </div>
-
           <button
-            ref={closeButtonRef}
+            ref={closeRef}
+            type="button"
             onClick={onClose}
             aria-label="Close details"
-            className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-[#1a1e2a] transition-all focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            className="rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center border-b border-[#232734] px-6 bg-[#11131a]">
-          <button
-            onClick={() => setActiveTab("readme")}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-all ${
-              activeTab === "readme"
-                ? "border-emerald-500 text-emerald-400 font-semibold"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            README
-          </button>
-
-          <button
-            onClick={() => setActiveTab("schema")}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-all ${
-              activeTab === "schema"
-                ? "border-emerald-500 text-emerald-400 font-semibold"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Code2 className="w-3.5 h-3.5" />
-            Tools & Schema
-          </button>
-
-          <button
-            onClick={() => setActiveTab("security")}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-all ${
-              activeTab === "security"
-                ? "border-emerald-500 text-emerald-400 font-semibold"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            Security & Effects
-          </button>
-
-          <button
-            onClick={() => setActiveTab("connect")}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-all ${
-              activeTab === "connect"
-                ? "border-emerald-500 text-emerald-400 font-semibold"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            Host Connect
-          </button>
+        {/* Tabs */}
+        <div role="tablist" aria-label="Capability details" className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-4">
+          {TABS.map((t) => {
+            const Icon = t.icon;
+            const selected = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                role="tab"
+                id={`tab-${t.id}`}
+                aria-selected={selected}
+                aria-controls={`panel-${t.id}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setActiveTab(t.id)}
+                className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition-all ${
+                  selected
+                    ? "border-emerald-500 font-semibold text-emerald-700"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 text-sm text-gray-300 space-y-4">
-          {activeTab === "readme" && (
-            <div className="space-y-4">
-              <div className="prose prose-invert max-w-none text-xs leading-relaxed space-y-3">
-                <div className="p-4 rounded-xl bg-[#11131a] border border-[#232734]">
-                  <h4 className="text-xs font-semibold text-gray-200 uppercase tracking-wider mb-2">
-                    Description
-                  </h4>
-                  <p className="text-gray-300">{item.summary}</p>
-                </div>
-
-                <div className="p-4 rounded-xl bg-[#11131a] border border-[#232734]">
-                  <h4 className="text-xs font-semibold text-gray-200 uppercase tracking-wider mb-2">
-                    Documentation
-                  </h4>
-                  <pre className="text-[11px] font-mono whitespace-pre-wrap text-gray-300 bg-black/40 p-3 rounded-lg border border-[#232734]">
+        {/* Body */}
+        <div className="flex-1 space-y-4 overflow-y-auto p-6 text-sm text-slate-700">
+          {activeTab === "overview" && (
+            <div
+              role="tabpanel"
+              id="panel-overview"
+              aria-labelledby="tab-overview"
+              className="space-y-4"
+            >
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Description</h4>
+                <p className="text-slate-700">{item.summary}</p>
+              </div>
+              {item.readme ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Documentation</h4>
+                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-3 font-mono text-[11px] text-slate-700">
                     {item.readme}
                   </pre>
                 </div>
-              </div>
+              ) : (
+                <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  No extended README is published for this listing. Install it with the command below to read the
+                  upstream documentation.
+                </p>
+              )}
             </div>
           )}
 
           {activeTab === "schema" && (
-            <div className="space-y-4">
-              {/* Schema Fingerprint */}
-              <div className="p-3.5 rounded-xl bg-[#11131a] border border-[#232734]">
-                <span className="text-[10px] uppercase font-mono tracking-wider text-gray-400 block mb-1">
+            <div
+              role="tabpanel"
+              id="panel-schema"
+              aria-labelledby="tab-schema"
+              className="space-y-4"
+            >
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-slate-500">
                   Canonical Schema Fingerprint (SHA-256)
                 </span>
-                <code className="text-xs font-mono text-emerald-400 break-all">
-                  {item.schemaFingerprint}
+                <code className="break-all font-mono text-xs text-emerald-700">
+                  {item.schemaFingerprint || "Not published in this catalog release"}
                 </code>
               </div>
-
-              {/* Tools List */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                  Exposed Tool Functions ({(item.tools || []).length})
-                </h4>
-                {(item.tools || []).map((t) => (
-                  <div
-                    key={t.name}
-                    className="p-4 rounded-xl bg-[#11131a] border border-[#232734] space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-sm font-semibold text-white">
-                        {t.name}
-                      </span>
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                        Tool
-                      </span>
+              {hasTools ? (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Exposed Tool Functions ({item.tools!.length})
+                  </h4>
+                  {item.tools!.map((t) => (
+                    <div key={t.name} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <span className="font-mono text-sm font-semibold text-slate-900">{t.name}</span>
+                      <p className="text-xs text-slate-500">{t.description}</p>
                     </div>
-                    <p className="text-xs text-gray-400">{t.description}</p>
-                    <pre className="text-[11px] font-mono bg-black/50 p-2.5 rounded-lg border border-[#232734] text-gray-300 overflow-x-auto">
-                      {JSON.stringify(t.inputSchema, null, 2)}
-                    </pre>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Tool schemas are not included in this release. The daemon computes a schema fingerprint on first
+                  connection and binds approvals to it.
+                </p>
+              )}
             </div>
           )}
 
           {activeTab === "security" && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div
+              role="tabpanel"
+              id="panel-security"
+              aria-labelledby="tab-security"
+              className="space-y-4"
+            >
+              <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
                 <div className="text-xs">
-                  <span className="font-semibold text-white block mb-0.5">
-                    Fail-Closed Policy Enforcement
-                  </span>
-                  <p className="text-gray-400">
-                    All declared effects undergo 5-tier evaluation before runtime execution. Unauthorized actions trigger explicit user prompts.
+                  <span className="mb-0.5 block font-semibold text-slate-900">Fail-Closed Policy Enforcement</span>
+                  <p className="text-slate-600">
+                    Declared effects pass through 5-tier evaluation before execution. Unapproved actions prompt the
+                    user; model output can never self-authorize.
                   </p>
                 </div>
               </div>
-
-              <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                Declared Effects & Capabilities
-              </h4>
-
-              <div className="space-y-2">
-                {(item.effects || []).map((eff, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-xl bg-[#11131a] border border-[#232734] flex items-center justify-between"
-                  >
-                    <code className="text-xs font-mono text-cyan-300">{eff.effect}</code>
-                    <span className="text-[10px] font-mono text-gray-400 bg-[#171a23] px-2 py-0.5 rounded border border-[#232734]">
-                      {eff.declaredBy}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              {hasEffects ? (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Declared Effects
+                  </h4>
+                  {item.effects!.map((eff, idx) => (
+                    <div
+                      key={`${eff.effect}-${idx}`}
+                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3"
+                    >
+                      <code className="font-mono text-xs text-cyan-700">{eff.effect}</code>
+                      <span className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-500">
+                        {eff.declaredBy}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  No effect declarations are published for this listing. Unknown-effect tools fail closed and require
+                  explicit per-call authorization.
+                </p>
+              )}
             </div>
           )}
 
           {activeTab === "connect" && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block">
-                  Select AI Agent Host
+            <div
+              role="tabpanel"
+              id="panel-connect"
+              aria-labelledby="tab-connect"
+              className="space-y-4"
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  Host
+                  <select
+                    value={hostId}
+                    onChange={(e) => setHostId(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-emerald-500 focus:outline-none"
+                  >
+                    {HOSTS.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <select
-                  value={selectedHost}
-                  onChange={(e) => setSelectedHost(e.target.value)}
-                  className="w-full bg-[#11131a] text-white border border-[#232734] rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="cline">Cline (VS Code Extension)</option>
-                  <option value="pi-agent">Pi Agent (Terminal CLI)</option>
-                  <option value="grok-build">Grok Build (xAI Dev Tool)</option>
-                  <option value="claude-code">Claude Code (Terminal CLI)</option>
-                  <option value="codex">OpenAI Codex (Terminal CLI)</option>
-                  <option value="opencode">OpenCode (CLI)</option>
-                </select>
+
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  OS
+                  <select
+                    value={os}
+                    onChange={(e) => setOs(e.target.value as PlatformOS)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-emerald-500 focus:outline-none"
+                  >
+                    <option value="win">Windows</option>
+                    <option value="mac">macOS</option>
+                    <option value="linux">Linux</option>
+                  </select>
+                </label>
+
+                <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setMode("bridge")}
+                    aria-pressed={mode === "bridge"}
+                    className={`rounded-lg px-3 py-1 transition-all ${
+                      mode === "bridge" ? "bg-emerald-600 font-semibold text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    LitePSM Bridge
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode("native")}
+                    aria-pressed={mode === "native"}
+                    className={`rounded-lg px-3 py-1 transition-all ${
+                      mode === "native" ? "bg-slate-800 font-semibold text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Direct Native
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                  Target Config File
+                </span>
+                <code className="break-all font-mono text-xs text-slate-700">{host.paths[os]}</code>
               </div>
 
               <div className="relative">
-                <pre className="p-4 rounded-xl bg-black/60 border border-[#232734] font-mono text-xs text-emerald-300 overflow-x-auto whitespace-pre-wrap">
-                  {getHostSnippet(selectedHost)}
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl border border-slate-800 bg-[#0d1117] p-4 font-mono text-xs text-emerald-300">
+                  {snippet()}
                 </pre>
                 <button
-                  onClick={copyHostSnippet}
-                  className="absolute top-3 right-3 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#1e2230] hover:bg-emerald-500 hover:text-black text-gray-200 text-xs font-sans transition-all border border-[#2c3244]"
+                  type="button"
+                  onClick={onCopySnippet}
+                  className="absolute right-3 top-3 flex items-center gap-1 rounded-lg border border-slate-700 bg-[#21262d] px-2.5 py-1.5 text-xs text-slate-200 transition-all hover:bg-emerald-500 hover:text-slate-950"
                 >
-                  {copiedSnippet ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Config</span>
-                    </>
-                  )}
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Copy Config</span>
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Bottom Action Footer */}
-        <div className="p-4 border-t border-[#232734] bg-[#11131a] flex items-center justify-between">
-          <div className="text-xs font-mono text-gray-400">
-            <code>litepsm install {item.id}</code>
-          </div>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(`litepsm install ${item.id}`);
-              alert(`Copied: litepsm install ${item.id}`);
-            }}
-            className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-all shadow-lg shadow-emerald-500/20"
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 p-4">
+          <Link
+            href={`/item/?id=${encodeURIComponent(item.id)}`}
+            className="truncate font-mono text-xs text-slate-500 underline underline-offset-4 hover:text-emerald-600"
           >
+            Open full page
+          </Link>
+          <button
+            type="button"
+            onClick={onCopyInstall}
+            className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-semibold text-black shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-400"
+          >
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
             Copy Install Command
           </button>
         </div>

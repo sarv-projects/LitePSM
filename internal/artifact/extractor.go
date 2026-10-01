@@ -317,8 +317,19 @@ func validateAndNormalizePath(name string, maxPathLength int, seenLower map[stri
 	normalized := filepath.ToSlash(name)
 	cleaned := filepath.Clean(normalized)
 
-	// Reject absolute paths, relative escapes, and drive letters
-	if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "../") || cleaned == ".." || strings.Contains(cleaned, ":") || strings.HasPrefix(cleaned, "/") {
+	// Reject absolute paths, relative escapes, drive letters, and root-anchored paths cross-platform
+	if filepath.IsAbs(cleaned) ||
+		filepath.IsAbs(normalized) ||
+		strings.HasPrefix(normalized, "/") ||
+		strings.HasPrefix(normalized, "\\") ||
+		strings.HasPrefix(cleaned, "/") ||
+		strings.HasPrefix(cleaned, "\\") ||
+		strings.HasPrefix(cleaned, "../") ||
+		strings.HasPrefix(cleaned, "..\\") ||
+		cleaned == ".." ||
+		strings.Contains(cleaned, ":") ||
+		filepath.VolumeName(cleaned) != "" ||
+		filepath.VolumeName(normalized) != "" {
 		return "", false, domain.ErrArchiveSlip(fmt.Sprintf("illegal path or path traversal: %s", name))
 	}
 

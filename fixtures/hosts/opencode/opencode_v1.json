@@ -1,8 +1,8 @@
 {
   "mcp": {
     "weather": {
-      "command": "python",
-      "args": ["-m", "weather_mcp"]
+      "type": "local",
+      "command": ["python", "-m", "weather_mcp"]
     }
   }
 }
