@@ -32,26 +32,69 @@ export default function Home() {
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      // Filter by Top Navigation Tab
+      // 1. Filter by Top Navigation Tab
       if (activeTab !== "all" && item.kind !== activeTab) {
         return false;
       }
 
-      // Filter by Category Rail
-      if (selectedCategory !== "all" && item.category !== selectedCategory) {
-        return false;
+      // 2. Filter by Category Rail
+      if (selectedCategory !== "all") {
+        if (selectedCategory === "Agent Skills") {
+          if (item.kind !== "skill" && !item.category.toLowerCase().includes("skill")) {
+            return false;
+          }
+        } else if (selectedCategory === "Plugins & Toolkits") {
+          if (item.kind !== "plugin" && !item.category.toLowerCase().includes("plugin")) {
+            return false;
+          }
+        } else if (selectedCategory === "Official Core") {
+          if (!item.category.toLowerCase().includes("official") && item.publisher?.name !== "modelcontextprotocol") {
+            return false;
+          }
+        } else {
+          const catNorm = selectedCategory.toLowerCase();
+          const itemCat = (item.category || "").toLowerCase();
+          const matchesCategory =
+            itemCat === catNorm ||
+            itemCat.includes(catNorm) ||
+            catNorm.includes(itemCat) ||
+            (catNorm.includes("database") && itemCat.includes("data")) ||
+            (catNorm.includes("cloud") && itemCat.includes("cloud")) ||
+            (catNorm.includes("security") && itemCat.includes("security")) ||
+            (catNorm.includes("finance") && (itemCat.includes("finance") || itemCat.includes("crypto"))) ||
+            (catNorm.includes("search") && (itemCat.includes("search") || itemCat.includes("extract"))) ||
+            (catNorm.includes("productivity") && (itemCat.includes("productivity") || itemCat.includes("workplace")));
+
+          if (!matchesCategory) {
+            return false;
+          }
+        }
       }
 
-      // Filter by Search Query
+      // 3. Filter by Search Query
       if (searchQuery.trim() !== "") {
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.toLowerCase().trim();
         const matchesName = item.name.toLowerCase().includes(q);
-        const matchesSummary = item.summary.toLowerCase().includes(q);
-        const matchesCategory = item.category.toLowerCase().includes(q);
-        const matchesPublisher = item.publisher.name.toLowerCase().includes(q);
-        const matchesTools = item.tools?.some((t) => t.name.toLowerCase().includes(q)) || false;
+        const matchesSummary = (item.summary || "").toLowerCase().includes(q);
+        const matchesCategory = (item.category || "").toLowerCase().includes(q);
+        const matchesPublisher = (item.publisher?.name || "").toLowerCase().includes(q);
+        const matchesId = item.id.toLowerCase().includes(q);
+        const matchesSlug = item.slug.toLowerCase().includes(q);
+        const matchesRuntime = (item.runtime || "").toLowerCase().includes(q);
+        const matchesTools = item.tools?.some(
+          (t) => t.name.toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q)
+        ) || false;
 
-        if (!matchesName && !matchesSummary && !matchesCategory && !matchesPublisher && !matchesTools) {
+        if (
+          !matchesName &&
+          !matchesSummary &&
+          !matchesCategory &&
+          !matchesPublisher &&
+          !matchesId &&
+          !matchesSlug &&
+          !matchesRuntime &&
+          !matchesTools
+        ) {
           return false;
         }
       }
@@ -62,10 +105,20 @@ export default function Home() {
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
+    // Reset category filter when switching tabs so all items for the new tab are visible
+    setSelectedCategory("all");
   };
 
   const handleCategoryChange = (cat: string) => {
     setSelectedCategory(cat);
+    // Synchronize tab if clicking kind-specific categories
+    if (cat === "Agent Skills") {
+      setActiveTab("skill");
+    } else if (cat === "Plugins & Toolkits") {
+      setActiveTab("plugin");
+    } else if (activeTab === "skill" || activeTab === "plugin") {
+      setActiveTab("all");
+    }
   };
 
   // Dedicated Detail Page Navigation: Opens dedicated page with agent file paths & JSON/TOML snippet

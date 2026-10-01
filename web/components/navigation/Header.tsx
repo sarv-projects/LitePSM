@@ -43,7 +43,7 @@ export function Header({
         </Link>
 
         {/* Center Kind Filter Tabs */}
-        <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/80">
+        <nav className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/80 overflow-x-auto no-scrollbar max-w-[65%] sm:max-w-none">
           <button
             onClick={() => setActiveTab("all")}
             className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all ${

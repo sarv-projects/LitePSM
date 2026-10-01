@@ -21,7 +21,7 @@ export const CATEGORIES = [
   { id: "all", label: "All Categories", icon: Layers },
   { id: "Official Core", label: "Official Core", icon: ShieldCheck },
   { id: "Developer Tools", label: "Developer Tools", icon: Code },
-  { id: "Database Management", label: "Database Management", icon: Database },
+  { id: "Databases", label: "Databases", icon: Database },
   { id: "Browser Automation", label: "Browser Automation", icon: Globe },
   { id: "Productivity & Workflow", label: "Productivity & Workflow", icon: Sparkles },
   { id: "Agent Skills", label: "Agent Skills", icon: Wrench },

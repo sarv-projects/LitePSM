@@ -59,6 +59,48 @@ def clean_desc(text):
         text = text[1:].strip()
     return text.strip()
 
+CATEGORY_MAPPING = {
+    "databases": "Databases",
+    "developer tools": "Developer Tools",
+    "browser automation": "Browser Automation",
+    "workplace & productivity": "Productivity & Workflow",
+    "productivity": "Productivity & Workflow",
+    "cloud platforms": "Cloud Infrastructure",
+    "security": "Security & Testing",
+    "finance & fintech": "Finance & Crypto",
+    "finance": "Finance & Crypto",
+    "search & data extraction": "Search & Retrieval",
+    "search": "Search & Retrieval",
+    "knowledge & memory": "Knowledge & Memory",
+    "communication": "Communication",
+    "coding agents": "Developer Tools",
+    "aggregators": "Developer Tools",
+    "marketing": "Productivity & Workflow",
+    "multimedia": "Multimedia",
+    "file systems": "Developer Tools",
+    "version control": "Developer Tools",
+    "official core": "Official Core",
+    "plugins & toolkits": "Plugins & Toolkits",
+}
+
+def clean_category(cat_str):
+    if not cat_str:
+        return "Developer Tools"
+    # Remove HTML anchor tags
+    cat = re.sub(r'<[^>]+>', '', cat_str)
+    # Remove malformed anchor fragments
+    cat = re.sub(r'a\s+name=[\'"][^\'"]*[\'"]\s*>?(?:<\/a>)?', '', cat)
+    # Remove emojis and symbols
+    cat = re.sub(r'[🐍📇🦀🐹☁️🏠🍎🪟🐧🎖️✨🔥⚡🚀💡🤖🛠️📦🗄️🔍🔒🌐💼📊💳🎮🏷️]+', '', cat)
+    # Strip leading non-alphanumeric
+    cat = re.sub(r'^[^\w]+', '', cat).strip()
+    
+    cat_lower = cat.lower()
+    for k, v in CATEGORY_MAPPING.items():
+        if k in cat_lower:
+            return v
+    return cat if cat else "Developer Tools"
+
 def build_full_catalog():
     print("Ingesting real registries...")
     
@@ -140,8 +182,7 @@ def build_full_catalog():
             cat_candidate = raw_line.lstrip("#").strip()
             # filter out non-categories
             if not any(k in cat_candidate.lower() for k in ["table of contents", "contents", "license", "contributing", "awesome", "sponsor"]):
-                # Clean emoji prefixes from category
-                cat_cleaned = re.sub(r'^[^\w\s]+', '', cat_candidate).strip()
+                cat_cleaned = clean_category(cat_candidate)
                 if cat_cleaned:
                     current_category = cat_cleaned
             continue
