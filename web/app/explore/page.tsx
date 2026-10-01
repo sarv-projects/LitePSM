@@ -6,7 +6,6 @@ import { SlidersHorizontal, X } from "lucide-react";
 import { Header } from "../../components/navigation/Header";
 import { SearchBar } from "../../components/navigation/SearchBar";
 import { ExtensionGrid } from "../../components/catalog/ExtensionGrid";
-import { DetailDrawer } from "../../components/catalog/DetailDrawer";
 import { Listing, categoryFacets, useTelemetry } from "../../lib/telemetry";
 import { useCatalogSearch } from "../../lib/useCatalogSearch";
 import { agentFacets, kindLabel, matchesHost } from "../../lib/catalog";
@@ -23,7 +22,6 @@ function ExploreContent() {
   const [category, setCategory] = useState<string>(params.get("category") ?? "all");
   const [agent, setAgent] = useState<string>(params.get("host") ?? "all");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
-  const [selected, setSelected] = useState<Listing | null>(null);
 
   const deferredQuery = useDeferredValue(query);
 
@@ -152,13 +150,10 @@ function ExploreContent() {
 
       <ExtensionGrid
         items={filtered}
-        onSelectItem={setSelected}
         query={deferredQuery}
         loading={searching}
         onClearFilters={clear}
       />
-
-      <DetailDrawer item={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

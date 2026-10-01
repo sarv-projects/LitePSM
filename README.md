@@ -13,12 +13,12 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | Phase | Description | Focus Area | Status |
 |---|---|---|---|
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `ARCH/00`–`ARCH/25`, 6 JSON Schemas (Draft 2020-12), `AGENTS.md`, `TEST.md` | **COMPLETED** |
-| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/litepsm` | **COMPLETED** |
+| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/marketplace` | **COMPLETED** |
 | **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder), `internal/catalog` (Search) | **COMPLETED** |
 | **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver), `internal/install` (Atomic CAS), `internal/skills` | **COMPLETED** |
 | **Phase E** | **Process Supervision, Bridge & Host Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/policy`, `internal/bridge`, **Codex, Claude, OpenCode, Cline, Pi Agent, Grok Build** adapters | **COMPLETED** |
 | **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | Stateless MCP 2026-07-28 (Streamable HTTP), legacy 2025-11-25, WinCred/DPAPI/Keychain, OAuth PKCE Loopback | **COMPLETED** |
-| **Phase G** | **In-Agent `/litepsm` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | **COMPLETED** |
+| **Phase G** | **In-Agent `/marketplace` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | **COMPLETED** |
 | **Phase H** | **Release Engineering & Packaging** | Cross-platform Go builds, npm wrapper (`litepsm`), conformance test suites | **COMPLETED** |
 | **Phase I** | **Golden Fixtures, Self-Update & Migrations** | Host fixtures corpus, `self-update` binary replacement, database migration engine | **COMPLETED** |
 
@@ -116,15 +116,15 @@ LitePSM bifurcates system responsibilities between an untrusted public discovery
         *   *Enter path manually*
         *   *Print copy-paste snippet*
         *   *Retry detection*
-    *   **Safe Atomic Merge:** LitePSM creates a timestamped backup in `DATA_ROOT/backups/`, preserves all existing comments/keys, injects the version-pinned Bridge entry, and installs the `/litepsm` command hook.
+    *   **Safe Atomic Merge:** LitePSM creates a timestamped backup in `DATA_ROOT/backups/`, preserves all existing comments/keys, injects the version-pinned Bridge entry, and installs the `/marketplace` command hook.
 
 ### 3.2 Non-Destructive Update Checking
-*   Whenever a user runs `litepsm` in terminal or invokes `/litepsm` in an agent, LitePSM performs a passive read of `/v1/current.json`.
+*   Whenever a user runs `litepsm` in terminal or invokes `/marketplace` in an agent, LitePSM performs a passive read of `/v1/current.json`.
 *   It compares installed versions against catalog release digests.
 *   **Zero Silent Mutation:** If updates are available, it alerts the user with a clean delta diff, but **never mutates local files** without explicit user approval.
 
-### 3.3 The In-Agent `/litepsm` Experience
-Typing `/litepsm` in any configured agent opens the **Capability Panel** with 4 dedicated tabs:
+### 3.3 The In-Agent `/marketplace` Experience
+Typing `/marketplace` in any configured agent opens the **Capability Panel** with 4 dedicated tabs:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -171,7 +171,7 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
 /
   ├── README.md                                         # This master technical specification
   ├── TODO.md                                           # Master delivery ledger (Phases A through H)
-  ├── AGENTS.md                                         # Supported AI agents guide & /litepsm UX
+  ├── AGENTS.md                                         # Supported AI agents guide & /marketplace UX
   ├── TEST.md                                           # Test scenarios for Cline, Pi Agent, Grok Build
   │
   ├── cmd/
@@ -212,7 +212,7 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
       ├── 13-RESOLVER-INSTALL-ENGINE.md                 # DFS resolver, archive safety & safe CAS rollback
       ├── 14-BRIDGE-PROVIDER-MCP.md                     # Stdio Bridge shim & supervisor watchdog
       ├── 15-POLICY-APPROVALS.md                        # 17-action effect taxonomy & policy engine
-      ├── 16-HOST-ADAPTERS.md                           # Cline, Pi Agent, Grok Build, dynamic fetching, /litepsm
+      ├── 16-HOST-ADAPTERS.md                           # Cline, Pi Agent, Grok Build, dynamic fetching, /marketplace
       ├── 17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md        # Decoupled adapter interfaces
       ├── 18-CATALOG-BUILDER-RELEASE-SEARCH.md          # Deterministic builder & lexical ranking
       ├── 19-SECRETS-OAUTH.md                           # OS SecretStore, persistent auth_profiles & OAuth

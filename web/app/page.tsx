@@ -7,7 +7,6 @@ import { SearchBar } from "../components/navigation/SearchBar";
 import { CategoryRail } from "../components/hero/CategoryRail";
 import { ExtensionGrid } from "../components/catalog/ExtensionGrid";
 import { SectionRow } from "../components/catalog/SectionRow";
-import { DetailDrawer } from "../components/catalog/DetailDrawer";
 import { ClientGrid } from "../components/home/ClientGrid";
 import { LeaderboardPreview } from "../components/home/LeaderboardPreview";
 import { FaqSection } from "../components/home/FaqSection";
@@ -24,7 +23,6 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [selectedItem, setSelectedItem] = useState<Listing | null>(null);
 
   const deferredQuery = useDeferredValue(searchQuery);
 
@@ -106,45 +104,39 @@ export default function Home() {
               title="Official MCP Servers"
               subtitle="Verified publishers from the official registry."
               items={sections.officialMCP}
-              onSelectItem={setSelectedItem}
               onViewAll={() => handleViewAllKind("mcp")}
             />
             <SectionRow
               title="Featured"
               subtitle="Highest-signal capabilities across every kind."
               items={sections.featured}
-              onSelectItem={setSelectedItem}
               onViewAll={() => handleClearFilters()}
             />
             <SectionRow
               title="Top MCP Servers"
               subtitle="Most-starred Model Context Protocol servers."
               items={sections.topMCP}
-              onSelectItem={setSelectedItem}
               onViewAll={() => handleViewAllKind("mcp")}
             />
             <SectionRow
               title="New & Noteworthy"
               subtitle="Recently added to the catalog."
               items={sections.newest}
-              onSelectItem={setSelectedItem}
               onViewAll={() => handleClearFilters()}
             />
             <SectionRow
               title="Top Agent Skills"
               subtitle="Portable SKILL.md workflows."
               items={sections.topSkills}
-              onSelectItem={setSelectedItem}
               onViewAll={() => handleViewAllKind("skill")}
             />
             <SectionRow
               title="Plugins & Toolkits"
               subtitle="Curated multi-component bundles."
               items={sections.plugins}
-              onSelectItem={setSelectedItem}
               onViewAll={() => handleViewAllKind("plugin")}
             />
-            <LeaderboardPreview items={sections.leaders} onSelectItem={setSelectedItem} />
+            <LeaderboardPreview items={sections.leaders} />
             <ClientGrid />
           </div>
         )}
@@ -152,7 +144,6 @@ export default function Home() {
         <div id="catalog" className="scroll-mt-24">
           <ExtensionGrid
             items={filteredItems}
-            onSelectItem={setSelectedItem}
             query={deferredQuery}
             loading={isFiltering}
             onClearFilters={handleClearFilters}
@@ -161,8 +152,6 @@ export default function Home() {
 
         {browsing && <FaqSection />}
       </div>
-
-      <DetailDrawer item={selectedItem} onClose={() => setSelectedItem(null)} />
 
       <footer className="w-full border-t border-slate-200 bg-white py-8 text-center font-mono text-xs text-slate-500">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row">

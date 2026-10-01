@@ -7,8 +7,8 @@
 Discover · install · verify · supervise — MCP servers, Agent Skills, and plugins,
 across Claude Code, OpenAI Codex, OpenCode, Cline, and many more.
 
-[![npm version](https://img.shields.io/npm/v/litepsm.svg?color=10b981)](https://www.npmjs.com/package/litepsm)
-[![npm downloads](https://img.shields.io/npm/dm/litepsm.svg?color=10b981)](https://www.npmjs.com/package/litepsm)
+[![npm version](https://img.shields.io/npm/v/litepsm.svg?color=10b981)](https://www.npmjs.com/package/marketplace)
+[![npm downloads](https://img.shields.io/npm/dm/litepsm.svg?color=10b981)](https://www.npmjs.com/package/marketplace)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/sarv-projects/LitePSM/blob/main/LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
@@ -21,7 +21,7 @@ $ litepsm
   ✓ 5,185 capabilities indexed · 6 hosts detected
   ? Select your AI agent  › Claude Code
   ✓ Bridge registered in ~/.claude.json (backup saved)
-  ✓ Ready — type /litepsm inside Claude Code
+  ✓ Ready — type /marketplace inside Claude Code
 ```
 
 Stop hand-editing `~/.claude.json`, `config.toml`, and a dozen other files.
@@ -53,7 +53,7 @@ litepsm self-update        # update the binary
 Inside a configured agent, just type:
 
 ```text
-/litepsm
+/marketplace
 ```
 
 ## Why litepsm

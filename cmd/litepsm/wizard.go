@@ -268,7 +268,7 @@ func (w *Wizard) applyAgentIntegration(ctx context.Context, adapter host.HostAda
 	if len(preExisting) > 0 {
 		fmt.Fprintf(w.out, "  • Discovered %d pre-existing external tool(s) in read-only mode.\n", len(preExisting))
 		for _, comp := range preExisting {
-			fmt.Fprintf(w.out, "    - [%s] %s (use 'Adopt' in /litepsm to manage)\n", comp.Kind, comp.Name)
+			fmt.Fprintf(w.out, "    - [%s] %s (use 'Adopt' in /marketplace to manage)\n", comp.Kind, comp.Name)
 		}
 	}
 
@@ -284,25 +284,25 @@ func (w *Wizard) printPostSetupInstructions(agent *SupportedAgentOption) {
 	switch agent.AdapterID {
 	case "cline":
 		fmt.Fprintln(w.out, "│ 1. Open VS Code and open the Cline sidebar.                           │")
-		fmt.Fprintln(w.out, "│ 2. Type /litepsm in the prompt or click the MCP tools icon.            │")
+		fmt.Fprintln(w.out, "│ 2. Type /marketplace in the prompt or click the MCP tools icon.        │")
 		fmt.Fprintln(w.out, "│ 3. Browse MCP Servers, Agent Skills, Plugins, and Installed tools.     │")
 	case "pi-agent", "pi":
 		fmt.Fprintln(w.out, "│ 1. Launch `pi` in your terminal.                                       │")
-		fmt.Fprintln(w.out, "│ 2. Type `/litepsm` or `/litepsm search <query>` to discover tools.     │")
+		fmt.Fprintln(w.out, "│ 2. Type `/marketplace search <query>` to discover tools.               │")
 		fmt.Fprintln(w.out, "│ 3. Extension helper registered in ~/.pi/agent/extensions/litepsm.ts.   │")
 	case "grok-build", "grok":
 		fmt.Fprintln(w.out, "│ 1. Launch `grok` in your terminal or project folder.                   │")
-		fmt.Fprintln(w.out, "│ 2. Type `/litepsm` to trigger capability discovery.                    │")
+		fmt.Fprintln(w.out, "│ 2. Type `/marketplace` to trigger capability discovery.                │")
 		fmt.Fprintln(w.out, "│ 3. Selected tools are automatically dynamically bound.                 │")
 	case "claude-code":
 		fmt.Fprintln(w.out, "│ 1. Launch `claude` in your terminal.                                   │")
-		fmt.Fprintln(w.out, "│ 2. Type `/litepsm` to invoke the discovery and management tools.       │")
+		fmt.Fprintln(w.out, "│ 2. Type `/marketplace` to invoke the discovery and management tools.   │")
 	case "codex":
 		fmt.Fprintln(w.out, "│ 1. Launch `codex` in your terminal.                                    │")
-		fmt.Fprintln(w.out, "│ 2. Use `/litepsm` or companion skills to discover capabilities.        │")
+		fmt.Fprintln(w.out, "│ 2. Use `/marketplace` or companion skills to discover capabilities.    │")
 	case "opencode":
 		fmt.Fprintln(w.out, "│ 1. Launch `opencode` in your terminal.                                 │")
-		fmt.Fprintln(w.out, "│ 2. Use `/litepsm` to search and install verified extensions.           │")
+		fmt.Fprintln(w.out, "│ 2. Use `/marketplace` to search and install verified extensions.       │")
 	}
 	fmt.Fprintln(w.out, "└────────────────────────────────────────────────────────────────────────┘")
 	fmt.Fprintln(w.out, "")

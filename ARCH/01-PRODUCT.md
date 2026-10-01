@@ -29,7 +29,7 @@ LitePSM solves this by providing **centralized federated discovery** combined wi
 4.  **Preservation of Upstream Semantics:** Retain original package formats, upstream identifiers, and version digests. Normalization is a discovery projection, not an erasure of provenance.
 5.  **Multi-Stage Capability Verification:** Clearly report the independent operational status of every item (`listed`, `resolvable`, `installable`, `runnable`, `tested`).
 6.  **Fail-Closed User Approval:** Agents cannot self-authorize capabilities. Effectful actions (filesystem writes, command execution, network requests) require explicit user approval.
-7.  **Passive Freshness & Non-Destructive Invocations:** Invocations of `litepsm` or in-agent `/litepsm` check for available catalog updates without mutating local installations or configuration unless explicitly confirmed.
+7.  **Passive Freshness & Non-Destructive Invocations:** Invocations of `litepsm` or in-agent `/marketplace` check for available catalog updates without mutating local installations or configuration unless explicitly confirmed.
 
 ### Non-Goals
 1.  **Cloud Tool Proxying:** LitePSM hosted services will never proxy tool requests, execute plugin code in the cloud, or store downstream service credentials.
@@ -89,11 +89,11 @@ $ litepsm
     [*] 2 installed capabilities have updates available. Run 'litepsm update' to inspect changes.
     ```
 
-### 5.2 In-Agent Interaction (`/litepsm`)
+### 5.2 In-Agent Interaction (`/marketplace`)
 Inside any configured agent (e.g., Claude Code, Codex, OpenCode), the agent or user can invoke LitePSM:
 
 ```text
-User / Agent: /litepsm search postgres
+User / Agent: /marketplace search postgres
 ```
 
 1.  **Bounded MCP Surface:** The agent queries the local LitePSM Bridge shim using `search_catalog`, `describe_capability`, or `list_installed`.

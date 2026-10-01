@@ -51,20 +51,20 @@ litepsm
     *   *Enter path manually*
     *   *Print copy-paste snippet*
     *   *Retry detection*
-5.  **Safe Atomic Merge:** LitePSM creates a backup in `DATA_ROOT/backups/`, preserves all existing entries and comments, injects a **single** version-pinned LitePSM Bridge entry (`litepsm bridge stdio --host <agent-id>`), and writes the `/litepsm` command hook. Individual capabilities are resolved by the daemon at runtime, so no per-capability host snippets are generated.
+5.  **Safe Atomic Merge:** LitePSM creates a backup in `DATA_ROOT/backups/`, preserves all existing entries and comments, injects a **single** version-pinned LitePSM Bridge entry (`litepsm bridge stdio --host <agent-id>`), and writes the `/marketplace` command hook. Individual capabilities are resolved by the daemon at runtime, so no per-capability host snippets are generated.
 
 ---
 
-## 3. The In-Agent `/litepsm` Experience
+## 3. The In-Agent `/marketplace` Experience
 
 Once configured, simply launch your agent and type:
 ```text
-/litepsm
+/marketplace
 ```
 
 ### UX Architecture: Portable Contract vs. Rich Host UI
-*   **Portable Text / MCP Contract:** For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/litepsm` prints structured markdown tables, action shortcuts, and standard MCP discovery tools (`search_catalog`, `describe_capability`, `invoke_capability`, `list_installed`).
-*   **Rich Host Renderer:** In hosts supporting rich extension panels or terminal TUIs (e.g. Cline in VS Code or Pi Agent TUI), `/litepsm` opens the **LitePSM Capability Panel** with 4 dedicated tabs:
+*   **Portable Text / MCP Contract:** For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` prints structured markdown tables, action shortcuts, and standard MCP discovery tools (`search_catalog`, `describe_capability`, `invoke_capability`, `list_installed`).
+*   **Rich Host Renderer:** In hosts supporting rich extension panels or terminal TUIs (e.g. Cline in VS Code or Pi Agent TUI), `/marketplace` opens the **LitePSM Capability Panel** with 4 dedicated tabs:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -106,26 +106,26 @@ The **Installed** tab provides complete situational awareness of your tool ecosy
 *   **How it works:** LitePSM adds itself to `cline_mcp_settings.json` under `mcpServers.litepsm`. This path is correct for the VS Code extension. The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LitePSM does not currently manage.
 *   **Accessing in Cline:**
     1.  Open VS Code and launch the Cline panel.
-    2.  Click the MCP icon or type `/litepsm` in the prompt.
+    2.  Click the MCP icon or type `/marketplace` in the prompt.
     3.  Browse available tools or view existing tools. Cline displays the green status dot in its MCP settings view.
 
 ### 4.2 Pi Agent (`pi-coding-agent`)
 *   **How it works:** Minimalist terminal agent by Mario Zechner. LitePSM registers under the `mcpServers` key in `~/.pi/agent/mcp.json` (project scope `.pi/mcp.json` is trust-gated; the legacy `~/.pi/config.json` and `~/.pi/mcp.json` are fallbacks) and creates `~/.pi/agent/extensions/litepsm.ts`.
 *   **Accessing in Pi:**
     1.  Launch `pi` in terminal.
-    2.  Type `/litepsm search <term>` or run `/litepsm` to trigger the interactive capability selector.
+    2.  Type `/marketplace search <term>` or run `/marketplace` to trigger the interactive capability selector.
     3.  Pi uses its minimal token footprint to query LitePSM only on demand.
 
 ### 4.3 Grok Build
 *   **How it works:** Host id is `grok-build`. LitePSM injects the stdio bridge under `[mcp_servers.litepsm]` in `~/.grok/config.toml` (project scope `.grok/config.toml`). On native Windows the config is `%USERPROFILE%\.grok\config.toml`; `%APPDATA%\Grok\config.toml` is only a legacy fallback.
 *   **Accessing in Grok Build:**
     1.  Launch `grok` in terminal.
-    2.  Type `/litepsm` to open the capability browser.
+    2.  Type `/marketplace` to open the capability browser.
     3.  Grok detects the companion command hook and loads selected tools directly into its execution loop.
 
 ### 4.4 OpenAI Codex
 *   **How it works:** LitePSM injects the stdio bridge into `~/.codex/config.toml` under `[mcp_servers.litepsm]`. Project scope is `.codex/config.toml`; native Windows user scope is `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback). The `$CODEX_HOME` environment variable overrides the config directory.
-*   **Accessing in Codex:** Launch `codex` and type `/litepsm` or use the registered companion skill.
+*   **Accessing in Codex:** Launch `codex` and type `/marketplace` or use the registered companion skill.
 
 ### 4.5 OpenCode
 *   **How it works:** LitePSM injects into `~/.config/opencode/opencode.json` (native Windows `%USERPROFILE%\.config\opencode\opencode.json`; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback), supporting both v1 flat `mcp` and v2 nested `mcp.servers` layouts. Project scope also supports `opencode.json` in the project root or `.opencode/`.
@@ -133,8 +133,8 @@ The **Installed** tab provides complete situational awareness of your tool ecosy
     ```json
     {"mcp":{"servers":{"litepsm":{"type":"local","command":["litepsm","bridge","stdio","--host","opencode"]}}}}
     ```
-*   **Accessing in OpenCode:** Type `/litepsm` in the OpenCode CLI.
+*   **Accessing in OpenCode:** Type `/marketplace` in the OpenCode CLI.
 
 ### 4.6 Claude Code
 *   **How it works:** User-scope servers live under the top-level `mcpServers` object in `~/.claude.json` (Windows `%USERPROFILE%\.claude.json`). Project scope is `.mcp.json` in the project root; local scope is a per-project entry inside `~/.claude.json`. `CLAUDE_CONFIG_DIR` overrides the config directory.
-*   **Accessing in Claude Code:** Type `/litepsm` in the terminal to invoke the bootstrap skill.
+*   **Accessing in Claude Code:** Type `/marketplace` in the terminal to invoke the bootstrap skill.

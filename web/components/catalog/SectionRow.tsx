@@ -10,7 +10,6 @@ interface SectionRowProps {
   title: string;
   subtitle?: string;
   items: Listing[];
-  onSelectItem: (item: Listing) => void;
   viewAllHref?: string;
   viewAllLabel?: string;
   onViewAll?: () => void;
@@ -21,7 +20,6 @@ export function SectionRow({
   title,
   subtitle,
   items,
-  onSelectItem,
   viewAllHref,
   viewAllLabel = "View all",
   onViewAll,
@@ -53,7 +51,7 @@ export function SectionRow({
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
-          <ExtensionCard key={item.id} item={item} onSelect={onSelectItem} />
+          <ExtensionCard key={item.id} item={item} />
         ))}
       </div>
     </section>

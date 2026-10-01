@@ -21,6 +21,7 @@ export interface Listing {
   command?: string;
   args?: string[];
   skillSource?: string;
+  installHint?: string;
   schemaFingerprint?: string;
   tools?: Array<{ name: string; description: string; inputSchema?: unknown }>;
   effects?: Array<{ effect: string; declaredBy: string }>;

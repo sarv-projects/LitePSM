@@ -7,7 +7,6 @@ import { Listing } from "../../lib/telemetry";
 
 interface ExtensionGridProps {
   items: Listing[];
-  onSelectItem: (item: Listing) => void;
   query: string;
   loading?: boolean;
   onClearFilters?: () => void;
@@ -16,7 +15,7 @@ interface ExtensionGridProps {
 const ITEMS_PER_PAGE = 48;
 const SUGGESTIONS = ["postgres", "github", "playwright", "memory", "browser", "code review"];
 
-export function ExtensionGrid({ items, onSelectItem, query, loading, onClearFilters }: ExtensionGridProps) {
+export function ExtensionGrid({ items, query, loading, onClearFilters }: ExtensionGridProps) {
   const [sortBy, setSortBy] = useState<"stars" | "name">("stars");
   const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -78,7 +77,7 @@ export function ExtensionGrid({ items, onSelectItem, query, loading, onClearFilt
         <div className="space-y-10">
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {displayedItems.map((item) => (
-              <ExtensionCard key={item.id} item={item} onSelect={onSelectItem} />
+              <ExtensionCard key={item.id} item={item} />
             ))}
           </div>
 

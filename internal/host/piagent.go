@@ -23,7 +23,7 @@ func (a *PiAgentAdapter) Descriptor() HostDescriptor {
 		ConfigFormat:           "json",
 		SupportsFormElicit:     true,
 		RequiresBootstrapSkill: false,
-		SlashCommandTrigger:    "/litepsm",
+		SlashCommandTrigger:    "/marketplace",
 	}
 }
 

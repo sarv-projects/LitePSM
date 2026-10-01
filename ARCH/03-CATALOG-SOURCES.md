@@ -10,6 +10,8 @@ LitePSM is an **aggregator and compatibility layer**, not a monolithic proprieta
             ├─ Official MCP Registry (server.json & API)
             ├─ Agent Skills Specification (SKILL.md & Git repos)
             ├─ Claude Code Marketplaces (.claude-plugin/marketplace.json)
+            ├─ OpenAI Codex Marketplaces (.agents/plugins/marketplace.json)
+            ├─ Cursor Marketplaces (.cursor-plugin/marketplace.json)
             ├─ OpenAI Portable Plugins (plugin.json)
             ├─ Grok Build Marketplaces (.grok-plugin/marketplace.json)
             └─ User-Configured Local / Private Git Repositories
@@ -45,9 +47,11 @@ Previous designs conflated metadata scraping, artifact downloading, and runtime 
 |---|---|---|---|
 | **Official MCP Registry** | Registry API (`registry.modelcontextprotocol.io`) | npm, PyPI, Cargo, OCI, NuGet, MCPB, Streamable HTTP | Registry metadata is discovery-only. Does not imply safe execution. Supports multiple runtimes. |
 | **Agent Skills** | `agentskills.io` directory API & Git repositories | Git tree containing `SKILL.md` + `scripts/`, `references/`, `assets/` | Progressive disclosure: loads metadata first, body on demand. `allowed-tools` frontmatter is **informational only** and confers no execution rights. |
-| **Claude Code Marketplaces** | Git repository / `.claude-plugin/marketplace.json` | `github`, `git-subdir`, `archive`, `npm` | Ingests static manifests. Sources of type `command` execute shell scripts during fetch and are **strictly rejected in v1**. |
+| **Claude Code Marketplaces** | Git repository / `.claude-plugin/marketplace.json` | `github`, `git-subdir`, `url`, `archive`, `npm`, local paths | Ingests static manifests. Sources of type `command` execute shell scripts during fetch and are **strictly rejected in v1**. Registered upstreams: `git:anthropics-skills`, `git:claude-plugins-official`, `git:knowledge-work-plugins` (see `internal/source/sources.go`). |
 | **OpenAI Portable Plugins** | Root `plugin.json` format | `skills/`, `mcp.json`, `hooks/`, `assets/` | Portable components are normalized. Vendor-specific extensions under `extensions.com.openai` are preserved in raw metadata. |
-| **Grok Build Marketplaces** | `.grok-plugin/marketplace.json` | Remote Git sources pinned to full commit SHAs | Supports distinct component kinds (commands, agents, hooks, MCP, LSP). Pinned SHA-1/SHA-256 commits are required for reproducibility. |
+| **OpenAI Codex Marketplaces** | Git repository / `.agents/plugins/marketplace.json` | `local`, `url`, `git-subdir` | Registered upstream: `git:openai-plugins` (both `marketplace.json` and `api_marketplace.json`). Entries carry a declared `policy.authentication` requirement recorded verbatim in `RequirementsSummary`. |
+| **Cursor Marketplaces** | Git repository / `.cursor-plugin/marketplace.json` | same-repo subpath strings | Registered upstream: `git:cursor-plugins`. Per-plugin detail lives in each plugin's own `plugin.json` and is not fetched at discovery. |
+| **Grok Build Marketplaces** | `.grok-plugin/marketplace.json` | Remote Git sources pinned to full commit SHAs | Supports distinct component kinds (commands, agents, hooks, MCP, LSP). Pinned SHA-1/SHA-256 commits are required for reproducibility. Registered upstream: `git:xai-plugin-marketplace`. |
 | **Generic Git / Local** | Local directories or authenticated Git repos | Any supported LitePSM manifest format | Uses the user's native Git credential helper or SSH agent. Credentials are never sent to LitePSM services. |
 
 ---

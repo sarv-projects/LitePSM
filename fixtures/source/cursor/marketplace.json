@@ -1,0 +1,22 @@
+{
+  "name": "cursor-plugins",
+  "owner": { "name": "Cursor", "email": "plugins@cursor.com" },
+  "metadata": { "description": "Official Cursor plugin marketplace" },
+  "plugins": [
+    {
+      "name": "teaching",
+      "source": "teaching",
+      "description": "Skill mapping, practice plans, and learning retrospectives."
+    },
+    {
+      "name": "ralph-loop",
+      "source": "ralph-loop",
+      "description": "Iterative self-referential AI loops using the Ralph Wiggum technique."
+    },
+    {
+      "name": "gmail",
+      "source": "third_party/gmail",
+      "description": "Search, read, draft, and manage email."
+    }
+  ]
+}

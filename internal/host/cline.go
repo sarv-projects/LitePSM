@@ -23,7 +23,7 @@ func (a *ClineAdapter) Descriptor() HostDescriptor {
 		ConfigFormat:           "json",
 		SupportsFormElicit:     true,
 		RequiresBootstrapSkill: false,
-		SlashCommandTrigger:    "/litepsm",
+		SlashCommandTrigger:    "/marketplace",
 	}
 }
 

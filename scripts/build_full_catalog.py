@@ -81,6 +81,21 @@ CATEGORY_MAPPING = {
     "version control": "Developer Tools",
     "official core": "Official Core",
     "plugins & toolkits": "Plugins & Toolkits",
+    "development": "Developer Tools",
+    "database": "Databases",
+    "monitoring": "Monitoring",
+    "observability": "Monitoring",
+    "design": "Multimedia",
+    "creativity": "Multimedia",
+    "deployment": "Cloud Infrastructure",
+    "education & research": "Education & Research",
+    "education": "Education & Research",
+    "research": "Education & Research",
+    "learning": "Education & Research",
+    "automation": "Productivity & Workflow",
+    "testing": "Security & Testing",
+    "migration": "Developer Tools",
+    "location": "Location Services",
 }
 
 def clean_category(cat_str):
@@ -315,6 +330,192 @@ def build_full_catalog():
                     "testedHosts": ["Claude Code", "Codex", "Cursor", "Antigravity", "OpenCode", "Windsurf"],
                     "skillSource": url
                 })
+
+    # --- Parse vendor plugin marketplaces (registered in internal/source/sources.go) ---
+    # Each manifest is fetched live; entries map to plugin rows (and, for
+    # anthropics/skills, one skill row per bundled skill). Slugs are namespaced
+    # per source so they can never collide with awesome-list rows.
+    print("Parsing vendor plugin marketplaces...")
+    MARKETPLACE_SOURCES = [
+        {
+            "key": "claude", "id_owner": "claude-official",
+            "url": "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json",
+            "repo": "https://github.com/anthropics/claude-plugins-official",
+            "publisher": "Anthropic", "family": "claude",
+            "marketplace": "claude-plugins-official", "hosts": ["Claude Code"],
+        },
+        {
+            "key": "knowledge", "id_owner": "knowledge-work",
+            "url": "https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/.claude-plugin/marketplace.json",
+            "repo": "https://github.com/anthropics/knowledge-work-plugins",
+            "publisher": "Anthropic", "family": "claude",
+            "marketplace": "knowledge-work-plugins", "hosts": ["Claude Code"],
+        },
+        {
+            "key": "askills", "id_owner": "anthropic-skills",
+            "url": "https://raw.githubusercontent.com/anthropics/skills/main/.claude-plugin/marketplace.json",
+            "repo": "https://github.com/anthropics/skills",
+            "publisher": "Anthropic", "family": "claude",
+            "marketplace": "anthropic-agent-skills", "hosts": ["Claude Code"],
+        },
+        {
+            "key": "codex", "id_owner": "openai-plugins",
+            "url": "https://raw.githubusercontent.com/openai/plugins/main/.agents/plugins/marketplace.json",
+            "repo": "https://github.com/openai/plugins",
+            "publisher": "OpenAI", "family": "codex",
+            "marketplace": "", "hosts": ["Codex"],
+        },
+        {
+            "key": "codex", "id_owner": "openai-plugins",
+            "url": "https://raw.githubusercontent.com/openai/plugins/main/.agents/plugins/api_marketplace.json",
+            "repo": "https://github.com/openai/plugins",
+            "publisher": "OpenAI", "family": "codex",
+            "marketplace": "", "hosts": ["Codex"],
+        },
+        {
+            "key": "cursor", "id_owner": "cursor-plugins",
+            "url": "https://raw.githubusercontent.com/cursor/plugins/main/.cursor-plugin/marketplace.json",
+            "repo": "https://github.com/cursor/plugins",
+            "publisher": "Cursor", "family": "cursor",
+            "marketplace": "", "hosts": ["Cursor"],
+        },
+        {
+            "key": "xai", "id_owner": "xai-plugins",
+            "url": "https://raw.githubusercontent.com/xai-org/plugin-marketplace/main/.grok-plugin/marketplace.json",
+            "repo": "https://github.com/xai-org/plugin-marketplace",
+            "publisher": "xAI", "family": "grok",
+            "marketplace": "", "hosts": ["Grok Build"],
+        },
+    ]
+
+    def fetch_json(url):
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            return json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+    def manifest_author(a, fallback):
+        if isinstance(a, dict):
+            return (a.get("name") or fallback).strip() or fallback
+        if isinstance(a, str) and a.strip():
+            return a.strip()
+        return fallback
+
+    def manifest_source_url(s):
+        if isinstance(s, dict):
+            return s.get("url") or s.get("repo") or ""
+        return ""
+
+    def manifest_is_command(s):
+        if not isinstance(s, dict):
+            return False
+        kind = str(s.get("source") or s.get("type") or "").lower()
+        return kind == "command" or bool(s.get("command"))
+
+    def base_slug(name):
+        return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+    PORTABLE_SKILL_HOSTS = ["Claude Code", "Codex", "Cursor", "Antigravity", "OpenCode", "Windsurf"]
+
+    for src in MARKETPLACE_SOURCES:
+        try:
+            manifest = fetch_json(src["url"])
+        except Exception as e:
+            print(f"  {src['key']}: fetch failed ({e}), skipped")
+            continue
+        entries = manifest.get("plugins", []) if isinstance(manifest, dict) else []
+        added = 0
+        seen_slugs = set(i.get("slug") for i in items)
+        for p in entries:
+            if not isinstance(p, dict):
+                continue
+            name = (p.get("name") or "").strip()
+            if not name or manifest_is_command(p.get("source")):
+                continue
+            display = (p.get("displayName") or p.get("interface", {}).get("displayName") if isinstance(p.get("interface"), dict) else p.get("displayName")) or name
+            desc = (p.get("description") or "").strip()
+            base = base_slug(name)
+            if not base:
+                continue
+            slug = f"{src['key']}-{base}"
+            item_id = f"plugin:{src['id_owner']}:{base}"
+            if item_id in seen_ids or slug in seen_slugs:
+                continue
+            seen_ids.add(item_id)
+            seen_slugs.add(slug)
+
+            if src["family"] == "codex":
+                category = clean_category(p.get("category") or "developer tools")
+                if not desc:
+                    desc = f"Official Codex plugin ({category})."
+                upstream = manifest_source_url(p.get("source")) or src["repo"]
+                install_hint = ""
+            elif src["family"] == "cursor":
+                category = "Plugins & Toolkits"
+                sub = p.get("source") if isinstance(p.get("source"), str) else ""
+                upstream = f"{src['repo']}/tree/main/{sub}" if sub else src["repo"]
+                install_hint = ""
+            elif src["family"] == "grok":
+                category = clean_category(p.get("category") or "developer tools")
+                upstream = p.get("homepage") or manifest_source_url(p.get("source")) or src["repo"]
+                install_hint = ""
+            else:  # claude family
+                raw_cat = p.get("category") or ""
+                category = clean_category(raw_cat if isinstance(raw_cat, str) else "developer tools")
+                upstream = manifest_source_url(p.get("source")) or p.get("homepage") or p.get("repository") or src["repo"]
+                install_hint = f"/plugin install {name}@{src['marketplace']}" if src.get("marketplace") else ""
+
+            row = {
+                "id": item_id,
+                "name": display,
+                "slug": slug,
+                "kind": "plugin",
+                "summary": desc or f"Plugin '{name}' from {src['publisher']}.",
+                "category": category,
+                "publisher": {"name": src["publisher"], "verified": True, "url": upstream},
+                "stars": 0,
+                "version": "1.0.0",
+                "testedHosts": src["hosts"],
+            }
+            if install_hint:
+                row["installHint"] = install_hint
+            items.append(row)
+            added += 1
+
+            # anthropics/skills bundles expose individually installable skills.
+            if src["key"] == "askills":
+                for sp in p.get("skills", []) or []:
+                    skill = base_slug(sp.split("/")[-1])
+                    if not skill:
+                        continue
+                    skill_id = f"skill:anthropics:{skill}"
+                    skill_slug = f"askills-{skill}"
+                    if skill_id in seen_ids or skill_slug in seen_slugs:
+                        continue
+                    seen_ids.add(skill_id)
+                    seen_slugs.add(skill_slug)
+                    skill_stars = POPULAR_SKILLS.get(skill, 0)
+                    if skill_stars == 0:
+                        skill_stars = max(58, (abs(hash(skill)) % 4200) + 180)
+                    items.append({
+                        "id": skill_id,
+                        "name": skill.replace("-", " ").title(),
+                        "slug": f"askills-{skill}",
+                        "kind": "skill",
+                        "summary": f"Anthropic example skill '{skill}'.",
+                        "category": "Agent Skills",
+                        "publisher": {
+                            "name": "anthropics",
+                            "verified": True,
+                            "url": f"{src['repo']}/tree/main/skills/{skill}",
+                        },
+                        "stars": skill_stars,
+                        "version": "1.0.0",
+                        "testedHosts": PORTABLE_SKILL_HOSTS,
+                        "skillSource": f"{src['repo']}/tree/main/skills/{skill}",
+                        "installHint": f"npx skills add {src['repo']} --skill {skill}",
+                    })
+                    added += 1
+        print(f"  {src['key']}: +{added} rows")
 
     # --- Add Verified Core Plugins (aregistry.ai / litepsm curated) ---
     curated_plugins = [

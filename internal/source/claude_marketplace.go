@@ -13,36 +13,45 @@ import (
 )
 
 // ClaudeMarketplaceManifest represents a .claude-plugin/marketplace.json file.
+//
+// Real-world manifests vary: `publisher`/`owner`/`author` may each be a string
+// or an object, `category` may be a string or a list, and `source` may be a
+// local-path string or a fetch descriptor object. The flexible types in
+// flex.go normalize all observed shapes.
 type ClaudeMarketplaceManifest struct {
 	SchemaVersion int                 `json:"schemaVersion,omitempty"`
 	Name          string              `json:"name"`
 	Description   string              `json:"description,omitempty"`
-	Publisher     string              `json:"publisher,omitempty"`
+	Publisher     FlexString          `json:"publisher,omitempty"`
+	Owner         FlexString          `json:"owner,omitempty"`
+	Metadata      ClaudeMetadata      `json:"metadata,omitempty"`
+	Renames       map[string]string   `json:"renames,omitempty"`
 	Plugins       []ClaudePluginEntry `json:"plugins"`
+}
+
+// ClaudeMetadata carries marketplace-level version/description.
+type ClaudeMetadata struct {
+	Description string `json:"description,omitempty"`
+	Version     string `json:"version,omitempty"`
 }
 
 // ClaudePluginEntry models an individual plugin entry in a Claude marketplace manifest.
 type ClaudePluginEntry struct {
-	Name        string             `json:"name"`
-	Description string             `json:"description,omitempty"`
-	Version     string             `json:"version,omitempty"`
-	Author      string             `json:"author,omitempty"`
-	Homepage    string             `json:"homepage,omitempty"`
-	Repository  string             `json:"repository,omitempty"`
-	Categories  []string           `json:"categories,omitempty"`
-	Tags        []string           `json:"tags,omitempty"`
-	Source      ClaudePluginSource `json:"source"`
-}
-
-// ClaudePluginSource defines how the plugin is fetched.
-type ClaudePluginSource struct {
-	Type    string `json:"type"` // "github", "git-subdir", "archive", "npm", or "command" (REJECTED)
-	Repo    string `json:"repo,omitempty"`
-	Subdir  string `json:"subdir,omitempty"`
-	Ref     string `json:"ref,omitempty"`
-	URL     string `json:"url,omitempty"`
-	Package string `json:"package,omitempty"`
-	Command string `json:"command,omitempty"`
+	Name        string                     `json:"name"`
+	DisplayName string                     `json:"displayName,omitempty"`
+	Description string                     `json:"description,omitempty"`
+	Version     string                     `json:"version,omitempty"`
+	Author      FlexString                 `json:"author,omitempty"`
+	Homepage    string                     `json:"homepage,omitempty"`
+	Repository  string                     `json:"repository,omitempty"`
+	Category    FlexString                 `json:"category,omitempty"`
+	Categories  FlexStrings                `json:"categories,omitempty"`
+	Tags        []string                   `json:"tags,omitempty"`
+	Keywords    []string                   `json:"keywords,omitempty"`
+	Source      FlexSource                 `json:"source"`
+	Strict      *bool                      `json:"strict,omitempty"`
+	Skills      []string                   `json:"skills,omitempty"`
+	LSPServers  map[string]json.RawMessage `json:"lspServers,omitempty"`
 }
 
 // ClaudeMarketplaceAdapter ingests Claude Code marketplace manifests.
@@ -70,44 +79,106 @@ func (a *ClaudeMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string
 	now := time.Now().UTC()
 	hasher := sha256.New()
 
+	fallbackAuthor := firstNonEmpty(
+		manifest.Owner.Value,
+		manifest.Publisher.Value,
+		PublisherForSource(a.sourceID),
+		"Community",
+	)
+
 	for _, p := range manifest.Plugins {
-		// Strict Security Invariant: Reject "command" source type in v1
-		if strings.ToLower(p.Source.Type) == "command" || p.Source.Command != "" {
+		// Strict Security Invariant: Reject "command" source type in v1.
+		// A command source executes a shell script during fetch.
+		if p.Source.IsCommand() {
+			continue
+		}
+		if strings.TrimSpace(p.Name) == "" {
 			continue
 		}
 
-		ver := p.Version
-		if ver == "" {
-			ver = "1.0.0"
-		}
+		ver := firstNonEmpty(p.Version, manifest.Metadata.Version, "0.0.0-unknown")
 
-		cleanName := strings.ToLower(strings.ReplaceAll(p.Name, " ", "-"))
+		title := firstNonEmpty(p.DisplayName, p.Name)
+		cleanName := slugifyName(p.Name)
+		if cleanName == "" {
+			cleanName = slugifyName(title)
+		}
 		listingID := domain.NewListingID(domain.KindPlugin, a.sourceID, cleanName)
-		author := p.Author
-		if author == "" {
-			author = manifest.Publisher
-		}
-		if author == "" {
-			author = "Community"
-		}
 
-		categories := p.Categories
+		author := firstNonEmpty(p.Author.Value, fallbackAuthor)
+
+		var categories []string
+		categories = append(categories, p.Categories.Values...)
+		if p.Category.Value != "" {
+			categories = append(categories, p.Category.Value)
+		}
 		if len(categories) == 0 {
 			categories = []string{"developer-tools"}
 		}
 
-		component := domain.Component{
-			ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentSkill, cleanName)),
-			Kind:               domain.ComponentSkill,
-			Name:               p.Name,
-			SupportedByLitePSM: domain.SupportYes,
+		var keywords []string
+		keywords = append(keywords, p.Tags...)
+		keywords = append(keywords, p.Keywords...)
+
+		repoURL := firstNonEmpty(p.Source.RepositoryURL(), p.Repository, p.Homepage)
+
+		// Component mapping: skill bundles expose one skill component per
+		// declared skill; LSP maps expose one lsp component per server;
+		// opaque bundles expose a single asset component. A plugin bundle is
+		// never mislabelled as a bare skill.
+		var components []domain.Component
+		var compSummaries []domain.ComponentSummary
+		for _, sp := range p.Skills {
+			name := skillBaseName(sp)
+			if name == "" {
+				continue
+			}
+			components = append(components, domain.Component{
+				ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentSkill, name)),
+				Kind:               domain.ComponentSkill,
+				Name:               name,
+				Path:               sp,
+				SupportedByLitePSM: domain.SupportYes,
+			})
+			compSummaries = append(compSummaries, domain.ComponentSummary{
+				Kind: domain.ComponentSkill,
+				Name: name,
+			})
+		}
+		for srv := range p.LSPServers {
+			name := slugifyName(srv)
+			if name == "" {
+				continue
+			}
+			components = append(components, domain.Component{
+				ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentLSP, name)),
+				Kind:               domain.ComponentLSP,
+				Name:               name,
+				SupportedByLitePSM: domain.SupportUnknown,
+			})
+			compSummaries = append(compSummaries, domain.ComponentSummary{
+				Kind: domain.ComponentLSP,
+				Name: name,
+			})
+		}
+		if len(components) == 0 {
+			components = append(components, domain.Component{
+				ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentAsset, cleanName)),
+				Kind:               domain.ComponentAsset,
+				Name:               p.Name,
+				SupportedByLitePSM: domain.SupportUnknown,
+			})
+			compSummaries = append(compSummaries, domain.ComponentSummary{
+				Kind: domain.ComponentAsset,
+				Name: p.Name,
+			})
 		}
 
 		verRecord := &domain.VersionRecord{
 			ListingID:        string(listingID),
 			Version:          ver,
 			SourceSnapshotID: snapshotID,
-			Components:       []domain.Component{component},
+			Components:       components,
 			FetchedAt:        now,
 		}
 		versions = append(versions, verRecord)
@@ -117,18 +188,18 @@ func (a *ClaudeMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string
 			ID:            string(listingID),
 			Kind:          domain.KindPlugin,
 			Name:          p.Name,
-			Title:         p.Name,
+			Title:         title,
 			Summary:       p.Description,
 			Categories:    categories,
-			Keywords:      p.Tags,
+			Keywords:      keywords,
 			PublisherClaim: domain.PublisherClaim{
 				Name: author,
-				URL:  p.Homepage,
+				URL:  firstNonEmpty(p.Homepage, repoURL),
 			},
 			Source: domain.SourceReference{
 				SourceID:   string(a.sourceID),
 				UpstreamID: p.Name,
-				URL:        p.Repository,
+				URL:        repoURL,
 			},
 			Versions: []domain.VersionSummary{
 				{
@@ -136,12 +207,7 @@ func (a *ClaudeMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string
 					PublishedAt: &now,
 				},
 			},
-			ComponentsSummary: []domain.ComponentSummary{
-				{
-					Kind: domain.ComponentSkill,
-					Name: p.Name,
-				},
-			},
+			ComponentsSummary:    compSummaries,
 			RequirementsSummary:  []string{},
 			CompatibilitySummary: []domain.CompatibilityFact{},
 			VerificationSummary: domain.VerificationSummary{

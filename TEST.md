@@ -121,11 +121,11 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
        - `litepsm` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: false`
     4. Assert attempting to mutate/toggle external tools without `adopt_tool()` returns `LPSM-HOST-READONLY-EXTERNAL`.
 
-### Test Case 5: Slash Command (`/litepsm`) Registration
+### Test Case 5: Slash Command (`/marketplace`) Registration
 *   **Objective:** Confirm slash command trigger is registered for the agent.
 *   **Procedure:**
-    1. For **Pi Agent**: verify `~/.pi/agent/extensions/litepsm.ts` exists and registers `/litepsm`.
-    2. For **Cline**: verify custom instructions or prompt templates contain `/litepsm` trigger keyword.
+    1. For **Pi Agent**: verify `~/.pi/agent/extensions/litepsm.ts` exists and registers `/marketplace`.
+    2. For **Cline**: verify custom instructions or prompt templates contain `/marketplace` trigger keyword.
     3. For **Grok Build**: verify `.grok/config.toml` command hook exists.
 
 ### Test Case 6: Dynamic Runtime Adapter Advisory Fetching

@@ -73,7 +73,7 @@ function PackageContent() {
 
   const related = useMemo(() => {
     if (!item) return [];
-    return items.filter((i) => i.id !== item.id && i.category === item.category).slice(0, 3);
+    return items.filter((i) => i.id !== item.id && i.category === item.category).slice(0, 6);
   }, [item]);
 
   if (!item) {
@@ -170,12 +170,38 @@ function PackageContent() {
                 <Copy className="h-4 w-4" aria-hidden="true" /> Copy command
               </button>
               <p className="text-[11px] leading-relaxed text-slate-400">
-                Or run <code className="text-slate-200">/litepsm</code> in your agent and search &ldquo;{item.name}
+                Or run <code className="text-slate-200">/marketplace</code> in your agent and search &ldquo;{item.name}
                 &rdquo;.
               </p>
             </div>
           </div>
         </section>
+
+        {item.installHint && (
+          <section className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
+            <h2 className="text-lg font-bold text-slate-900">Install with your agent</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {item.kind === "skill"
+                ? "Portable skill — install directly from the upstream repository."
+                : "Vendor plugin — install with the host's own plugin command."}
+            </p>
+            <div className="relative mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <code className="select-all break-all font-mono text-xs text-slate-800 sm:text-sm">
+                  {item.installHint}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => copyText(item.installHint!, "Install command copied")}
+                  aria-label="Copy host install command"
+                  className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-emerald-600 hover:bg-emerald-600 hover:text-white"
+                >
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Compatibility */}
         <section className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">

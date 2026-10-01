@@ -1,0 +1,27 @@
+{
+  "name": "xai-official",
+  "description": "Official xAI plugin marketplace",
+  "owner": { "name": "xAI" },
+  "plugins": [
+    {
+      "name": "sentry",
+      "description": "Sentry error monitoring integration.",
+      "category": "monitoring",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/getsentry/plugin-grok.git",
+        "sha": "91e0cb6c79730e02bcf8f7dbcb1795e677fe8cc5"
+      },
+      "homepage": "https://github.com/getsentry/sentry-for-ai",
+      "keywords": ["sentry"]
+    },
+    {
+      "name": "neon",
+      "description": "Neon Serverless Postgres integration.",
+      "category": "database",
+      "source": { "type": "local", "path": "./external_plugins/neon" },
+      "homepage": "https://neon.com",
+      "keywords": ["neon", "neon postgres"]
+    }
+  ]
+}

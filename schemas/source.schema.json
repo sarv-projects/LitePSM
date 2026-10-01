@@ -35,7 +35,10 @@
         "agent-skills",
         "claude-marketplace",
         "openai-plugins",
+        "codex-marketplace",
+        "cursor-marketplace",
         "grok-marketplace",
+        "acp-registry",
         "git",
         "local",
         "custom"
@@ -48,7 +51,10 @@
         "skill-md",
         "claude-marketplace.json",
         "plugin.json",
+        "codex-marketplace.json",
+        "cursor-marketplace.json",
         "grok-marketplace.json",
+        "acp-registry.json",
         "litepsm-native"
       ]
     },

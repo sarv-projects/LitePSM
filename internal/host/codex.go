@@ -23,7 +23,7 @@ func (a *CodexAdapter) Descriptor() HostDescriptor {
 		ConfigFormat:           "toml",
 		SupportsFormElicit:     false,
 		RequiresBootstrapSkill: true,
-		SlashCommandTrigger:    "/litepsm",
+		SlashCommandTrigger:    "/marketplace",
 	}
 }
 

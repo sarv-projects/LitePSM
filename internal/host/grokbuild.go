@@ -23,7 +23,7 @@ func (a *GrokBuildAdapter) Descriptor() HostDescriptor {
 		ConfigFormat:           "toml",
 		SupportsFormElicit:     false,
 		RequiresBootstrapSkill: false,
-		SlashCommandTrigger:    "/litepsm",
+		SlashCommandTrigger:    "/marketplace",
 	}
 }
 

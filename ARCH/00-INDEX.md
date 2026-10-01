@@ -38,7 +38,7 @@ This architecture defines the complete specification for **LitePSM**, comprising
 | [13 — Resolver & Install Engine](13-RESOLVER-INSTALL-ENGINE.md) | Pure DFS resolver, cycle detection, artifact verification, two-phase atomic commit | Normative |
 | [14 — Bridge, Provider Supervisor & MCP](14-BRIDGE-PROVIDER-MCP.md) | Stdio Bridge shim, provider supervisor, Job Objects, dual-protocol MCP client | Normative |
 | [15 — Policy & Approvals Engine](15-POLICY-APPROVALS.md) | 17-action effect taxonomy, PolicyInput/Decision, approval channels, schema-drift invalidation | Normative |
-| [16 — Host Adapters & In-Agent UX](16-HOST-ADAPTERS.md) | HostAdapter interface, auto-detection, fallback prompt, Codex/Claude/Grok/OpenCode/Cline adapters, `/litepsm` | Normative |
+| [16 — Host Adapters & In-Agent UX](16-HOST-ADAPTERS.md) | HostAdapter interface, auto-detection, fallback prompt, Codex/Claude/Grok/OpenCode/Cline adapters, `/marketplace` | Normative |
 | [17 — Source, Artifact & Runtime Adapters](17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) | Decoupled SourceAdapter, ArtifactFetcher, and RuntimeAdapter interface contracts | Normative |
 | [18 — Catalog Builder, Releases & Search](18-CATALOG-BUILDER-RELEASE-SEARCH.md) | Deterministic CI builder, `/v1/releases/` immutable layout, manifest digests, search ranking | Normative |
 | [19 — Secrets & OAuth Broker](19-SECRETS-OAUTH.md) | OS SecretStore backends (WinCred/DPAPI, Keychain, Secret Service), loopback PKCE OAuth | Normative |

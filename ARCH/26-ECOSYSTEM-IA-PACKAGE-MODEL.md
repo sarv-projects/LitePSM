@@ -88,7 +88,7 @@ MCP is one `type` and one `source` family, not the root. Making MCP the root wou
 "Plugin" is overloaded: it denotes (a) the vendor-neutral Agent Plugins bundle, (b) vendor-private plugin formats, and (c) a curated multi-component toolkit. Using it as the root would:
 *   mislabel MCP-only and skill-only entries as "plugins";
 *   merge packaging (`type: plugin`) with provenance (`source`) and with curation (`collection`), collapsing three axes into one word;
-*   duplicate the existing `plugin` listing kind, which already sometimes means "bundle of skills" (see `internal/source/claude_marketplace.go`, which emits `KindPlugin` with a single `ComponentSkill`).
+*   duplicate the existing `plugin` listing kind, which already sometimes means "bundle of skills".
 
 ### 3.4 Internal taxonomy (normative list)
 
@@ -256,14 +256,16 @@ Source adapters perform metadata ingestion only and never execute package code (
 |---|---|---|---|
 | Official MCP Registry | Registry API / `server.json` | `mcp_registry.go` (`MCPRegistryAdapter`) | **Implemented** (metadata parse; npm/PyPI/Cargo/OCI/NuGet/MCPB packages + remotes) |
 | Agent Skills / Skills.sh | `agentskills.io` directory + Git `SKILL.md` | `skills.go` (`AgentSkillsAdapter`) | **Implemented** (frontmatter parse; `allowed-tools` informational only) |
-| Claude marketplace (incl. arbitrary Git marketplaces) | `.claude-plugin/marketplace.json` | `claude_marketplace.go` (`ClaudeMarketplaceAdapter`) | **Implemented** (`command` sources rejected) |
+| Claude marketplace (incl. arbitrary Git marketplaces) | `.claude-plugin/marketplace.json` | `claude_marketplace.go` (`ClaudeMarketplaceAdapter`) | **Implemented** (flexible author/category/source shapes; skill bundles → skill components, `lspServers` → lsp components, opaque bundles → asset; `command` sources rejected). Registered: `git:anthropics-skills`, `git:claude-plugins-official`, `git:knowledge-work-plugins` |
+| OpenAI Codex marketplaces | `.agents/plugins/marketplace.json` | `codex_marketplace.go` (`CodexMarketplaceAdapter`) | **Implemented** (declared `policy.authentication` recorded; opaque bundles → asset). Registered: `git:openai-plugins` (both `marketplace.json` and `api_marketplace.json`) |
+| Cursor marketplaces | `.cursor-plugin/marketplace.json` | `cursor_marketplace.go` (`CursorMarketplaceAdapter`) | **Implemented** (opaque bundles → asset). Registered: `git:cursor-plugins` |
 | OpenAI Codex plugins | `plugin.json` | `openai_plugin.go` (`OpenAIPluginAdapter`) | **Implemented** for the `plugin.json` shape; note the legacy `openai/skills` surface is deprecated and must not be treated as the forward path |
-| Grok Build marketplaces | `.grok-plugin/marketplace.json` | `grok_marketplace.go` (`GrokMarketplaceAdapter`) | **Implemented** (commit-SHA pinning expected) |
+| Grok Build marketplaces | `.grok-plugin/marketplace.json` | `grok_marketplace.go` (`GrokMarketplaceAdapter`) | **Implemented** (flexible owner/source shapes; pinned commit SHA → `ImmutableRef`; opaque bundles → asset). Registered: `git:xai-plugin-marketplace` |
 | GitHub repos + Releases | REST API / release assets / raw tree | — | **Missing** |
 | npm | Registry API / dist-tags | — | **Missing** as first-class discovery (only reachable transitively via MCP Registry `registryType: npm`) |
 | PyPI | JSON API / PEP 691 | — | **Missing** as first-class discovery (transitive via MCP Registry) |
 | Docker / OCI | Registry catalog / manifests | — | **Missing** as first-class discovery (transitive via MCP Registry `oci`) |
-| Cursor marketplace + cursor.directory | Marketplace API / directory feed | — | **Missing** |
+| Cursor directory feed (cursor.directory) | Directory feed | — | **Missing** (the `.cursor-plugin/marketplace.json` manifest shape is implemented above) |
 | GitHub Copilot plugins | Plugin manifest / marketplace | — | **Missing** |
 | Gemini CLI extensions | Extension manifest | — | **Missing** |
 | OpenCode (npm plugins) | npm package + `opencode` config convention | — | **Missing** |

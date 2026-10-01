@@ -23,7 +23,7 @@ type HostDescriptor struct {
     ConfigFormat           string   `json:"configFormat"`           // json | toml | yaml
     SupportsFormElicit     bool     `json:"supportsFormElicit"`     // MCP 2026-07-28 input_required
     RequiresBootstrapSkill bool     `json:"requiresBootstrapSkill"` // Needs companion SKILL.md / command
-    SlashCommandTrigger    string   `json:"slashCommandTrigger"`    // e.g. "/litepsm"
+    SlashCommandTrigger    string   `json:"slashCommandTrigger"`    // e.g. "/marketplace"
 }
 ```
 
@@ -99,7 +99,7 @@ When a user runs `litepsm`, the client queries the remote catalog release pointe
 
 ---
 
-## 4. In-Agent `/litepsm` Experience & Capability Browser
+## 4. In-Agent `/marketplace` Experience & Capability Browser
 
 The in-agent experience is architected as an abstract UX Model mapped to host-specific renderers:
 
@@ -119,7 +119,7 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 ```
 
 ### 4.1 Portable Contract vs. Rich Host UI
-*   **Baseline Portable Contract:** Universal MCP does not support arbitrary GUI windows or webviews. For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/litepsm` prints structured markdown tables, action shortcuts, and standard MCP discovery tools (`search_catalog`, `describe_capability`, `invoke_capability`, `list_installed`).
+*   **Baseline Portable Contract:** Universal MCP does not support arbitrary GUI windows or webviews. For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` prints structured markdown tables, action shortcuts, and standard MCP discovery tools (`search_catalog`, `describe_capability`, `invoke_capability`, `list_installed`).
 *   **Rich Host Renderer:** Where agent hosts support custom extensions or webviews (e.g. Cline's VS Code extension panel or Pi's interactive terminal TUI), the companion extension renders the interactive 4-tab visual capability browser:
 
 ```text
@@ -170,10 +170,10 @@ INSTALLED & DETECTED CAPABILITIES:
 
 ---
 
-## 5. Automated Slash Command (`/litepsm`) Registration
+## 5. Automated Slash Command (`/marketplace`) Registration
 
-To guarantee that `/litepsm` is immediately accessible the next time the agent opens:
+To guarantee that `/marketplace` is immediately accessible the next time the agent opens:
 1.  **Cline:** Registers a custom prompt/workflow or workspace command triggering the LitePSM MCP bridge.
-2.  **Pi Agent:** Writes a TypeScript command extension to `~/.pi/agent/extensions/litepsm.ts` (or `~/.pi/extensions/litepsm.ts`) registering `/litepsm`.
-3.  **Claude Code & Codex:** Installs a companion bootstrap skill `litepsm.skill.md` with trigger keyword `/litepsm`.
+2.  **Pi Agent:** Writes a TypeScript command extension to `~/.pi/agent/extensions/litepsm.ts` (or `~/.pi/extensions/litepsm.ts`) registering `/marketplace`.
+3.  **Claude Code & Codex:** Installs a companion bootstrap skill `litepsm.skill.md` with trigger keyword `/marketplace`.
 4.  **Grok Build:** Registers a custom command hook in `.grok/config.toml` (project scope).

@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
+import Link from "next/link";
 import { Star } from "lucide-react";
 import { Header } from "../../components/navigation/Header";
-import { DetailDrawer } from "../../components/catalog/DetailDrawer";
 import { Listing } from "../../lib/telemetry";
 import { KIND_ORDER, kindLabel, topStarred, sortListings } from "../../lib/catalog";
 import { formatStars } from "../../lib/format";
@@ -15,12 +15,10 @@ function Board({
   title,
   subtitle,
   rows,
-  onSelect,
 }: {
   title: string;
   subtitle?: string;
   rows: Listing[];
-  onSelect: (item: Listing) => void;
 }) {
   if (!rows.length) return null;
   return (
@@ -30,10 +28,10 @@ function Board({
       <ol className="mt-4 divide-y divide-slate-100">
         {rows.map((item, i) => (
           <li key={item.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(item)}
-              className="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-slate-50"
+            <Link
+              href={`/package/?slug=${encodeURIComponent(item.slug)}`}
+              aria-label={`Open ${item.name} package page`}
+              className="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
             >
               <span className="w-6 shrink-0 text-center font-mono text-sm font-bold text-slate-300">
                 {String(i + 1).padStart(2, "0")}
@@ -46,7 +44,7 @@ function Board({
                 <Star className="h-3 w-3 fill-amber-500 text-amber-500" aria-hidden="true" />
                 {formatStars(item.stars)}
               </span>
-            </button>
+            </Link>
           </li>
         ))}
       </ol>
@@ -55,8 +53,6 @@ function Board({
 }
 
 export default function TrendingPage() {
-  const [selected, setSelected] = useState<Listing | null>(null);
-
   const boards = useMemo(
     () => ({
       overall: topStarred(items, 20),
@@ -82,15 +78,13 @@ export default function TrendingPage() {
         </p>
 
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <Board title="Top 20 overall" subtitle="By GitHub stars" rows={boards.overall} onSelect={setSelected} />
-          <Board title="New & noteworthy" subtitle="Most recently added" rows={boards.newest} onSelect={setSelected} />
+          <Board title="Top 20 overall" subtitle="By GitHub stars" rows={boards.overall} />
+          <Board title="New & noteworthy" subtitle="Most recently added" rows={boards.newest} />
           {boards.byKind.map((b) => (
-            <Board key={b.kind} title={`Top ${kindLabel(b.kind)}`} rows={b.rows} onSelect={setSelected} />
+            <Board key={b.kind} title={`Top ${kindLabel(b.kind)}`} rows={b.rows} />
           ))}
         </div>
       </main>
-
-      <DetailDrawer item={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

@@ -22,7 +22,7 @@ LitePSM provides both an interactive terminal interface for humans and a structu
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        Agent Host Client                               │
 │                                                                        │
-│   In-Agent /litepsm Slash Command & Progressive Tool Discovery         │
+│   In-Agent /marketplace Slash Command & Progressive Tool Discovery         │
 │     ├── search_catalog(query, kinds, limit)                            │
 │     ├── describe_capability(capability_id)                             │
 │     ├── prepare_install(listing_id, version) -> InstallPlan v2         │
@@ -77,7 +77,7 @@ If the configuration file is absent, LitePSM prompts the user:
     {
       "mcpServers": {
         "litepsm": {
-          "command": "/usr/local/bin/litepsm",
+          "command": "/usr/local/bin/marketplace",
           "args": ["bridge", "stdio", "--host", "claude-code"]
         }
       }
@@ -93,7 +93,7 @@ If the configuration file is absent, LitePSM prompts the user:
 LitePSM maintains all user state, database files, and package trees within platform-standard data directories:
 *   **Windows:** `%LOCALAPPDATA%\LitePSM`
 *   **macOS:** `~/Library/Application Support/LitePSM`
-*   **Linux:** `$XDG_DATA_HOME/litepsm` (default: `~/.local/share/litepsm`)
+*   **Linux:** `$XDG_DATA_HOME/marketplace` (default: `~/.local/share/marketplace`)
 
 ```text
 DATA_ROOT/
@@ -141,7 +141,7 @@ LitePSM's dependency resolver is pure and deterministic. It performs no disk I/O
 ## 5. Update and Upstream Repack Handling
 
 ### 5.1 Passive Update Checks
-Whenever a user runs `litepsm` or an agent invokes `/litepsm`, the client performs a passive read of `/v1/current.json`.
+Whenever a user runs `litepsm` or an agent invokes `/marketplace`, the client performs a passive read of `/v1/current.json`.
 *   If the remote catalog release sequence exceeds the cached sequence, it downloads the release index.
 *   It compares installed versions against catalog versions.
 *   **Zero Local Mutation:** It displays update availability to the user or agent, but **never mutates local files** without an explicit update command.
