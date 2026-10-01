@@ -26,52 +26,59 @@ export function Header({ activeTab, setActiveTab }: HeaderProps) {
         </div>
 
         {/* Center Nav Links */}
-        <nav className="hidden md:flex items-center gap-1 bg-[#11131a]/80 p-1 rounded-lg border border-[#232734]">
+        <nav className="flex items-center gap-1 bg-[#11131a]/90 p-1 rounded-xl border border-[#232734]">
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+              activeTab === "all"
+                ? "bg-emerald-500 text-black shadow font-semibold"
+                : "text-gray-400 hover:text-white"
+            }`}
+          >
+            All (28)
+          </button>
           <button
             onClick={() => setActiveTab("mcp")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
               activeTab === "mcp"
                 ? "bg-emerald-500 text-black shadow font-semibold"
                 : "text-gray-400 hover:text-white"
             }`}
           >
-            MCP Servers
+            MCP Servers (15)
           </button>
           <button
             onClick={() => setActiveTab("skill")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
               activeTab === "skill"
                 ? "bg-emerald-500 text-black shadow font-semibold"
                 : "text-gray-400 hover:text-white"
             }`}
           >
-            Agent Skills
+            Agent Skills (8)
           </button>
           <button
             onClick={() => setActiveTab("plugin")}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
               activeTab === "plugin"
                 ? "bg-emerald-500 text-black shadow font-semibold"
                 : "text-gray-400 hover:text-white"
             }`}
           >
-            Plugins
+            Plugins (5)
           </button>
         </nav>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <a
             href="https://github.com/sarv-projects/LitePSM"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#171a23] hover:bg-[#232734] text-xs font-medium text-gray-300 hover:text-white border border-[#232734] transition-all"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#171a23] hover:bg-[#232734] text-xs font-medium text-gray-300 hover:text-white border border-[#232734] transition-all"
           >
-            <Github className="w-3.5 h-3.5" />
+            <Github className="w-4 h-4" />
             <span className="hidden sm:inline">GitHub</span>
-            <span className="px-1.5 py-0.2 rounded bg-black/40 text-[10px] text-emerald-400 font-mono">
-              ★ 1.4k
-            </span>
           </a>
         </div>
       </div>

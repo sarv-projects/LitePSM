@@ -18,10 +18,13 @@ export const CATEGORIES = [
   { id: "Developer Tools", label: "Developer Tools", icon: Code },
   { id: "Database Management", label: "Database Management", icon: Database },
   { id: "Browser Automation", label: "Browser Automation", icon: Globe },
-  { id: "DevOps", label: "DevOps & Cloud", icon: Workflow },
+  { id: "Productivity & Workflow", label: "Productivity & Workflow", icon: Sparkles },
+  { id: "Deployment & DevOps", label: "Deployment & DevOps", icon: Workflow },
   { id: "Security & Testing", label: "Security & Testing", icon: ShieldCheck },
-  { id: "Productivity", label: "Productivity", icon: Sparkles },
-  { id: "Data Science & ML", label: "Data Science & ML", icon: Cpu },
+  { id: "Analytics & Monitoring", label: "Analytics & Monitoring", icon: Cpu },
+  { id: "Cloud Infrastructure", label: "Cloud Infrastructure", icon: Globe },
+  { id: "Learning & Documentation", label: "Docs & Learning", icon: Wrench },
+  { id: "API Development", label: "API Development", icon: Code },
 ];
 
 interface CategoryRailProps {

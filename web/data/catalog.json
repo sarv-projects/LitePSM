@@ -1,5 +1,258 @@
 [
   {
+    "id": "mcp:obra:superpowers",
+    "name": "Superpowers",
+    "slug": "superpowers",
+    "kind": "mcp",
+    "summary": "Empowers AI coding agents with a structured software development workflow, from design refinement to TDD implementation.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "obra",
+      "verified": true,
+      "url": "https://github.com/obra/superpowers"
+    },
+    "transport": "stdio",
+    "stars": 293270,
+    "version": "2.4.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# Superpowers MCP Server\n\nEquip your AI agents with disciplined software engineering patterns: architecture planning, test-driven development (TDD), and self-healing test loops.",
+    "schemaFingerprint": "sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809",
+    "tools": [
+      {
+        "name": "plan_architecture",
+        "description": "Draft formal architectural specification before writing code",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "module"
+          ]
+        }
+      },
+      {
+        "name": "run_tdd_cycle",
+        "description": "Execute red-green-refactor cycle with automated test feedback",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "testFile": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:spawn:test",
+        "declaredBy": "publisher_declared"
+      },
+      {
+        "effect": "fs:read:repo",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "mcp:koala73:world-monitor",
+    "name": "World Monitor",
+    "slug": "world-monitor",
+    "kind": "mcp",
+    "summary": "Real-time global intelligence through AI-powered news aggregation, geopolitical tracking, and infrastructure monitoring.",
+    "category": "Analytics & Monitoring",
+    "publisher": {
+      "name": "koala73",
+      "verified": true,
+      "url": "https://github.com/koala73/world-monitor"
+    },
+    "transport": "Streamable HTTP",
+    "stars": 87610,
+    "version": "1.8.2",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Claude Code",
+      "Codex"
+    ],
+    "readme": "# World Monitor MCP Server\n\nGlobal situational awareness and OSINT monitoring via unified MCP endpoints.",
+    "schemaFingerprint": "sha256:2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a",
+    "tools": [
+      {
+        "name": "get_geopolitical_alerts",
+        "description": "Fetch latest breaking geopolitical flashpoints and market disruptions",
+        "inputSchema": {
+          "type": "object"
+        }
+      },
+      {
+        "name": "track_infrastructure",
+        "description": "Monitor critical global cloud and network infrastructure outages",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "region": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "net:outbound:https",
+        "declaredBy": "publisher_declared"
+      }
+    ]
+  },
+  {
+    "id": "mcp:ruvnet:ruflo",
+    "name": "Ruflo Swarm Orchestrator",
+    "slug": "ruflo",
+    "kind": "mcp",
+    "summary": "Orchestrates intelligent multi-agent swarms for Claude and coding harnesses, coordinating autonomous workflows.",
+    "category": "Productivity & Workflow",
+    "publisher": {
+      "name": "ruvnet",
+      "verified": true,
+      "url": "https://github.com/ruvnet/ruflo"
+    },
+    "transport": "stdio",
+    "stars": 73570,
+    "version": "3.1.0",
+    "testedHosts": [
+      "Cline",
+      "Claude Code",
+      "Pi Agent",
+      "Grok Build"
+    ],
+    "readme": "# Ruflo Swarm Orchestrator\n\nRun hierarchical multi-agent teams with consensus voting, leader election, and distributed subtask delegation.",
+    "schemaFingerprint": "sha256:3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+    "tools": [
+      {
+        "name": "spawn_subagent",
+        "description": "Launch specialized subagent with isolated context and bounded memory",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "aggregate_consensus",
+        "description": "Collect votes across swarm agents on plan execution",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:spawn:worker",
+        "declaredBy": "publisher_declared"
+      }
+    ]
+  },
+  {
+    "id": "mcp:fission-ai:openspec",
+    "name": "OpenSpec",
+    "slug": "openspec",
+    "kind": "mcp",
+    "summary": "Spec-driven development toolkit ensuring alignment between humans and AI coding assistants before code is written.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "Fission-AI",
+      "verified": true,
+      "url": "https://github.com/Fission-AI/openspec"
+    },
+    "transport": "stdio",
+    "stars": 70750,
+    "version": "1.2.5",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Codex",
+      "OpenCode"
+    ],
+    "readme": "# OpenSpec MCP Server\n\nFormal RFC and design document scaffolding for AI-assisted engineering.",
+    "schemaFingerprint": "sha256:4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c",
+    "tools": [
+      {
+        "name": "validate_spec",
+        "description": "Validate specification document against RFC standards",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:read:spec",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "mcp:upstash:context7",
+    "name": "Context7",
+    "slug": "context7",
+    "kind": "mcp",
+    "summary": "Fetches up-to-date documentation and official code examples for LLMs and AI code editors directly from the source.",
+    "category": "Learning & Documentation",
+    "publisher": {
+      "name": "Upstash",
+      "verified": true,
+      "url": "https://github.com/upstash/context7"
+    },
+    "transport": "Streamable HTTP",
+    "stars": 62550,
+    "version": "2.0.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# Context7 MCP Server\n\nInstant high-fidelity library documentation search, avoiding stale hallucinations.",
+    "schemaFingerprint": "sha256:5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    "tools": [
+      {
+        "name": "search_docs",
+        "description": "Retrieve canonical API references and code samples for any popular library",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "query": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "net:outbound:https",
+        "declaredBy": "publisher_declared"
+      }
+    ]
+  },
+  {
     "id": "mcp:github:modelcontextprotocol:servers:postgres",
     "name": "PostgreSQL MCP Server",
     "slug": "postgres",
@@ -12,10 +265,16 @@
       "url": "https://github.com/modelcontextprotocol/servers"
     },
     "transport": "stdio",
-    "stars": 3420,
+    "stars": 14200,
     "version": "1.2.0",
-    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code"],
-    "readme": "# PostgreSQL MCP Server\n\nA secure Model Context Protocol server providing structured read and schema inspection operations for PostgreSQL databases.\n\n## Capabilities\n- `query`: Execute read-only SQL queries with automatic transaction rollback on failure\n- `list_tables`: List all database tables and column schemas\n- `describe_table`: Detailed table statistics and indexes",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# PostgreSQL MCP Server\n\nA secure Model Context Protocol server providing structured read and schema inspection operations for PostgreSQL databases.",
     "schemaFingerprint": "sha256:4a8e3d8f89b1c9e2b02e779a1d528b184ef11739c947514a387799518dcfc88a",
     "tools": [
       {
@@ -24,26 +283,32 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "sql": { "type": "string" },
-            "limit": { "type": "integer", "default": 50 }
+            "sql": {
+              "type": "string"
+            }
           },
-          "required": ["sql"]
+          "required": [
+            "sql"
+          ]
         }
       },
       {
         "name": "list_tables",
-        "description": "List all tables in the current schema",
+        "description": "List all tables in current schema",
         "inputSchema": {
-          "type": "object",
-          "properties": {
-            "schema": { "type": "string", "default": "public" }
-          }
+          "type": "object"
         }
       }
     ],
     "effects": [
-      { "effect": "net:outbound:db", "declaredBy": "publisher_declared" },
-      { "effect": "fs:read:config", "declaredBy": "curated" }
+      {
+        "effect": "net:outbound:db",
+        "declaredBy": "publisher_declared"
+      },
+      {
+        "effect": "fs:read:config",
+        "declaredBy": "curated"
+      }
     ]
   },
   {
@@ -59,44 +324,43 @@
       "url": "https://github.com/modelcontextprotocol/servers"
     },
     "transport": "stdio",
-    "stars": 5890,
+    "stars": 18900,
     "version": "2.1.0",
-    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex", "Claude Code", "OpenCode"],
-    "readme": "# GitHub MCP Server\n\nOfficial GitHub MCP server allowing agents to read and manage repositories, review pull requests, create issues, and search code.",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code",
+      "OpenCode"
+    ],
+    "readme": "# GitHub MCP Server\n\nOfficial GitHub MCP server allowing agents to read and manage repositories, review PRs, and search code.",
     "schemaFingerprint": "sha256:7c9e0a12f5678b89c0de1234567890abcdef1234567890abcdef1234567890ab",
     "tools": [
       {
         "name": "get_file_contents",
         "description": "Retrieve file contents from a repository at a given ref",
         "inputSchema": {
-          "type": "object",
-          "properties": {
-            "owner": { "type": "string" },
-            "repo": { "type": "string" },
-            "path": { "type": "string" }
-          },
-          "required": ["owner", "repo", "path"]
+          "type": "object"
         }
       },
       {
         "name": "create_pull_request",
-        "description": "Create a new pull request against the base branch",
+        "description": "Create a new PR against base branch",
         "inputSchema": {
-          "type": "object",
-          "properties": {
-            "owner": { "type": "string" },
-            "repo": { "type": "string" },
-            "title": { "type": "string" },
-            "head": { "type": "string" },
-            "base": { "type": "string" }
-          },
-          "required": ["owner", "repo", "title", "head", "base"]
+          "type": "object"
         }
       }
     ],
     "effects": [
-      { "effect": "net:outbound:https", "declaredBy": "publisher_declared" },
-      { "effect": "secret:token:github", "declaredBy": "publisher_declared" }
+      {
+        "effect": "net:outbound:https",
+        "declaredBy": "publisher_declared"
+      },
+      {
+        "effect": "secret:token:github",
+        "declaredBy": "publisher_declared"
+      }
     ]
   },
   {
@@ -112,100 +376,35 @@
       "url": "https://brave.com/search/api"
     },
     "transport": "Streamable HTTP",
-    "stars": 1840,
+    "stars": 9400,
     "version": "1.0.4",
-    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex"],
-    "readme": "# Brave Search MCP Server\n\nStreamable HTTP-enabled MCP server providing ultra-low latency real-time web search and local business directory search.",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex"
+    ],
+    "readme": "# Brave Search MCP Server\n\nStreamable HTTP-enabled MCP server providing ultra-low latency real-time web search.",
     "schemaFingerprint": "sha256:9f8e7d6c5b4a3210feebda9876543210abcdef9876543210abcdef9876543210",
     "tools": [
       {
         "name": "brave_web_search",
-        "description": "Execute queries on the global Brave Search index",
+        "description": "Execute queries on global Brave Search index",
         "inputSchema": {
           "type": "object",
           "properties": {
-            "query": { "type": "string" },
-            "count": { "type": "integer", "default": 10 }
-          },
-          "required": ["query"]
-        }
-      }
-    ],
-    "effects": [
-      { "effect": "net:outbound:https", "declaredBy": "publisher_declared" }
-    ]
-  },
-  {
-    "id": "skill:builtin:agentskills:git-release",
-    "name": "Git Semantic Release Assistant",
-    "slug": "git-release",
-    "kind": "skill",
-    "summary": "Automated conventional commits analysis, changelog generation, and semver tagging.",
-    "category": "DevOps",
-    "publisher": {
-      "name": "AgentSkills.io",
-      "verified": true,
-      "url": "https://agentskills.io"
-    },
-    "stars": 920,
-    "version": "1.4.0",
-    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Claude Code", "OpenCode"],
-    "readme": "# Git Semantic Release Assistant\n\nA progressive disclosure agent skill implementing automated semver bumping, conventional commit audits, and GitHub release creation.",
-    "schemaFingerprint": "sha256:11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
-    "tools": [
-      {
-        "name": "bump_version",
-        "description": "Calculate next semver version from commit history",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "current": { "type": "string" }
-          },
-          "required": ["current"]
-        }
-      }
-    ],
-    "effects": [
-      { "effect": "fs:write:changelog", "declaredBy": "curated" }
-    ]
-  },
-  {
-    "id": "plugin:official:docker-k8s-toolkit",
-    "name": "Docker & Kubernetes Orchestrator",
-    "slug": "docker-k8s",
-    "kind": "plugin",
-    "summary": "Multi-component toolkit for container builds, pod inspection, log tailing, and helm deploys.",
-    "category": "DevOps",
-    "publisher": {
-      "name": "LitePSM Curated",
-      "verified": true,
-      "url": "https://litepsm.dev"
-    },
-    "stars": 2150,
-    "version": "2.0.1",
-    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Codex"],
-    "readme": "# Docker & Kubernetes Orchestrator Plugin\n\nFull-stack container management plugin providing stdio MCP bridges to docker daemon and k8s kubeconfig APIs.",
-    "schemaFingerprint": "sha256:33445566778899001122aabbccddeeff33445566778899001122aabbccddeeff",
-    "tools": [
-      {
-        "name": "docker_ps",
-        "description": "List running containers",
-        "inputSchema": { "type": "object" }
-      },
-      {
-        "name": "kubectl_get_pods",
-        "description": "List pods in given namespace",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "namespace": { "type": "string", "default": "default" }
+            "query": {
+              "type": "string"
+            }
           }
         }
       }
     ],
     "effects": [
-      { "effect": "process:spawn", "declaredBy": "curated" },
-      { "effect": "fs:read:kubeconfig", "declaredBy": "curated" }
+      {
+        "effect": "net:outbound:https",
+        "declaredBy": "publisher_declared"
+      }
     ]
   },
   {
@@ -221,32 +420,778 @@
       "url": "https://playwright.dev"
     },
     "transport": "stdio",
-    "stars": 4120,
+    "stars": 15100,
     "version": "1.3.2",
-    "testedHosts": ["Cline", "Pi Agent", "Grok Build", "Claude Code", "OpenCode"],
-    "readme": "# Playwright MCP Server\n\nAutomate browser sessions, take full-page screenshots, execute JavaScript snippets, and inspect accessibility trees.",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Claude Code",
+      "OpenCode"
+    ],
+    "readme": "# Playwright MCP Server\n\nAutomate browser sessions, take full-page screenshots, and inspect DOM accessibility trees.",
     "schemaFingerprint": "sha256:55667788990011223344aabbccddeeff55667788990011223344aabbccddeeff",
     "tools": [
       {
         "name": "navigate",
-        "description": "Navigate to a URL and wait for network idle",
+        "description": "Navigate to URL and wait for network idle",
         "inputSchema": {
-          "type": "object",
-          "properties": {
-            "url": { "type": "string" }
-          },
-          "required": ["url"]
+          "type": "object"
         }
       },
       {
         "name": "screenshot",
-        "description": "Capture current page viewport screenshot as base64 PNG",
-        "inputSchema": { "type": "object" }
+        "description": "Capture viewport screenshot",
+        "inputSchema": {
+          "type": "object"
+        }
       }
     ],
     "effects": [
-      { "effect": "process:spawn:browser", "declaredBy": "publisher_declared" },
-      { "effect": "net:outbound:all", "declaredBy": "publisher_declared" }
+      {
+        "effect": "process:spawn:browser",
+        "declaredBy": "publisher_declared"
+      },
+      {
+        "effect": "net:outbound:all",
+        "declaredBy": "publisher_declared"
+      }
+    ]
+  },
+  {
+    "id": "mcp:github:modelcontextprotocol:servers:sqlite",
+    "name": "SQLite Explorer",
+    "slug": "sqlite",
+    "kind": "mcp",
+    "summary": "Fast, lightweight local relational database query execution and schema reflection.",
+    "category": "Database Management",
+    "publisher": {
+      "name": "Anthropic",
+      "verified": true,
+      "url": "https://github.com/modelcontextprotocol/servers"
+    },
+    "transport": "stdio",
+    "stars": 8200,
+    "version": "1.1.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# SQLite Explorer MCP Server\n\nInspect tables, execute queries, and generate schema DDL for local SQLite database files.",
+    "schemaFingerprint": "sha256:66778899001122334455aabbccddeeff66778899001122334455aabbccddeeff",
+    "tools": [
+      {
+        "name": "read_query",
+        "description": "Execute read-only SQL query on SQLite file",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:read:db",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "mcp:github:modelcontextprotocol:servers:filesystem",
+    "name": "Secure Filesystem Bridge",
+    "slug": "filesystem",
+    "kind": "mcp",
+    "summary": "Scoped, secure filesystem access with boundary isolation and path traversal prevention.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "Model Context Protocol",
+      "verified": true,
+      "url": "https://github.com/modelcontextprotocol/servers"
+    },
+    "transport": "stdio",
+    "stars": 11500,
+    "version": "1.4.1",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# Filesystem MCP Server\n\nGrant granular filesystem reading and writing capabilities to coding agents.",
+    "schemaFingerprint": "sha256:77889900112233445566aabbccddeeff77889900112233445566aabbccddeeff",
+    "tools": [
+      {
+        "name": "read_file",
+        "description": "Read file contents within allowed directory",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:read:scoped",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "mcp:sentry:sentry-mcp",
+    "name": "Sentry Error Intelligence",
+    "slug": "sentry",
+    "kind": "mcp",
+    "summary": "Fetch production exceptions, stack traces, and issue telemetry directly into coding loops.",
+    "category": "Analytics & Monitoring",
+    "publisher": {
+      "name": "Sentry",
+      "verified": true,
+      "url": "https://sentry.io"
+    },
+    "transport": "Streamable HTTP",
+    "stars": 7600,
+    "version": "1.0.2",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# Sentry MCP Server\n\nDiagnose production crashes and query event details directly from Sentry.",
+    "schemaFingerprint": "sha256:88990011223344556677aabbccddeeff88990011223344556677aabbccddeeff",
+    "tools": [
+      {
+        "name": "get_issue",
+        "description": "Get detailed error stacktrace by issue ID",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "net:outbound:https",
+        "declaredBy": "publisher_declared"
+      }
+    ]
+  },
+  {
+    "id": "mcp:linear:linear-mcp",
+    "name": "Linear Project Sync",
+    "slug": "linear",
+    "kind": "mcp",
+    "summary": "Manage issues, sprints, cycles, and project roadmaps seamlessly with Linear workspace.",
+    "category": "Productivity & Workflow",
+    "publisher": {
+      "name": "Linear",
+      "verified": true,
+      "url": "https://linear.app"
+    },
+    "transport": "Streamable HTTP",
+    "stars": 8900,
+    "version": "1.3.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Claude Code"
+    ],
+    "readme": "# Linear MCP Server\n\nQuery and update Linear tickets, assignees, and pull request linkages.",
+    "schemaFingerprint": "sha256:99001122334455667788aabbccddeeff99001122334455667788aabbccddeeff",
+    "tools": [
+      {
+        "name": "create_issue",
+        "description": "Create ticket in Linear team",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "net:outbound:https",
+        "declaredBy": "publisher_declared"
+      }
+    ]
+  },
+  {
+    "id": "mcp:anthropic:memory",
+    "name": "Persistent Knowledge Graph Memory",
+    "slug": "memory",
+    "kind": "mcp",
+    "summary": "Graph-based associative memory that allows AI agents to persist knowledge across sessions.",
+    "category": "Productivity & Workflow",
+    "publisher": {
+      "name": "Anthropic",
+      "verified": true,
+      "url": "https://github.com/modelcontextprotocol/servers"
+    },
+    "transport": "stdio",
+    "stars": 16700,
+    "version": "1.1.2",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code",
+      "OpenCode"
+    ],
+    "readme": "# Memory MCP Server\n\nMaintain structured entity relations and cross-session knowledge graphs.",
+    "schemaFingerprint": "sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+    "tools": [
+      {
+        "name": "create_entities",
+        "description": "Create new knowledge nodes",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:write:memory",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "mcp:cloudflare:cloudflare-mcp",
+    "name": "Cloudflare Edge Platform",
+    "slug": "cloudflare",
+    "kind": "mcp",
+    "summary": "Manage Cloudflare DNS records, Workers deployments, KV namespaces, and D1 databases.",
+    "category": "Cloud Infrastructure",
+    "publisher": {
+      "name": "Cloudflare",
+      "verified": true,
+      "url": "https://cloudflare.com"
+    },
+    "transport": "Streamable HTTP",
+    "stars": 10800,
+    "version": "2.0.1",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex"
+    ],
+    "readme": "# Cloudflare MCP Server\n\nDeploy Workers, configure DNS records, and inspect KV stores.",
+    "schemaFingerprint": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    "tools": [
+      {
+        "name": "deploy_worker",
+        "description": "Deploy Worker script to Cloudflare edge",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "net:outbound:https",
+        "declaredBy": "publisher_declared"
+      }
+    ]
+  },
+  {
+    "id": "skill:vercel:skills-sh:skill-finder",
+    "name": "Skill Finder",
+    "slug": "skill-finder",
+    "kind": "skill",
+    "summary": "Universal dynamic capability discovery engine allowing agents to search and load on-demand playbooks on the fly.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "Vercel / skills.sh",
+      "verified": true,
+      "url": "https://skills.sh"
+    },
+    "stars": 12500,
+    "version": "1.5.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Claude Code",
+      "OpenCode"
+    ],
+    "readme": "# Skill Finder\n\nAllows AI coding agents to dynamically search over 1,000,000 public skills on skills.sh and install matching SKILL.md specs.",
+    "schemaFingerprint": "sha256:a1b2c3d4e5f67890123456789abcdef0a1b2c3d4e5f67890123456789abcdef0",
+    "tools": [
+      {
+        "name": "search_skills",
+        "description": "Query skills.sh global index for matching agent workflows",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "net:outbound:skills",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "skill:agenticskills:agent-browser",
+    "name": "Agent Browser Playbook",
+    "slug": "agent-browser",
+    "kind": "skill",
+    "summary": "Autonomous web navigation, DOM element identification, and multi-step form completion playbooks.",
+    "category": "Browser Automation",
+    "publisher": {
+      "name": "AgenticSkills.io",
+      "verified": true,
+      "url": "https://agenticskills.io/skills"
+    },
+    "stars": 8400,
+    "version": "2.1.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Claude Code",
+      "Codex"
+    ],
+    "readme": "# Agent Browser Playbook\n\nProduction-tested recipes for navigating complex modern single-page apps, overcoming captchas, and verifying UI state.",
+    "schemaFingerprint": "sha256:b2c3d4e5f67890123456789abcdef01ab2c3d4e5f67890123456789abcdef01a",
+    "tools": [
+      {
+        "name": "inspect_dom",
+        "description": "Extract accessible DOM tree without token bloat",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:spawn:browser",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "skill:anthropic:skill-creator",
+    "name": "Skill Creator",
+    "slug": "skill-creator",
+    "kind": "skill",
+    "summary": "Anthropic official bootstrapping skill used by coding agents to author and validate new SKILL.md packages.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "Anthropic",
+      "verified": true,
+      "url": "https://skillregistry.io"
+    },
+    "stars": 18200,
+    "version": "1.0.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# Skill Creator\n\nStandardized guidance for authoring portable, high-efficiency SKILL.md files compliant with the 2026 Agent Skills standard.",
+    "schemaFingerprint": "sha256:c3d4e5f67890123456789abcdef01a2bc3d4e5f67890123456789abcdef01a2b",
+    "tools": [
+      {
+        "name": "scaffold_skill",
+        "description": "Create valid SKILL.md template with frontmatter and test assertions",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:write:skill",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "skill:voltagent:tdd-workflow",
+    "name": "TDD Workflow Enforcer",
+    "slug": "tdd-workflow",
+    "kind": "skill",
+    "summary": "Strict Test-Driven Development enforcement: requires writing failing tests before modifying implementation code.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "VoltAgent",
+      "verified": true,
+      "url": "https://github.com/VoltAgent/awesome-agent-skills"
+    },
+    "stars": 9800,
+    "version": "1.3.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# TDD Workflow Enforcer\n\nPrevents regression-heavy agent coding by verifying test failures in Red state before allowing Green implementations.",
+    "schemaFingerprint": "sha256:d4e5f67890123456789abcdef01a2b3cd4e5f67890123456789abcdef01a2b3c",
+    "tools": [
+      {
+        "name": "verify_red_state",
+        "description": "Assert that new test fails before code edit",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:run:test",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "skill:skillregistry:code-review",
+    "name": "Multi-Dimensional Code Review",
+    "slug": "code-review",
+    "kind": "skill",
+    "summary": "Comprehensive pull request analysis checking for security vulnerabilities, logic bugs, performance bottlenecks, and style.",
+    "category": "Security & Testing",
+    "publisher": {
+      "name": "SkillRegistry.io",
+      "verified": true,
+      "url": "https://skillregistry.io"
+    },
+    "stars": 11200,
+    "version": "2.0.4",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Claude Code"
+    ],
+    "readme": "# Code Review Playbook\n\nAutomated multi-pass code reviewer analyzing diff context, OWASP top 10 hazards, and test coverage.",
+    "schemaFingerprint": "sha256:e5f67890123456789abcdef01a2b3c4de5f67890123456789abcdef01a2b3c4d",
+    "tools": [
+      {
+        "name": "analyze_diff",
+        "description": "Perform structured security and lint audit on git diff",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:read:repo",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "skill:aregistry:k8s-runbook",
+    "name": "Kubernetes SRE Incident Runbook",
+    "slug": "k8s-runbook",
+    "kind": "skill",
+    "summary": "Automated diagnostic playbooks for resolving CrashLoopBackOff, OOMKilled, ImagePullBackOff, and ingress outages.",
+    "category": "Deployment & DevOps",
+    "publisher": {
+      "name": "aregistry.ai",
+      "verified": true,
+      "url": "https://aregistry.ai"
+    },
+    "stars": 7100,
+    "version": "1.2.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Claude Code"
+    ],
+    "readme": "# Kubernetes SRE Incident Runbook\n\nDiagnose and remediate failing pods with automated kubectl log analysis and event inspection.",
+    "schemaFingerprint": "sha256:f67890123456789abcdef01a2b3c4d5ef67890123456789abcdef01a2b3c4d5e",
+    "tools": [
+      {
+        "name": "diagnose_pod_crash",
+        "description": "Analyze logs and termination state for failing pods",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:run:kubectl",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "skill:builtin:agentskills:git-release",
+    "name": "Git Semantic Release Assistant",
+    "slug": "git-release",
+    "kind": "skill",
+    "summary": "Automated conventional commits analysis, changelog generation, and semver tagging.",
+    "category": "Deployment & DevOps",
+    "publisher": {
+      "name": "AgentSkills.io",
+      "verified": true,
+      "url": "https://agentskills.io"
+    },
+    "stars": 9200,
+    "version": "1.4.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Claude Code",
+      "OpenCode"
+    ],
+    "readme": "# Git Semantic Release Assistant\n\nA progressive disclosure agent skill implementing automated semver bumping and GitHub release notes.",
+    "schemaFingerprint": "sha256:11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
+    "tools": [
+      {
+        "name": "bump_version",
+        "description": "Calculate next semver version from commit history",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:write:changelog",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "skill:skills-re:api-designer",
+    "name": "OpenAPI 3.1 & Schema Architect",
+    "slug": "api-designer",
+    "kind": "skill",
+    "summary": "Spec-first API design workflow generating type-safe schemas, TypeScript interfaces, and mock servers.",
+    "category": "API Development",
+    "publisher": {
+      "name": "skills.re",
+      "verified": true,
+      "url": "https://skills.re"
+    },
+    "stars": 6500,
+    "version": "1.1.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# OpenAPI 3.1 & Schema Architect\n\nGenerate pristine, linted OpenAPI specs with zero schema ambiguities.",
+    "schemaFingerprint": "sha256:22334455667788990011aabbccddeeff22334455667788990011aabbccddeeff",
+    "tools": [
+      {
+        "name": "lint_openapi",
+        "description": "Validate OpenAPI specification against Spectral rules",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:read:spec",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "plugin:aregistry:k8s-cluster-inspector",
+    "name": "Kubernetes Cluster Inspector",
+    "slug": "k8s-cluster-inspector",
+    "kind": "plugin",
+    "summary": "Query live cluster state: pods, deployments, configmaps, and network policies through unified tooling.",
+    "category": "Deployment & DevOps",
+    "publisher": {
+      "name": "aregistry.ai",
+      "verified": true,
+      "url": "https://aregistry.ai"
+    },
+    "stars": 8900,
+    "version": "1.4.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex"
+    ],
+    "readme": "# Kubernetes Cluster Inspector Plugin\n\nDirect cluster inspection without leaving your agent IDE.",
+    "schemaFingerprint": "sha256:778899aabbccddeeff00112233445566778899aabbccddeeff00112233445566",
+    "tools": [
+      {
+        "name": "get_cluster_health",
+        "description": "Get overall node and pod health summary",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:spawn:kubectl",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "plugin:aregistry:k8s-helm-release-mgr",
+    "name": "Helm Release Manager",
+    "slug": "k8s-helm-release-mgr",
+    "kind": "plugin",
+    "summary": "List, diff, rollback, and explain Helm chart releases with safe rollback gates.",
+    "category": "Deployment & DevOps",
+    "publisher": {
+      "name": "aregistry.ai",
+      "verified": true,
+      "url": "https://aregistry.ai"
+    },
+    "stars": 6200,
+    "version": "1.2.1",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Codex"
+    ],
+    "readme": "# Helm Release Manager Plugin\n\nInspect values.yaml diffs and execute safe rollbacks for Helm releases.",
+    "schemaFingerprint": "sha256:8899aabbccddeeff00112233445566778899aabbccddeeff0011223344556677",
+    "tools": [
+      {
+        "name": "diff_release",
+        "description": "Diff proposed Helm release against running release",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:spawn:helm",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "plugin:official:docker-k8s-toolkit",
+    "name": "Docker & Kubernetes Orchestrator",
+    "slug": "docker-k8s",
+    "kind": "plugin",
+    "summary": "Multi-component toolkit for container builds, pod inspection, log tailing, and helm deploys.",
+    "category": "Deployment & DevOps",
+    "publisher": {
+      "name": "LitePSM Curated",
+      "verified": true,
+      "url": "https://litepsm.dev"
+    },
+    "stars": 12150,
+    "version": "2.0.1",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex"
+    ],
+    "readme": "# Docker & Kubernetes Orchestrator Plugin\n\nFull-stack container management plugin providing stdio bridges to docker daemon.",
+    "schemaFingerprint": "sha256:33445566778899001122aabbccddeeff33445566778899001122aabbccddeeff",
+    "tools": [
+      {
+        "name": "docker_ps",
+        "description": "List running containers",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:spawn:docker",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "plugin:official:fullstack-nextjs-toolkit",
+    "name": "Next.js 15 Fullstack Accelerator",
+    "slug": "nextjs-toolkit",
+    "kind": "plugin",
+    "summary": "Automated App Router scaffolding, Server Actions diagnostics, and static export validation.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "Vercel Community",
+      "verified": true,
+      "url": "https://nextjs.org"
+    },
+    "stars": 14700,
+    "version": "2.2.0",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Claude Code",
+      "OpenCode"
+    ],
+    "readme": "# Next.js 15 Fullstack Accelerator\n\nDiagnose hydration mismatches, optimize image loading priorities, and build clean Next.js 15 apps.",
+    "schemaFingerprint": "sha256:99aabbccddeeff00112233445566778899aabbccddeeff001122334455667788",
+    "tools": [
+      {
+        "name": "audit_hydration",
+        "description": "Detect potential hydration mismatches in React components",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "fs:read:web",
+        "declaredBy": "curated"
+      }
+    ]
+  },
+  {
+    "id": "plugin:official:python-uv-toolkit",
+    "name": "Python uv & PyPI Suite",
+    "slug": "python-uv",
+    "kind": "plugin",
+    "summary": "Ultra-fast Python package resolution, lockfile synchronization, and isolated virtual environment manager.",
+    "category": "Developer Tools",
+    "publisher": {
+      "name": "Astral",
+      "verified": true,
+      "url": "https://astral.sh/uv"
+    },
+    "stars": 21300,
+    "version": "1.0.8",
+    "testedHosts": [
+      "Cline",
+      "Pi Agent",
+      "Grok Build",
+      "Codex",
+      "Claude Code"
+    ],
+    "readme": "# Python uv & PyPI Suite Plugin\n\n10-100x faster pip installs and deterministic virtual environment management.",
+    "schemaFingerprint": "sha256:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+    "tools": [
+      {
+        "name": "uv_sync",
+        "description": "Synchronize pyproject.toml dependencies into virtualenv",
+        "inputSchema": {
+          "type": "object"
+        }
+      }
+    ],
+    "effects": [
+      {
+        "effect": "process:spawn:uv",
+        "declaredBy": "curated"
+      }
     ]
   }
 ]
