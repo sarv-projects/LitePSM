@@ -1,6 +1,6 @@
 {
   "name": "litepsm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Universal Package & Capability Manager for AI Coding Agents",
   "bin": {
     "litepsm": "bin/litepsm.js"
