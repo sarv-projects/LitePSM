@@ -373,7 +373,7 @@ export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 p-4">
           <Link
-            href={`/item/?id=${encodeURIComponent(item.id)}`}
+            href={`/package/?slug=${encodeURIComponent(item.slug)}`}
             className="truncate font-mono text-xs text-slate-500 underline underline-offset-4 hover:text-emerald-600"
           >
             Open full page
