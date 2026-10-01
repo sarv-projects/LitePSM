@@ -48,24 +48,69 @@ export default function Home() {
     });
   }, [items, activeTab, selectedCategory, searchQuery]);
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 2500);
+  };
+
+  const handleTabChange = (tab: string) => {
+    if (typeof document !== "undefined" && "startViewTransition" in document) {
+      (document as any).startViewTransition(() => setActiveTab(tab));
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
+  const handleCategoryChange = (cat: string) => {
+    if (typeof document !== "undefined" && "startViewTransition" in document) {
+      (document as any).startViewTransition(() => setSelectedCategory(cat));
+    } else {
+      setSelectedCategory(cat);
+    }
+  };
+
+  const handleSelectItem = (item: ExtensionItem | null) => {
+    if (typeof document !== "undefined" && "startViewTransition" in document) {
+      (document as any).startViewTransition(() => setSelectedItem(item));
+    } else {
+      setSelectedItem(item);
+    }
+  };
+
   return (
     <main className="min-h-screen flex flex-col justify-between">
       <div>
-        <Header activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Header activeTab={activeTab} setActiveTab={handleTabChange} />
         <HeroSection />
         <SearchBar query={searchQuery} setQuery={setSearchQuery} />
         <CategoryRail
           selectedCategory={selectedCategory}
-          onSelectCategory={setSelectedCategory}
+          onSelectCategory={handleCategoryChange}
         />
         <ExtensionGrid
           items={filteredItems}
-          onSelectItem={setSelectedItem}
+          onSelectItem={handleSelectItem}
           query={searchQuery}
         />
       </div>
 
-      <DetailDrawer item={selectedItem} onClose={() => setSelectedItem(null)} />
+      <DetailDrawer item={selectedItem} onClose={() => handleSelectItem(null)} />
+
+      {/* Modern Toast Notification (persistent-toast-notifications) */}
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-[#171a23] border border-emerald-500/40 text-emerald-400 px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md text-xs font-mono animate-fadeIn"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="w-full border-t border-[#232734] py-8 text-center text-xs text-gray-500 font-mono">

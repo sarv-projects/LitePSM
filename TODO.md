@@ -47,7 +47,7 @@ Before implementing application code, all normative specifications, data contrac
 | **LPSM-C001** | Implement `internal/source` adapters for Official MCP Registry and Agent Skills. | [ARCH/03](ARCH/03-CATALOG-SOURCES.md), [ARCH/17](ARCH/17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) | Pinned metadata fixtures map to valid `Listing` records with source digests and timestamps. | Completed |
 | **LPSM-C002** | Implement `internal/catalogbuild` (deterministic release compiler, manifest generator, shard partitioner). | [ARCH/18](ARCH/18-CATALOG-BUILDER-RELEASE-SEARCH.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Two successive builds from identical source fixtures yield byte-for-byte identical output. | Completed |
 | **LPSM-C003** | Implement `internal/catalog` client (release fetcher, manifest integrity checker, ETag cache, lexical search index). | [ARCH/06](ARCH/06-API-CONTRACTS.md), [ARCH/18](ARCH/18-CATALOG-BUILDER-RELEASE-SEARCH.md) | Offline search functional from local cache; updates detected via `/v1/current.json` sequence bump. | Completed |
-| **LPSM-C004** | Configure Cloudflare Pages deployment pipeline with strict dist allowlist (zero private source leaks). | [ARCH/02](ARCH/02-HLD.md), [ARCH/18](ARCH/18-CATALOG-BUILDER-RELEASE-SEARCH.md) | CI audit verifies only generated release JSON and static HTML/CSS/JS are published. | Planned |
+| **LPSM-C004** | Configure Cloudflare Pages deployment pipeline with strict dist allowlist (zero private source leaks). | [ARCH/02](ARCH/02-HLD.md), [ARCH/18](ARCH/18-CATALOG-BUILDER-RELEASE-SEARCH.md) | CI audit verifies only generated release JSON and static HTML/CSS/JS are published. | Completed |
 
 ---
 

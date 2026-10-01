@@ -72,8 +72,16 @@ export function ExtensionCard({ item, onSelect }: ExtensionCardProps) {
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(item)}
-      className="group relative flex flex-col justify-between glass-panel rounded-2xl p-5 border border-[#232734] hover:border-emerald-500/50 hover:bg-[#151822] transition-all duration-200 cursor-pointer shadow-lg hover:shadow-emerald-950/20"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(item);
+        }
+      }}
+      className="group relative flex flex-col justify-between glass-panel rounded-2xl p-5 border border-[#232734] hover:border-emerald-500/50 hover:bg-[#151822] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:border-emerald-500 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-emerald-950/20 will-change-transform transform-gpu hover:-translate-y-0.5"
     >
       <div>
         {/* Top Badges & Stars */}

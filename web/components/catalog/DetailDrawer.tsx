@@ -25,6 +25,28 @@ export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
   const [activeTab, setActiveTab] = useState<"readme" | "schema" | "security" | "connect">("readme");
   const [selectedHost, setSelectedHost] = useState<string>("cline");
   const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+
+  // Platform-controls-dismiss-dialog & Accessibility Focus Routing
+  React.useEffect(() => {
+    if (!item) return;
+
+    const previousFocusedElement = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      previousFocusedElement?.focus();
+    };
+  }, [item, onClose]);
 
   if (!item) return null;
 
@@ -65,9 +87,18 @@ export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-fadeIn">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="drawer-title"
+      aria-describedby="drawer-summary"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm drawer-backdrop"
+    >
       {/* Drawer Container */}
-      <div className="w-full max-w-2xl h-full bg-[#0d0f16] border-l border-[#232734] flex flex-col shadow-2xl overflow-hidden">
+      <div className="w-full max-w-2xl h-full bg-[#0d0f16] border-l border-[#232734] flex flex-col shadow-2xl overflow-hidden drawer-panel">
         {/* Top Header */}
         <div className="p-6 border-b border-[#232734] flex items-start justify-between gap-4">
           <div>
@@ -81,8 +112,8 @@ export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
                 {item.stars.toLocaleString()}
               </span>
             </div>
-            <h2 className="text-xl font-bold text-white">{item.name}</h2>
-            <p className="text-xs text-gray-400 mt-1">
+            <h2 id="drawer-title" className="text-xl font-bold text-white">{item.name}</h2>
+            <p id="drawer-summary" className="text-xs text-gray-400 mt-1">
               Publisher:{" "}
               <span className="text-gray-200 font-medium">{item.publisher.name}</span>
               {item.publisher.verified && (
@@ -94,8 +125,10 @@ export function DetailDrawer({ item, onClose }: DetailDrawerProps) {
           </div>
 
           <button
+            ref={closeButtonRef}
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-[#1a1e2a] transition-all"
+            aria-label="Close details"
+            className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-[#1a1e2a] transition-all focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
           >
             <X className="w-5 h-5" />
           </button>

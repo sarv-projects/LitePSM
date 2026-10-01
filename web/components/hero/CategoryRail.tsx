@@ -31,7 +31,7 @@ interface CategoryRailProps {
 
 export function CategoryRail({ selectedCategory, onSelectCategory }: CategoryRailProps) {
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 mb-8 overflow-x-auto no-scrollbar py-2">
+    <div className="w-full max-w-6xl mx-auto px-4 mb-8 overflow-x-auto no-scrollbar py-2 overscroll-x-contain snap-x snap-mandatory">
       <div className="flex items-center gap-2 min-w-max justify-start md:justify-center">
         {CATEGORIES.map((cat) => {
           const Icon = cat.icon;
@@ -41,7 +41,7 @@ export function CategoryRail({ selectedCategory, onSelectCategory }: CategoryRai
             <button
               key={cat.id}
               onClick={() => onSelectCategory(cat.id)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium border transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium border transition-all snap-start ${
                 isSelected
                   ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-400 shadow-sm shadow-emerald-950"
                   : "glass-panel border-[#232734] text-gray-400 hover:text-gray-200 hover:border-gray-700"
