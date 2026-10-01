@@ -4,7 +4,6 @@ package secrets
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -15,11 +14,12 @@ type DarwinSecretStore struct {
 }
 
 func newPlatformSecretStore() (SecretStore, error) {
-	mem, err := NewMemorySecretStore()
+	vaultPath := DefaultVaultPath()
+	store, err := NewFileEncryptedSecretStore(vaultPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize macOS secure store: %w", err)
+		return NewMemorySecretStore()
 	}
-	return &DarwinSecretStore{fallback: mem}, nil
+	return store, nil
 }
 
 func (s *DarwinSecretStore) Put(ctx context.Context, namespace, key string, secretBytes []byte) (*SecretRef, error) {

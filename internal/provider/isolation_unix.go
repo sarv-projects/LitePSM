@@ -20,6 +20,11 @@ func setupProcessIsolation(cmd *exec.Cmd) {
 	setParentDeathSignal(cmd.SysProcAttr)
 }
 
+func postStartProcessIsolation(cmd *exec.Cmd, h *ProviderHandle) error {
+	startWatchdogIfRequired(h)
+	return nil
+}
+
 func killProcessTree(h *ProviderHandle, gracePeriod time.Duration) error {
 	if h.Cmd == nil || h.Cmd.Process == nil {
 		return nil

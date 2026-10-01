@@ -169,23 +169,7 @@ func (a *GrokBuildAdapter) DetectPreExistingComponents(ctx context.Context) ([]P
 		return nil, nil
 	}
 
-	var results []PreExistingComponent
-	lines := strings.Split(string(data), "\n")
-	for _, l := range lines {
-		trimmed := strings.TrimSpace(l)
-		if strings.HasPrefix(trimmed, "[mcp_servers.") && strings.HasSuffix(trimmed, "]") {
-			name := strings.TrimSuffix(strings.TrimPrefix(trimmed, "[mcp_servers."), "]")
-			if name != "litepsm" {
-				results = append(results, PreExistingComponent{
-					Name:       name,
-					Kind:       "mcp",
-					ReadOnly:   true,
-					SourcePath: configPath,
-				})
-			}
-		}
-	}
-	return results, nil
+	return parseTomlMcpComponents(string(data), configPath), nil
 }
 
 func (a *GrokBuildAdapter) RenderManualSetup(binaryPath string) string {

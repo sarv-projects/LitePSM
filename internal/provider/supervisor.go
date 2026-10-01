@@ -98,8 +98,8 @@ type ProviderHandle struct {
 	Cmd            *exec.Cmd
 	Stdin          io.WriteCloser
 	Stdout         io.ReadCloser
-	PipeReader     *io.PipeReader
-	PipeWriter     *io.PipeWriter
+	PipeReader     io.ReadCloser
+	PipeWriter     io.WriteCloser
 	StartedAt      time.Time
 	StoppedAt      *time.Time
 	ExitError      error
@@ -197,6 +197,9 @@ func (s *Supervisor) StartProvider(ctx context.Context, providerID string, spec 
 		StartedAt:    time.Now().UTC(),
 	}
 
+	// Platform post-start isolation hooks (Windows Job Object assignment or Unix watchdog pipe)
+	_ = postStartProcessIsolation(cmd, handle)
+
 	s.providers[providerID] = handle
 
 	// Monitor child process exit asynchronously
@@ -242,6 +245,9 @@ func (h *ProviderHandle) Terminate(gracePeriod time.Duration) error {
 
 	_ = h.Stdin.Close()
 	_ = h.Stdout.Close()
+	if h.PipeWriter != nil {
+		_ = h.PipeWriter.Close()
+	}
 
 	_ = killProcessTree(h, gracePeriod)
 

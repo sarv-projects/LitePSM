@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -330,3 +331,84 @@ func TestRegistry(t *testing.T) {
 		t.Fatalf("expected detection results")
 	}
 }
+
+func TestGoldenFixturesCompliance(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Cline Golden Fixture
+	t.Run("Cline", func(t *testing.T) {
+		data, err := os.ReadFile("../../fixtures/hosts/cline/existing_servers_cline_mcp_settings.json")
+		if err != nil {
+			t.Fatalf("failed to read fixture: %v", err)
+		}
+		tempFile := filepath.Join(t.TempDir(), "cline_mcp_settings.json")
+		_ = os.WriteFile(tempFile, data, 0600)
+
+		adapter := &ClineAdapter{}
+		plan := &HostChangePlan{
+			HostID:          "cline",
+			ConfigPath:      tempFile,
+			OriginalContent: string(data),
+			ProposedContent: `{"mcpServers":{"filesystem":{"command":"npx"},"github":{"command":"npx"},"litepsm":{"command":"litepsm","args":["bridge","stdio","--host","cline"]}}}`,
+		}
+		res, err := adapter.ApplySetup(ctx, plan)
+		if err != nil || !res.Success {
+			t.Fatalf("ApplySetup failed: %v", err)
+		}
+		comps, err := adapter.DetectPreExistingComponents(ctx)
+		_ = comps // verify detection method exists and runs
+	})
+
+	// 2. Pi Agent Golden Fixture (mcp.servers layout)
+	t.Run("PiAgent_Nested", func(t *testing.T) {
+		data, err := os.ReadFile("../../fixtures/hosts/pi/valid_mcp.json")
+		if err != nil {
+			t.Fatalf("failed to read fixture: %v", err)
+		}
+		tempFile := filepath.Join(t.TempDir(), "mcp.json")
+		_ = os.WriteFile(tempFile, data, 0600)
+
+		// Test manual parsing of the fixture
+		var rootMap map[string]any
+		_ = json.Unmarshal(data, &rootMap)
+		mcpVal, ok := rootMap["mcp"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected mcp root key")
+		}
+		serversVal, ok := mcpVal["servers"].(map[string]any)
+		if !ok || serversVal["local_bash"] == nil {
+			t.Fatalf("expected local_bash under mcp.servers")
+		}
+	})
+
+	// 3. Grok Golden Fixture
+	t.Run("Grok_TOML", func(t *testing.T) {
+		data, err := os.ReadFile("../../fixtures/hosts/grok/valid_grok_config.toml")
+		if err != nil {
+			t.Fatalf("failed to read fixture: %v", err)
+		}
+		comps := parseTomlMcpComponents(string(data), "/path/to/config.toml")
+		if len(comps) != 1 || comps[0].Name != "sqlite" {
+			t.Fatalf("expected sqlite component, got %+v", comps)
+		}
+		if comps[0].Command != "uvx" || len(comps[0].Args) != 3 {
+			t.Fatalf("unexpected sqlite command/args: %+v", comps[0])
+		}
+	})
+
+	// 4. Codex Golden Fixture
+	t.Run("Codex_TOML", func(t *testing.T) {
+		data, err := os.ReadFile("../../fixtures/hosts/codex/config.toml")
+		if err != nil {
+			t.Fatalf("failed to read fixture: %v", err)
+		}
+		comps := parseTomlMcpComponents(string(data), "/path/to/config.toml")
+		if len(comps) != 1 || comps[0].Name != "memory" {
+			t.Fatalf("expected memory component, got %+v", comps)
+		}
+		if comps[0].Command != "npx" || len(comps[0].Args) != 2 {
+			t.Fatalf("unexpected memory command/args: %+v", comps[0])
+		}
+	})
+}
+

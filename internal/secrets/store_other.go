@@ -2,12 +2,11 @@
 
 package secrets
 
-import "fmt"
-
 func newPlatformSecretStore() (SecretStore, error) {
-	mem, err := NewMemorySecretStore()
+	vaultPath := DefaultVaultPath()
+	store, err := NewFileEncryptedSecretStore(vaultPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize fallback secure store: %w", err)
+		return NewMemorySecretStore()
 	}
-	return mem, nil
+	return store, nil
 }

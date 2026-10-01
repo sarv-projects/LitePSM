@@ -100,16 +100,30 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 		rootMap = make(map[string]any)
 	}
 
-	mcpServers, ok := rootMap["mcpServers"].(map[string]any)
-	if !ok {
-		mcpServers = make(map[string]any)
-	}
-
-	mcpServers["litepsm"] = map[string]any{
+	bridgeEntry := map[string]any{
 		"command": filepath.ToSlash(binaryPath),
 		"args":    []string{"bridge", "stdio", "--host", "pi-agent"},
 	}
-	rootMap["mcpServers"] = mcpServers
+
+	// Check if "mcp.servers" or "mcp" exists vs "mcpServers"
+	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
+		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
+			serversVal["litepsm"] = bridgeEntry
+			mcpVal["servers"] = serversVal
+			rootMap["mcp"] = mcpVal
+		} else {
+			mcpVal["litepsm"] = bridgeEntry
+			rootMap["mcp"] = mcpVal
+		}
+	} else if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
+		mcpServers["litepsm"] = bridgeEntry
+		rootMap["mcpServers"] = mcpServers
+	} else {
+		// Default to mcpServers
+		rootMap["mcpServers"] = map[string]any{
+			"litepsm": bridgeEntry,
+		}
+	}
 
 	proposedBytes, err := json.MarshalIndent(rootMap, "", "  ")
 	if err != nil {
@@ -178,12 +192,20 @@ func (a *PiAgentAdapter) VerifySetup(ctx context.Context) (*HostVerification, er
 		return &HostVerification{HostID: "pi-agent", ConfigPath: configPath, Status: "corrupted"}, nil
 	}
 
-	mcpServers, ok := rootMap["mcpServers"].(map[string]any)
-	if !ok {
-		return &HostVerification{HostID: "pi-agent", ConfigPath: configPath, Status: "missing"}, nil
+	registered := false
+	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
+		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
+			_, registered = serversVal["litepsm"]
+		} else {
+			_, registered = mcpVal["litepsm"]
+		}
+	}
+	if !registered {
+		if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
+			_, registered = mcpServers["litepsm"]
+		}
 	}
 
-	_, registered := mcpServers["litepsm"]
 	status := "missing"
 	if registered {
 		status = "ready"
@@ -213,15 +235,10 @@ func (a *PiAgentAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pre
 		return nil, nil
 	}
 
-	mcpServers, ok := rootMap["mcpServers"].(map[string]any)
-	if !ok {
-		return nil, nil
-	}
-
 	var results []PreExistingComponent
-	for name, details := range mcpServers {
+	extractComp := func(name string, details any) {
 		if name == "litepsm" {
-			continue
+			return
 		}
 		comp := PreExistingComponent{
 			Name:       name,
@@ -242,6 +259,23 @@ func (a *PiAgentAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pre
 			}
 		}
 		results = append(results, comp)
+	}
+
+	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
+		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
+			for name, details := range serversVal {
+				extractComp(name, details)
+			}
+		} else {
+			for name, details := range mcpVal {
+				extractComp(name, details)
+			}
+		}
+	}
+	if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
+		for name, details := range mcpServers {
+			extractComp(name, details)
+		}
 	}
 
 	return results, nil

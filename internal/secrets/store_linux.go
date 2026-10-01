@@ -4,7 +4,6 @@ package secrets
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -15,11 +14,12 @@ type LinuxSecretStore struct {
 }
 
 func newPlatformSecretStore() (SecretStore, error) {
-	mem, err := NewMemorySecretStore()
+	vaultPath := DefaultVaultPath()
+	store, err := NewFileEncryptedSecretStore(vaultPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Linux secure store: %w", err)
+		return NewMemorySecretStore()
 	}
-	return &LinuxSecretStore{fallback: mem}, nil
+	return store, nil
 }
 
 func (s *LinuxSecretStore) Put(ctx context.Context, namespace, key string, secretBytes []byte) (*SecretRef, error) {

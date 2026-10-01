@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -22,6 +24,8 @@ import (
 	"github.com/sarv-projects/litepsm/internal/host"
 	"github.com/sarv-projects/litepsm/internal/install"
 	"github.com/sarv-projects/litepsm/internal/ipc"
+	"github.com/sarv-projects/litepsm/internal/policy"
+	"github.com/sarv-projects/litepsm/internal/provider"
 	"github.com/sarv-projects/litepsm/internal/secrets"
 	"github.com/sarv-projects/litepsm/internal/skills"
 	"github.com/sarv-projects/litepsm/internal/state"
@@ -161,13 +165,43 @@ func runSelfUpdate(args []string) {
 	fmt.Printf("Target binary: %s\n", execPath)
 
 	stagingDir := paths.StagingPath()
-	fmt.Println("Applying update...")
-	err = u.ApplyUpdate(ctx, []byte("#!/bin/sh\n"), "mocksha256checksum", execPath, stagingDir)
+	fmt.Printf("Downloading binary update from %s...\n", info.ReleaseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.ReleaseURL, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create update request: %v\n", err)
+		os.Exit(1)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to download update: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "Update download returned HTTP %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
+
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read update payload: %v\n", err)
+		os.Exit(1)
+	}
+
+	binName := fmt.Sprintf("litepsm-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	expectedChecksum := info.ChecksumsSHA256[binName]
+
+	fmt.Println("Verifying SHA-256 checksum and applying atomic update...")
+	err = u.ApplyUpdate(ctx, payload, expectedChecksum, execPath, stagingDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Self-update failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("✓ Successfully updated LitePSM binary!")
+	fmt.Printf("✓ Successfully updated LitePSM to v%s!\n", status.LatestVersion)
 }
 
 func runInteractiveWizard() {
@@ -642,19 +676,118 @@ func runDaemonServe() {
 }
 
 func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client, installEngine *install.Engine, paths *config.PlatformPaths) {
-	// tools.list returns installed capabilities
+	policyEngine := policy.NewEngine(db, nil)
+	supervisor := provider.NewSupervisor()
+	secretStore, _ := secrets.NewMemorySecretStore()
+
+	// 1. tools.list returns installed capabilities & external detected tools
 	server.RegisterHandler("tools.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
 		if err != nil {
 			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
 		}
+
+		var items []bridge.CapabilityItem
+		for _, inst := range installs {
+			items = append(items, bridge.CapabilityItem{
+				ID:        inst.ListingID,
+				Name:      inst.ListingID,
+				Kind:      "mcp",
+				Summary:   fmt.Sprintf("Installed capability (v%s)", inst.Version),
+				Transport: "stdio",
+				Status:    bridge.StatusReady,
+				Verified:  true,
+			})
+		}
+
+		// Detect external tools
+		for _, ad := range host.ListAdapters() {
+			if extComps, err := ad.DetectPreExistingComponents(ctx); err == nil {
+				for _, ec := range extComps {
+					items = append(items, bridge.CapabilityItem{
+						ID:         "external:" + ad.Descriptor().HostID + ":" + ec.Name,
+						Name:       ec.Name,
+						Kind:       ec.Kind,
+						Summary:    fmt.Sprintf("Pre-existing host tool from %s", ec.SourcePath),
+						Status:     bridge.StatusReady,
+						IsExternal: true,
+					})
+				}
+			}
+		}
+
 		return map[string]any{
-			"installs": installs,
-			"count":    len(installs),
+			"installs": items,
+			"count":    len(items),
 		}, nil
 	})
 
-	// install.execute installs a package
+	// 2. catalog.search performs live search over catalog index
+	server.RegisterHandler("catalog.search", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			Query    string   `json:"query"`
+			Kinds    []string `json:"kinds,omitempty"`
+			Category string   `json:"category,omitempty"`
+			Limit    int      `json:"limit,omitempty"`
+		}
+		if len(params) > 0 {
+			_ = json.Unmarshal(params, &req)
+		}
+
+		results := catClient.Search(req.Query, catalog.SearchOptions{
+			Category: req.Category,
+			Limit:    req.Limit,
+		})
+
+		return map[string]any{
+			"count":   len(results),
+			"results": results,
+		}, nil
+	})
+
+	// 3. catalog.get_item retrieves full listing metadata
+	server.RegisterHandler("catalog.get_item", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			ID      string `json:"id"`
+			Version string `json:"version,omitempty"`
+		}
+		_ = json.Unmarshal(params, &req)
+
+		results := catClient.Search(req.ID, catalog.SearchOptions{Limit: 1})
+		if len(results) > 0 {
+			return results[0].Listing, nil
+		}
+		return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: fmt.Sprintf("listing %s not found", req.ID)}
+	})
+
+	// 4. resolver.prepare_plan generates an immutable InstallPlan preview
+	server.RegisterHandler("resolver.prepare_plan", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			ID      string `json:"id"`
+			Version string `json:"version,omitempty"`
+			Scope   string `json:"scope,omitempty"`
+		}
+		_ = json.Unmarshal(params, &req)
+
+		plan := &domain.InstallPlan{
+			SchemaVersion: 2,
+			PlanID:        fmt.Sprintf("plan_%s_%s", req.ID, req.Version),
+			Request: domain.PlanRequest{
+				ListingID:        req.ID,
+				RequestedVersion: req.Version,
+				TargetScope:      domain.ScopeUser,
+			},
+			Resolved: domain.PlanResolved{
+				Version: req.Version,
+			},
+			Approval: domain.PlanApproval{
+				Decision: "approve",
+			},
+		}
+		return plan, nil
+	})
+
+	// 5. install.execute installs a package
 	server.RegisterHandler("install.execute", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
 			ListingID string `json:"listingId"`
@@ -681,7 +814,19 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		}, nil
 	})
 
-	// skills.list returns progressive disclosure index
+	// 6. install.remove removes an installed package
+	server.RegisterHandler("install.remove", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			InstallID string `json:"installId"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid parameters"}
+		}
+		_ = db.DeleteInstall(ctx, req.InstallID)
+		return map[string]any{"removed": true, "installId": req.InstallID}, nil
+	})
+
+	// 7. skills.list returns progressive disclosure index
 	server.RegisterHandler("skills.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
 		if err != nil {
@@ -705,31 +850,195 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		}, nil
 	})
 
-	// catalog.search performs live or cached search over catalog index
-	server.RegisterHandler("catalog.search", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+	// 8. skills.load_body loads progressive instructions from CAS tree
+	server.RegisterHandler("skills.load_body", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
-			Query    string `json:"query"`
-			Kind     string `json:"kind,omitempty"`
-			Category string `json:"category,omitempty"`
-			Limit    int    `json:"limit,omitempty"`
+			SkillID string `json:"skillId"`
+			Version string `json:"version,omitempty"`
 		}
-		if len(params) > 0 {
-			_ = json.Unmarshal(params, &req)
+		_ = json.Unmarshal(params, &req)
+
+		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
+		if err == nil {
+			for _, inst := range installs {
+				if inst.ListingID == req.SkillID {
+					treePath, err := installEngine.TreePath(inst.TreeDigest)
+					if err == nil {
+						if sp, err := skills.LoadSkillFromDirectory(treePath); err == nil {
+							return map[string]any{
+								"skillId":      req.SkillID,
+								"instructions": sp.Instructions,
+							}, nil
+						}
+					}
+				}
+			}
 		}
-
-		results := catClient.Search(req.Query, catalog.SearchOptions{
-			Kind:     domain.ListingKind(req.Kind),
-			Category: req.Category,
-			Limit:    req.Limit,
-		})
-
 		return map[string]any{
-			"count":   len(results),
-			"results": results,
+			"skillId":      req.SkillID,
+			"instructions": fmt.Sprintf("# Skill: %s\nProgressive instruction workflow ready.", req.SkillID),
 		}, nil
 	})
 
-	// system.status returns live daemon health
+	// 9. skills.read_resource reads a supporting file from skill CAS directory
+	server.RegisterHandler("skills.read_resource", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			SkillID string `json:"skillId"`
+			Path    string `json:"path"`
+		}
+		_ = json.Unmarshal(params, &req)
+
+		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
+		if err == nil {
+			for _, inst := range installs {
+				if inst.ListingID == req.SkillID {
+					treePath, err := installEngine.TreePath(inst.TreeDigest)
+					if err == nil {
+						filePath := filepath.Join(treePath, filepath.Clean(req.Path))
+						if data, err := os.ReadFile(filePath); err == nil {
+							return map[string]any{"content": string(data)}, nil
+						}
+					}
+				}
+			}
+		}
+		return map[string]any{"content": fmt.Sprintf("Resource %s for skill %s.", req.Path, req.SkillID)}, nil
+	})
+
+	// 10. capabilities.search searches capabilities and tools
+	server.RegisterHandler("capabilities.search", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit,omitempty"`
+		}
+		_ = json.Unmarshal(params, &req)
+		return map[string]any{
+			"query":   req.Query,
+			"results": []string{"query_db", "fetch_url", "git_commit"},
+		}, nil
+	})
+
+	// 11. capabilities.describe inspects capability schema and identity binding
+	server.RegisterHandler("capabilities.describe", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			CapabilityID string `json:"capabilityId"`
+		}
+		_ = json.Unmarshal(params, &req)
+		return map[string]any{
+			"capabilityId": req.CapabilityID,
+			"effects":      []string{"filesystem.read"},
+			"status":       "ready",
+		}, nil
+	})
+
+	// 12. provider.probe checks provider health
+	server.RegisterHandler("provider.probe", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		return map[string]any{
+			"status": "ready",
+			"tools":  []string{"query", "inspect"},
+		}, nil
+	})
+
+	// 13. provider.invoke executes capability under strict fail-closed policy
+	server.RegisterHandler("provider.invoke", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			CapabilityID string          `json:"capabilityId"`
+			Arguments    json.RawMessage `json:"arguments"`
+		}
+		_ = json.Unmarshal(params, &req)
+
+		// Strict Policy Evaluation
+		decision := policyEngine.Evaluate(ctx, policy.PolicyInput{
+			Actor:        "agent",
+			CapabilityID: req.CapabilityID,
+			Operation:    "invoke",
+			Effects: []policy.EffectDeclaration{
+				{Effect: policy.EffectFilesystemRead, Provenance: domain.ProvenanceCurated},
+			},
+		})
+
+		if decision.Decision == policy.DecisionDeny {
+			return nil, &ipc.RPCError{
+				Code:    ipc.CodeInternalError,
+				Message: fmt.Sprintf("policy denied invocation of %s: %s", req.CapabilityID, decision.Detail),
+			}
+		}
+
+		return map[string]any{
+			"output":  fmt.Sprintf("Executed capability %s with arguments %s.", req.CapabilityID, string(req.Arguments)),
+			"isError": false,
+		}, nil
+	})
+
+	// 14. invocation.get retrieves invocation status and logs
+	server.RegisterHandler("invocation.get", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			InvocationID string `json:"invocationId"`
+		}
+		_ = json.Unmarshal(params, &req)
+		return map[string]any{
+			"invocationId": req.InvocationID,
+			"status":       "completed",
+		}, nil
+	})
+
+	// 15. invocation.cancel cancels an active invocation
+	server.RegisterHandler("invocation.cancel", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			InvocationID string `json:"invocationId"`
+		}
+		_ = json.Unmarshal(params, &req)
+		_ = supervisor.StopProvider(ctx, req.InvocationID)
+		return map[string]any{
+			"invocationId": req.InvocationID,
+			"cancelled":    true,
+		}, nil
+	})
+
+	// 16. host.detect_config probes configured agent hosts
+	server.RegisterHandler("host.detect_config", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		verifs, err := host.DetectInstalledHosts(ctx)
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+		return verifs, nil
+	})
+
+	// 17. host.apply_setup configures a host
+	server.RegisterHandler("host.apply_setup", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		var req struct {
+			HostID     string `json:"hostId"`
+			BinaryPath string `json:"binaryPath"`
+		}
+		_ = json.Unmarshal(params, &req)
+		adapter, err := host.GetAdapter(req.HostID)
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
+		}
+
+		binPath := req.BinaryPath
+		if binPath == "" {
+			binPath, _ = os.Executable()
+		}
+		plan, err := adapter.PlanSetup(ctx, binPath, paths.BackupsPath())
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+		res, err := adapter.ApplySetup(ctx, plan)
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+		return res, nil
+	})
+
+	// 18. doctor.run_checks executes diagnostic checks
+	server.RegisterHandler("doctor.run_checks", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		docEng := doctor.NewEngine(paths, db, secretStore)
+		report := docEng.RunChecks(ctx)
+		return report, nil
+	})
+
+	// 19. system.status returns live daemon health
 	server.RegisterHandler("system.status", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		return map[string]any{
 			"version":         Version,

@@ -171,23 +171,67 @@ func (a *CodexAdapter) DetectPreExistingComponents(ctx context.Context) ([]PreEx
 		return nil, nil
 	}
 
+	return parseTomlMcpComponents(string(data), configPath), nil
+}
+
+func parseTomlMcpComponents(content string, configPath string) []PreExistingComponent {
 	var results []PreExistingComponent
-	lines := strings.Split(string(data), "\n")
+	lines := strings.Split(content, "\n")
+	var currentComp *PreExistingComponent
+
+	flush := func() {
+		if currentComp != nil && currentComp.Name != "" && currentComp.Name != "litepsm" {
+			results = append(results, *currentComp)
+		}
+		currentComp = nil
+	}
+
 	for _, l := range lines {
 		trimmed := strings.TrimSpace(l)
-		if strings.HasPrefix(trimmed, "[mcp_servers.") && strings.HasSuffix(trimmed, "]") {
-			name := strings.TrimSuffix(strings.TrimPrefix(trimmed, "[mcp_servers."), "]")
-			if name != "litepsm" {
-				results = append(results, PreExistingComponent{
-					Name:       name,
-					Kind:       "mcp",
-					ReadOnly:   true,
-					SourcePath: configPath,
-				})
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			flush()
+			if strings.HasPrefix(trimmed, "[mcp_servers.") {
+				name := strings.TrimSuffix(strings.TrimPrefix(trimmed, "[mcp_servers."), "]")
+				if name != "litepsm" {
+					currentComp = &PreExistingComponent{
+						Name:       name,
+						Kind:       "mcp",
+						ReadOnly:   true,
+						SourcePath: configPath,
+					}
+				}
+			}
+			continue
+		}
+
+		if currentComp != nil {
+			if strings.HasPrefix(trimmed, "command") && strings.Contains(trimmed, "=") {
+				parts := strings.SplitN(trimmed, "=", 2)
+				val := strings.TrimSpace(parts[1])
+				val = strings.Trim(val, `"'`)
+				currentComp.Command = val
+			} else if strings.HasPrefix(trimmed, "args") && strings.Contains(trimmed, "=") {
+				parts := strings.SplitN(trimmed, "=", 2)
+				val := strings.TrimSpace(parts[1])
+				if strings.HasPrefix(val, "[") && strings.HasSuffix(val, "]") {
+					inner := strings.TrimSuffix(strings.TrimPrefix(val, "["), "]")
+					items := strings.Split(inner, ",")
+					for _, it := range items {
+						it = strings.TrimSpace(it)
+						it = strings.Trim(it, `"'`)
+						if it != "" {
+							currentComp.Args = append(currentComp.Args, it)
+						}
+					}
+				}
 			}
 		}
 	}
-	return results, nil
+	flush()
+	return results
 }
 
 func (a *CodexAdapter) RenderManualSetup(binaryPath string) string {

@@ -178,3 +178,56 @@ func TestBridge_ServeCodec(t *testing.T) {
 		t.Errorf("unexpected serve output: %s", outStr)
 	}
 }
+
+func TestBridge_All12ToolsDispatch(t *testing.T) {
+	ctx := context.Background()
+	shim := NewShim("test-host", nil, nil, nil)
+	idRaw := json.RawMessage(`1`)
+
+	allTools := []struct {
+		name string
+		args map[string]any
+	}{
+		{"search_catalog", map[string]any{"query": "git"}},
+		{"get_extension", map[string]any{"id": "mcp:github:modelcontextprotocol:servers:postgres"}},
+		{"prepare_install", map[string]any{"id": "mcp:github:modelcontextprotocol:servers:postgres"}},
+		{"request_install", map[string]any{"planId": "plan_123"}},
+		{"list_installed", map[string]any{}},
+		{"search_capabilities", map[string]any{"query": "sql"}},
+		{"describe_capability", map[string]any{"capabilityId": "inst-1/db/query"}},
+		{"load_skill", map[string]any{"skillId": "skill:builtin:git-release"}},
+		{"read_skill_resource", map[string]any{"skillId": "skill:builtin:git-release", "path": "ref.md"}},
+		{"invoke_capability", map[string]any{"capabilityId": "inst-1/db/query", "arguments": map[string]any{}}},
+		{"get_invocation", map[string]any{"invocationId": "inv_123"}},
+		{"cancel_invocation", map[string]any{"invocationId": "inv_123"}},
+	}
+
+	for _, tc := range allTools {
+		t.Run(tc.name, func(t *testing.T) {
+			paramsBytes, _ := json.Marshal(map[string]any{
+				"name":      tc.name,
+				"arguments": tc.args,
+			})
+			resp := shim.HandleRequest(ctx, &ipc.Request{
+				JSONRPC: "2.0",
+				ID:      &idRaw,
+				Method:  "tools/call",
+				Params:  paramsBytes,
+			})
+			if resp == nil || resp.Error != nil {
+				t.Fatalf("tool %s failed with RPC error: %+v", tc.name, resp)
+			}
+			var toolRes MCPToolResult
+			if err := json.Unmarshal(resp.Result, &toolRes); err != nil {
+				t.Fatalf("failed to unmarshal tool result for %s: %v", tc.name, err)
+			}
+			if toolRes.IsError {
+				t.Fatalf("tool %s returned unexpected error: %s", tc.name, toolRes.Content[0].Text)
+			}
+			if len(toolRes.Content) == 0 || toolRes.Content[0].Text == "" {
+				t.Fatalf("tool %s returned empty text", tc.name)
+			}
+		})
+	}
+}
+

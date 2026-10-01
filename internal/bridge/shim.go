@@ -247,7 +247,9 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 	switch name {
 	case "search_catalog":
 		var req struct {
-			Query string `json:"query"`
+			Query string   `json:"query"`
+			Kinds []string `json:"kinds,omitempty"`
+			Limit int      `json:"limit,omitempty"`
 		}
 		_ = json.Unmarshal(args, &req)
 
@@ -256,14 +258,81 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 				Count   int   `json:"count"`
 				Results []any `json:"results"`
 			}
-			err := s.client.Call(ctx, "catalog.search", map[string]any{"query": req.Query}, &resp)
+			err := s.client.Call(ctx, "catalog.search", map[string]any{
+				"query": req.Query,
+				"kinds": req.Kinds,
+				"limit": req.Limit,
+			}, &resp)
 			if err != nil {
 				return FormatErrorResult(err)
 			}
 			outBytes, _ := json.MarshalIndent(resp, "", "  ")
 			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Catalog query for %q executed (local mode).", req.Query)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Catalog query for %q executed (standalone mode).", req.Query)}}}
+
+	case "get_extension":
+		var req struct {
+			ID      string `json:"id"`
+			Version string `json:"version,omitempty"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp any
+			err := s.client.Call(ctx, "catalog.get_item", map[string]any{
+				"id":      req.ID,
+				"version": req.Version,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			outBytes, _ := json.MarshalIndent(resp, "", "  ")
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Extension details for %s retrieved.", req.ID)}}}
+
+	case "prepare_install":
+		var req struct {
+			ID      string `json:"id"`
+			Version string `json:"version,omitempty"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp any
+			err := s.client.Call(ctx, "resolver.prepare_plan", map[string]any{
+				"id":      req.ID,
+				"version": req.Version,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			outBytes, _ := json.MarshalIndent(resp, "", "  ")
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Install plan preview for %s ready.", req.ID)}}}
+
+	case "request_install":
+		var req struct {
+			PlanID        string `json:"planId"`
+			ApprovalToken string `json:"approvalToken,omitempty"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp any
+			err := s.client.Call(ctx, "install.execute", map[string]any{
+				"planId":        req.PlanID,
+				"approvalToken": req.ApprovalToken,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			outBytes, _ := json.MarshalIndent(resp, "", "  ")
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Install executed for plan %s.", req.PlanID)}}}
 
 	case "list_installed":
 		if s.client != nil {
@@ -277,16 +346,15 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			}
 			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(resp.Installs)}}}
 		}
-		// Default mock response
 		items := []CapabilityItem{
 			{
-				ID:         "mcp:github:modelcontextprotocol:servers:postgres",
-				Name:       "postgres",
-				Kind:       "mcp",
-				Summary:    "PostgreSQL Read/Write Inspection Tool",
-				Transport:  "stdio",
-				Status:     StatusReady,
-				Verified:   true,
+				ID:        "mcp:github:modelcontextprotocol:servers:postgres",
+				Name:      "postgres",
+				Kind:      "mcp",
+				Summary:   "PostgreSQL Read/Write Inspection Tool",
+				Transport: "stdio",
+				Status:    StatusReady,
+				Verified:  true,
 			},
 			{
 				ID:         "external:native:fetch",
@@ -299,12 +367,92 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(items)}}}
 
+	case "search_capabilities":
+		var req struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit,omitempty"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp any
+			err := s.client.Call(ctx, "capabilities.search", map[string]any{
+				"query": req.Query,
+				"limit": req.Limit,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			outBytes, _ := json.MarshalIndent(resp, "", "  ")
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Found capabilities matching %q.", req.Query)}}}
+
+	case "describe_capability":
+		var req struct {
+			CapabilityID string `json:"capabilityId"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp any
+			err := s.client.Call(ctx, "capabilities.describe", map[string]any{
+				"capabilityId": req.CapabilityID,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			outBytes, _ := json.MarshalIndent(resp, "", "  ")
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Capability schema and identity binding for %s.", req.CapabilityID)}}}
+
 	case "load_skill":
 		var req struct {
 			SkillID string `json:"skillId"`
+			Version string `json:"version,omitempty"`
 		}
 		_ = json.Unmarshal(args, &req)
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("# Skill: %s\nProgressive instructions loaded.", req.SkillID)}}}
+
+		if s.client != nil {
+			var resp struct {
+				SkillID      string `json:"skillId"`
+				Instructions string `json:"instructions"`
+			}
+			err := s.client.Call(ctx, "skills.load_body", map[string]any{
+				"skillId": req.SkillID,
+				"version": req.Version,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			if resp.Instructions != "" {
+				return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Instructions}}}
+			}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("# Skill: %s\nProgressive instruction workflow.", req.SkillID)}}}
+
+	case "read_skill_resource":
+		var req struct {
+			SkillID string `json:"skillId"`
+			Path    string `json:"path"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp struct {
+				Content string `json:"content"`
+			}
+			err := s.client.Call(ctx, "skills.read_resource", map[string]any{
+				"skillId": req.SkillID,
+				"path":    req.Path,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Content}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Resource %s for skill %s.", req.Path, req.SkillID)}}}
 
 	case "invoke_capability":
 		var req struct {
@@ -312,7 +460,64 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			Arguments    json.RawMessage `json:"arguments"`
 		}
 		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp struct {
+				Output  string `json:"output"`
+				IsError bool   `json:"isError"`
+			}
+			err := s.client.Call(ctx, "provider.invoke", map[string]any{
+				"capabilityId": req.CapabilityID,
+				"arguments":    req.Arguments,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			return MCPToolResult{
+				Content: []MCPContent{{Type: "text", Text: resp.Output}},
+				IsError: resp.IsError,
+			}
+		}
 		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Capability %s invoked successfully.", req.CapabilityID)}}}
+
+	case "get_invocation":
+		var req struct {
+			InvocationID string `json:"invocationId"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp any
+			err := s.client.Call(ctx, "invocation.get", map[string]any{
+				"invocationId": req.InvocationID,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			outBytes, _ := json.MarshalIndent(resp, "", "  ")
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s status: completed.", req.InvocationID)}}}
+
+	case "cancel_invocation":
+		var req struct {
+			InvocationID string `json:"invocationId"`
+		}
+		_ = json.Unmarshal(args, &req)
+
+		if s.client != nil {
+			var resp struct {
+				Cancelled bool `json:"cancelled"`
+			}
+			err := s.client.Call(ctx, "invocation.cancel", map[string]any{
+				"invocationId": req.InvocationID,
+			}, &resp)
+			if err != nil {
+				return FormatErrorResult(err)
+			}
+			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s cancelled: %v", req.InvocationID, resp.Cancelled)}}}
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s cancelled.", req.InvocationID)}}}
 
 	default:
 		return FormatErrorResult(domain.ErrNotFound("tool", name))
