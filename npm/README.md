@@ -5,7 +5,7 @@
 **One control plane for every AI coding agent capability.**
 
 Discover · install · verify · supervise — MCP servers, Agent Skills, and plugins,
-across Claude Code, Codex, OpenCode, Cline, Pi Agent, and Grok Build.
+across Claude Code, OpenAI Codex, OpenCode, Cline, and many more.
 
 [![npm version](https://img.shields.io/npm/v/litepsm.svg?color=10b981)](https://www.npmjs.com/package/litepsm)
 [![npm downloads](https://img.shields.io/npm/dm/litepsm.svg?color=10b981)](https://www.npmjs.com/package/litepsm)
