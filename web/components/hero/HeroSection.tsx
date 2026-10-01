@@ -76,13 +76,10 @@ export function HeroSection() {
 
       {/* Subtitle */}
       <p className="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto mb-8 leading-relaxed">
-        Comprehensive registry of every verified MCP server, portable Agent Skill, and plugin across{" "}
-        <strong className="text-slate-800 font-semibold">Cline</strong>,{" "}
-        <strong className="text-slate-800 font-semibold">Cursor</strong>,{" "}
-        <strong className="text-slate-800 font-semibold">Pi Agent</strong>,{" "}
-        <strong className="text-slate-800 font-semibold">Grok Build</strong>,{" "}
-        <strong className="text-slate-800 font-semibold">Codex</strong>, and{" "}
-        <strong className="text-slate-800 font-semibold">Claude Code</strong>.
+        Comprehensive registry of every verified MCP server, portable Agent Skill, and plugin for{" "}
+        <strong className="text-slate-800 font-semibold">Claude Code</strong>,{" "}
+        <strong className="text-slate-800 font-semibold">Codex</strong>,{" "}
+        <strong className="text-slate-800 font-semibold">OpenCode</strong>, and many more.
       </p>
 
       {/* Quick Terminal Quickstart Banner */}

@@ -45,7 +45,7 @@ npm install -g litepsm
 litepsm
 ```
 1.  **Dynamic Runtime Fetching:** LitePSM contacts `/v1/current.json` to verify the latest verified adapter advisory metadata (supported versions and warnings; actual parsers are compiled in).
-2.  **Select Your Agent:** Choose your agent from the interactive dropdown (e.g. `Cline`, `Pi Agent`, `Grok Build`, `Codex`, `Claude Code`, `OpenCode`).
+2.  **Select Your Agent:** Choose your agent from the interactive dropdown (for Claude Code, Codex, OpenCode, and many more).
 3.  **Auto-Detection:** LitePSM scans your filesystem for the agent's configuration file.
 4.  **Fallback Options:** If the configuration file is not found (e.g., custom installation directory), LitePSM prompts:
     *   *Enter path manually*

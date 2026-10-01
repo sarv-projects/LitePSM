@@ -36,7 +36,7 @@ function ItemDetailContent() {
     return items.find((i) => i.id === itemId) || items[0];
   }, [itemId, items]);
 
-  const [activeHost, setActiveHost] = useState<string>("cline");
+  const [activeHost, setActiveHost] = useState<string>("claude-code");
   const [platformOs, setPlatformOs] = useState<"win" | "mac" | "linux">("win");
   const [snippetMode, setSnippetMode] = useState<"bridge" | "native">("bridge");
   const [copiedPath, setCopiedPath] = useState(false);
@@ -54,14 +54,14 @@ function ItemDetailContent() {
   }, []);
 
   const hosts = [
-    { id: "cline", name: "Cline", ext: "VS Code", type: "json" },
+    { id: "claude-code", name: "Claude Code", ext: "CLI", type: "json" },
+    { id: "codex", name: "OpenAI Codex", ext: "Terminal", type: "toml" },
+    { id: "opencode", name: "OpenCode", ext: "CLI", type: "json" },
     { id: "cursor", name: "Cursor", ext: "Editor", type: "json" },
+    { id: "cline", name: "Cline", ext: "VS Code", type: "json" },
     { id: "claude-desktop", name: "Claude Desktop", ext: "Desktop", type: "json" },
     { id: "pi-agent", name: "Pi Agent", ext: "Terminal", type: "json" },
     { id: "grok-build", name: "Grok Build", ext: "Terminal", type: "toml" },
-    { id: "codex", name: "OpenAI Codex", ext: "Terminal", type: "toml" },
-    { id: "claude-code", name: "Claude Code", ext: "CLI", type: "json" },
-    { id: "opencode", name: "OpenCode", ext: "CLI", type: "json" },
   ];
 
   // Resolve exact config file path based on host and OS
@@ -313,7 +313,7 @@ function ItemDetailContent() {
                   Agent Configuration & File Path Matrix
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Select your agent host to view its exact configuration file path and ready-to-fill snippet.
+                  Select your agent host to view its exact configuration file path and ready-to-fill snippet for Claude Code, Codex, OpenCode, and many more.
                 </p>
               </div>
 

@@ -2,7 +2,7 @@
 
 LitePSM is an open-source, provider-neutral package manager, federated catalog, and local control plane for AI agent capabilities: **Plugins, Skills, and MCP (Model Context Protocol) Servers**. 
 
-It eliminates the need to manually configure, update, and manage capabilities across fragmented AI developer tools (Cline, Pi Agent, Grok Build, Claude Code, OpenAI Codex, OpenCode). By registering a lightweight, version-pinned LitePSM Bridge once per agent, users can discover, install, update, and supervise capabilities centrally from a single local control plane.
+It eliminates the need to manually configure, update, and manage capabilities across fragmented AI developer tools (for Claude Code, Codex, OpenCode, and many more). By registering a lightweight, version-pinned LitePSM Bridge once per agent, users can discover, install, update, and supervise capabilities centrally from a single local control plane.
 
 > **Foundational Security Invariant:** Credentials and execution remain strictly on the user's workstation or directly with the selected upstream provider. LitePSM's hosted public catalog does not store credentials, execute plugin scripts, or proxy tool calls. The client-side control plane operates entirely within the local user's operating system privileges and enforces local, fail-closed authorization policies.
 
