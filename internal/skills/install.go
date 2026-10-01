@@ -156,67 +156,14 @@ func SanitizeSkillName(name string) (string, error) {
 	return n, nil
 }
 
-// AgentSkillDirs maps LitePSM host IDs to their skill directories.
-//
-// Source: vercel-labs/skills src/agents.ts (MIT) — the same data backing the
-// reference `skills add` installer. Each entry lists the project-relative dir
-// (used when scope=project) and the global dir (scope=global). A "env" field
-// names an environment variable overriding the global base, matching the
-// reference behavior (CODEX_HOME, CLAUDE_CONFIG_DIR, GROK_HOME) and the
-// XDG base dir for OpenCode. Only hosts LitePSM manages are listed.
-type agentSkillDirs struct {
-	project string
-	global  string
-	env     string
+// pathExists is a seam for tests.
+var pathExists = func(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
-var agentSkillDirTable = map[string]agentSkillDirs{
-	// Cline and Pi read the universal Agent Skills locations.
-	"cline":       {project: ".agents/skills", global: ".agents/skills"},
-	"pi-agent":    {project: ".agents/skills", global: ".agents/skills"},
-	"codex":       {project: ".agents/skills", global: "skills", env: "CODEX_HOME"},
-	"opencode":    {project: ".agents/skills", global: "opencode/skills", env: "XDG_CONFIG_HOME"},
-	"claude-code": {project: ".claude/skills", global: "skills", env: "CLAUDE_CONFIG_DIR"},
-	"grok-build":  {project: ".grok/skills", global: "skills", env: "GROK_HOME"},
-}
-
-// AgentSkillDir returns the skill directory for an agent host, honouring the
-// scope ("project" = repo-local, "global" = user-wide) and environment
-// overrides. Unknown hosts return ok=false.
-//
-// Global base defaults: $HOME for cline/pi-agent (universal
-// ~/.agents/skills), $CODEX_HOME or ~/.codex for codex, $XDG_CONFIG_HOME or
-// ~/.config for opencode, $CLAUDE_CONFIG_DIR or ~/.claude for claude-code,
-// $GROK_HOME or ~/.grok for grok-build.
-func AgentSkillDir(agentID, scope, projectRoot, home string) (string, bool) {
-	def, ok := agentSkillDirTable[agentID]
-	if !ok {
-		return "", false
-	}
-	if scope != "global" {
-		return filepath.Join(projectRoot, def.project), true
-	}
-	base := home
-	if def.env != "" {
-		if v := strings.TrimSpace(os.Getenv(def.env)); v != "" {
-			base = v
-		} else {
-			switch agentID {
-			case "codex":
-				base = filepath.Join(home, ".codex")
-			case "opencode":
-				base = filepath.Join(home, ".config")
-			case "claude-code":
-				base = filepath.Join(home, ".claude")
-			case "grok-build":
-				base = filepath.Join(home, ".grok")
-			}
-		}
-	}
-	return filepath.Join(base, def.global), true
-}
-
-// HostSkillDir is kept for compatibility and delegates to AgentSkillDir.
+// AgentSkillDir, HostSkillDir, LookupAgent and the agent table live in
+// agents.go. HostSkillDir is kept as a compatibility alias.
 func HostSkillDir(agentID, scope, projectRoot, home string) (string, bool) {
 	return AgentSkillDir(agentID, scope, projectRoot, home)
 }
@@ -240,11 +187,12 @@ type InstallOp struct {
 
 // PlanInstall builds copy operations: every selected skill is installed into
 // each selected agent's own skill directory (repo-local for scope=project,
-// user-global for scope=global). There is no forced universal copy: agents
-// whose project dir is `.agents/skills` (cline, pi-agent, codex, opencode)
-// naturally share that tree, which is exactly the reference behavior.
+// user-global for scope=global). Agents that share a directory (several read
+// the universal `.agents/skills` tree) collapse to a single write, so a second
+// copy never collides with the first.
 func PlanInstall(skills []DiscoveredSkill, agents []string, scope, projectRoot, home string) []InstallOp {
 	var ops []InstallOp
+	seenDest := map[string]bool{}
 	for _, sk := range skills {
 		name, err := SanitizeSkillName(sk.Pkg.Name)
 		if err != nil {
@@ -255,10 +203,15 @@ func PlanInstall(skills []DiscoveredSkill, agents []string, scope, projectRoot, 
 			if !ok {
 				continue
 			}
+			dst := filepath.Join(dir, name)
+			if seenDest[dst] {
+				continue
+			}
+			seenDest[dst] = true
 			ops = append(ops, InstallOp{
 				SkillName: name,
 				FromDir:   sk.Dir,
-				ToDir:     filepath.Join(dir, name),
+				ToDir:     dst,
 				HostLabel: ag,
 			})
 		}

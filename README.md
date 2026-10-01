@@ -139,15 +139,24 @@ litepsm skills add ./my-skills --scope global -y --json
 | Copy | Symlinks are refused, hidden VCS dirs are skipped, existing destinations are never overwritten, and each skill is bounded at 32 MiB. |
 | Risk panel | Always rendered. Without a real audit source it reports `unverified` per skill — a verdict is never invented. |
 
-Host skill directories (per `vercel-labs/skills` `src/agents.ts`, MIT):
+Host skill directories are transcribed from `vercel-labs/skills` `src/agents.ts`
+(MIT) — the ecosystem's de-facto map of where each agent reads `SKILL.md` from.
+LitePSM tracks **77 agents**. Selected examples:
 
-| Host ID | This repo only | Global |
+| Agent | This repo only | Global |
 |---|---|---|
 | `claude-code` | `<repo>/.claude/skills` | `$CLAUDE_CONFIG_DIR/skills` (default `~/.claude/skills`) |
 | `codex` | `<repo>/.agents/skills` | `$CODEX_HOME/skills` (default `~/.codex/skills`) |
 | `opencode` | `<repo>/.agents/skills` | `$XDG_CONFIG_HOME/opencode/skills` (default `~/.config/opencode/skills`) |
 | `grok-build` | `<repo>/.grok/skills` | `$GROK_HOME/skills` (default `~/.grok/skills`) |
-| `cline`, `pi-agent` | `<repo>/.agents/skills` | `~/.agents/skills` |
+| `windsurf` | `<repo>/.windsurf/skills` | `~/.codeium/windsurf/skills` |
+| `gemini-cli`, `github-copilot`, `cursor`, `amp`, `kilo`, `zed`, `droid`, … | `<repo>/.agents/skills` | per-agent |
+| `cline`, `pi-agent`, `kimi-code-cli` | `<repo>/.agents/skills` | `~/.agents/skills` |
+
+Agents sharing one directory (the universal `.agents/skills` group) collapse to a
+single write, so installing for several of them never collides. Agents detected
+on the machine are listed first; **popularity is not used to order them**,
+because no measured usage data exists — presence then alphabetical.
 
 Non-interactive runs require `--agent` and `--yes`; they never prompt, never
 imply a consent that was not given, and emit `--json` output on stdout.

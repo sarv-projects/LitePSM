@@ -2,17 +2,14 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/host"
 	"github.com/sarv-projects/litepsm/internal/skills"
 )
 
@@ -154,7 +151,6 @@ func runSkillsAdd(args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	ctx := context.Background()
 
 	var workRoot string
 	var cleanup func()
@@ -273,21 +269,16 @@ func runSkillsAdd(args []string) {
 	}
 
 	// --- Agent selection ---
-	adapters := host.ListAdapters()
-	sort.Slice(adapters, func(i, j int) bool {
-		return strings.ToLower(adapters[i].Descriptor().DisplayName) <
-			strings.ToLower(adapters[j].Descriptor().DisplayName)
-	})
+	targets := skills.AgentTargets()
 	knownAgents := map[string]string{}
-	for _, a := range adapters {
-		d := a.Descriptor()
-		knownAgents[strings.ToLower(d.HostID)] = d.DisplayName
+	for _, a := range targets {
+		knownAgents[a.ID] = a.DisplayName
 	}
 	var agents []string
 	if len(opts.agents) > 0 {
 		for _, ag := range opts.agents {
 			if _, ok := knownAgents[ag]; !ok {
-				fmt.Fprintf(os.Stderr, "Error: unknown agent %q\n", ag)
+				fmt.Fprintf(os.Stderr, "Error: unknown agent %q\nKnown agents: %s\n", ag, strings.Join(skills.AgentIDs(), " "))
 				os.Exit(1)
 			}
 			agents = append(agents, ag)
@@ -319,33 +310,54 @@ func runSkillsAdd(args []string) {
 	}
 
 	if len(opts.agents) == 0 && interactive {
-		// Detect installed hosts so the prompt shows what is actually present.
-		detected := map[string]bool{}
-		if verifs, derr := host.DetectInstalledHosts(ctx); derr == nil {
-			for _, v := range verifs {
-				if v.Status == "ready" || v.Status == "corrupted" || v.Registered {
-					detected[strings.ToLower(v.HostID)] = true
-				}
+		// Detected agents first (installed on this machine), then the rest.
+		// Popularity is NOT used to order agents: we have no measured usage
+		// data, so this is presence-first then alphabetical.
+		var detectedTargets, otherTargets []skills.AgentTarget
+		for _, a := range targets {
+			if skills.AgentInstalled(a, project, home) {
+				detectedTargets = append(detectedTargets, a)
+			} else {
+				otherTargets = append(otherTargets, a)
 			}
 		}
-		fmt.Fprintf(out, "◇  %d agents\n", len(adapters))
+		fmt.Fprintf(out, "◇  %d agents (%d detected)\n", len(targets), len(detectedTargets))
 		fmt.Fprintln(out, "◇  Which agents do you want to install to?")
-		ids := make([]string, 0, len(adapters))
+		ids := make([]string, 0, len(targets))
 		var detectedIDs []string
 		i := 1
-		for _, a := range adapters {
-			d := a.Descriptor()
-			id := strings.ToLower(d.HostID)
-			dir, _ := skills.AgentSkillDir(id, opts.scope, project, home)
-			mark := " "
-			if detected[id] {
-				mark = "●"
-				detectedIDs = append(detectedIDs, id)
+		for _, group := range []struct {
+			label string
+			list  []skills.AgentTarget
+		}{{"Detected", detectedTargets}, {"All agents", otherTargets}} {
+			if len(group.list) == 0 {
+				continue
 			}
-			fmt.Fprintf(out, "│  %d) [%s] %s (%s)\n", i, mark, d.DisplayName, shortHome(dir, home))
-			ids = append(ids, id)
-			i++
+			if group.label == "All agents" {
+				fmt.Fprintln(out, "│")
+			}
+			fmt.Fprintf(out, "◇  %s\n", group.label)
+			for _, a := range group.list {
+				dir, ok := skills.AgentSkillDir(a.ID, opts.scope, project, home)
+				pathText := "no global location"
+				if ok {
+					pathText = shortHome(dir, home)
+				} else if opts.scope != "global" {
+					pathText = "—"
+				}
+				mark := " "
+				if a.Universal {
+					mark = "◦"
+				}
+				fmt.Fprintf(out, "│  %d) [%s] %-22s %s\n", i, mark, a.DisplayName, pathText)
+				ids = append(ids, a.ID)
+				if group.label == "Detected" {
+					detectedIDs = append(detectedIDs, a.ID)
+				}
+				i++
+			}
 		}
+		fmt.Fprintln(out, "│  [ ] needs its own dir   [◦] shares .agents/skills")
 		fmt.Fprint(out, "│  numbers, comma-separated, or empty for detected > ")
 		out.Flush()
 		answer := strings.TrimSpace(askLine())
