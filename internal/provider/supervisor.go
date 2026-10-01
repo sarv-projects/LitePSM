@@ -69,12 +69,12 @@ func (r *RingBuffer) String() string {
 
 // LaunchSpec defines parameters for launching a local or supervised provider process.
 type LaunchSpec struct {
-	Executable   string            `json:"executable"`
-	Args         []string          `json:"args"`
-	WorkingDir   string            `json:"workingDir"`
-	Env          map[string]string `json:"env"`
-	SecretEnv    map[string]string `json:"secretEnv,omitempty"`
-	TimeoutSec   int               `json:"timeoutSec"`
+	Executable string            `json:"executable"`
+	Args       []string          `json:"args"`
+	WorkingDir string            `json:"workingDir"`
+	Env        map[string]string `json:"env"`
+	SecretEnv  map[string]string `json:"secretEnv,omitempty"`
+	TimeoutSec int               `json:"timeoutSec"`
 }
 
 // ProviderStatus describes runtime lifecycle status.
@@ -90,20 +90,42 @@ const (
 
 // ProviderHandle tracks an active supervised child process.
 type ProviderHandle struct {
-	ProviderID     string
-	PID            int
-	Status         ProviderStatus
-	LaunchSpec     LaunchSpec
-	StderrBuffer   *RingBuffer
-	Cmd            *exec.Cmd
-	Stdin          io.WriteCloser
-	Stdout         io.ReadCloser
-	PipeReader     io.ReadCloser
-	PipeWriter     io.WriteCloser
-	StartedAt      time.Time
-	StoppedAt      *time.Time
-	ExitError      error
-	mu             sync.RWMutex
+	ProviderID   string
+	PID          int
+	Status       ProviderStatus
+	LaunchSpec   LaunchSpec
+	StderrBuffer *RingBuffer
+	Cmd          *exec.Cmd
+	Stdin        io.WriteCloser
+	Stdout       io.ReadCloser
+	PipeReader   io.ReadCloser
+	PipeWriter   io.WriteCloser
+	StartedAt    time.Time
+	StoppedAt    *time.Time
+	ExitError    error
+	mu           sync.RWMutex
+
+	// waitDone is closed exactly once by the single process reaper after
+	// cmd.Wait returns. Other paths wait on this instead of calling Wait
+	// concurrently (os/exec does not permit concurrent Wait calls).
+	waitDone    chan struct{}
+	waitOnce    sync.Once
+	terminating bool
+}
+
+// currentStatus returns the lifecycle status under the handle lock.
+func (h *ProviderHandle) currentStatus() ProviderStatus {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.Status
+}
+
+// signalExit closes the reaper channel exactly once, unblocking waiters.
+func (h *ProviderHandle) signalExit() {
+	if h.waitDone == nil {
+		return
+	}
+	h.waitOnce.Do(func() { close(h.waitDone) })
 }
 
 // InvocationRequest represents a tool execution request directed to a provider.
@@ -142,7 +164,7 @@ func (s *Supervisor) StartProvider(ctx context.Context, providerID string, spec 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if existing, ok := s.providers[providerID]; ok && existing.Status == StatusRunning {
+	if existing, ok := s.providers[providerID]; ok && existing.currentStatus() == StatusRunning {
 		return existing, nil
 	}
 
@@ -195,6 +217,7 @@ func (s *Supervisor) StartProvider(ctx context.Context, providerID string, spec 
 		Stdin:        stdin,
 		Stdout:       stdout,
 		StartedAt:    time.Now().UTC(),
+		waitDone:     make(chan struct{}),
 	}
 
 	// Platform post-start isolation hooks (Windows Job Object assignment or Unix watchdog pipe)
@@ -243,6 +266,7 @@ func (h *ProviderHandle) Terminate(gracePeriod time.Duration) error {
 		return nil
 	}
 
+	h.terminating = true
 	_ = h.Stdin.Close()
 	_ = h.Stdout.Close()
 	if h.PipeWriter != nil {
@@ -266,14 +290,23 @@ func (h *ProviderHandle) StderrLogs() string {
 }
 
 func (s *Supervisor) monitorProcess(h *ProviderHandle) {
+	// Sole owner of cmd.Wait: os/exec forbids concurrent Wait calls.
 	err := h.Cmd.Wait()
+
+	// Unblock any Terminate/killProcessTree waiter before taking the lock so
+	// there is no lock-ordering deadlock between the reaper and Terminate.
+	h.signalExit()
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	now := time.Now().UTC()
 	h.StoppedAt = &now
 	h.ExitError = err
-	if err != nil {
+	if h.terminating {
+		// A requested termination is a clean stop, never an error state.
+		h.Status = StatusStopped
+	} else if err != nil {
 		h.Status = StatusError
 	} else {
 		h.Status = StatusStopped

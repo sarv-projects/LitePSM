@@ -162,7 +162,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 			cancelMu.Unlock()
 		}
 
-		go func(r *Request, ctx context.Context, idStr string) {
+		go func(r *Request, ctx context.Context, idStr string, cancel context.CancelFunc) {
+			// Always release the per-request context, including notifications
+			// (which are never stored in cancelFuncs) so no context leaks.
+			defer cancel()
 			defer func() {
 				if idStr != "" {
 					cancelMu.Lock()
@@ -199,7 +202,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 			}
 
 			_ = codec.WriteResponse(resp)
-		}(req, reqCtx, idKey)
+		}(req, reqCtx, idKey, cancel)
 	}
 }
 

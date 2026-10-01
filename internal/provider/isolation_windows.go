@@ -129,17 +129,20 @@ func killProcessTree(h *ProviderHandle, gracePeriod time.Duration) error {
 		return nil
 	}
 
-	done := make(chan error, 1)
-	go func() {
-		done <- h.Cmd.Wait()
-	}()
-
 	_ = h.Cmd.Process.Kill()
+
+	if h.waitDone == nil {
+		time.Sleep(gracePeriod)
+		_ = h.Cmd.Process.Kill()
+		return nil
+	}
 
 	select {
 	case <-time.After(gracePeriod):
 		_ = h.Cmd.Process.Kill()
-	case <-done:
+		// Wait for the single reaper (monitorProcess) to observe the exit.
+		<-h.waitDone
+	case <-h.waitDone:
 	}
 	return nil
 }
