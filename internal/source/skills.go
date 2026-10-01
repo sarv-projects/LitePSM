@@ -86,11 +86,11 @@ func (a *AgentSkillsAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 
 		artDigest := domain.ComputeBytesDigest(content)
 		artifact := domain.ArtifactRef{
-			ArtifactID:   fmt.Sprintf("skill_%s_%s", doc.Name, doc.Version),
-			Type:         domain.ArtifactGitTree,
-			Locator:      filename,
-			Digest:       artDigest,
-			FetchPolicy:  domain.FetchImmutable,
+			ArtifactID:  fmt.Sprintf("skill_%s_%s", doc.Name, doc.Version),
+			Type:        domain.ArtifactGitTree,
+			Locator:     filename,
+			Digest:      artDigest,
+			FetchPolicy: domain.FetchImmutable,
 		}
 
 		verRecord := &domain.VersionRecord{

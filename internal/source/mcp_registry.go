@@ -13,17 +13,17 @@ import (
 
 // MCPRegistryServerSchema represents the upstream server.json schema from the MCP Registry.
 type MCPRegistryServerSchema struct {
-	Name        string                    `json:"name"`
-	Title       string                    `json:"title,omitempty"`
-	Description string                    `json:"description"`
-	Repository  string                    `json:"repository,omitempty"`
-	Homepage    string                    `json:"homepage,omitempty"`
-	Categories  []string                  `json:"categories,omitempty"`
-	Keywords    []string                  `json:"keywords,omitempty"`
-	Publisher   *MCPRegistryPublisher     `json:"publisher,omitempty"`
-	Packages    []MCPRegistryPackage      `json:"packages,omitempty"`
-	Remotes     []MCPRegistryRemote       `json:"remotes,omitempty"`
-	Status      string                    `json:"status,omitempty"`
+	Name        string                `json:"name"`
+	Title       string                `json:"title,omitempty"`
+	Description string                `json:"description"`
+	Repository  string                `json:"repository,omitempty"`
+	Homepage    string                `json:"homepage,omitempty"`
+	Categories  []string              `json:"categories,omitempty"`
+	Keywords    []string              `json:"keywords,omitempty"`
+	Publisher   *MCPRegistryPublisher `json:"publisher,omitempty"`
+	Packages    []MCPRegistryPackage  `json:"packages,omitempty"`
+	Remotes     []MCPRegistryRemote   `json:"remotes,omitempty"`
+	Status      string                `json:"status,omitempty"`
 }
 
 type MCPRegistryPublisher struct {
@@ -36,8 +36,8 @@ type MCPRegistryPackage struct {
 	RegistryType string            `json:"registryType"` // npm | pypi | cargo | oci | mcpb
 	Name         string            `json:"name"`
 	Version      string            `json:"version"`
-	Digest       string            `json:"digest,omitempty"` // sha256:<hex>
-	Runtime      string            `json:"runtime,omitempty"` // node | python | docker
+	Digest       string            `json:"digest,omitempty"`    // sha256:<hex>
+	Runtime      string            `json:"runtime,omitempty"`   // node | python | docker
 	Transport    string            `json:"transport,omitempty"` // stdio | http | sse
 	Command      string            `json:"command,omitempty"`
 	Args         []string          `json:"args,omitempty"`
@@ -46,14 +46,14 @@ type MCPRegistryPackage struct {
 
 type MCPRegistryRemote struct {
 	URL       string `json:"url"`
-	Transport string `json:"transport"` // http | sse
+	Transport string `json:"transport"`          // http | sse
 	AuthType  string `json:"authType,omitempty"` // oauth2 | api_key | none
 }
 
 // MCPRegistryAdapter normalizes the Official MCP Registry feed into LitePSM domain entities.
 type MCPRegistryAdapter struct {
-	sourceID  domain.SourceID
-	rawFeed   []byte
+	sourceID domain.SourceID
+	rawFeed  []byte
 }
 
 // NewMCPRegistryAdapter creates an MCP registry adapter with static or downloaded feed bytes.
@@ -157,11 +157,11 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 			}
 
 			artifact := domain.ArtifactRef{
-				ArtifactID:   artID,
-				Type:         artType,
-				Locator:      locator,
-				Digest:       pkg.Digest,
-				FetchPolicy:  domain.FetchImmutable,
+				ArtifactID:  artID,
+				Type:        artType,
+				Locator:     locator,
+				Digest:      pkg.Digest,
+				FetchPolicy: domain.FetchImmutable,
 			}
 
 			component := domain.Component{
@@ -232,14 +232,14 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 		}
 
 		listing := &domain.Listing{
-			SchemaVersion: 1,
-			ID:            string(listingID),
-			Kind:          domain.KindMCP,
-			Name:          srv.Name,
-			Title:         srv.Title,
-			Summary:       srv.Description,
-			Categories:    categories,
-			Keywords:      srv.Keywords,
+			SchemaVersion:  1,
+			ID:             string(listingID),
+			Kind:           domain.KindMCP,
+			Name:           srv.Name,
+			Title:          srv.Title,
+			Summary:        srv.Description,
+			Categories:     categories,
+			Keywords:       srv.Keywords,
 			PublisherClaim: pubClaim,
 			Source: domain.SourceReference{
 				SourceID:   string(a.sourceID),
