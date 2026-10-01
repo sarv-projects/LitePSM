@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 
@@ -29,17 +28,7 @@ func (a *ClineAdapter) Descriptor() HostDescriptor {
 }
 
 func (a *ClineAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	usr, _ := user.Current()
-	homeDir := ""
-	if usr != nil {
-		homeDir = usr.HomeDir
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOME")
-		if homeDir == "" {
-			homeDir = os.Getenv("USERPROFILE")
-		}
-	}
+	homeDir := resolveHomeDir()
 
 	var candidates []string
 	if runtime.GOOS == "windows" {

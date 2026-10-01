@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 
 	"github.com/sarv-projects/litepsm/internal/domain"
@@ -28,17 +27,7 @@ func (a *ClaudeCodeAdapter) Descriptor() HostDescriptor {
 }
 
 func (a *ClaudeCodeAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	usr, _ := user.Current()
-	homeDir := ""
-	if usr != nil {
-		homeDir = usr.HomeDir
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOME")
-		if homeDir == "" {
-			homeDir = os.Getenv("USERPROFILE")
-		}
-	}
+	homeDir := resolveHomeDir()
 	return filepath.Join(homeDir, ".claude.json"), nil
 }
 

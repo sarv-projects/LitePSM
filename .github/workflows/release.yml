@@ -29,6 +29,7 @@ jobs:
       - name: Compile Release Binaries
         run: |
           chmod +x scripts/build-release.sh
+          export VERSION="${GITHUB_REF_NAME#v}"
           ./scripts/build-release.sh
 
       - name: Build Web Static Export

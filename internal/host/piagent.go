@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 
@@ -29,17 +28,7 @@ func (a *PiAgentAdapter) Descriptor() HostDescriptor {
 }
 
 func (a *PiAgentAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	usr, _ := user.Current()
-	homeDir := ""
-	if usr != nil {
-		homeDir = usr.HomeDir
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOME")
-		if homeDir == "" {
-			homeDir = os.Getenv("USERPROFILE")
-		}
-	}
+	homeDir := resolveHomeDir()
 
 	var candidates []string
 	if runtime.GOOS == "windows" {
@@ -65,18 +54,7 @@ func (a *PiAgentAdapter) DetectConfig(ctx context.Context, scope domain.InstallS
 }
 
 func (a *PiAgentAdapter) ExtensionPath() string {
-	usr, _ := user.Current()
-	homeDir := ""
-	if usr != nil {
-		homeDir = usr.HomeDir
-	}
-	if homeDir == "" {
-		homeDir = os.Getenv("HOME")
-		if homeDir == "" {
-			homeDir = os.Getenv("USERPROFILE")
-		}
-	}
-	return filepath.Join(homeDir, ".pi", "agent", "extensions", "litepsm.ts")
+	return filepath.Join(resolveHomeDir(), ".pi", "agent", "extensions", "litepsm.ts")
 }
 
 func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error) {
