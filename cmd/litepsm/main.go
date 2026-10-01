@@ -101,6 +101,13 @@ func main() {
 	case "agent":
 		runAgentCommand(os.Args[2:])
 
+	case "skills":
+		if len(os.Args) < 3 || os.Args[2] != "add" {
+			fmt.Println("Usage: litepsm skills add <source> [--skill <name>] [--agent <host-id>] [--global] [--yes] [--list] [--json]")
+			os.Exit(1)
+		}
+		runSkillsAdd(os.Args[3:])
+
 	case "help", "--help", "-h":
 		printUsage()
 
@@ -127,6 +134,7 @@ Available Commands:
   host [list|detect|setup]    Manage agent host adapters (Codex, Claude, OpenCode, Cline, Pi, Grok)
   agent list [--json]         List installable ACP agents from the registry
   agent resolve <id>          Resolve an ACP agent launch spec for this host
+  skills add <source>         Install SKILL.md skills (owner/repo, git URL, local dir)
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
   self-update                 Check for and apply binary updates
   daemon serve                Start the LitePSM background supervisor and IPC engine

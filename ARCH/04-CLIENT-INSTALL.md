@@ -16,6 +16,7 @@ LitePSM provides both an interactive terminal interface for humans and a structu
 │                                                                        │
 │   $ litepsm setup <agent> (Scriptable Non-Interactive Setup)           │
 │   $ litepsm search / info / install / update / remove / doctor         │
+│   $ litepsm skills add <source> (Skill installer: clone, select, copy) │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼

@@ -118,6 +118,40 @@ LitePSM bifurcates system responsibilities between an untrusted public discovery
         *   *Retry detection*
     *   **Safe Atomic Merge:** LitePSM creates a timestamped backup in `DATA_ROOT/backups/`, preserves all existing comments/keys, injects the version-pinned Bridge entry, and installs the `/marketplace` command hook.
 
+### 3.4 Skill Installer (`litepsm skills add`)
+
+Portable `SKILL.md` skills are installed per agent host, in the host's own skill
+directory, at a chosen scope.
+
+```bash
+litepsm skills add anthropics/skills                  # interactive
+litepsm skills add anthropics/skills --list           # what is in the repo
+litepsm skills add anthropics/skills --skill frontend-design --agent claude-code --agent codex --yes
+litepsm skills add ./my-skills --scope global -y --json
+```
+
+| Step | Behaviour |
+|---|---|
+| Source | `owner/repo`, an `https` Git URL, or a local directory. Remote sources are fetched with a shallow `git clone` into a temp dir. Non-`https` schemes and path traversal in skill names are refused. |
+| Discovery | Walks the source tree up to depth 2 for directories containing `SKILL.md`/`skill.md` with both `name` and `description`. `.git` is never descended. A skill directory is never treated as a parent of another skill. |
+| Scope | `This repo only` (default) writes project-relative dirs; `Global (user-wide)` writes user dirs and honours `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `XDG_CONFIG_HOME`. |
+| Agents | Each selected skill is copied into every selected agent's own directory. Hosts without a dedicated dir (Cline, Pi Agent) share the universal `.agents/skills` tree. No universal copy is forced. |
+| Copy | Symlinks are refused, hidden VCS dirs are skipped, existing destinations are never overwritten, and each skill is bounded at 32 MiB. |
+| Risk panel | Always rendered. Without a real audit source it reports `unverified` per skill — a verdict is never invented. |
+
+Host skill directories (per `vercel-labs/skills` `src/agents.ts`, MIT):
+
+| Host ID | This repo only | Global |
+|---|---|---|
+| `claude-code` | `<repo>/.claude/skills` | `$CLAUDE_CONFIG_DIR/skills` (default `~/.claude/skills`) |
+| `codex` | `<repo>/.agents/skills` | `$CODEX_HOME/skills` (default `~/.codex/skills`) |
+| `opencode` | `<repo>/.agents/skills` | `$XDG_CONFIG_HOME/opencode/skills` (default `~/.config/opencode/skills`) |
+| `grok-build` | `<repo>/.grok/skills` | `$GROK_HOME/skills` (default `~/.grok/skills`) |
+| `cline`, `pi-agent` | `<repo>/.agents/skills` | `~/.agents/skills` |
+
+Non-interactive runs require `--agent` and `--yes`; they never prompt, never
+imply a consent that was not given, and emit `--json` output on stdout.
+
 ### 3.2 Non-Destructive Update Checking
 *   Whenever a user runs `litepsm` in terminal or invokes `/marketplace` in an agent, LitePSM performs a passive read of `/v1/current.json`.
 *   It compares installed versions against catalog release digests.
