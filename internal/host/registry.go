@@ -28,6 +28,21 @@ func RegisterAdapter(hostID string, adapter HostAdapter) {
 	adapters[strings.ToLower(hostID)] = adapter
 }
 
+// init wires every verified data-driven target into the registry. A hand-written
+// adapter always wins a name collision: those few were written and tested before
+// the target table existed, and
+// TestBridgeTargetTableDoesNotShadowBespokeAdapters keeps the two generations
+// from overlapping.
+func init() {
+	for _, t := range verifiedBridgeTargets {
+		id := strings.ToLower(t.ID)
+		if _, taken := adapters[id]; taken {
+			continue
+		}
+		adapters[id] = NewGenericAdapter(t)
+	}
+}
+
 // GetAdapter retrieves a HostAdapter by host ID.
 func GetAdapter(hostID string) (HostAdapter, error) {
 	registryMu.RLock()
