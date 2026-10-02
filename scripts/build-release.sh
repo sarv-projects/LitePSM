@@ -4,7 +4,7 @@ set -euo pipefail
 # LitePSM Multi-Platform Build Script
 # Targets: Windows (amd64, arm64), Linux (amd64, arm64), macOS (amd64, arm64)
 
-VERSION="${VERSION:-0.2.0}"
+VERSION="${VERSION:-0.3.0}"
 DIST_DIR="dist"
 mkdir -p "${DIST_DIR}"
 

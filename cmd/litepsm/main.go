@@ -38,7 +38,7 @@ const (
 	// -ldflags "-X main.Version=<v>" (see scripts/build-release.sh). Keep this
 	// value in sync with npm/package.json — the npm postinstall downloads the
 	// release asset named after the npm package version.
-	Version         = "0.2.0"
+	Version         = "0.3.0"
 	ProtocolVersion = "2026-07-28"
 )
 
