@@ -46,8 +46,13 @@ This architecture defines the complete specification for **LitePSM**, comprising
 | [21 — Testing & Conformance](21-TESTING-CONFORMANCE.md) | Test pyramid, property testing, archive fuzzing, crash injection, fake MCP conformance | Normative |
 | [22 — Platform, Release & Migrations](22-PLATFORM-RELEASE-MIGRATIONS.md) | Multi-platform build matrix, transactional DB migrations, downgrade prevention, self-update | Normative |
 | [23 — Schemas & Examples](23-SCHEMAS-EXAMPLES.md) | Complete JSON Schema (Draft 2020-12) specifications and golden test fixtures | Normative |
-| [24 — Function Inventory](24-FUNCTION-INVENTORY.md) | Complete Go package and public function inventory across all 20 internal modules | Normative |
+| [24 — Function Inventory](24-FUNCTION-INVENTORY.md) | Complete Go package and public function inventory across all 22 internal modules | Normative |
 | [25 — Web Frontend UI](25-WEB-FRONTEND-UI.md) | Web marketplace UI inspired by mcpmarket.com, component hierarchy, detail drawer | Normative |
+| [26 — Ecosystem IA & Package Model](26-ECOSYSTEM-IA-PACKAGE-MODEL.md) | Neutral `Package`/`Capability` model, 8-type v1 taxonomy, website IA, honesty rule, phased roadmap | Normative for IA/vocabulary/matrix; informative for roadmap |
+| [27 — Capability & Source Support Matrix](27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md) | Research-backed status snapshot per capability type and source, with code evidence | Informative status snapshot (not a new contract) |
+| [28 — ACP Agent Docs Verification](28-ACP-AGENT-DOCS-VERIFICATION.md) | Per-agent registry-vs-docs verification and override corrections | Informative status snapshot with provenance |
+| [29 — Connector System Design](29-CONNECTOR-SYSTEM-DESIGN.md) | Local proxy execution and credential custody design record for deferred `connector` type | Design record, not implemented |
+| [30 — Data-Driven Bridge Targets](30-DATA-DRIVEN-BRIDGE-TARGETS.md) | `BridgeTarget`/`GenericAdapter` table, surgical config merge, integrity tests | Normative |
 
 ### Companion Operational Guides
 
@@ -75,3 +80,6 @@ This architecture defines the complete specification for **LitePSM**, comprising
 *   **ArtifactFetcher:** Client-side component responsible for downloading raw bytes and verifying integrity digests without executing scripts.
 *   **RuntimeAdapter:** Client-side component responsible for materializing the execution environment (e.g., virtual environment, node_modules) and constructing launch specifications.
 *   **HostAdapter:** Integration module that discovers, backs up, and safely merges the LitePSM Bridge entry into an agent host's native configuration.
+*   **Package / Capability:** The neutral top-level abstraction defined in [26](26-ECOSYSTEM-IA-PACKAGE-MODEL.md): `type` (what it is), `source` (where it came from), `compatibility` (which hosts/runtimes, with evidence level), plus an install adapter (how it is materialised). User-facing synonym: **Capability**.
+*   **BridgeTarget:** Data-driven per-agent MCP configuration description (`internal/host/target.go`) consumed by the single `GenericAdapter`; each row records the documentation URL it was verified against ([30](30-DATA-DRIVEN-BRIDGE-TARGETS.md)).
+*   **Connector (deferred):** Authenticated runtime state with a lifecycle (not a file format); local proxy execution design is recorded in [29](29-CONNECTOR-SYSTEM-DESIGN.md) and remains unimplemented.

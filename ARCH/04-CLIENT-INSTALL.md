@@ -78,7 +78,7 @@ If the configuration file is absent, LitePSM prompts the user:
     {
       "mcpServers": {
         "litepsm": {
-          "command": "/usr/local/bin/marketplace",
+          "command": "/usr/local/bin/litepsm",
           "args": ["bridge", "stdio", "--host", "claude-code"]
         }
       }
@@ -94,7 +94,7 @@ If the configuration file is absent, LitePSM prompts the user:
 LitePSM maintains all user state, database files, and package trees within platform-standard data directories:
 *   **Windows:** `%LOCALAPPDATA%\LitePSM`
 *   **macOS:** `~/Library/Application Support/LitePSM`
-*   **Linux:** `$XDG_DATA_HOME/marketplace` (default: `~/.local/share/marketplace`)
+*   **Linux:** `$XDG_DATA_HOME/litepsm` (default: `~/.local/share/litepsm`)
 
 ```text
 DATA_ROOT/

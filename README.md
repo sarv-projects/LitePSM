@@ -13,10 +13,10 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | Phase | Description | Focus Area | Status |
 |---|---|---|---|
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `ARCH/00`–`ARCH/25`, 6 JSON Schemas (Draft 2020-12), `AGENTS.md`, `TEST.md` | **COMPLETED** |
-| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/marketplace` | **COMPLETED** |
+| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/litepsm` | **COMPLETED** |
 | **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder), `internal/catalog` (Search) | **COMPLETED** |
 | **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver), `internal/install` (Atomic CAS), `internal/skills` | **COMPLETED** |
-| **Phase E** | **Process Supervision, Bridge & Host Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/policy`, `internal/bridge`, **Codex, Claude, OpenCode, Cline, Pi Agent, Grok Build** adapters | **COMPLETED** |
+| **Phase E** | **Process Supervision, Bridge & Host Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/policy`, `internal/bridge`, 6 bespoke adapters (Codex, Claude, OpenCode, Cline, Pi Agent, Grok Build) + 44 generic BridgeTargets (50 total, `ARCH/30`), 77 skill targets | **COMPLETED** |
 | **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | Stateless MCP 2026-07-28 (Streamable HTTP), legacy 2025-11-25, WinCred/DPAPI/Keychain, OAuth PKCE Loopback | **COMPLETED** |
 | **Phase G** | **In-Agent `/marketplace` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | **COMPLETED** |
 | **Phase H** | **Release Engineering & Packaging** | Cross-platform Go builds, npm wrapper (`litepsm`), conformance test suites | **COMPLETED** |
@@ -218,17 +218,35 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
   ├── TEST.md                                           # Test scenarios for Cline, Pi Agent, Grok Build
   │
   ├── cmd/
-  │   └── litepsm/                                      # Root CLI entrypoint (doctor, version, daemon serve)
-  │       └── main.go
+  │   └── litepsm/                                      # Root CLI entrypoint (daemon serve, bridge, host, skills, doctor, agent)
+  │       ├── main.go                                   # Command dispatch + daemon/IPC handlers
+  │       ├── wizard.go                                 # Interactive agent setup wizard
+  │       ├── skills_add.go                             # `skills add` installer (clone, select, copy)
+  │       └── skills_remove.go                          # `skills remove/list` ledger-backed removal
   │
-  ├── internal/
+  ├── internal/ (22 packages)
   │   ├── domain/                                       # Pure domain models, canonical IDs, RFC 8785 JCS, errors
   │   ├── config/                                       # Platform paths (%LOCALAPPDATA%, XDG, runtimes) & config
   │   ├── state/                                        # SQLite WAL engine (22 tables), safe CAS rollback journal
   │   ├── ipc/                                          # Local authenticated IPC (Named Pipes DACL / Unix 0600)
-  │   ├── source/                                       # Upstream adapters (Official MCP Registry, Agent Skills)
+  │   ├── source/                                       # Upstream adapters (MCP Registry, Skills, Claude/Codex/Cursor/Grok, ACP)
   │   ├── catalogbuild/                                 # Deterministic release compiler & manifest generator
-  │   └── catalog/                                      # Catalog client, HTTP sync, ETag cache & lexical search
+  │   ├── catalog/                                      # Catalog client, HTTP sync, ETag cache & lexical search
+  │   ├── artifact/                                     # Safe archive extraction (256 MiB/1 GiB/case-fold limits)
+  │   ├── resolver/                                     # Pure DFS resolver + semver constraints
+  │   ├── install/                                      # Atomic CAS staging + SQLite commit
+  │   ├── skills/                                       # Skill loader, 77-agent installer, ledger
+  │   ├── agent/                                        # ACP registry + launch-spec resolution + overrides
+  │   ├── connector/                                    # Connector manifest + local proxy executor + egress policy
+  │   ├── bridge/                                       # Stdio Bridge shim (12 tools)
+  │   ├── provider/                                     # Supervisor (Job Objects/watchdog) + isolation
+  │   ├── policy/                                       # 17-action effect taxonomy + 5-tier engine
+  │   ├── host/                                         # 6 bespoke adapters + 44 generic BridgeTargets (50 total)
+  │   ├── mcpclient/                                    # Dual-profile MCP client (2026-07-28 + legacy)
+  │   ├── secrets/                                      # OS vault + memory/file stores
+  │   ├── auth/                                         # OAuth PKCE loopback broker
+  │   ├── doctor/                                       # 10-check diagnostics + repair plans
+  │   └── update/                                       # Self-update with fail-closed checksum verification
   │
   ├── schemas/                                          # Draft 2020-12 Canonical JSON Schemas
   │   ├── install-plan.schema.json                      # Cryptographic plan schema with planHash
@@ -238,7 +256,7 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
   │   ├── catalog-release.schema.json                   # Immutable release pointer & manifest schema
   │   └── errors.schema.json                            # Standardized LPSM-* machine error schema
   │
-  └── ARCH/                                             # 26 Architecture & LLD Documents
+  └── ARCH/                                             # 31 Architecture & LLD Documents (00–30)
       ├── 00-INDEX.md                                   # Normative status, precedence & registry
       ├── 01-PRODUCT.md                                 # Product contract & 5-stage lifecycle
       ├── 02-HLD.md                                     # Daemon/Bridge split & sequence diagrams
@@ -263,8 +281,13 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
       ├── 21-TESTING-CONFORMANCE.md                     # Test pyramid, crash injection & canary scans
       ├── 22-PLATFORM-RELEASE-MIGRATIONS.md             # Cross-compilation & DB migrations
       ├── 23-SCHEMAS-EXAMPLES.md                        # Schema fixtures & examples
-      ├── 24-FUNCTION-INVENTORY.md                      # Public Go function inventory (20 packages)
-      └── 25-WEB-FRONTEND-UI.md                         # Web marketplace frontend inspired by mcpmarket.com
+      ├── 24-FUNCTION-INVENTORY.md                      # Public Go function inventory (22 packages)
+      ├── 25-WEB-FRONTEND-UI.md                         # Web marketplace frontend inspired by mcpmarket.com
+      ├── 26-ECOSYSTEM-IA-PACKAGE-MODEL.md              # Neutral Package/Capability model, 8-type taxonomy, honesty rule
+      ├── 27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md        # Status snapshot per type/source with code evidence
+      ├── 28-ACP-AGENT-DOCS-VERIFICATION.md             # ACP registry-vs-docs verification + overrides
+      ├── 29-CONNECTOR-SYSTEM-DESIGN.md                 # Local proxy execution design (deferred, not implemented)
+      └── 30-DATA-DRIVEN-BRIDGE-TARGETS.md              # BridgeTarget table (44) + GenericAdapter, surgical merge
 ```
 
 ---

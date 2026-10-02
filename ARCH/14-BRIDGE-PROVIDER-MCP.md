@@ -58,7 +58,7 @@ The LitePSM Daemon acts as a supervisor for all local stdio MCP servers. It ensu
     Each spawned child process is assigned to a Windows Job Object configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. When the daemon process terminates for any reason, the Windows kernel automatically terminates all associated child processes.
 *   **Linux & macOS (Supervisor Watchdog & Control Pipe):**
     Process groups alone do not terminate child processes if the parent daemon process crashes or receives an uncatchable `SIGKILL`. To guarantee zero orphan processes:
-    1.  The daemon spawns local stdio providers through a lightweight internal supervisor watchdog (`cmd/litepsm internal watchdog`) in a distinct process group (`Setpgid = true`).
+    1.  The daemon spawns local stdio providers in a distinct process group (`Setpgid = true`) with an in-process supervisor watchdog (`startWatchdogIfRequired` in `internal/provider/`, control pipe + `PR_SET_PDEATHSIG` on Linux). There is no separate `internal watchdog` CLI subcommand.
     2.  The daemon holds the write end of an anonymous unidirectional control pipe, passing the read end (FD) to the watchdog.
     3.  If the daemon exits, crashes, or is killed via `SIGKILL`, the kernel closes the pipe. The watchdog reads an immediate `EOF`, traps it, and promptly issues `syscall.Kill(-pgid, syscall.SIGTERM)` followed by `syscall.Kill(-pgid, syscall.SIGKILL)` after a 2-second grace period.
     4.  On Linux, the watchdog and provider processes additionally configure `prctl(PR_SET_PDEATHSIG, syscall.SIGKILL)` on creation for defense-in-depth kernel-enforced teardown.

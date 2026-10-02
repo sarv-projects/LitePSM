@@ -68,11 +68,10 @@ Every new connection must issue `daemon.handshake` as its first request before i
   "id": 1,
   "method": "daemon.handshake",
   "params": {
-    "protocolVersion": "1.0",
-    "clientType": "bridge",
     "clientVersion": "1.0.0",
+    "clientKind": "bridge",
     "hostId": "claude-code",
-    "sessionId": "sess_01J9X8K2M4N5P6Q7R8S9T0U1V2"
+    "pid": 12345
   }
 }
 
@@ -81,15 +80,14 @@ Every new connection must issue `daemon.handshake` as its first request before i
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "serverVersion": "1.0.0",
-    "protocolVersion": "1.0",
-    "supportedFeatures": ["streamable-http", "rfc8785", "oauth-pkce"],
-    "minimumClientVersion": "1.0.0"
+    "daemonVersion": "0.2.0",
+    "protocolVersion": "2026-07-28",
+    "pid": 54321
   }
 }
 ```
 
-If the client's protocol version is unsupported, the daemon responds with `LPSM-IPC-VERSION-INCOMPATIBLE` and immediately terminates the connection.
+Field names follow `internal/ipc/protocol.go` (`HandshakeParams`/`HandshakeResult`). No `sessionId`, `serverVersion`, `supportedFeatures`, or `minimumClientVersion` fields exist. Version gating (`LPSM-IPC-VERSION-INCOMPATIBLE`) is planned but the current `daemon.handshake` handler in `internal/ipc/server.go:NewServer` accepts the handshake without enforcement.
 
 ### 3.2 Request Cancellation (`$/cancelRequest`)
 Clients can cancel long-running operations (such as multi-megabyte artifact downloads or long-running provider calls) by sending a standard notification:

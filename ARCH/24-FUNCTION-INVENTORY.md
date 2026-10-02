@@ -1,6 +1,8 @@
 # Function Inventory & Module Signatures
 
-This document lists the public Go function signatures, inputs, outputs, error conditions, and designated test files for all 20 internal packages.
+This document lists the public Go function signatures, inputs, outputs, error conditions, and designated test files for all 22 internal packages.
+
+> Note: there is no `internal/approval` or `internal/audit` package. Approval consumption lives in `internal/state` (`ConsumeApproval`) and is evaluated by `internal/policy`; audit events live in `state.audit_events` via `RecordAuditEvent`. Section 10 below is retained as a pointer so old references do not 404.
 
 ---
 
@@ -187,16 +189,16 @@ func RenderPlanSummary(plan *domain.InstallPlan) string
 
 ---
 
-## 10. Package: `internal/approval`
-*Test file:* `internal/approval/approval_test.go`
+## 10. Approval logic (no separate package — lives in `internal/state` + `internal/policy`)
+*Test files:* `internal/state/state_test.go`, `internal/policy/policy_test.go`
 
 ```go
-func DetermineApprovalRequirement(decision domain.PolicyDecision, op string) ApprovalRequirement
-func RequestApproval(ctx context.Context, channel ApprovalChannel, subject domain.ApprovalSubject) (*domain.Approval, error)
-func ValidateApproval(a *domain.Approval, subjectHash string) error
-func ConsumeOneTimeApproval(ctx context.Context, approvalID string) error
-func CreateDurableCapabilityGrant(ctx context.Context, capID, schemaFingerprint, actor string) (*domain.CapabilityGrant, error)
-func InvalidateGrantsForSchemaChange(ctx context.Context, capID, newFingerprint string) error
+// internal/state (repositories.go, operations.go)
+func (db *DB) RecordApproval(ctx context.Context, approvalID, subjectType, subjectHash, actor, channel, scope string, expiresAt *time.Time) error
+func (db *DB) ConsumeApproval(ctx context.Context, approvalID string) error
+func (db *DB) RevokeApproval(ctx context.Context, approvalID string) error
+func (db *DB) SaveCapabilityGrant(ctx context.Context, grant *domain.CapabilityGrant, grantedBy string) error
+func (db *DB) GetActiveGrant(ctx context.Context, capabilityID, schemaFingerprint string) (*domain.CapabilityGrant, error)
 ```
 
 ---
@@ -358,16 +360,12 @@ func MapDaemonErrorToMCP(err error) mcp.ToolResult
 
 ---
 
-## 20. Packages: `internal/audit` & `internal/doctor`
-*Test files:* `internal/audit/audit_test.go`, `internal/doctor/doctor_test.go`
+## 20. Package: `internal/doctor` (audit events live in `internal/state`)
+*Test file:* `internal/doctor/doctor_test.go`
 
 ```go
-// internal/audit
-func Append(ctx context.Context, ev domain.AuditEvent) error
-func Query(ctx context.Context, filter AuditFilter) ([]domain.AuditEvent, error)
-func Export(ctx context.Context, outWriter io.Writer) error
-func Prune(ctx context.Context, olderThan time.Duration) (int64, error)
-func RedactAuditMetadata(meta map[string]any) map[string]any
+// internal/state
+func (db *DB) RecordAuditEvent(ctx context.Context, actor, action, targetRef, decision, approvalID, opID, outcome, metadataJSON string) error
 
 // internal/doctor
 func RunChecks(ctx context.Context, scope Scope) (*DoctorReport, error)
@@ -380,4 +378,55 @@ func CheckProviderRequirements(ctx context.Context) CheckResult
 func CheckCatalogCache(ctx context.Context) CheckResult
 func BuildRepairPlan(report *DoctorReport) (*RepairPlan, error)
 func ApplyRepairPlan(ctx context.Context, plan *RepairPlan) error
+```
+
+---
+
+## 21. Package: `internal/agent`
+*Test file:* `internal/agent/agent_test.go`
+
+```go
+func ParseRegistry(data []byte) (*Registry, error)
+func MatchTarget(goos, goarch string) (Target, bool)
+func HostTarget() (Target, bool)
+func NewACPAdapter() *ACPAdapter
+func (a *ACPAdapter) Supports(ag Agent) bool
+func (a *ACPAdapter) Resolve(ag Agent, target Target, binaryDir string) (*LaunchSpec, error)
+func LoadRegistryFile(path string) (*Registry, error)
+func FetchRegistry(ctx context.Context, client *http.Client, rawURL string, maxBytes int64) (*Registry, error)
+func (r *Registry) FindAgent(id string) (*Agent, bool)
+func IsDeprecated(id string) bool
+```
+
+---
+
+## 22. Package: `internal/connector`
+*Test file:* `internal/connector/connector_test.go`
+
+```go
+func ParseManifest(data []byte) (*ConnectorManifest, error)
+func (m *ConnectorManifest) Validate() error
+func (e *Executor) Execute(ctx context.Context, integ *Integration, conn *Connection, req CallRequest) (*CallResult, error)
+func SanitizeHeaders(in http.Header) http.Header
+func (p EgressPolicy) CheckTarget(ctx context.Context, rawURL string) (*url.URL, error)
+func (p EgressPolicy) CheckRedirect(ctx context.Context, location string) (*url.URL, error)
+func NewGrantStore() *GrantStore
+func (g *GrantStore) Approve(grant FieldGrant) error
+func (g *GrantStore) Lookup(connectionID, componentID, field string) (FieldGrant, bool)
+func VaultResolver(store secrets.SecretStore, grants *GrantStore, refFor func(connectionID, field string) (string, error)) SecretResolver
+func (c *Connection) DeriveStatus(now time.Time, exhaustedAfter int) ConnectionStatus
+func (i *Integration) ScopesCover(required []string) bool
+```
+
+---
+
+## 23. Package: `internal/update`
+*Test file:* `internal/update/update_test.go`
+
+```go
+func NewUpdater(baseURL string) *Updater
+func TargetBinaryName() string
+func (u *Updater) CheckForUpdate(ctx context.Context, currentVersion string) (*UpdateStatus, *ReleaseInfo, error)
+func (u *Updater) ApplyUpdate(ctx context.Context, newBinaryBytes []byte, expectedSHA256 string, targetBinaryPath string, stagingDir string) error
+func VerifySelfBoot(binaryPath string) error
 ```

@@ -15,6 +15,8 @@ All public contracts and local plans are validated against strict JSON Schema (D
 
 ## 2. Specification: `install-plan.schema.json`
 
+> Implementation note (honest gap): the daemon's `resolver.prepare_plan` preview in `cmd/litepsm/main.go:registerCoreHandlers` currently emits `plan_<listing>_<version>` placeholder IDs, and `internal/install/engine.go:Execute` emits `inst_<listing>_<digest8>` install IDs. Both violate the strict patterns below (`^plan_[0-9A-Za-z]{26}$`, `^inst_[0-9A-Za-z_-]{20,36}$` with no colons). Until ULID issuance lands, treat handler-emitted IDs as placeholders: validate persisted `plans`/`installs` rows strictly, and do not present preview IDs as conforming.
+
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -204,18 +204,17 @@ Milestone labels reuse the vocabulary in [ARCH/26 §11](26-ECOSYSTEM-IA-PACKAGE-
 
 ## 4. Verification Status
 
-### 4.1 Commands used and observed results (2026-10-01, repo `/home/sarvesh/business_Dev/litePSM`)
+### 4.1 Commands used and observed results (2026-10-02, repo `/home/sarvesh/business_Dev/litePSM`)
 
 | Command | Observed result |
 |---|---|
-| `ls internal/source` | `acp_registry.go`, `acp_registry_test.go`, `adapter.go`, `claude_marketplace.go`, `grok_marketplace.go`, `mcp_registry.go`, `openai_plugin.go`, `skills.go`, `source_marketplace_test.go`, `source_test.go` |
-| `go test ./internal/source/...` | `ok github.com/sarv-projects/litepsm/internal/source 0.007s` (exit 0) |
-| `go test ./internal/agent/... ./internal/domain/...` | `ok .../internal/agent 0.004s`; `ok .../internal/domain 0.004s` (exit 0) |
+| `ls internal/source` | `acp_registry.go`, `acp_registry_test.go`, `adapter.go`, `claude_marketplace.go`, `codex_marketplace.go`, `cursor_marketplace.go`, `flex.go`, `grok_marketplace.go`, `mcp_registry.go`, `openai_plugin.go`, `skills.go`, `source_marketplace_test.go`, `source_test.go`, `sources.go` |
+| `go test ./internal/source/... ./internal/agent/... ./internal/domain/...` | `ok` for all three packages (exit 0) |
 | `go vet ./internal/...` | no output (exit 0) |
 | `go build ./...` | no output (exit 0) |
 | `go version` | `go1.26.0 linux/amd64` |
-| `git status --short` | `M ARCH/26-…`, `M internal/domain/models.go`; untracked `fixtures/source/`, `internal/agent/`, `internal/source/acp_registry.go`, `internal/source/acp_registry_test.go` |
-| `python3` census of `fixtures/source/acp/registry.json` | 41 agents |
+| `git status --short` | `M ARCH/00-INDEX.md`, `M ARCH/26-ECOSYSTEM-IA-PACKAGE-MODEL.md` (docs upgrade in progress; ACP adapters committed) |
+| `python3` census of `fixtures/source/acp/registry.json` | 41 agents (`version`/`agents`/`extensions` keys) |
 
 The ACP adapter test reads `../../fixtures/source/acp/registry.json`. At first observation that fixture and the ACP adapters were untracked; they were committed as `09ba4cb` shortly afterwards, and `go test ./internal/source/... ./internal/agent/...` re-run against the committed tree still returned `ok` (exit 0).
 

@@ -31,10 +31,10 @@ type HostDescriptor struct {
 
 ## 2. Dynamic Runtime Adapter Advisory & Metadata Discovery
 
-When a user runs `litepsm`, the client queries the remote catalog release pointer (`/v1/current.json`) and fetches the latest `adapters.json` metadata:
-*   **Advisory Compatibility Metadata:** `adapters.json` contains version matrices, compatibility warnings, config path hints, and recommended setup snippets. It does **not** deliver dynamic executable Go code; config file parsing and mutation are strictly performed by the compiled-in binary. Adding new config parsers requires a client binary release.
-*   **Zero Local Mutation:** Fetching adapter metadata is a passive read. It allows the CLI to inform the user if an updated client binary is required for a newer agent release without altering existing host configurations.
-*   **Offline Fallback:** If internet access is unavailable, LitePSM falls back immediately to the compiled-in adapter registry.
+When a user runs `litepsm`, the client reads the remote catalog release pointer (`/v1/current.json`), which carries an `advisories` array (hostId, status, minVersion) — there is no separate `adapters.json` endpoint. The interactive wizard (`cmd/litepsm/wizard.go:verifyRuntimeAdvisories`) currently reports compiled-in protocol/adapters without a network fetch:
+*   **Advisory Compatibility Metadata:** `current.json.advisories` contains per-host status and minimum versions. It does **not** deliver dynamic executable Go code; config file parsing and mutation are strictly performed by the compiled-in binary. Adding new config parsers requires a client binary release.
+*   **Zero Local Mutation:** Reading advisory metadata is a passive read. It allows the CLI to inform the user if an updated client binary is required for a newer agent release without altering existing host configurations.
+*   **Offline Fallback:** If internet access is unavailable, LitePSM uses the compiled-in adapter registry (`internal/host/registry.go`).
 
 ---
 
@@ -96,6 +96,11 @@ When a user runs `litepsm`, the client queries the remote catalog release pointe
     *   `v2.x`: Uses nested `mcp.servers` object (`mcp.servers.litepsm`).
     The adapter inspects the existing document structure or schema version to write the correct layout.
 *   **Detected External Capabilities:** Scans existing configured servers in read-only mode.
+
+### 3.7 Data-driven targets: 44 generic + 6 bespoke = 50 total (`internal/host/target.go`, `ARCH/30`)
+*   The six adapters above are hand-written and retained (they carry behaviour the generic path does not model: OpenCode v1/v2 layouts, TOML handling, Pi extension generation, Cline comment preservation).
+*   All other agents are data rows (`verifiedBridgeTargets` in `internal/host/targets_data.go`, 44 rows) served by the single `GenericAdapter` (`internal/host/generic.go`). Bespoke IDs always win name collisions (`TestBridgeTargetTableDoesNotShadowBespokeAdapters`).
+*   Surgical merge (`internal/host/jsonc_merge.go` + TOML merger) preserves comments/key order; strict-JSON hosts refuse commented files rather than guessing. See ARCH/30 for the honesty contract, exclusion table (23 unverified agents), and integrity tests.
 
 ---
 

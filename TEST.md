@@ -131,9 +131,9 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
 ### Test Case 6: Dynamic Runtime Adapter Advisory Fetching
 *   **Objective:** Verify the client queries the remote manifest at runtime for compatibility advisories without executing remote code.
 *   **Procedure:**
-    1. Start local mock HTTP server serving `/v1/current.json` and `/v1/adapters.json`.
+    1. Start local mock HTTP server serving `/v1/current.json` (with its `advisories` array; there is no separate `/v1/adapters.json` endpoint).
     2. Execute `litepsm` with `--catalog-url http://127.0.0.1:<mock-port>`.
-    3. Verify that adapter advisory metadata and version warnings from `adapters.json` appear in the interactive dropdown.
+    3. Verify that advisory metadata and version warnings from `current.json` appear without executing remote code.
     4. Disconnect network and verify clean fallback to compiled-in adapters.
 
 ---

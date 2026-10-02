@@ -45,7 +45,7 @@ LitePSM is bifurcated into two strictly isolated environments:
     │                ▼                  ▼                   ▼                 │
     │ ┌─────────────────────────┐ ┌───────────────┐ ┌───────────────────────┐ │
     │ │ SQLite State (WAL mode) │ │ Policy Engine │ │ OS Secret Broker      │ │
-    │ │ (20 Relational Tables)  │ │ & Approvals   │ │ (WinCred/DPAPI/Keych) │ │
+    │ │ (22 Relational Tables)  │ │ & Approvals   │ │ (WinCred/DPAPI/Keych) │ │
     │ └─────────────────────────┘ └───────────────┘ └───────────────────────┘ │
     │                │                  │                   │                 │
     │                ▼                  ▼                   ▼                 │

@@ -136,13 +136,13 @@ The `agent-runtime` value is deferred as a *distinct* type only; v1 expresses in
 
 ### 3.4.2 v1 type support status (data reality)
 
-Which v1 types are backed by real rows in the current 5,185-item catalog (`web/data/catalog.json`):
+Which v1 types are backed by real rows in the current 5,814-item catalog (`web/data/catalog.json`: 4,079 `mcp`, 1,103 `skill`, 632 `plugin`):
 
 | v1 type | v1 catalog data | Rendering rule |
 |---|---|---|
 | `mcp` | Yes — 4,079 rows | Normal listing |
 | `skill` | Yes — 1,103 rows | Normal listing |
-| `plugin` | Yes — 3 rows | Normal listing |
+| `plugin` | Yes — 632 rows | Normal listing |
 | `agent` | No rows | Render as "no packages yet"; never fabricate entries |
 | `rule` | No rows | Render as "no packages yet"; never fabricate entries |
 | `hook` | No rows | Render as "no packages yet"; never fabricate entries |
@@ -195,18 +195,21 @@ The current implementation is a v1 discovery catalog. The gaps below are factual
 
 | Concern | v1 reality | Evidence | Gap vs target |
 |---|---|---|---|
-| Top-level classification | Four-value enum: `{plugin, mcp, skill, connector}` | `internal/domain/models.go` (`KindPlugin`, `KindMCP`, `KindSkill`, `KindConnector`) | Target `type` enum of eight v1 values (§3.4), with deferred values in §3.4.1; `connector` exists in Go but is a deferred v2 value and never appears in the shipped dataset |
-| Web kind set | Three values: `"mcp" \| "skill" \| "plugin"` | `web/lib/telemetry.ts` (`Listing["kind"]`) | Web drops `connector`; must align to the type taxonomy |
-| Shipped dataset kinds | 4,079 `mcp`, 1,103 `skill`, 3 `plugin` (5,185 total) | `web/data/catalog.json` | No rows for the other v1 types (`agent`, `rule`, `hook`, `tool`, `lsp`) despite `ComponentKind` supporting some; deferred values (§3.4.1) are not tracked in v1 |
-| Component kinds | `skill, mcp-provider, hook, command, agent-definition, asset` | `internal/domain/models.go` (`ComponentKind`) | Component kinds are closer to reality than listing kinds, but are not surfaced to web |
+| Top-level classification | Nine-value enum: `{plugin, mcp, skill, connector, agent, rule, hook, tool, lsp}` | `internal/domain/models.go` (`KindPlugin`, `KindMCP`, `KindSkill`, `KindConnector`, `KindAgent`, `KindRule`, `KindHook`, `KindTool`, `KindLSP`) | Target `type` enum of eight v1 values (§3.4), with deferred values in §3.4.1; `connector` exists in Go but is a deferred v2 value and never appears in the shipped dataset (5814 rows carry only `mcp`/`skill`/`plugin`) |
+| Web kind set | Three values: `"mcp" \| "skill" \| "plugin"` | `web/lib/telemetry.ts` (`Listing["kind"]`) | Web drops `connector` and the five zero-row v1 types; must align to the type taxonomy |
+| Shipped dataset kinds | 4,079 `mcp`, 1,103 `skill`, 632 `plugin` (5,814 total) | `web/data/catalog.json` | No rows for the other v1 types (`agent`, `rule`, `hook`, `tool`, `lsp`) despite `ComponentKind` supporting some; deferred values (§3.4.1) are not tracked in v1 |
+| Component kinds | `skill, mcp-provider, hook, command, agent-definition, agent, rule, tool, lsp, asset` | `internal/domain/models.go` (`ComponentKind`) | Component kinds cover all eight v1 types plus legacy `command`/`agent-definition`/`asset`, but are not surfaced to web |
 
 ### 4.2 Dataset fields vs target
 
-`web/data/catalog.json` rows carry exactly:
+`web/data/catalog.json` rows carry exactly (5,814 rows verified 2026-10-02):
 
 ```text
 id, name, slug, kind, summary, category, publisher{name,verified,url},
-stars, version, testedHosts, command, args, skillSource, transport, runtime
+stars (present on all rows, null on all rows — no popularity signal),
+version, command, args, transport, runtime (mcp rows),
+skillSource (skill rows), compatibleHosts (plugin rows),
+installHint (441 rows)
 ```
 
 | Signal | v1 present? | Evidence | Required treatment |
@@ -217,33 +220,36 @@ stars, version, testedHosts, command, args, skillSource, transport, runtime
 | usage / installs | **No** | no field in dataset or domain | `Not published` until a real telemetry source exists |
 | `updatedAt` / maintenance | **No** — only `version`; no dates at all | `catalog.json` keys | `Not published`; do not infer from stars |
 | security | **No** dedicated signal | `catalog.json` keys | Separate provenance signals (§7.4), not one score |
-| stars | **Present but not uniformly live** — the builder seeds popular entries from hard-coded maps and defaults some to 35,000 | `scripts/build_full_catalog.py` (`POPULAR_SERVERS`, fallback `35000`) | Keep as **illustrative popularity only**; never present stars as a trust/usage signal |
+| stars | **Absent as a signal** — `stars` key is present on all 5,814 rows but `null` on all rows; 0 non-null values | `web/data/catalog.json` key-frequency scan; `scripts/build_full_catalog.py` (sets `"stars": None`, no popularity ranking) | Keep as **not published**; never present stars as a trust/usage signal (§12.4) |
 | `categories` | Single flat `category` string, 63 distinct values | `catalog.json`; `web/lib/telemetry.ts` (`categoryFacets`) | Replace with hierarchical categories + tags |
 | `testedHosts` | String array of display names (6–7 values, identical for many rows) | `catalog.json`; `scripts/build_full_catalog.py` | Replace with per-host compatibility facts carrying evidence level |
 | `publisher.verified` | Boolean, set by the builder | `catalog.json` | Replace with separate source-verified / publisher-verified signals |
 
-### 4.3 Trust signal currently asserted without evidence
+### 4.3 Trust signal status (fixed — verify, do not regress)
 
-All five compiled source adapters unconditionally set `VerificationSummary.Level = "signature_verified"`:
+All eight compiled source adapters set `VerificationSummary.Level = "unverified"`:
 
 *   `internal/source/mcp_registry.go`
 *   `internal/source/skills.go`
 *   `internal/source/claude_marketplace.go`
 *   `internal/source/openai_plugin.go`
 *   `internal/source/grok_marketplace.go`
+*   `internal/source/codex_marketplace.go`
+*   `internal/source/cursor_marketplace.go`
+*   `internal/source/acp_registry.go`
 
-This is not backed by a signature check at ingestion. Per the honesty rule (§12.4), this value MUST NOT be surfaced as a verification claim. The initial target value is `unverified` unless a real signature/attestation check produces evidence.
+This is the correct honest default: no signature check runs at ingestion. Per the honesty rule (§12.4), `unverified` MUST NOT be surfaced as a verification claim. A regression test (`TestOverridesAgainstRegistry` plus `acp_registry_test.go` asserting `"unverified"`) pins this; any adapter emitting `signature_verified` without a real check fails the strict honesty audit.
 
 ### 4.4 Routing, navigation, and categories
 
 | Concern | v1 reality | Evidence | Gap vs target |
 |---|---|---|---|
-| Detail route | `/item?id=<id>` query route (static-export compatible) | `web/app/item/page.tsx`; links in `web/components/catalog/DetailDrawer.tsx` | Target `/package/?slug=<slug>` (rename + slug identity) |
-| Primary nav | Header renders `Explore / Agents / Categories / Trending` | `web/components/navigation/Header.tsx` (`PRIMARY_NAV`) | No route files exist for these; they are dead links today. Target nav adds `Collections` and `Docs` |
-| Existing routes | Only `/` and `/item` | `web/app/` contains `page.tsx`, `item/`, `layout.tsx`, `globals.css` | Target ~16 routes (§6) |
+| Detail route | `/package/?slug=<key>` query route (static-export compatible; `slug` when unique, else full `id`) | `web/app/package/page.tsx`; links via `listingHref()` in `web/lib/catalog.ts` | Target keeps query-route shape; `slug` uniqueness validated at build time (§6.3) |
+| Primary nav | Header renders `Explore / Agents / Categories / Trending` | `web/components/navigation/Header.tsx` (`PRIMARY_NAV`) | Implemented routes exist for all four; target nav adds `Collections`, `Sources`, `Security`, `Docs`, `Download` (§6) |
+| Existing routes | `/`, `/explore`, `/package`, `/categories`, `/agents`, `/trending` | `web/app/` contains `page.tsx`, `explore/`, `package/`, `categories/`, `agents/`, `trending/`, `layout.tsx`, `globals.css` | Target ~16 routes (§6); `/collections`, `/sources`, `/publishers`, `/security`, `/docs`, `/download` remain missing |
 | Categories | Flat `CategoryRail` pills; top 16–18 by frequency; 12 hard-coded labels in doc | `web/components/hero/CategoryRail.tsx`; `web/lib/telemetry.ts`; `ARCH/25` §3.2 | Replace with real hierarchical categories and `/categories/<slug>` |
 | Filters | `kind` + `category` only | `web/lib/useCatalogSearch.ts` options; `web/app/page.tsx` | Target power filters (§7.2) |
-| Detail tabs | Single long page with host config + related items | `web/app/item/page.tsx` | Target tabs Overview/Setup/Compatibility/Configuration/Files/Versions/Security/Reviews |
+| Detail tabs | Single long page with host config + related items | `web/app/package/page.tsx` | Target tabs Overview/Setup/Compatibility/Configuration/Files/Versions/Security/Reviews |
 | Per-capability host snippet | `nativeSnippet(host, slug, command, args)` emits a direct native per-package config | `web/lib/hosts.ts` | Contradicts one-bridge-per-host; remove/relabel (§10, §11) |
 
 ---
@@ -327,9 +333,9 @@ The site is a static export (`web/next.config.ts`: `output: "export"`, `trailing
 /package/?slug=<canonical-slug>
 ```
 
-The HTML shell is one static file; the client resolves `slug` (via `useSearchParams`) against the catalog. This mirrors the existing `/item?id=` mechanism in `web/app/item/page.tsx` and keeps the export file count flat.
+The HTML shell is one static file; the client resolves `slug` (via `useSearchParams`) against the catalog. This is the current `/package/?slug=` mechanism in `web/app/package/page.tsx` and keeps the export file count flat.
 
-**Build-size risk (explicit):** the shipped dataset has **5,185 items**. Per-item static pages (`generateStaticParams` over all items) would add at least one HTML file per item, plus assets. The catalog builder is expected to grow. Cloudflare Pages is limited to **20,000 files per project** ([09 — Research](09-RESEARCH.md) §7). Per-item static pages are therefore **not adopted** unless a static-param budget is explicitly approved (e.g. prerender only the top N by a real signal, with the rest served via the query route). This document rejects unbounded `generateStaticParams` for the full catalog.
+**Build-size risk (explicit):** the shipped dataset has **5,814 items**. Per-item static pages (`generateStaticParams` over all items) would add at least one HTML file per item, plus assets. The catalog builder is expected to grow. Cloudflare Pages is limited to **20,000 files per project** ([09 — Research](09-RESEARCH.md) §7). Per-item static pages are therefore **not adopted** unless a static-param budget is explicitly approved (e.g. prerender only the top N by a real signal, with the rest served via the query route). This document rejects unbounded `generateStaticParams` for the full catalog.
 
 Identity note: `slug` must be globally unique. v1 `slug` values are derived per-source and may collide. The target contract uses a canonical slug (or the full package `id`) as the lookup key and validates uniqueness at build time.
 
@@ -444,11 +450,11 @@ The category has no shortage of package lists. LitePSM's defensible difference i
 
 ---
 
-## 10. Explicit Separation: Public Website vs `/litepsm` TUI
+## 10. Explicit Separation: Public Website vs `/marketplace` TUI
 
 Two different product surfaces with different jobs. Neither is collapsed into the other.
 
-| | Public website (LitePSM Market) | `/litepsm` CLI/TUI |
+| | Public website (LitePSM Market) | `/marketplace` CLI/TUI |
 |---|---|---|
 | Audience | Anonymous discovery, evaluation, sharing | Installed user on their workstation |
 | Job | Discover · browse · compare · trust · publish | Search · install · configure · update · remove |
@@ -475,7 +481,7 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 | Compatibility-first card and detail layout | The one durable differentiator | M1 |
 | Separate provenance signals instead of one score | Honest, auditable trust UX | M3 |
 | Hierarchical categories + tags | 63 flat categories are unusable as navigation | M1 (route), M2 (data) |
-| Query-route detail pages instead of per-item static pages | 5,185 items vs 20k file limit | M1 |
+| Query-route detail pages instead of per-item static pages | 5,814 items vs 20k file limit | M1 |
 | Website and TUI as distinct surfaces | Different state models and audiences | M1/M5 |
 
 ### 11.2 Add
@@ -496,10 +502,10 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 
 | Item | Why | Milestone |
 |---|---|---|
-| Replace `ListingKind` `{plugin,mcp,skill,connector}` with `type` taxonomy | Misclassification | M2 |
+| Replace `ListingKind` `{plugin,mcp,skill,connector,agent,rule,hook,tool,lsp}` with `type` taxonomy | Misclassification | M2 |
 | Replace flat `category` string with hierarchical categories + tags | Navigation | M2 |
 | Replace `testedHosts: string[]` with compatibility facts | Evidence level required | M2 |
-| Rework Header nav to `Explore · Agents · Categories · Collections · Trending · Docs` | Current links are dead and set is wrong | M1 |
+| Rework Header nav to `Explore · Agents · Categories · Collections · Trending · Docs` | Current nav is `Explore / Agents / Categories / Coverage→/trending/`; `Collections`, `Sources`, `Security`, `Docs`, `Download` remain missing | M1 |
 | Rework `CategoryRail` (fixed pills) into category entry points | Real hierarchy | M1 |
 | Rework detail page into tabbed layout per §7.3 | Depth without a wall of text | M1 |
 | Rework search from lexical `matchesQuery` + kind/category to filtered power search | §7.2 | M1/M2 |
@@ -511,23 +517,23 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 | `web/lib/telemetry.ts` `Listing` interface to target v2 fields | Keep web model truthful | M2 |
 | Catalog builder output to emit v2 shape (`type`/`source`/`compatibility`) | Data must lead UI | M2 |
 | `ARCH/25` navigation and detail references to match this document | Doc drift | M1 |
-| `ARCH/00-INDEX` to register this document | Discoverability | M1 (maintainer) |
-| Stars presentation labelled illustrative | Seeded provenance | M3 |
-| `VerificationSummary` to `unverified` unless evidenced | Currently asserts `signature_verified` without a check | M3 |
+| `ARCH/00-INDEX` to register this document | Discoverability | Done (registered with 26–30) |
+| Stars absent: render `Not published` | `stars` is `null` on all 5,814 rows; no popularity signal exists | M3 |
+| `VerificationSummary` stays `unverified` unless evidenced | Fixed — all 8 adapters emit `unverified`; regression-pinned, do not regress | M3 |
 
 ### 11.5 Remove
 
 | Item | Why | Milestone |
 |---|---|---|
-| `/item?id=` route and all links to it | Replaced by `/package/?slug=` | M1 |
+| `/item?id=` route and all links to it | Replaced by `/package/?slug=` (no `/item` route exists) | Done |
 | Flat 12-label category rail | Replaced by real hierarchical categories | M1 |
 | Per-capability (as opposed to per-host) install snippets, i.e. `nativeSnippet(host, slug, command, args)` and the "Direct Native" toggle | Contradicts one-bridge-per-host (D-010); bypasses the daemon | M1 |
 | Single Boolean `publisher.verified` as a trust badge | Replaced by separate source/publisher verification signals | M3 |
-| `signature_verified` defaults from all source adapters | Unsupported claim | M3 |
+| `signature_verified` defaults from source adapters | Fixed — adapters emit `unverified`; keep regression test | Done |
 | Any "Runs executable" green state without evidence | Honesty rule | M3 |
 | `Reviews` tab or any feature requiring a backend | Site is static-only; don't fake it | M1 |
 
-*If no per-capability install snippet remains after inspection, the removal row is satisfied and should be recorded as such rather than re-applied.* The current codebase **does** contain `nativeSnippet` (`web/lib/hosts.ts`) and renders it in `web/app/item/page.tsx`, so the row applies.
+*If no per-capability install snippet remains after inspection, the removal row is satisfied and should be recorded as such rather than re-applied.* The current codebase **does** contain `nativeSnippet` (`web/lib/hosts.ts:240`) and renders it in `web/app/package/page.tsx:191`, so the row applies.
 
 ---
 
@@ -535,11 +541,11 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 
 ### M1 — Website IA
 
-*   Deliver: nav rename, §6 routes as static query/data pages, `/package/?slug=`, tabbed detail shell, compatibility-first card, remove `/item` and dead nav links.
+*   Deliver: nav rename, §6 routes as static query/data pages, `/package/?slug=`, tabbed detail shell, compatibility-first card; `/item` already removed, implemented nav links (`Explore/Agents/Categories/Coverage`) verified.
 *   Acceptance (observable evidence):
     *   `cd web && npx tsc --noEmit` exits 0.
     *   `cd web && npm run build` exits 0 and produces `web/out/`.
-    *   Route list: the export contains a directory per route in §6 (e.g. `out/explore/index.html`, `out/package/index.html`, `out/categories/index.html`, `out/agents/index.html`, `out/sources/index.html`, `out/collections/index.html`, `out/trending/index.html`, `out/security/index.html`, `out/docs/index.html`, `out/download/index.html`), and `out/item/` is gone.
+    *   Route list: the export contains a directory per implemented route (`out/explore/index.html`, `out/package/index.html`, `out/categories/index.html`, `out/agents/index.html`, `out/trending/index.html`), `out/item/` is absent, and the remaining §6 routes (`sources`, `collections`, `security`, `docs`, `download`, `publishers`) are tracked as missing.
     *   No nav link 404s.
 
 ### M2 — Data model + source adapters
@@ -569,10 +575,10 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 
 ### M5 — TUI
 
-*   Deliver: `/litepsm` search/install/configure/update/remove parity with the website's vocabulary, without collapsing the two surfaces (§10).
+*   Deliver: `/marketplace` search/install/configure/update/remove parity with the website's vocabulary, without collapsing the two surfaces (§10).
 *   Acceptance:
     *   `go test ./...` passes.
-    *   A documented manual run shows `/litepsm search` and install flows using the same `type`/`source`/`compatibility` vocabulary as the website.
+    *   A documented manual run shows `/marketplace` search and install flows using the same `type`/`source`/`compatibility` vocabulary as the website.
 
 ### v2 (post-v1) — Deferred capability types
 

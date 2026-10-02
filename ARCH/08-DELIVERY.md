@@ -2,7 +2,7 @@
 
 ## 1. Staged Delivery Methodology
 
-To ensure stability and prevent architectural regressions, LitePSM follows an 8-phase delivery sequence (Phase A through Phase H). Each phase begins in a **Proposed** state and advances to **Verified** and **Accepted** only when automated quality gates and test suites pass.
+To ensure stability and prevent architectural regressions, LitePSM follows a 9-phase delivery sequence (Phase A through Phase I). Each phase begins in a **Proposed** state and advances to **Verified** and **Accepted** only when automated quality gates and test suites pass.
 
 ```text
 [Phase A] Architecture Freeze & Schemas
@@ -23,10 +23,13 @@ To ensure stability and prevent architectural regressions, LitePSM follows an 8-
 [Phase F] MCP Protocols (Streamable HTTP), Secrets & OAuth
     │
     ▼
-[Phase G] Marketplace Federation, In-Agent /litepsm & CLI TUI
+[Phase G] Marketplace Federation, In-Agent /marketplace & CLI TUI
     │
     ▼
 [Phase H] Cross-Platform Build, Conformance & Packaging
+    │
+    ▼
+[Phase I] Golden Fixtures, Self-Update & Migrations
 ```
 
 ---
@@ -80,13 +83,13 @@ To ensure stability and prevent architectural regressions, LitePSM follows an 8-
     *   `internal/auth`: OAuth 2.0 PKCE loopback listener on `127.0.0.1`.
 *   **Acceptance Gate:** Dual-protocol conformance suite passes against mock MCP servers; synthetic canary tokens confirm zero secret leaks in logs, database dumps, or error responses.
 
-### Phase G: Marketplace Federation, In-Agent `/litepsm` & CLI TUI
+### Phase G: Marketplace Federation, In-Agent `/marketplace` & CLI TUI
 *   **Deliverables:**
     *   Federated source adapters for Claude Code, Codex, and Grok Build marketplaces (rejecting command sources).
     *   Interactive CLI TUI wizard (`litepsm` runner with dropdown agent selector and passive update notices).
-    *   In-agent `/litepsm` command and progressive tool discovery workflow.
+    *   In-agent `/marketplace` command and progressive tool discovery workflow.
     *   `internal/doctor`: Diagnostic checks and `--repair` plan generator.
-*   **Acceptance Gate:** Running `litepsm` in terminal allows seamless agent selection and configuration; agents can invoke `/litepsm` to search and propose verified installations.
+*   **Acceptance Gate:** Running `litepsm` in terminal allows seamless agent selection and configuration; agents can invoke `/marketplace` to search and propose verified installations.
 
 ### Phase H: Cross-Platform Build, Conformance & Packaging
 *   **Deliverables:**
@@ -94,6 +97,13 @@ To ensure stability and prevent architectural regressions, LitePSM follows an 8-
     *   npm distribution package (`litepsm` / `@litepsm/cli`) with native binary bootstrapping.
     *   Comprehensive end-to-end integration and crash-injection test suite.
 *   **Acceptance Gate:** Full CI test matrix green across Windows, Ubuntu, and macOS runners; npm package boots correctly via `npx litepsm`.
+
+### Phase I: Golden Fixtures, Self-Update & Migrations
+*   **Deliverables:**
+    *   Golden host-configuration fixture corpus (`fixtures/hosts/`, `fixtures/source/`).
+    *   `self-update` binary replacement with fail-closed SHA-256 verification (`internal/update`).
+    *   Transactional database migration engine with downgrade prevention (`internal/state/migrations.go`).
+*   **Acceptance Gate:** Fixture-backed adapter tests pass offline; update without a published checksum is refused; higher-schema databases halt with `LPSM-STATE-VERSION-INCOMPATIBLE`.
 
 ---
 

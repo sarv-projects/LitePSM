@@ -128,19 +128,27 @@ Local Bridge Shims, CLI sessions, and the diagnostic doctor interact with the Da
 ### 3.2 Supported IPC Methods
 | Method | Description |
 |---|---|
+| `tools.list` | Lists installed capabilities plus read-only detected external host tools |
 | `catalog.search` | Queries cached index with filters and limits |
 | `catalog.get_item` | Retrieves full listing metadata and version history |
 | `resolver.prepare_plan` | Pure dependency resolution generating `InstallPlan` v2 |
 | `install.execute` | Submits approval and begins transactional execution |
-| `install.update` | Prepares and executes update delta |
 | `install.remove` | Safe removal and unreferenced CAS pruning |
+| `skills.list` | Returns progressive-disclosure skill index for installed trees |
 | `skills.load_body` | Retrieves progressive `SKILL.md` body on demand |
 | `skills.read_resource` | Reads bounded skill supporting resource |
+| `capabilities.search` | Searches capability/tool names across providers |
+| `capabilities.describe` | Inspects capability schema, effects, and status |
 | `provider.probe` | Checks provider health and probes tool schemas |
 | `provider.invoke` | Policy-evaluated tool execution |
+| `invocation.get` | Retrieves invocation status |
+| `invocation.cancel` | Cancels an active invocation |
 | `host.detect_config` | Probes default agent configuration file path |
 | `host.apply_setup` | Injects Bridge shim entry with atomic pre-edit backup |
 | `doctor.run_checks` | Runs 10 non-mutating system diagnostics |
+| `system.status` | Returns daemon version, protocol, PID, and readiness |
+
+> `install.update` is planned but has no handler in `cmd/litepsm/main.go:registerCoreHandlers` — update flows must go through a fresh `resolver.prepare_plan` + `install.execute` until it is implemented.
 
 ---
 
