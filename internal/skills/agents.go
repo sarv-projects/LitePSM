@@ -198,6 +198,15 @@ func openClawGlobalDir(home string) string {
 // AgentSkillDir returns the skill directory for an agent at the given scope.
 // Unknown agents return ok=false; agents without a documented global location
 // return ok=false for scope="global".
+//
+// PRECEDENCE, because it surprises callers: documented per-agent home overrides
+// (CODEX_HOME, CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME, ...) WIN over the `home`
+// argument. That is intentional for the CLI -- those variables are a real user
+// escape hatch and match the convention each agent already follows -- but it
+// means this function is NOT a pure function of its arguments. Any test must
+// neutralise the ambient environment (see useTempHome), and any caller that
+// needs a guaranteed home must set the override explicitly rather than assume
+// the argument is honoured.
 func AgentSkillDir(agentID, scope, projectRoot, home string) (string, bool) {
 	a, ok := LookupAgent(agentID)
 	if !ok {

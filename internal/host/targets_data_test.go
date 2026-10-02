@@ -185,28 +185,15 @@ func TestVerifiedBridgeTargetsReturnsACopy(t *testing.T) {
 // a real temporary HOME, which is the only way to catch path-resolution and
 // permission mistakes.
 func TestGenericAdapterRoundTrip(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("APPDATA", "")
-
-	tgt, ok := LookupBridgeTarget("cursor")
-	if !ok {
-		t.Fatal("cursor target missing")
-	}
-	adapter := NewGenericAdapter(tgt)
+	home := useTempHome(t)
+	adapter := adapterFor(t, "cursor")
 	ctx := context.Background()
 
-	// Pre-existing user content that must survive the install.
-	configDir := filepath.Join(home, ".cursor")
-	if err := os.MkdirAll(configDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(configDir, "mcp.json")
+	// Pre-existing user content that must survive the install. The path comes
+	// from the adapter, because on Windows the resolver may target %APPDATA%.
+	configPath := configPathOf(t, adapter)
 	original := "{\n  \"mcpServers\": {\n    \"mine\": {\"command\": \"npx\"}\n  }\n}\n"
-	if err := os.WriteFile(configPath, []byte(original), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeConfig(t, configPath, original)
 
 	plan, err := adapter.PlanSetup(ctx, "/opt/litepsm/bin/litepsm", filepath.Join(home, "backups"))
 	if err != nil {
@@ -267,24 +254,13 @@ func TestGenericAdapterRoundTrip(t *testing.T) {
 // TestGenericAdapterPreservesUserCommentsEndToEnd is the regression test for the
 // data-loss bug this writer exists to prevent.
 func TestGenericAdapterPreservesUserCommentsEndToEnd(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
-
-	tgt, _ := LookupBridgeTarget("zed")
-	adapter := NewGenericAdapter(tgt)
+	home := useTempHome(t)
+	adapter := adapterFor(t, "zed")
 	ctx := context.Background()
 
-	dir := filepath.Join(home, ".config", "zed")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "settings.json")
+	path := configPathOf(t, adapter)
 	original := "{\n  // my theme, do not clobber\n  \"theme\": \"One Dark\",\n  \"context_servers\": {\n    // my server\n    \"mine\": { \"command\": \"uvx\" }\n  }\n}\n"
-	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeConfig(t, path, original)
 
 	plan, err := adapter.PlanSetup(ctx, "/bin/litepsm", filepath.Join(home, "backups"))
 	if err != nil {
@@ -320,21 +296,10 @@ func TestGenericAdapterPreservesUserCommentsEndToEnd(t *testing.T) {
 }
 
 func TestGenericAdapterDetectsPreExistingComponentsReadOnly(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("APPDATA", "")
-
-	tgt, _ := LookupBridgeTarget("cursor")
-	adapter := NewGenericAdapter(tgt)
-	dir := filepath.Join(home, ".cursor")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "mcp.json"),
-		[]byte(`{"mcpServers":{"a":{"command":"x"},"litepsm":{"command":"y"}}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	useTempHome(t)
+	adapter := adapterFor(t, "cursor")
+	writeConfig(t, configPathOf(t, adapter),
+		`{"mcpServers":{"a":{"command":"x"},"litepsm":{"command":"y"}}}`)
 	comps, err := adapter.DetectPreExistingComponents(context.Background())
 	if err != nil {
 		t.Fatalf("detect failed: %v", err)
@@ -353,11 +318,8 @@ func TestGenericAdapterDetectsPreExistingComponentsReadOnly(t *testing.T) {
 // TestGenericAdapterHonoursEnvOverride proves the documented home overrides are
 // wired, since they are the only escape hatch for tests and sandboxed installs.
 func TestGenericAdapterHonoursEnvOverride(t *testing.T) {
-	home := t.TempDir()
+	home := useTempHome(t)
 	alt := filepath.Join(home, "alt-home")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("APPDATA", "")
 	t.Setenv("KIMI_CODE_HOME", alt)
 
 	tgt, _ := LookupBridgeTarget("kimi-code-cli")

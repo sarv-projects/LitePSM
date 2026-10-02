@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sarv-projects/litepsm/internal/domain"
 )
 
 func TestStripJSONEntryRemovesOnlyTheBridgeEntry(t *testing.T) {
@@ -176,10 +174,7 @@ func TestStripTOMLEntryAbsent(t *testing.T) {
 // TestRemoveSetupRoundTrip proves an install can be fully undone: apply the
 // bridge entry, remove it, and the file must be byte-identical to the original.
 func TestRemoveSetupRoundTrip(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("APPDATA", "")
+	home := useTempHome(t)
 	ctx := context.Background()
 	backups := filepath.Join(home, "backups")
 
@@ -189,25 +184,17 @@ func TestRemoveSetupRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("adapter %s missing: %v", id, err)
 			}
-			tgt, _ := LookupBridgeTarget(id)
 			isTOML := adapter.Descriptor().ConfigFormat == "toml"
 
-			// Seed a realistic config with foreign content.
-			path, err := adapter.DetectConfig(ctx, domain.ScopeUser)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				t.Fatal(err)
-			}
+			// Seed a realistic config with foreign content. The path comes from
+			// the adapter: on Windows several targets resolve under %APPDATA%,
+			// so a hardcoded Unix path would write outside the sandbox.
+			path := configPathOfAny(t, adapter)
 			original := "{\n  \"mine\": {\"command\": \"npx\"}\n}\n"
 			if isTOML {
 				original = "[mine]\ncommand = \"npx\"\n"
 			}
-			_ = tgt
-			if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-				t.Fatal(err)
-			}
+			writeConfig(t, path, original)
 
 			plan, err := adapter.PlanSetup(ctx, "/bin/litepsm", backups)
 			if err != nil {
@@ -248,14 +235,10 @@ func TestRemoveSetupRoundTrip(t *testing.T) {
 }
 
 func TestRemoveSetupOnUninstalledHostIsSafe(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("APPDATA", "")
+	home := useTempHome(t)
 	ctx := context.Background()
 
-	tgt, _ := LookupBridgeTarget("cursor")
-	adapter := NewGenericAdapter(tgt)
+	adapter := adapterFor(t, "cursor")
 
 	// No file at all.
 	result, err := RemoveSetup(ctx, adapter, filepath.Join(home, "backups"))
@@ -270,12 +253,9 @@ func TestRemoveSetupOnUninstalledHostIsSafe(t *testing.T) {
 	}
 
 	// File present, no bridge entry.
-	path, _ := adapter.DetectConfig(ctx, domain.ScopeUser)
-	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	path := configPathOf(t, adapter)
 	original := `{"mcpServers": {"mine": {"command": "npx"}}}`
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeConfig(t, path, original)
 	result, err = RemoveSetup(ctx, adapter, filepath.Join(home, "backups"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -290,10 +270,7 @@ func TestRemoveSetupOnUninstalledHostIsSafe(t *testing.T) {
 }
 
 func TestRemoveFromAllReportsPerHostOutcomes(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("APPDATA", "")
+	home := useTempHome(t)
 	ctx := context.Background()
 	backups := filepath.Join(home, "backups")
 

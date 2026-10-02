@@ -106,12 +106,8 @@ func TestPlanInstall(t *testing.T) {
 	if err != nil || len(found) != 1 {
 		t.Fatalf("discover failed: %v %d", err, len(found))
 	}
-	home := t.TempDir()
+	home := useTempHome(t)
 	project := t.TempDir()
-
-	// Same XDG isolation as TestAgentSkillDirResolution: without it, CI runners
-	// resolve XDG-style agents into /home/runner/.config instead of the sandbox.
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	ops := PlanInstall(found, []string{"claude-code", "codex"}, "project", project, home)
 
 	byHost := map[string]string{}
@@ -165,6 +161,9 @@ func TestCopySkillDir(t *testing.T) {
 }
 
 func TestHostSkillDir(t *testing.T) {
+	// Isolate the per-agent home overrides; HostSkillDir honours them over the
+	// explicit home argument, so an ambient value would redirect the assertion.
+	useTempHome(t)
 	if _, ok := HostSkillDir("unknown-agent", "project", "/p", "/h"); ok {
 		t.Error("unknown agent must not have a mapped dir")
 	}
