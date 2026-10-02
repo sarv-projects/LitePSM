@@ -52,7 +52,7 @@ When an MCP provider requires user authentication via OAuth 2.0:
 │                                                                        │
 │   1. Generate PKCE Verifier & Code Challenge (RFC 7636)                │
 │   2. Bind Local Loopback Listener strictly to 127.0.0.1 on Port 0      │
-│   3. Construct Auth URL with redirect_uri=http://127.0.0.1:<port>/cb   │
+│   3. Construct Auth URL with redirect_uri=http://127.0.0.1:<port>/callback │
 │   4. Open System Default Browser to Provider Auth Page                 │
 │   5. Await Callback with State Validation (Timeout: 120 seconds)       │
 │   6. Exchange Authorization Code for Access & Refresh Tokens           │

@@ -27,20 +27,20 @@ Using automated property-testing generators:
 
 ---
 
-## 3. Hostile Archive Fixtures (`fixtures/hostile/`)
+## 3. Hostile Archive Cases (generated in-code — no `fixtures/hostile/` directory)
 
-Automated CI runs test extraction against known malicious archive payloads:
-*   `zip-slip.zip`: Contains `../../../../tmp/evil.sh` traversal entries.
-*   `windows-drive.zip`: Contains `C:\Windows\System32\evil.dll` drive-letter escapes.
-*   `symlink-escape.tar.gz`: Contains a symlink pointing to `/etc/shadow` followed by a file writing through the symlink.
-*   `zip-bomb-recursive.zip`: Nested archive expanding to 50 gigabytes.
-*   `case-collision.zip`: Contains `File.txt` and `file.txt` colliding on NTFS/APFS.
+Automated CI runs extraction against malicious archive payloads constructed in-test (`test/fuzz_hostile_archive_test.go`, `internal/artifact/artifact_test.go`):
+*   Zip-slip traversal (`../../../../tmp/evil.sh`) → rejected with `LPSM-CAS-ARCHIVE-SLIP`.
+*   Windows drive-letter escapes (`C:\Windows\System32\evil.dll`, UNC, `:` identifiers) → rejected.
+*   Symlinks, hardlinks, FIFOs, sockets, device nodes → rejected.
+*   Oversize payloads (256 MiB archive / 1 GiB tree / 20k files / 128 MiB single-file caps) → rejected before disk allocation.
+*   Case-fold collisions (`File.txt` vs `file.txt`) → rejected.
 
 ---
 
-## 4. Crash-Injection Fault Matrix
+## 4. Crash-Injection Fault Matrix (target — systematic harness planned)
 
-The daemon test harness injects simulated process termination (`SIGKILL` / `os.Exit(1)`) across 11 critical operational checkpoints:
+Crash recovery logic exists (`DB.RecoverIncompleteOperations` in `internal/state/operations.go`, exercised by `test/conformance_test.go`), but no systematic kill-at-each-checkpoint harness (`CP-01`…`CP-11` markers) exists in-tree yet. The matrix below is the acceptance target for that harness, which must inject simulated process termination (`SIGKILL` / `os.Exit(1)`) across 11 critical operational checkpoints:
 
 | Injection Point | Operation State | Verification on Daemon Restart |
 |---|---|---|

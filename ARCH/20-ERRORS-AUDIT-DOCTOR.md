@@ -35,9 +35,9 @@ Every error returned by LitePSM across CLI, IPC, and Bridge MCP interfaces confo
 
 ---
 
-## 2. CLI Exit Code Contract
+## 2. CLI Exit Code Contract (target — current CLI exits 0/1 only)
 
-CLI exit codes follow stable numerical ranges to allow robust shell scripting:
+CLI exit codes follow stable numerical ranges to allow robust shell scripting. Implementation note: `cmd/litepsm/*.go` currently calls `os.Exit(1)` for every failure mode, so distinct codes are not yet observable; the table below is the contract to implement:
 
 | Exit Code | Classification | Meaning |
 |---|---|---|

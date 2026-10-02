@@ -34,15 +34,19 @@ The dependency resolver (`internal/resolver`) is a pure, side-effect-free functi
 ```
 
 ### 1.1 Cycle Detection & Diamond Dependency Resolution Algorithm
-The resolver aggregates incoming constraints across all paths in the dependency DAG, verifies that a non-empty version intersection exists, and ensures the selected version satisfies every parent constraint:
+The resolver aggregates incoming constraints across all paths in the dependency DAG, verifies that a non-empty version intersection exists, and ensures the selected version satisfies every parent constraint. Entry point is `Resolver.Resolve(ctx, rootListingID, rootConstraintStr)` (`internal/resolver/resolver.go`), returning `*domain.DependencyResolutionResult`; errors use `domain.ErrResolveCycle` (`LPSM-RESOLVE-CYCLE`) and `domain.ErrResolveConflict` (`LPSM-RESOLVE-CONFLICT`):
 
 ```go
+// Sketch — field/method names follow internal/resolver/resolver.go
 type VersionConstraints struct {
     ListingID   string
     Constraints []string
 }
 
-func (r *Resolver) ResolveDependencies(ctx context.Context, root *domain.Listing, targetVer string) ([]domain.DependencyResolution, error) {
+// Actual signature: Resolve(ctx, rootListingID, rootConstraintStr) (*domain.DependencyResolutionResult, error)
+// Cycle: domain.ErrResolveCycle(chain) → LPSM-RESOLVE-CYCLE
+// Conflict: domain.ErrResolveConflict(id, reason) → LPSM-RESOLVE-CONFLICT
+func (r *Resolver) Resolve(ctx context.Context, rootListingID, rootConstraintStr string) (*domain.DependencyResolutionResult, error) {
     resolved := make([]domain.DependencyResolution, 0)
     selected := make(map[string]*domain.VersionRecord)
     aggregatedConstraints := make(map[string][]string)
@@ -52,7 +56,7 @@ func (r *Resolver) ResolveDependencies(ctx context.Context, root *domain.Listing
     var collectConstraints func(listingID, verConstraint string) error
     collectConstraints = func(listingID, verConstraint string) error {
         if visiting[listingID] {
-            return domain.NewError("LPSM-RESOLVE-CYCLE", fmt.Sprintf("Circular dependency detected at %s", listingID))
+            return domain.ErrResolveCycle(listingID) // LPSM-RESOLVE-CYCLE
         }
 
         aggregatedConstraints[listingID] = append(aggregatedConstraints[listingID], verConstraint)
@@ -63,9 +67,7 @@ func (r *Resolver) ResolveDependencies(ctx context.Context, root *domain.Listing
         // Select or verify candidate version against ALL accumulated constraints
         candidate, err := r.selectBestVersionIntersect(ctx, listingID, aggregatedConstraints[listingID])
         if err != nil {
-            return domain.NewError("LPSM-RESOLVE-CONFLICT", 
-                fmt.Sprintf("Constraint conflict for %s across incoming requirements %v: %v", 
-                    listingID, aggregatedConstraints[listingID], err))
+            return domain.ErrResolveConflict(listingID, err.Error()) // LPSM-RESOLVE-CONFLICT
         }
         selected[listingID] = candidate
 
@@ -96,23 +98,24 @@ func (r *Resolver) ResolveDependencies(ctx context.Context, root *domain.Listing
 
 ## 2. Safe Extraction Pipeline
 
-Once a plan is approved, the artifact engine (`internal/artifact`) verifies the archive hash, spools it safely to a bounded temporary file, and extracts the payload into an isolated staging directory using an `io.ReaderAt`:
+Once a plan is approved, the artifact engine (`internal/artifact`) verifies the archive hash, spools it safely to a bounded temporary file, and extracts the payload into an isolated staging directory. Entry points are `ExtractArchiveSafelyWithLimits` / `ExtractFileSafely` (`internal/artifact/extractor.go`); all safety rejections use `domain.ErrArchiveSlip` (`LPSM-CAS-ARCHIVE-SLIP`), not `LPSM-ARTIFACT-*`:
 
 ```go
-func (e *ArtifactEngine) ExtractArchiveSafely(r io.ReaderAt, size int64, stagingDir string) (*domain.ExtractedTreeInfo, error) {
+// Sketch — follows internal/artifact/extractor.go:extractZip
+func ExtractArchiveSafelyWithLimits(r io.ReaderAt, size int64, archiveType string, stagingDir string, limits ExtractionLimits) (*domain.ExtractedTreeInfo, error) {
     var totalBytes int64
     var fileCount int
     seenLower := make(map[string]string) // Case-fold collision detection
 
     zr, err := zip.NewReader(r, size)
     if err != nil {
-        return nil, domain.NewError("LPSM-ARTIFACT-MALFORMED", "Invalid archive format")
+        return nil, domain.ErrArchiveSlip("invalid or corrupt archive") // LPSM-CAS-ARCHIVE-SLIP
     }
 
     for _, f := range zr.File {
         fileCount++
         if fileCount > 20000 {
-            return nil, domain.NewError("LPSM-ARTIFACT-LIMIT-EXCEEDED", "Archive exceeds max file count (20,000)")
+            return nil, domain.ErrArchiveSlip("archive exceeds max file count") // LPSM-CAS-ARCHIVE-SLIP
         }
 
         // Normalize slashes and backslashes
@@ -121,25 +124,25 @@ func (e *ArtifactEngine) ExtractArchiveSafely(r io.ReaderAt, size int64, staging
 
         // Reject absolute paths, relative parent traversal, and Windows drive/colon identifiers
         if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "../") || cleaned == ".." || strings.Contains(cleaned, ":") {
-            return nil, domain.NewError("LPSM-ARTIFACT-UNSAFE-PATH", fmt.Sprintf("Path traversal or illegal identifier detected: %s", f.Name))
+            return nil, domain.ErrArchiveSlip(fmt.Sprintf("unsafe path: %s", f.Name)) // LPSM-CAS-ARCHIVE-SLIP
         }
 
         // Check for case-fold collisions on case-insensitive filesystems (Windows/macOS)
         lowerPath := strings.ToLower(cleaned)
         if orig, exists := seenLower[lowerPath]; exists && orig != cleaned {
-            return nil, domain.NewError("LPSM-ARTIFACT-COLLISION", fmt.Sprintf("Case-fold collision detected: %s collides with %s", cleaned, orig))
+            return nil, domain.ErrArchiveSlip(fmt.Sprintf("case-fold collision: %s", cleaned)) // LPSM-CAS-ARCHIVE-SLIP
         }
         seenLower[lowerPath] = cleaned
 
         // Prohibit symlinks, hardlinks, and special device files
         if f.Mode()&os.ModeSymlink != 0 || f.Mode()&os.ModeNamedPipe != 0 || f.Mode()&os.ModeDevice != 0 {
-            return nil, domain.NewError("LPSM-ARTIFACT-UNSUPPORTED-TYPE", "Symlinks, FIFOs, and devices are strictly forbidden")
+            return nil, domain.ErrArchiveSlip("prohibited file type") // symlinks/FIFOs/devices/sockets — LPSM-CAS-ARCHIVE-SLIP
         }
 
         targetPath := filepath.Join(stagingDir, filepath.FromSlash(cleaned))
         // Boundary check: ensure target stays strictly within stagingDir
         if !strings.HasPrefix(targetPath, filepath.Clean(stagingDir)+string(filepath.Separator)) {
-            return nil, domain.NewError("LPSM-ARTIFACT-PATH-ESCAPE", "Extracted path escapes staging root")
+            return nil, domain.ErrArchiveSlip("path traversal escape") // LPSM-CAS-ARCHIVE-SLIP
         }
 
         if f.FileInfo().IsDir() {
@@ -151,11 +154,11 @@ func (e *ArtifactEngine) ExtractArchiveSafely(r io.ReaderAt, size int64, staging
 
         // Enforce max single file size (128 MiB) and cumulative total size (1 GiB)
         if f.UncompressedSize64 > 128*1024*1024 {
-            return nil, domain.NewError("LPSM-ARTIFACT-LIMIT-EXCEEDED", "File exceeds max single file limit (128 MiB)")
+            return nil, domain.ErrArchiveSlip("single file size limit exceeded") // LPSM-CAS-ARCHIVE-SLIP
         }
         totalBytes += int64(f.UncompressedSize64)
         if totalBytes > 1024*1024*1024 {
-            return nil, domain.NewError("LPSM-ARTIFACT-LIMIT-EXCEEDED", "Total uncompressed size exceeds limit (1 GiB)")
+            return nil, domain.ErrArchiveSlip("total extracted size limit exceeded") // LPSM-CAS-ARCHIVE-SLIP
         }
 
         if err := writeBoundedFile(f, targetPath); err != nil {

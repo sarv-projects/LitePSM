@@ -39,7 +39,7 @@ Third-party packages (skills, MCP distribution archives, plugins) are untrusted.
 *   **Max Total Extracted Files:** 20,000 files.
 *   **Max Single File Size:** 128 MiB.
 *   **Max Normalized Path Length:** 1,024 bytes.
-*   **Max Compression Ratio:** 100:1 (Zip-bomb defense).
+*   **Max Compression Ratio:** 100:1 (Zip-bomb defense) — planned; `internal/artifact/extractor.go` currently enforces archive/tree/file-count/single-file/path caps but no explicit ratio check. Treat size caps as the enforced mitigation until the ratio check lands.
 *   **Max HTTP Redirects:** 3 hops across identical origin; cross-origin redirects require explicit re-authorization.
 
 ### 2.2 Prohibited Archive Artifacts

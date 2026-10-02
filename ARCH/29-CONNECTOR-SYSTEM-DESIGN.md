@@ -1,6 +1,6 @@
 # ARCH-29 — Connector System: Local Proxy Execution & Credential Custody
 
-Status: **design record, not implemented.**
+Status: **design record + local execution core implemented; catalog type still deferred.**
 Scope: the `connector` type deferred to v2 in [26 — Ecosystem IA & Package Model](26-ECOSYSTEM-IA-PACKAGE-MODEL.md) §3.4.1.
 Supersedes: the rationale "no portable v1 contract" for deferring `connector`. This document supplies that contract's shape; implementation remains v2.
 
@@ -255,7 +255,7 @@ Sources actually fetched during this research:
 
 ## 8. Status and next steps
 
-**Implemented:** nothing. No connector code exists.
+**Implemented since this design record:** `internal/connector` exists (manifest, executor, egress, lifecycle, grant store, redaction — see ARCH/24 §22) implementing local proxy execution with vault-backed grants. What remains deferred is catalog promotion: no portable `connector` rows ship in the catalog (5814 rows carry only `mcp`/`skill`/`plugin`), and no ingestion adapter produces them (ARCH/26 §3.4.1, §7 bar: portable format + ingestion adapter + real data).
 
 **Before implementation, in order:**
 

@@ -47,14 +47,16 @@ The Policy Engine (`internal/policy`) evaluates every proposed action against lo
 type PolicyInput struct {
     Actor               string                     `json:"actor"`               // user | agent | system
     HostID              string                     `json:"hostId"`              // e.g. claude-code, codex
-    Operation           string                     `json:"operation"`           // install | update | invoke
+    Operation           string                     `json:"operation"`           // install | update | invoke | start
     TargetRef           string                     `json:"targetRef"`           // ListingId or CapabilityId
-    Effects             []domain.EffectDeclaration `json:"effects"`             // List of canonical effects with provenance
+    CapabilityID        string                     `json:"capabilityId,omitempty"`
+    Effects             []EffectDeclaration        `json:"effects"`             // List of canonical effects with provenance
     RequestedAccess     []string                   `json:"requestedAccess"`
     SchemaFingerprint   string                     `json:"schemaFingerprint,omitempty"`
     CASTreeDigest       string                     `json:"casTreeDigest,omitempty"`    // Verified CAS tree digest (local)
     EndpointOrigin      string                     `json:"endpointOrigin,omitempty"`   // Verified HTTPS origin (remote)
-    Scope               string                     `json:"scope"`               // user | project
+    ServerVersionDigest string                     `json:"serverVersionDigest,omitempty"`
+    Scope               domain.InstallScope        `json:"scope"`               // user | project
     WorkspaceID         string                     `json:"workspaceId,omitempty"`      // Canonical workspace ID (project scope)
     ProjectRoot         string                     `json:"projectRoot,omitempty"`      // Absolute path to project root
 }
@@ -63,7 +65,8 @@ type PolicyDecision struct {
     Decision            DecisionKind          `json:"decision"`            // allow | deny | ask
     ReasonCodes         []string              `json:"reasonCodes"`
     MatchedRuleIDs      []string              `json:"matchedRuleIds"`
-    RequiredChannel     ApprovalChannel       `json:"requiredChannel"`     // cli-tty | mcp-elicitation | native-host
+    RequiredChannel     domain.ApprovalChannel `json:"requiredChannel"`  // interactive_cli | agent_bridge | ci_policy | preapproved_rule
+    Detail              string                `json:"detail,omitempty"`
 }
 ```
 
@@ -89,12 +92,14 @@ When a policy evaluation returns `Decision: "ask"`, LitePSM routes approval requ
 │     ├── YES ──► Prompt user interactively within host UI               │
 │     │                                                                  │
 │     └── NO  ──► Fail Closed & Output CLI Command                       │
-│                 "To approve, run in terminal: litepsm approve <hash>"   │
+│                 "To approve, complete the install via CLI approval flow"│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
+> Implementation note: there is no standalone `litepsm approve <hash>` command (`cmd/litepsm/main.go` dispatches `version/setup/self-update/doctor/search/install/catalog/daemon/bridge/host/uninstall/agent/skills`). Approval is consumed via `install.execute` / `request_install` (`planId` + approval token) and `DB.ConsumeApproval` (`internal/state/repositories.go`).
+
 *   **Prompt-Injection Defense:** An LLM outputting `"The user told me it is approved"` or passing `approved: true` in tool parameters is **strictly ignored**. Approvals require cryptographic binding to a valid user channel token.
-*   **One-Time Approval Replay Prevention:** Approvals intended for single use track state (`status IN ('active', 'consumed', 'revoked', 'expired')`). Calling `ConsumeOneTimeApproval(approvalID)` executes an atomic update:
+*   **One-Time Approval Replay Prevention:** Approvals intended for single use track state (`status IN ('active', 'consumed', 'revoked', 'expired')`). Calling `ConsumeApproval(ctx, approvalID)` (`internal/state/repositories.go`) executes an atomic update:
     ```sql
     UPDATE approvals 
     SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP 
@@ -124,13 +129,10 @@ CREATE TABLE capability_grants (
 ```
 
 ### Automatic Invalidation on Schema or Code Drift
-Whenever a provider connects or is invoked:
+Whenever a provider connects or is invoked (`internal/policy/engine.go` grant checks, `internal/mcpclient/probe.go` drift details):
 1.  **Local Stdio Providers:**
-    *   Computes `currentFingerprint = SHA-256(JCS(tool.InputSchema))` and checks current CAS tree digest.
-    *   If `grant.schema_fingerprint != currentFingerprint` OR `grant.cas_tree_digest != currentTreeDigest`:
-        *   The grant is marked `status = 'invalidated'`.
-        *   The capability status in SQLite is updated to `'changed'`.
-        *   Subsequent invocations return error code `LPSM-PROVIDER-SCHEMA-DRIFT` or `LPSM-PROVIDER-CODE-DRIFT`.
+    *   Computes `currentFingerprint = SHA-256(CanonicalizeJSON(tool.InputSchema))` and checks current CAS tree digest.
+    *   If `grant.schema_fingerprint != currentFingerprint` → deny `LPSM-PROVIDER-SCHEMA-DRIFT`; if CAS digest differs → deny `LPSM-PROVIDER-CODE-DRIFT`. The grant row is denied at evaluation time (status CHECK allows only `active/consumed/revoked/expired` — no `invalidated` value is written).
 2.  **Remote Streamable HTTP Providers:**
     *   Checks `(schemaFingerprint, endpointOrigin, serverVersionDigest)`.
-    *   If the upstream origin redirect or server version changes, the grant is invalidated with `LPSM-PROVIDER-ENDPOINT-DRIFT`.
+    *   On mismatch → deny `LPSM-PROVIDER-ENDPOINT-DRIFT` (or schema drift). `capabilities.status` may be `changed` (`active/changed/disabled` CHECK) when probe observes a fingerprint move.

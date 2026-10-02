@@ -66,9 +66,9 @@ For supported agents, LitePSM configures a single Bridge entry per host. Subsequ
 *   **Decision:** Tool inputs are fingerprinted via SHA-256 digests of their JSON Schemas (`schemaFingerprint`). Any drift upon provider reconnection immediately invalidates pre-existing capability grants and halts execution until re-approved.
 *   **Status:** Accepted.
 
-### D-017: Official MCP SDK & Named Protocol Profiles
+### D-017: Hand-Rolled MCP JSON-RPC & Named Protocol Profiles
 *   **Context:** Custom wire protocol implementations risk subtle incompatibilities.
-*   **Decision:** LitePSM utilizes the official MCP Go SDK and explicitly tests two named protocol profiles:
+*   **Decision:** LitePSM hand-rolls MCP JSON-RPC 2.0 (`internal/ipc`, `internal/bridge`, `internal/mcpclient`; no external MCP SDK in `go.mod`) and explicitly tests two named protocol profiles:
     1.  **Modern Profile:** 2026-07-28 stateless architecture with Streamable HTTP and header mirroring (`Mcp-Method`).
     2.  **Legacy Profile:** 2025-11-25 stateful initialization for backwards compatibility.
 *   **Status:** Accepted.

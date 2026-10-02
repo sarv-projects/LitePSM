@@ -85,8 +85,5 @@ type RuntimeAdapter interface {
 }
 ```
 
-### Implementations in v1
-*   `RemoteHTTPRuntime`: Configures remote Streamable HTTP / SSE endpoints. Does not spawn local processes; prepares authorization headers.
-*   `NodeStdioRuntime`: Resolves local `node` binary; verifies version compatibility; constructs `node dist/index.js` invocation arguments.
-*   `PythonStdioRuntime`: Resolves local Python binary; verifies virtualenv; constructs module invocation arguments.
-*   `BinaryStdioRuntime`: Verifies executable permissions on pre-compiled native binaries within the CAS tree.
+### Implementations (planned — no `internal/runtime` package exists yet)
+*   `RemoteHTTPRuntime`, `NodeStdioRuntime`, `PythonStdioRuntime`, `BinaryStdioRuntime` are the target strategies. Current launch specs are built ad-hoc in `internal/install`, `internal/bridge`, and `internal/host` flows; no `RuntimeAdapter` interface is compiled in-tree. Do not present these as shipped.

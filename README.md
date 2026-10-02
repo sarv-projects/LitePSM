@@ -294,7 +294,7 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
 
 ## 6. Technical Stack & Development Invariants
 
-*   **Local Core & Daemon:** Written in Go (1.23+) for static cross-platform compilation, OS process group / Job Object control, SQLite WAL concurrency, and official MCP Go SDK integration.
+*   **Local Core & Daemon:** Written in Go (1.23+) for static cross-platform compilation, OS process group / Job Object control, SQLite WAL concurrency, and hand-rolled MCP JSON-RPC 2.0 (no external SDK).
 *   **Database:** SQLite 3 with Write-Ahead Logging (`WAL`), utilizing pure-Go drivers (`modernc.org/sqlite`) for zero-CGO cross-compilation.
 *   **Web Marketplace:** Static export using Next.js 15 / React 19 + Tailwind CSS + Radix UI, deployed to Cloudflare Pages.
 *   **Testing:** Multi-tier testing pyramid featuring property-based tests, hostile archive fuzzing, crash injection, and synthetic secret canary scans.

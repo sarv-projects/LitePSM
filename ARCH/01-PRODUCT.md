@@ -48,6 +48,8 @@ To prevent misleading claims of compatibility, LitePSM categorizes every item ac
 [Listed] ──> [Resolvable] ──> [Installable] ──> [Runnable] ──> [Tested]
 ```
 
+> Vocabulary note: these five stages are the product contract for user-facing status. They are not operation states — daemon operations track `created → resolving → awaiting_approval → … → committed / rolled_back` (`internal/state/operations.go`). No automated `runnable`/`tested` prober populates stages 4–5 yet; report them as `Unknown` until evidence exists (honesty rule, ARCH/26 §12.4).
+
 1.  **Listed:** The item's metadata has been ingested from an upstream source and normalized into a valid LitePSM Listing record.
 2.  **Resolvable:** All package artifacts, external references, and dependencies can be resolved to immutable hashes (Git commit SHA, archive SHA-256 digest).
 3.  **Installable:** The artifact has been verified to unpack safely into the local Content-Addressed Store (CAS) without exceeding security limits or triggering path-traversal errors.
@@ -63,14 +65,17 @@ When a user installs LitePSM (via `npm install -g litepsm`, `curl`, or direct bi
 
 ```text
 $ litepsm
-? Select your AI Agent to configure:
-  > Claude Code
-    OpenAI Codex
-    Grok Build
-    OpenCode
-    Cline
-    Generic MCP Configuration (JSON export)
+Select your primary AI Agent Host:
+  [1] Cline          (VS Code Extension - cline_mcp_settings.json)
+  [2] Pi Agent       (Terminal Coding Agent (pi) - mcp.json / config.json + TS Extension)
+  [3] Grok Build     (Terminal / IDE (grok) - config.toml (TOML))
+  [4] Claude Code    (Terminal CLI (claude) - ~/.claude.json (JSON))
+  [5] OpenAI Codex   (Terminal CLI (codex) - config.toml (TOML))
+  [6] OpenCode       (Open-source CLI (opencode) - opencode.json (v1 / v2))
+  [q] Quit
 ```
+
+> Implementation note: the wizard lists only the 6 bespoke adapters (`cmd/litepsm/wizard.go:supportedAgents`). The remaining 44 generic `BridgeTarget` rows are managed via `litepsm host setup <id>` / `litepsm host list` (50 total — see ARCH/30). There is no separate `Generic MCP Configuration (JSON export)` wizard entry.
 
 1.  **Agent Selection:** User selects their agent from the interactive terminal dropdown.
 2.  **Automated Path Discovery:** LitePSM scans documented default paths across Windows, macOS, and Linux (e.g., `~/.claude.json`, `%APPDATA%\Codex\config.json`).
@@ -84,10 +89,11 @@ $ litepsm
       > Exit
     ```
 4.  **Atomic Registration:** Upon locating or receiving the path, LitePSM creates a timestamped pre-edit backup, safely parses the file, injects the pinned LitePSM Bridge entry, and atomically replaces the file.
-5.  **Passive Update Notice:** On every interactive launch, LitePSM queries the static catalog pointer (`/v1/current.json`). If updates exist for locally installed capabilities, it displays an informational banner without touching local state:
+5.  **Passive Advisory Notice (target — currently compiled-in only):** The intended flow queries the static catalog pointer (`/v1/current.json`) for capability updates without touching local state. Current `verifyRuntimeAdvisories` (`cmd/litepsm/wizard.go`) prints only the compiled-in protocol version and adapter count with no network fetch; `litepsm update` / `self-update` updates the LitePSM binary itself (`internal/update`), not installed capabilities. Capability refresh is `litepsm catalog sync` followed by reinstall until an update-notice lands:
     ```text
-    [*] 2 installed capabilities have updates available. Run 'litepsm update' to inspect changes.
+    [*] 2 installed capabilities have updates available. Run 'litepsm catalog sync' to refresh, then reinstall to inspect changes.
     ```
+    (`litepsm update` is reserved for binary self-update — see `runSelfUpdate` in `cmd/litepsm/main.go`.)
 
 ### 5.2 In-Agent Interaction (`/marketplace`)
 Inside any configured agent (e.g., Claude Code, Codex, OpenCode), the agent or user can invoke LitePSM:
@@ -96,14 +102,15 @@ Inside any configured agent (e.g., Claude Code, Codex, OpenCode), the agent or u
 User / Agent: /marketplace search postgres
 ```
 
-1.  **Bounded MCP Surface:** The agent queries the local LitePSM Bridge shim using `search_catalog`, `describe_capability`, or `list_installed`.
+1.  **Bounded MCP Surface:** The agent queries the local LitePSM Bridge shim using `search_catalog`, `describe_capability`, `list_installed`, `get_extension`, `load_skill`, and related tools (`internal/bridge/shim.go:initTools`).
 2.  **Progressive Disclosure:** Search results return compact summaries (name, kind, publisher, verified status). Detailed tool schemas and skill contents are retrieved only when specifically requested.
-3.  **Install Plan Display:** When an agent proposes installing a capability, it calls `prepare_install`, which generates an immutable `InstallPlan` detailing affected paths, runtime commands, and declared permissions.
-4.  **User Confirmation Boundary:** The Bridge enforces that installation cannot proceed without out-of-band user approval. If the agent's host UI does not support reliable interactive form elicitation, the Bridge returns the exact CLI command for the user to execute:
+3.  **Install Plan Display:** When an agent proposes installing a capability, it calls `prepare_install`, which previews an immutable `InstallPlan` detailing affected paths, runtime commands, and declared permissions. Execution goes through `request_install` (`planId` + human approval token), not CLI flags.
+4.  **User Confirmation Boundary:** The Bridge enforces that installation cannot proceed without out-of-band user approval. If the agent's host UI does not support reliable interactive form elicitation, the Bridge returns the exact CLI command for the user to execute (current CLI takes no `--plan-id` flag — see `litepsm install --help`):
     ```text
     To approve this installation, run in your terminal:
-    litepsm install mcp:builtin:mcp-registry/postgres --plan-id 01J9X...
+    litepsm install <listing-id> --version <ver> --scope user|project
     ```
+    (`litepsm install` usage: `litepsm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]` — `cmd/litepsm/main.go`.)
 
 ---
 
