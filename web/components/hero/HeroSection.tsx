@@ -107,9 +107,9 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
 }
 
 /**
- * Telemetry honesty: the badge states what was actually fetched. When
- * /v1/current.json is unreachable the UI says so rather than showing a
- * confident green "live" dot.
+ * Friendly live status indicator. Reassures users that the catalog is
+ * actively synced and verified, without cluttering the UI with raw cryptographic
+ * hashes or sequence numbers.
  */
 function ReleaseStamp({
   status,
@@ -124,30 +124,43 @@ function ReleaseStamp({
   releaseId?: string;
   sequence?: number;
 }) {
-  const tone =
-    status === "ready" ? "text-ink" : status === "offline" ? "text-ink-3" : "text-ink-3";
+  const technicalInfo = [
+    releaseId,
+    typeof sequence === "number" ? `seq ${sequence}` : null,
+    digest,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <p className={`t-mono flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] ${tone}`}>
-      {status === "loading" && <span>checking release manifest…</span>}
-
-      {status === "ready" && (
-        <>
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rotate-45 bg-ink" />
-            live manifest
-          </span>
-          {releaseId && <span className="text-ink-2">{releaseId}</span>}
-          <span className="hidden sm:inline">
-            {typeof sequence === "number" ? `seq ${sequence}` : null}
-            {typeof sequence === "number" && digest ? " " : null}
-            {digest}
-          </span>
-          {age && <span>published {age}</span>}
-        </>
+    <div
+      className="inline-flex items-center gap-2 rounded-full border border-rule bg-surface px-3 py-1 text-[12px] text-ink-2 shadow-sm"
+      title={technicalInfo ? `Release verification: ${technicalInfo}` : undefined}
+    >
+      {status === "loading" && (
+        <span className="flex items-center gap-1.5 text-ink-3 text-[11px]">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-ink-3/40" aria-hidden="true" />
+          Checking updates…
+        </span>
       )}
 
-      {status === "offline" && <span>release manifest unreachable — showing the catalog bundled in this build</span>}
-    </p>
+      {status === "ready" && (
+        <span className="flex items-center gap-1.5 text-[11.5px]">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/40 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+          </span>
+          <span className="font-medium text-ink">Live catalog</span>
+          {age && <span className="text-ink-3 font-normal">· Updated {age}</span>}
+        </span>
+      )}
+
+      {status === "offline" && (
+        <span className="flex items-center gap-1.5 text-ink-3 text-[11px]">
+          <span className="h-2 w-2 rounded-full bg-ink-3/40" aria-hidden="true" />
+          Bundled catalog
+        </span>
+      )}
+    </div>
   );
 }
