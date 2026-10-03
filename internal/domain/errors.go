@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -42,6 +43,15 @@ type LPSMError struct {
 	CorrelationID string         `json:"correlationId,omitempty"`
 	CauseCode     string         `json:"causeCode,omitempty"`
 	Details       map[string]any `json:"details,omitempty"`
+	Cause         error          `json:"-"`
+}
+
+// Unwrap returns the underlying cause error.
+func (e *LPSMError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
 }
 
 // Error implements the standard error interface.
@@ -289,7 +299,8 @@ func IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	if lpsmErr, ok := err.(*LPSMError); ok {
+	var lpsmErr *LPSMError
+	if errors.As(err, &lpsmErr) && lpsmErr != nil {
 		return lpsmErr.Retryable
 	}
 	return false
@@ -300,7 +311,8 @@ func ErrorCode(err error) string {
 	if err == nil {
 		return ""
 	}
-	if lpsmErr, ok := err.(*LPSMError); ok {
+	var lpsmErr *LPSMError
+	if errors.As(err, &lpsmErr) && lpsmErr != nil {
 		return lpsmErr.Code
 	}
 	return ""

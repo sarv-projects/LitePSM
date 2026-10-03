@@ -158,10 +158,11 @@ var (
 	// credentialShapedKeys is the normative blocklist. Any of these keys
 	// carrying a non-empty value anywhere in the manifest fails validation.
 	credentialShapedKeys = []string{
-		"clientsecret", "client_secret", "apikey", "api_key", "accesstoken",
+		"clientsecret", "client_secret", "apikey", "api_key", "api_token", "accesstoken",
 		"access_token", "refreshtoken", "refresh_token", "password",
-		"privatekey", "private_key", "token", "secret", "bearer",
+		"privatekey", "private_key", "token", "secret", "bearer", "authorization", "x_api_key",
 	}
+	envNameRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 )
 
 // ParseManifest decodes and validates a connector manifest.
@@ -171,6 +172,9 @@ func ParseManifest(data []byte) (*ConnectorManifest, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("connector manifest is not valid JSON: %w", err)
+	}
+	if dec.More() {
+		return nil, fmt.Errorf("connector manifest contains trailing content after JSON")
 	}
 	if err := m.Validate(); err != nil {
 		return nil, err
@@ -212,6 +216,21 @@ func (m *ConnectorManifest) Validate() error {
 	if m.Reach.OpenAPI != nil {
 		if _, err := url.ParseRequestURI(m.Reach.OpenAPI.BaseURL); err != nil {
 			return fmt.Errorf("reach.openapi.baseUrl %q is not a valid URL: %w", m.Reach.OpenAPI.BaseURL, err)
+		}
+	}
+	if m.Reach.MCP != nil {
+		if len(m.Reach.MCP.Command) == 0 && m.Reach.MCP.URL == "" {
+			return fmt.Errorf("reach.mcp must declare either command or url")
+		}
+		if m.Reach.MCP.URL != "" {
+			if _, err := url.ParseRequestURI(m.Reach.MCP.URL); err != nil {
+				return fmt.Errorf("reach.mcp.url %q is not a valid URL: %w", m.Reach.MCP.URL, err)
+			}
+		}
+		for envKey := range m.Reach.MCP.Env {
+			if !envNameRe.MatchString(envKey) {
+				return fmt.Errorf("reach.mcp.env contains invalid environment variable name %q", envKey)
+			}
 		}
 	}
 	if len(m.Auth.Schemes) == 0 {

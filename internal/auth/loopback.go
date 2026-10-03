@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -101,20 +102,20 @@ func (ll *LoopbackListener) handleCallback(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
+	if receivedState != ll.stateToken {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, "<html><body><h2>Access Denied</h2><p>Invalid or expired state parameter. (CSRF protection)</p></body></html>")
+		return
+	}
+
 	if receivedErr != "" {
 		msg := receivedErr
 		if errDesc != "" {
 			msg = fmt.Sprintf("%s: %s", receivedErr, errDesc)
 		}
 		w.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprintf(w, "<html><body><h2>Authentication Failed</h2><p>%s</p></body></html>", msg)
+		_, _ = fmt.Fprintf(w, "<html><body><h2>Authentication Failed</h2><p>%s</p></body></html>", html.EscapeString(msg))
 		ll.sendResult(LoopbackResult{Error: domain.NewError(domain.CodeOAuthStateMismatch, msg, nil)})
-		return
-	}
-
-	if receivedState != ll.stateToken {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = fmt.Fprint(w, "<html><body><h2>Access Denied</h2><p>Invalid or expired state parameter. (CSRF protection)</p></body></html>")
 		return
 	}
 

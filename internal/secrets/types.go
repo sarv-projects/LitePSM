@@ -3,6 +3,7 @@ package secrets
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -61,6 +62,17 @@ type SecretStore interface {
 	Close() error
 }
 
+var validEnvNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+var dangerousEnvVars = map[string]bool{
+	"LD_PRELOAD":            true,
+	"LD_LIBRARY_PATH":       true,
+	"DYLD_INSERT_LIBRARIES": true,
+	"DYLD_LIBRARY_PATH":     true,
+	"PATH":                  true,
+	"IFS":                   true,
+}
+
 // ResolveLaunchSecrets resolves a map of environment variables to secret URIs into plaintext values.
 func ResolveLaunchSecrets(ctx context.Context, store SecretStore, secretRefs map[string]string) (map[string]string, error) {
 	if len(secretRefs) == 0 {
@@ -69,6 +81,13 @@ func ResolveLaunchSecrets(ctx context.Context, store SecretStore, secretRefs map
 
 	resolved := make(map[string]string, len(secretRefs))
 	for envVar, uri := range secretRefs {
+		if !validEnvNameRegex.MatchString(envVar) {
+			return nil, fmt.Errorf("invalid environment variable name %q", envVar)
+		}
+		if dangerousEnvVars[strings.ToUpper(envVar)] {
+			return nil, fmt.Errorf("dangerous environment variable %q cannot be injected from manifest", envVar)
+		}
+
 		ref, err := ParseSecretRef(uri)
 		if err != nil {
 			return nil, fmt.Errorf("invalid secret ref for %s: %w", envVar, err)

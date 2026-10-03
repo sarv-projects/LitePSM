@@ -28,9 +28,11 @@ package connector
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -128,6 +130,15 @@ func (e *Executor) Execute(ctx context.Context, integ *Integration, conn *Connec
 	if conn.IntegrationID != integ.ID {
 		return nil, fmt.Errorf("connector: connection %q does not belong to integration %q", conn.ID, integ.ID)
 	}
+	if conn.RevokedAt != nil {
+		return nil, fmt.Errorf("connector: connection %q is revoked", conn.ID)
+	}
+	if conn.DisabledAt != nil {
+		return nil, fmt.Errorf("connector: connection %q is disabled", conn.ID)
+	}
+	if conn.ExpiresAt != nil && now.After(*conn.ExpiresAt) {
+		return nil, fmt.Errorf("connector: connection %q is expired", conn.ID)
+	}
 
 	target, err := e.buildURL(req, op)
 	if err != nil {
@@ -139,6 +150,10 @@ func (e *Executor) Execute(ctx context.Context, integ *Integration, conn *Connec
 	}
 
 	cleanHeaders := SanitizeHeaders(req.Headers)
+
+	if e.Resolve == nil {
+		return nil, fmt.Errorf("connector: no secret resolver configured")
+	}
 
 	plaintext, err := e.Resolve(ctx, GrantCheck{
 		ComponentID:  req.ComponentID,
@@ -241,10 +256,11 @@ func (e *Executor) buildURL(req CallRequest, op Operation) (string, error) {
 	base := strings.TrimRight(e.Manifest.Reach.OpenAPI.BaseURL, "/")
 	path := op.PathTemplate
 	for name, val := range req.PathParams {
-		if strings.Contains(val, "/") || strings.Contains(val, "..") || strings.Contains(val, ":") {
+		if strings.Contains(val, "/") || strings.Contains(val, "..") || strings.Contains(val, ":") ||
+			strings.Contains(val, "?") || strings.Contains(val, "#") {
 			return "", fmt.Errorf("connector: path parameter %q has an illegal value", name)
 		}
-		path = strings.ReplaceAll(path, "{"+name+"}", val)
+		path = strings.ReplaceAll(path, "{"+name+"}", url.PathEscape(val))
 	}
 	if strings.Contains(path, "{") || strings.Contains(path, "}") {
 		return "", fmt.Errorf("connector: operation %q has unfilled path parameters", op.Name)
@@ -253,7 +269,20 @@ func (e *Executor) buildURL(req CallRequest, op Operation) (string, error) {
 		return "", fmt.Errorf("connector: operation path must be relative, not a URL")
 	}
 	path = strings.TrimLeft(path, "/")
-	return base + "/" + path, nil
+	fullURL := base + "/" + path
+	if len(req.Query) > 0 {
+		parsed, err := url.Parse(fullURL)
+		if err != nil {
+			return "", err
+		}
+		q := parsed.Query()
+		for k, v := range req.Query {
+			q.Set(k, v)
+		}
+		parsed.RawQuery = q.Encode()
+		fullURL = parsed.String()
+	}
+	return fullURL, nil
 }
 
 // doUpstream builds the request, injects the credential exactly once, and
@@ -274,8 +303,14 @@ func (e *Executor) doUpstream(ctx context.Context, target, method string, header
 		}
 	}
 	switch scheme {
-	case AuthOAuth2, AuthHTTP, AuthBasic, AuthAPIKey:
+	case AuthOAuth2, AuthHTTP:
 		httpReq.Header.Set("Authorization", "Bearer "+plaintext)
+	case AuthBasic:
+		encoded := base64.StdEncoding.EncodeToString([]byte(plaintext))
+		httpReq.Header.Set("Authorization", "Basic "+encoded)
+	case AuthAPIKey:
+		// API keys default to X-API-Key header unless specified, or Bearer fallback
+		httpReq.Header.Set("X-API-Key", plaintext)
 	default:
 		return nil, fmt.Errorf("connector: unsupported auth scheme %q", scheme)
 	}

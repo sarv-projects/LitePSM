@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -176,19 +177,27 @@ func extractZip(r io.ReaderAt, size int64, stagingDir string, limits ExtractionL
 			continue
 		}
 
-		// Enforce single file size limit
-		if int64(f.UncompressedSize64) > limits.MaxSingleFileSize {
+		// Enforce single file size limit with uint64 overflow protection
+		if f.UncompressedSize64 > uint64(math.MaxInt64) || int64(f.UncompressedSize64) > limits.MaxSingleFileSize {
 			return nil, domain.ErrArchiveSlip(fmt.Sprintf("file %s exceeds single file size limit (%d bytes)", f.Name, limits.MaxSingleFileSize))
 		}
 
-		totalBytes += int64(f.UncompressedSize64)
-		if totalBytes > limits.MaxTreeSize {
+		size := int64(f.UncompressedSize64)
+		if totalBytes > limits.MaxTreeSize-size {
 			return nil, domain.ErrArchiveSlip(fmt.Sprintf("archive exceeds total extracted size limit (%d bytes)", limits.MaxTreeSize))
 		}
+		totalBytes += size
 
 		// Ensure parent directory exists
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 			return nil, err
+		}
+
+		// Ensure targetPath does not pre-exist as a symlink
+		if fi, err := os.Lstat(targetPath); err == nil {
+			if fi.Mode()&os.ModeSymlink != 0 {
+				_ = os.Remove(targetPath)
+			}
 		}
 
 		rc, err := f.Open()
@@ -196,7 +205,7 @@ func extractZip(r io.ReaderAt, size int64, stagingDir string, limits ExtractionL
 			return nil, err
 		}
 
-		if err := writeBoundedFile(rc, targetPath, int64(f.UncompressedSize64), limits.MaxSingleFileSize); err != nil {
+		if err := writeBoundedFile(rc, targetPath, size, limits.MaxSingleFileSize); err != nil {
 			rc.Close()
 			return nil, err
 		}

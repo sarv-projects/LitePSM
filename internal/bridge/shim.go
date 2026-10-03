@@ -198,6 +198,14 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 			Result:  result,
 		}
 
+	case "ping":
+		result, _ := json.Marshal(map[string]any{})
+		return &ipc.Response{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  result,
+		}
+
 	case "initialized", "notifications/initialized":
 		return nil // Notification; no response needed
 
@@ -217,12 +225,18 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 			Arguments json.RawMessage `json:"arguments"`
 		}
 		if err := json.Unmarshal(req.Params, &callParams); err != nil {
+			if req.ID == nil {
+				return nil
+			}
 			errRes := FormatErrorResult(domain.ErrInvalidIdentifier("params", "valid tool call parameters"))
 			resBytes, _ := json.Marshal(errRes)
 			return &ipc.Response{JSONRPC: "2.0", ID: req.ID, Result: resBytes}
 		}
 
 		toolResult := s.DispatchTool(ctx, callParams.Name, callParams.Arguments)
+		if req.ID == nil {
+			return nil
+		}
 		resBytes, _ := json.Marshal(toolResult)
 		return &ipc.Response{
 			JSONRPC: "2.0",
@@ -231,6 +245,9 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 		}
 
 	default:
+		if req.ID == nil {
+			return nil // Notification; never return error response to ID-less notifications
+		}
 		return &ipc.Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,

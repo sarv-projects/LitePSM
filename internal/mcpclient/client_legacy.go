@@ -124,7 +124,7 @@ func (c *LegacyClient) postRPC(ctx context.Context, rpcReq JSONRPCRequest) (*JSO
 		return nil, fmt.Errorf("http error %d: %s", httpResp.StatusCode, string(respBody))
 	}
 
-	respData, err := io.ReadAll(httpResp.Body)
+	respData, err := io.ReadAll(io.LimitReader(httpResp.Body, 16*1024*1024))
 	if err != nil {
 		return nil, err
 	}

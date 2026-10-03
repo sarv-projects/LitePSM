@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/sarv-projects/litepsm/internal/agent"
 	"github.com/sarv-projects/litepsm/internal/bridge"
@@ -33,12 +34,13 @@ import (
 	"github.com/sarv-projects/litepsm/internal/update"
 )
 
+// Version is the canonical LitePSM version. Release builds override it via
+// -ldflags "-X main.Version=<v>" (see scripts/build-release.sh). Keep this
+// value in sync with npm/package.json — the npm postinstall downloads the
+// release asset named after the npm package version.
+var Version = "0.3.0"
+
 const (
-	// Version is the canonical LitePSM version. Release builds override it via
-	// -ldflags "-X main.Version=<v>" (see scripts/build-release.sh). Keep this
-	// value in sync with npm/package.json — the npm postinstall downloads the
-	// release asset named after the npm package version.
-	Version         = "0.3.0"
 	ProtocolVersion = "2026-07-28"
 )
 
@@ -766,8 +768,18 @@ func runCatalogSync() {
 	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
 	fmt.Printf("Synchronizing catalog from %s...\n", regURL)
 
-	seedDefaultListings(catClient)
-	fmt.Println("✓ Catalog synchronization complete. 3 verified capabilities indexed.")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	res, err := catClient.Sync(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Notice: remote registry unreachable (%v); loading local index.\n", err)
+		seedDefaultListings(catClient)
+		fmt.Printf("✓ Catalog ready (offline fallback: %d capabilities indexed).\n", catClient.Count())
+		return
+	}
+
+	fmt.Printf("✓ Catalog synchronization complete (Release %s, %d capabilities indexed).\n", res.ReleaseID, res.ItemCount)
 }
 
 func createSyntheticPackageArtifact(listingID string) []byte {
@@ -836,9 +848,13 @@ func seedDefaultListings(catClient *catalog.Client) {
 
 func runDoctor(args []string) {
 	repairMode := false
+	yesMode := false
 	for _, a := range args {
 		if a == "--repair" || a == "-r" {
 			repairMode = true
+		}
+		if a == "--yes" || a == "-y" {
+			yesMode = true
 		}
 	}
 
@@ -881,12 +897,28 @@ func runDoctor(args []string) {
 		report.PassedCount, report.WarnCount, report.FailCount, strings.ToUpper(string(report.OverallStatus)))
 
 	if repairMode {
-		fmt.Println("\nExecuting Automated Repair Plan...")
 		plan := doctor.BuildRepairPlan(report, paths)
 		if len(plan.Actions) == 0 {
-			fmt.Println("No automated repair actions necessary.")
+			fmt.Println("\nNo automated repair actions necessary.")
 			return
 		}
+		fmt.Println("\nProposed Automated Repair Plan:")
+		for i, act := range plan.Actions {
+			fmt.Printf("  %d. [%s] %s\n", i+1, act.ActionKind, act.Description)
+		}
+
+		if !yesMode {
+			fmt.Print("\nApply these repair actions? [y/N]: ")
+			var response string
+			fmt.Scanln(&response)
+			response = strings.TrimSpace(strings.ToLower(response))
+			if response != "y" && response != "yes" {
+				fmt.Println("Repair aborted by user.")
+				return
+			}
+		}
+
+		fmt.Println("\nExecuting Automated Repair Plan...")
 		if err := doctor.ApplyRepairPlan(ctx, plan, paths, db); err != nil {
 			fmt.Fprintf(os.Stderr, "Repair error: %v\n", err)
 		}
@@ -899,7 +931,7 @@ func runDoctor(args []string) {
 		}
 		fmt.Println("Repair cycle completed.")
 	} else if report.FailCount > 0 || report.WarnCount > 0 {
-		fmt.Println("\nTip: Run 'litepsm doctor --repair' to apply automated corrective actions.")
+		fmt.Println("\nTip: Run 'litepsm doctor --repair' to preview and apply automated corrective actions.")
 	}
 }
 
@@ -1202,7 +1234,15 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 				if inst.ListingID == req.SkillID {
 					treePath, err := installEngine.TreePath(inst.TreeDigest)
 					if err == nil {
-						filePath := filepath.Join(treePath, filepath.Clean(req.Path))
+						cleanRel := filepath.Clean(req.Path)
+						if filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, "..") {
+							return nil, &ipc.RPCError{Code: -32602, Message: "path traversal denied"}
+						}
+						filePath := filepath.Join(treePath, cleanRel)
+						rel, err := filepath.Rel(treePath, filePath)
+						if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+							return nil, &ipc.RPCError{Code: -32602, Message: "path traversal denied"}
+						}
 						if data, err := os.ReadFile(filePath); err == nil {
 							return map[string]any{"content": string(data)}, nil
 						}

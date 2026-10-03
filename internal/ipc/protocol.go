@@ -21,6 +21,9 @@ const (
 	CodePlanStale      = -32002
 	CodeSchemaDrift    = -32003
 	CodeRateLimited    = -32004
+
+	// MaxMessageSize sets the upper bound for a single JSON-RPC message (16 MiB).
+	MaxMessageSize = 16 * 1024 * 1024
 )
 
 // Request defines a standard JSON-RPC 2.0 request or notification.
@@ -85,9 +88,27 @@ func NewLineDelimitedCodec(rw io.ReadWriter) *LineDelimitedCodec {
 	}
 }
 
+func readBoundedLine(r *bufio.Reader, max int) ([]byte, error) {
+	var buf []byte
+	for {
+		chunk, isPrefix, err := r.ReadLine()
+		if err != nil {
+			return nil, err
+		}
+		if len(buf)+len(chunk) > max {
+			return nil, fmt.Errorf("message size exceeds limit of %d bytes", max)
+		}
+		buf = append(buf, chunk...)
+		if !isPrefix {
+			break
+		}
+	}
+	return buf, nil
+}
+
 // ReadRequest decodes the next JSON-RPC request from the line stream.
 func (c *LineDelimitedCodec) ReadRequest() (*Request, error) {
-	line, err := c.reader.ReadBytes('\n')
+	line, err := readBoundedLine(c.reader, MaxMessageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +125,7 @@ func (c *LineDelimitedCodec) ReadRequest() (*Request, error) {
 
 // ReadResponse decodes the next JSON-RPC response from the line stream.
 func (c *LineDelimitedCodec) ReadResponse() (*Response, error) {
-	line, err := c.reader.ReadBytes('\n')
+	line, err := readBoundedLine(c.reader, MaxMessageSize)
 	if err != nil {
 		return nil, err
 	}

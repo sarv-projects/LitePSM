@@ -270,3 +270,8 @@ func (c *Client) GetListing(id string) (*domain.Listing, error) {
 	}
 	return l, nil
 }
+
+// Count returns the total number of indexed listings.
+func (c *Client) Count() int {
+	return c.index.Count()
+}

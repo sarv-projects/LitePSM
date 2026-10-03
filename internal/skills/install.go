@@ -241,9 +241,12 @@ func CopySkillDir(src, dst string) error {
 			}
 			return nil
 		}
-		// Refuse symlinks outright.
+		// Refuse symlinks and non-regular files outright (FIFOs, devices, sockets)
 		if d.Type()&fs.ModeSymlink != 0 {
 			return fmt.Errorf("refusing to copy symlink %s", rel)
+		}
+		if !d.IsDir() && !d.Type().IsRegular() {
+			return fmt.Errorf("refusing to copy non-regular file %s", rel)
 		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
@@ -253,21 +256,34 @@ func CopySkillDir(src, dst string) error {
 		if err != nil {
 			return err
 		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to copy symlink %s", rel)
+		}
 		total += info.Size()
 		if total > MaxSkillBytes {
 			return fmt.Errorf("skill exceeds %d bytes", MaxSkillBytes)
 		}
-		return copyFile(path, target, info.Mode())
+		return copyFile(path, target, info.Mode(), info.Size())
 	})
 	return err
 }
 
-func copyFile(src, dst string, mode fs.FileMode) error {
-	in, err := os.Open(src)
+func copyFile(src, dst string, mode fs.FileMode, expectedSize int64) error {
+	in, err := os.OpenFile(src, os.O_RDONLY, 0)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
+
+	// Verify opened file is still regular (no TOCTOU swap to symlink or pipe)
+	fi, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("file %s is not regular after opening", src)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
@@ -275,7 +291,7 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(out, in)
+	_, copyErr := io.Copy(out, io.LimitReader(in, expectedSize+1))
 	closeErr := out.Close()
 	if copyErr != nil {
 		return copyErr

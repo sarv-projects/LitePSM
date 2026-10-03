@@ -91,12 +91,13 @@ func (db *DB) RecordApproval(ctx context.Context, approvalID, subjectType, subje
 }
 
 // ConsumeApproval atomically consumes an active approval.
-// If the approval was already consumed, it fails closed with LPSM-POLICY-APPROVAL-CONSUMED.
+// If the approval was already consumed or expired, it fails closed with an appropriate error.
 func (db *DB) ConsumeApproval(ctx context.Context, approvalID string) error {
 	query := `
 	UPDATE approvals
 	SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP
-	WHERE approval_id = ? AND status = 'active';`
+	WHERE approval_id = ? AND status = 'active'
+	  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);`
 
 	res, err := db.raw.ExecContext(ctx, query, approvalID)
 	if err != nil {

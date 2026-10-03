@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sarv-projects/litepsm/internal/domain"
 )
@@ -48,7 +49,12 @@ func (a *ClaudeCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, ba
 	}
 
 	var rootMap map[string]any
-	if err := json.Unmarshal([]byte(origContent), &rootMap); err != nil {
+	if strings.TrimSpace(origContent) != "" && strings.TrimSpace(origContent) != "{}" {
+		if err := json.Unmarshal([]byte(origContent), &rootMap); err != nil {
+			return nil, fmt.Errorf("failed to parse existing claude config %s: %w", configPath, err)
+		}
+	}
+	if rootMap == nil {
 		rootMap = make(map[string]any)
 	}
 
@@ -78,12 +84,7 @@ func (a *ClaudeCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, ba
 }
 
 func (a *ClaudeCodeAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan) (*HostApplyResult, error) {
-	dir := filepath.Dir(plan.ConfigPath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
-	}
-
-	if err := os.WriteFile(plan.ConfigPath, []byte(plan.ProposedContent), 0600); err != nil {
+	if err := AtomicWriteFile(plan.ConfigPath, []byte(plan.ProposedContent), 0600); err != nil {
 		return nil, fmt.Errorf("failed to write config %s: %w", plan.ConfigPath, err)
 	}
 

@@ -53,7 +53,9 @@ func NewFileEncryptedSecretStore(vaultPath string) (*FileEncryptedSecretStore, e
 		entries:   make(map[string]memoryEntry),
 	}
 
-	_ = store.load()
+	if err := store.load(); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to load encrypted vault: %w", err)
+	}
 	return store, nil
 }
 
@@ -128,7 +130,19 @@ func (s *FileEncryptedSecretStore) persist() error {
 		return err
 	}
 
-	return os.WriteFile(s.vaultPath, data, 0600)
+	tmpFile := s.vaultPath + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpFile, 0600); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := os.Rename(tmpFile, s.vaultPath); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	return os.Chmod(s.vaultPath, 0600)
 }
 
 func (s *FileEncryptedSecretStore) Put(ctx context.Context, namespace, key string, secretBytes []byte) (*SecretRef, error) {
@@ -162,7 +176,9 @@ func (s *FileEncryptedSecretStore) Put(ctx context.Context, namespace, key strin
 		},
 	}
 
-	_ = s.persist()
+	if err := s.persist(); err != nil {
+		return nil, fmt.Errorf("failed to persist encrypted vault: %w", err)
+	}
 	return ref, nil
 }
 
@@ -192,7 +208,9 @@ func (s *FileEncryptedSecretStore) Delete(ctx context.Context, ref SecretRef) er
 	}
 
 	delete(s.entries, ref.URI)
-	_ = s.persist()
+	if err := s.persist(); err != nil {
+		return fmt.Errorf("failed to persist encrypted vault after deletion: %w", err)
+	}
 	return nil
 }
 

@@ -187,8 +187,8 @@ function PackageContent() {
 
   const snippet = item
     ? snippetMode === "bridge"
-      ? bridgeSnippet(host)
-      : nativeSnippet(host, item.slug, item.command, item.args)
+      ? bridgeSnippet(host, "litepsm", platformOs)
+      : nativeSnippet(host, item.slug, item.command, item.args, platformOs)
     : "";
 
   const related = useMemo(() => {
@@ -265,7 +265,9 @@ function PackageContent() {
 
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify([jsonLd, breadcrumb]) }}
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify([jsonLd, breadcrumb]).replace(/</g, "\\u003c"),
+        }}
       />
 
       <nav aria-label="Breadcrumb" className="border-b border-rule bg-sunken">
@@ -554,7 +556,7 @@ function PackageContent() {
                 <dt>Publisher</dt>
                 <dd>
                   {item.publisher?.name ? (
-                    item.publisher.url ? (
+                    item.publisher.url && /^https?:\/\//i.test(item.publisher.url) ? (
                       <a
                         href={item.publisher.url}
                         target="_blank"
@@ -625,7 +627,13 @@ function PackageContent() {
                       rel="noopener noreferrer"
                       className="link break-all"
                     >
-                      {new URL(item.skillSource).host}
+                      {(() => {
+                        try {
+                          return new URL(item.skillSource).host;
+                        } catch {
+                          return item.skillSource;
+                        }
+                      })()}
                     </a>
                   ) : (
                     <span className="absent">{item.kind === "skill" ? "not published" : "not applicable"}</span>

@@ -51,8 +51,11 @@ func TestEgressRefusesPrivateResolvedAddresses(t *testing.T) {
 		"rfc1918-172": "172.16.4.4",
 		"rfc1918-192": "192.168.1.1",
 		"link-local":  "169.254.169.254",
+		"cgnat":       "100.64.0.1",
+		"doc-rfc5737": "192.0.2.1",
 		"ipv6-loop":   "::1",
 		"ipv6-ula":    "fd00::1",
+		"ipv6-doc":    "2001:db8::1",
 	}
 	for name, ip := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -187,6 +190,22 @@ func TestParseManifestRejectsVersionRange(t *testing.T) {
 	ranged := strings.Replace(validManifestJSON(), `"version": "1.0.0"`, `"version": "^1.0.0"`, 1)
 	if _, err := ParseManifest([]byte(ranged)); err == nil {
 		t.Fatal("version range was accepted")
+	}
+}
+
+func TestParseManifestRejectsTrailingContent(t *testing.T) {
+	trailing := validManifestJSON() + " trailing garbage"
+	if _, err := ParseManifest([]byte(trailing)); err == nil {
+		t.Fatal("manifest with trailing content was accepted")
+	}
+}
+
+func TestParseManifestRejectsBannedCredentialKeys(t *testing.T) {
+	withAuthz := strings.Replace(validManifestJSON(),
+		`"authorizeUrl": "https://example.com/oauth/authorize"`,
+		`"authorizeUrl": "https://example.com/oauth/authorize", "authorization": "Bearer foo"`, 1)
+	if _, err := ParseManifest([]byte(withAuthz)); err == nil {
+		t.Fatal("manifest with authorization header was accepted")
 	}
 }
 

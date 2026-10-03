@@ -136,11 +136,33 @@ func (e *Engine) checkDatabase(ctx context.Context) CheckResult {
 		}
 	}
 
+	var integrityResult string
+	err := e.db.Raw().QueryRowContext(ctx, "PRAGMA integrity_check;").Scan(&integrityResult)
+	if err != nil {
+		return CheckResult{
+			ID:             "check_db",
+			Name:           "SQLite State Database Integrity",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("integrity check failed: %v", err),
+			Recommendation: "Run litepsm doctor --repair or restore state.db from backup.",
+		}
+	}
+
+	if integrityResult != "ok" {
+		return CheckResult{
+			ID:             "check_db",
+			Name:           "SQLite State Database Integrity",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("database corruption detected: %s", integrityResult),
+			Recommendation: "Restore state.db from DATA_ROOT/backups/db/.",
+		}
+	}
+
 	return CheckResult{
 		ID:      "check_db",
 		Name:    "SQLite State Database Integrity",
 		Status:  StatusPass,
-		Message: "22 relational tables verified in WAL mode with active foreign key enforcement",
+		Message: "relational tables verified (PRAGMA integrity_check ok, WAL mode active)",
 	}
 }
 

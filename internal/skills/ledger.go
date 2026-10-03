@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -42,6 +43,7 @@ type LedgerEntry struct {
 // Ledger is a JSON file listing every directory this tool has created.
 type Ledger struct {
 	path string
+	mu   sync.Mutex
 }
 
 // OpenLedger loads the ledger at path. A missing file is not an error: it means
@@ -80,16 +82,27 @@ func (l *Ledger) write(entries []LedgerEntry) error {
 		}
 		return entries[i].DestDir < entries[j].DestDir
 	})
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
+	dir := filepath.Dir(l.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating ledger directory: %w", err)
 	}
 	blob, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := l.path + ".tmp"
-	if err := os.WriteFile(tmp, append(blob, '\n'), 0o600); err != nil {
+	tmp := filepath.Join(dir, fmt.Sprintf(".ledger_%d.tmp", time.Now().UnixNano()))
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("creating temporary ledger file: %w", err)
+	}
+	if _, err := f.Write(append(blob, '\n')); err != nil {
+		f.Close()
+		_ = os.Remove(tmp)
 		return fmt.Errorf("writing skills ledger: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
 	return os.Rename(tmp, l.path)
 }
@@ -97,6 +110,9 @@ func (l *Ledger) write(entries []LedgerEntry) error {
 // Add records newly created directories. Entries with a destination already in
 // the ledger are ignored, so re-running an install cannot double-count.
 func (l *Ledger) Add(entries []LedgerEntry) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if len(entries) == 0 {
 		return nil
 	}
@@ -156,6 +172,9 @@ type RemovalOutcome struct {
 // names is empty) and updates the ledger. It is deliberately conservative: a
 // directory that no longer looks like one we installed is reported, not deleted.
 func (l *Ledger) Remove(names []string, dryRun bool) ([]RemovalOutcome, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	entries, err := l.read()
 	if err != nil {
 		return nil, err

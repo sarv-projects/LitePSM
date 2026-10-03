@@ -124,6 +124,27 @@ func (p EgressPolicy) checkResolvedAddresses(ctx context.Context, host string) e
 	return nil
 }
 
+var nonPublicNets = []*net.IPNet{
+	// Carrier-Grade NAT (RFC 6598)
+	mustParseCIDR("100.64.0.0/10"),
+	// Documentation (RFC 5737)
+	mustParseCIDR("192.0.2.0/24"),
+	mustParseCIDR("198.51.100.0/24"),
+	mustParseCIDR("203.0.113.0/24"),
+	// Benchmarking (RFC 2544)
+	mustParseCIDR("198.18.0.0/15"),
+	// IPv6 Documentation (RFC 3849)
+	mustParseCIDR("2001:db8::/32"),
+}
+
+func mustParseCIDR(s string) *net.IPNet {
+	_, ipnet, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(err)
+	}
+	return ipnet
+}
+
 // isPublicAddress reports whether ip is safe for a credential-bearing request.
 // Everything that is not global unicast — loopback, private, link-local,
 // multicast, unspecified, and the IPv4/IPv6 special ranges — is refused.
@@ -135,9 +156,12 @@ func isPublicAddress(ip net.IP) bool {
 		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return false
 	}
-	// net.IP.IsPrivate covers RFC 1918 and IPv6 ULA, but be explicit about the
-	// ranges reviewers ask about: carrier-grade NAT and documentation space are
-	// not valid provider endpoints either.
+	// Explicitly block CGNAT, documentation, and benchmarking ranges
+	for _, subnet := range nonPublicNets {
+		if subnet.Contains(ip) {
+			return false
+		}
+	}
 	if ip.IsInterfaceLocalMulticast() {
 		return false
 	}

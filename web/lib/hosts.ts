@@ -80,16 +80,23 @@ const PATH_OVERRIDES: Record<string, Partial<Record<PlatformOS, string>>> = {
 
 export const HOSTS: HostAdapter[] = (generated as GeneratedHost[]).map((h) => {
   // Hand-written adapters (codex, claude-code, opencode, cline, pi-agent,
-  // grok-build) do not expose a key path, so fall back to the format's
-  // conventional default rather than an empty string.
-  const fallback = h.format === "toml" ? "mcp_servers" : "mcpServers";
+  // grok-build) do not expose a key path in hosts.json, so apply bespoke
+  // defaults where necessary or fall back to the format's conventional default.
+  let fallback = h.format === "toml" ? "mcp_servers" : "mcpServers";
+  let shape: HostShape = (h.shape as HostShape) || "object";
+
+  if (h.id === "opencode") {
+    fallback = "mcp.servers";
+    shape = "local-array";
+  }
+
   const keyPath = h.keyPath || fallback;
   return {
     id: h.id,
     name: h.name,
     kind: h.format === "toml" ? "toml" : "json",
     keyPath,
-    shape: (h.shape as HostShape) || "object",
+    shape,
     userPath: h.userPath || "",
     projectOnly: h.projectOnly,
     docsUrl: h.docsUrl,

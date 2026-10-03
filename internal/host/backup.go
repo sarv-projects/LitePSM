@@ -27,12 +27,36 @@ func CreateAtomicBackup(originalPath, backupDir, hostID string) (string, error) 
 	shortHash := hex.EncodeToString(hash[:])[:8]
 	timestamp := time.Now().UTC().Format("20060102_150405")
 
-	backupFileName := fmt.Sprintf("%s_%s_%s.bak", hostID, timestamp, shortHash)
-	backupPath := filepath.Join(backupDir, backupFileName)
-
-	if err := os.WriteFile(backupPath, data, 0600); err != nil {
-		return "", fmt.Errorf("failed to write backup file %s: %w", backupPath, err)
+	// Sanitize hostID to avoid directory traversal
+	cleanHostID := filepath.Base(filepath.Clean(hostID))
+	if cleanHostID == "." || cleanHostID == "/" || cleanHostID == "\\" {
+		cleanHostID = "host"
 	}
 
-	return backupPath, nil
+	backupFileName := fmt.Sprintf("%s_%s_%s.bak", cleanHostID, timestamp, shortHash)
+	backupPath := filepath.Join(backupDir, backupFileName)
+
+	return backupPath, AtomicWriteFile(backupPath, data, 0600)
+}
+
+// AtomicWriteFile writes data to targetPath atomically via a temporary file.
+func AtomicWriteFile(targetPath string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(targetPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".tmp_%d_%s", time.Now().UnixNano(), filepath.Base(targetPath)))
+	if err := os.WriteFile(tmpFile, data, perm); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpFile, perm); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	if err := os.Rename(tmpFile, targetPath); err != nil {
+		_ = os.Remove(tmpFile)
+		return err
+	}
+	return os.Chmod(targetPath, perm)
 }

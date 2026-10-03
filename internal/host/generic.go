@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/sarv-projects/litepsm/internal/domain"
@@ -182,10 +181,7 @@ func mergeTOMLEntry(orig, table, block string) (string, error) {
 
 // ApplySetup implements HostAdapter.
 func (a *GenericAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan) (*HostApplyResult, error) {
-	if err := os.MkdirAll(filepath.Dir(plan.ConfigPath), 0700); err != nil {
-		return nil, fmt.Errorf("failed to create %s: %w", filepath.Dir(plan.ConfigPath), err)
-	}
-	if err := os.WriteFile(plan.ConfigPath, []byte(plan.ProposedContent), 0600); err != nil {
+	if err := AtomicWriteFile(plan.ConfigPath, []byte(plan.ProposedContent), 0600); err != nil {
 		return nil, fmt.Errorf("failed to write %s: %w", plan.ConfigPath, err)
 	}
 	return &HostApplyResult{

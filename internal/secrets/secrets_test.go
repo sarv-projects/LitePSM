@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -68,9 +69,10 @@ func TestSecretStore_CRUD(t *testing.T) {
 
 func TestResolveLaunchSecrets(t *testing.T) {
 	ctx := context.Background()
-	store, err := OpenSecretStore()
+	tmpVault := filepath.Join(t.TempDir(), "vault.enc")
+	store, err := NewFileEncryptedSecretStore(tmpVault)
 	if err != nil {
-		t.Fatalf("OpenSecretStore failed: %v", err)
+		t.Fatalf("NewFileEncryptedSecretStore failed: %v", err)
 	}
 	defer store.Close()
 

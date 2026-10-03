@@ -65,9 +65,27 @@ func (c *StdioClient) nextID() string {
 	return fmt.Sprintf("stdio-%d", atomic.AddUint64(&c.seq, 1))
 }
 
+func readBoundedLine(r *bufio.Reader, max int) ([]byte, error) {
+	var buf []byte
+	for {
+		chunk, isPrefix, err := r.ReadLine()
+		if err != nil {
+			return nil, err
+		}
+		if len(buf)+len(chunk) > max {
+			return nil, fmt.Errorf("message size exceeds limit of %d bytes", max)
+		}
+		buf = append(buf, chunk...)
+		if !isPrefix {
+			break
+		}
+	}
+	return buf, nil
+}
+
 func (c *StdioClient) readLoop() {
 	for {
-		line, err := c.reader.ReadBytes('\n')
+		line, err := readBoundedLine(c.reader, 16*1024*1024)
 		if err != nil {
 			c.closePending(err)
 			return

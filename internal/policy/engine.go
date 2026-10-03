@@ -123,32 +123,47 @@ func (e *Engine) Evaluate(ctx context.Context, input PolicyInput) PolicyDecision
 	// -------------------------------------------------------------
 	// Tier 1: Hard Invariant Deny Rules (Cannot be overridden)
 	// -------------------------------------------------------------
-	for _, eff := range input.Effects {
-		// Invariant 1: Deny raw shell command execution from marketplace sources
-		if strings.HasPrefix(input.TargetRef, "cmd:") || strings.HasPrefix(input.TargetRef, "command:") {
-			return PolicyDecision{
-				Decision:    DecisionDeny,
-				ReasonCodes: []string{"INVARIANT_DENY_COMMAND_MARKETPLACE"},
-				Detail:      "Command source execution from external marketplace is strictly prohibited",
-			}
-		}
 
+	// Invariant 1: Deny raw shell command execution from marketplace sources
+	if strings.HasPrefix(input.TargetRef, "cmd:") || strings.HasPrefix(input.TargetRef, "command:") {
+		return PolicyDecision{
+			Decision:    DecisionDeny,
+			ReasonCodes: []string{"INVARIANT_DENY_COMMAND_MARKETPLACE"},
+			Detail:      "Command source execution from external marketplace is strictly prohibited",
+		}
+	}
+
+	for _, eff := range input.Effects {
 		// Invariant 2: Deny writing plaintext secrets to non-vault files
-		if eff.Effect == EffectCredentialWrite && strings.Contains(eff.Target, "disk") {
-			return PolicyDecision{
-				Decision:    DecisionDeny,
-				ReasonCodes: []string{"INVARIANT_DENY_PLAINTEXT_SECRET_DISK"},
-				Detail:      "Storing secrets in unencrypted local files is prohibited; use OS secret store",
+		if eff.Effect == EffectCredentialWrite {
+			tLower := strings.ToLower(eff.Target)
+			if strings.Contains(tLower, "disk") || strings.Contains(tLower, "file") || strings.Contains(tLower, ".env") || strings.Contains(tLower, "config") {
+				return PolicyDecision{
+					Decision:    DecisionDeny,
+					ReasonCodes: []string{"INVARIANT_DENY_PLAINTEXT_SECRET_DISK"},
+					Detail:      "Storing secrets in unencrypted local files is prohibited; use OS secret store",
+				}
 			}
 		}
 
 		// Invariant 3: Deny SSRF / loopback network access for untrusted third-party capabilities
-		if eff.Effect == EffectNetworkOutbound && (strings.Contains(eff.Target, "127.0.0.1") || strings.Contains(eff.Target, "localhost") || strings.Contains(eff.Target, "169.254.169.254")) {
-			if input.Actor != "user" && eff.Provenance != domain.ProvenanceUserClassified {
-				return PolicyDecision{
-					Decision:    DecisionDeny,
-					ReasonCodes: []string{"INVARIANT_DENY_SSRF_LOOPBACK"},
-					Detail:      "Access to loopback or cloud metadata endpoints is restricted",
+		if eff.Effect == EffectNetworkOutbound {
+			tLower := strings.ToLower(eff.Target)
+			isLocalOrMeta := strings.Contains(tLower, "127.") ||
+				strings.Contains(tLower, "localhost") ||
+				strings.Contains(tLower, "169.254.") ||
+				strings.Contains(tLower, "[::1]") ||
+				strings.Contains(tLower, "::1") ||
+				strings.Contains(tLower, "0.0.0.0") ||
+				strings.Contains(tLower, "10.") ||
+				strings.Contains(tLower, "192.168.")
+			if isLocalOrMeta {
+				if eff.Provenance != domain.ProvenanceUserClassified {
+					return PolicyDecision{
+						Decision:    DecisionDeny,
+						ReasonCodes: []string{"INVARIANT_DENY_SSRF_LOOPBACK"},
+						Detail:      "Access to loopback, private network, or cloud metadata endpoints is restricted",
+					}
 				}
 			}
 		}
@@ -219,7 +234,8 @@ func (e *Engine) Evaluate(ctx context.Context, input PolicyInput) PolicyDecision
 	}
 
 	// Read-only benign local operations (e.g. searching catalog, reading skill index)
-	if len(input.Effects) == 0 || (len(input.Effects) == 1 && input.Effects[0].Effect == EffectFilesystemRead) {
+	isReadOnlyOp := input.Operation == "read" || input.Operation == "search" || input.Operation == "describe" || input.Operation == "list"
+	if isReadOnlyOp && (len(input.Effects) == 0 || (len(input.Effects) == 1 && input.Effects[0].Effect == EffectFilesystemRead)) {
 		return PolicyDecision{
 			Decision:    DecisionAllow,
 			ReasonCodes: []string{"BENIGN_READ_ONLY"},
@@ -246,7 +262,8 @@ func (e *Engine) checkCapabilityGrant(ctx context.Context, input PolicyInput) (P
 	query := `
 	SELECT grant_id, schema_fingerprint, cas_tree_digest, endpoint_origin, server_version_digest, status
 	FROM capability_grants
-	WHERE capability_id = ? AND status = 'active';`
+	WHERE capability_id = ? AND status = 'active'
+	  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);`
 
 	rows, err := e.db.Raw().QueryContext(ctx, query, input.CapabilityID)
 	if err != nil || rows == nil {
@@ -287,6 +304,15 @@ func (e *Engine) checkCapabilityGrant(ctx context.Context, input PolicyInput) (P
 				Decision:    DecisionDeny,
 				ReasonCodes: []string{"LPSM-PROVIDER-ENDPOINT-DRIFT"},
 				Detail:      fmt.Sprintf("Remote endpoint origin changed to %s: prior grant invalidated", input.EndpointOrigin),
+			}, false
+		}
+
+		// Check 4: Remote Server Version Drift Invalidation
+		if input.ServerVersionDigest != "" && serverVer.Valid && serverVer.String != input.ServerVersionDigest {
+			return PolicyDecision{
+				Decision:    DecisionDeny,
+				ReasonCodes: []string{"LPSM-PROVIDER-CODE-DRIFT"},
+				Detail:      fmt.Sprintf("Remote server version changed for capability %s: prior grant invalidated", input.CapabilityID),
 			}, false
 		}
 

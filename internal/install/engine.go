@@ -244,12 +244,15 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 // TreePath computes the local filesystem path for a given Merkle tree digest.
 func (e *Engine) TreePath(treeDigest string) (string, error) {
 	parts := strings.SplitN(treeDigest, ":", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", fmt.Errorf("invalid tree digest format %q: expected <algo>:<hex>", treeDigest)
+	if len(parts) != 2 || parts[0] != "sha256" || len(parts[1]) != 64 {
+		return "", fmt.Errorf("invalid tree digest format %q: expected sha256:<64-hex>", treeDigest)
 	}
-	algo := parts[0]
-	hash := parts[1]
-	return filepath.Join(e.casRoot, "trees", algo, hash), nil
+	for _, c := range parts[1] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return "", fmt.Errorf("invalid hex in tree digest %q", treeDigest)
+		}
+	}
+	return filepath.Join(e.casRoot, "trees", parts[0], parts[1]), nil
 }
 
 // Rollback safely reverses an incomplete or failed operation.
