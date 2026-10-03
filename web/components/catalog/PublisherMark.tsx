@@ -3,6 +3,8 @@
 import React from "react";
 import { Listing } from "../../lib/telemetry";
 
+import { Check } from "lucide-react";
+
 /** Single-letter stamp. 2px radius: a chip, not a card. */
 export function PublisherTile({ name, kind }: { name?: string; kind: Listing["kind"] }) {
   const initial = (name || "?").trim().charAt(0).toUpperCase();
@@ -15,21 +17,15 @@ export function PublisherTile({ name, kind }: { name?: string; kind: Listing["ki
 
 /**
  * `publisher.verified` is a registry flag on the publisher, not a LitePSM
- * security audit, so it is rendered in ink with the wording spelled out.
+ * security audit. Rendered as a distinct verified badge.
  */
-/**
- * `publisher.verified` is a registry flag on the publisher, not a LitePSM
- * security audit, so it is rendered in ink with the wording spelled out. The
- * glyph is optional: in a dense row it collides with the meta separator, so
- * rows carry the word alone.
- */
-export function VerifiedMark({ glyph = false }: { glyph?: boolean }) {
+export function VerifiedMark({ glyph = true }: { glyph?: boolean }) {
   return (
     <span
-      className={glyph ? "inline-flex items-center gap-1.5 text-ink-2" : "text-ink-2"}
+      className="inline-flex items-center gap-1 rounded-[2px] bg-accent-wash px-1.5 py-0.5 text-[10px] font-medium text-accent border border-accent/20"
       title="The upstream registry marks this publisher as verified. This is not a LitePSM security audit."
     >
-      {glyph && <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rotate-45 bg-ink" />}
+      {glyph && <Check className="h-2.5 w-2.5 stroke-[2.5]" aria-hidden="true" />}
       verified
     </span>
   );

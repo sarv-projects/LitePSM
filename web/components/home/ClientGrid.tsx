@@ -39,9 +39,9 @@ export function ClientGrid() {
             <span className="min-w-0">
               <span className="row-name">{host.name}</span>
               <span className="row-meta">
-                <span className="uppercase">{host.kind}</span>
-                {host.nested && <span>nested v2 layout</span>}
-                <span className="truncate">{host.userPath}</span>
+                <span className="meta-spec uppercase">{host.kind}</span>
+                {host.nested && <span className="meta-spec">nested v2 layout</span>}
+                <span className="truncate text-ink-3">{host.userPath}</span>
               </span>
             </span>
 

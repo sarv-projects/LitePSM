@@ -64,15 +64,12 @@ export function ExtensionGrid({
 
       {shown.length > 0 ? (
         <>
-          <div className="t-mono hidden border-b border-rule px-3 py-1.5 text-[10px] text-ink-3 lg:grid lg:grid-cols-[3px_22px_minmax(0,1fr)_auto] lg:gap-x-3">
+          <div className="t-mono hidden border-b border-rule px-3 py-2 text-[10.5px] font-medium uppercase tracking-wider text-ink-3 lg:grid lg:grid-cols-[3px_22px_minmax(0,1fr)_auto] lg:gap-x-3 items-center">
             <span />
             <span />
-            {/* Column labels name the meta fields they sit above, so a reader
-                knows what the hairline-separated tokens in a row mean. */}
-            <span>Name, then publisher, kind, transport, runtime, category</span>
-            <span className="flex gap-[18px] pr-0.5">
-              <span className="w-[86px] text-right">Popularity</span>
-              <span className="w-[62px] text-right">Hosts</span>
+            <span>Capability &amp; Specifications</span>
+            <span className="text-right pr-1">
+              <span>Agent Compatibility</span>
             </span>
           </div>
 

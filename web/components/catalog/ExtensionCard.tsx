@@ -56,18 +56,18 @@ export function ExtensionCard({ item, hostCount }: ExtensionCardProps) {
         <span className="row-name">{item.name}</span>
         {item.summary && <span className="row-summary">{item.summary}</span>}
         <span className="row-meta">
-          <span>{item.publisher?.name || "not published"}</span>
-          {item.publisher?.verified && <VerifiedMark />}
-          <span className="t-mono">{KIND_TAG[item.kind]}</span>
-          {item.transport && <span className="t-mono">{item.transport}</span>}
-          {item.runtime && <span className="t-mono">{item.runtime}</span>}
-          <span className="truncate">{item.category}</span>
+          <span className="meta-publisher">{item.publisher?.name || "unspecified"}</span>
+          {item.publisher?.verified && <VerifiedMark glyph />}
+          <span className={`meta-kind meta-kind-${item.kind}`}>{KIND_TAG[item.kind]}</span>
+          {item.transport && <span className="meta-spec">{item.transport}</span>}
+          {item.runtime && <span className="meta-spec">{item.runtime}</span>}
+          <span className="meta-category truncate">{item.category}</span>
         </span>
       </span>
 
       <span className="row-side">
         <span
-          className="t-mono t-tabular w-[62px] whitespace-nowrap text-[11px] text-ink-3"
+          className="t-mono t-tabular rounded-[3px] bg-sunken px-2 py-0.5 text-[11px] font-medium text-ink-2 border border-rule"
           title={`Declares compatibility with ${hosts.length} of the ${total} agent hosts named in this catalog. Publisher-declared, not a test result.`}
         >
           {hosts.length}/{total} hosts

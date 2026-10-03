@@ -520,8 +520,8 @@ function PackageContent() {
                             {r.name}
                           </span>
                           <span className="row-meta">
-                            <span>{r.publisher?.name || "not published"}</span>
-                            <span className="truncate">{r.summary}</span>
+                            <span className="meta-publisher">{r.publisher?.name || "unspecified"}</span>
+                            <span className="truncate text-ink-3">{r.summary}</span>
                           </span>
                         </span>
                         <span className="t-mono t-tabular shrink-0 text-[11px] text-ink-3">

@@ -294,48 +294,76 @@
     color: var(--ink-2);
   }
 
-  /* Meta is a monospace token row with hairline gaps - never middle dots. */
+  /* Meta is a responsive, highly readable badge and spec token row. */
   .row-meta {
     display: flex;
     align-items: center;
-    flex-wrap: nowrap;
-    gap: 0 8px;
-    margin-top: 2px;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
     font-family: var(--font-mono), ui-monospace, monospace;
     font-size: 11px;
-    line-height: 1.5;
+    line-height: 1.4;
     color: var(--ink-3);
   }
-  /*
-   * Meta tokens are separated by a 1px rule rather than a middle dot, so the
-   * row reads as a spec line. The rule is inset into the gap instead of
-   * overlapping either token.
-   */
-  .row-meta > * {
-    position: relative;
-    white-space: nowrap;
+
+  .meta-publisher {
+    font-weight: 500;
+    color: var(--ink-2);
   }
-  /* Only the trailing token yields space. Everything before it is a short
-     identifier, so shrinking those would just produce four truncated stubs
-     instead of one readable ellipsis at the end. */
-  .row-meta > *:not(:last-child) {
-    flex: none;
+
+  .meta-kind {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--r-chip);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1;
   }
-  .row-meta > *:last-child {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .meta-kind-mcp {
+    background-color: var(--mcp-wash);
+    color: var(--mcp);
+    border: 1px solid rgba(31, 79, 216, 0.2);
   }
-  .row-meta > * + *::before {
-    content: "";
-    position: absolute;
-    left: -5px;
-    top: 50%;
-    width: 1px;
-    height: 10px;
-    transform: translateY(-50%);
-    background-color: var(--rule-2);
+  .meta-kind-skill {
+    background-color: var(--skill-wash);
+    color: var(--skill);
+    border: 1px solid rgba(11, 107, 114, 0.2);
+  }
+  .meta-kind-plugin {
+    background-color: var(--plugin-wash);
+    color: var(--plugin);
+    border: 1px solid rgba(124, 58, 212, 0.2);
+  }
+
+  .meta-spec {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--r-chip);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 10.5px;
+    background-color: var(--sunken);
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+    line-height: 1;
+  }
+
+  .meta-category {
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .meta-category::before {
+    content: "·";
+    margin-right: 6px;
+    color: var(--rule-2);
+    font-weight: bold;
   }
 
   .row-side {
