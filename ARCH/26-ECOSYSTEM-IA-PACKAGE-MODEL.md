@@ -533,7 +533,7 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 | Any "Runs executable" green state without evidence | Honesty rule | M3 |
 | `Reviews` tab or any feature requiring a backend | Site is static-only; don't fake it | M1 |
 
-*If no per-capability install snippet remains after inspection, the removal row is satisfied and should be recorded as such rather than re-applied.* The current codebase **does** contain `nativeSnippet` (`web/lib/hosts.ts:240`) and renders it in `web/app/package/page.tsx:191`, so the row applies.
+*If no per-capability install snippet remains after inspection, the removal row is satisfied and should be recorded as such rather than re-applied.* The row is now satisfied: `nativeSnippet` and the "Direct Native" toggle were removed from `web/lib/hosts.ts` and `web/app/package/page.tsx`, and the detail route renders only the single per-host `litepsm` bridge entry.
 
 ---
 

@@ -16,7 +16,6 @@
 
 import generated from "../data/hosts.json";
 import generatedSkillTargets from "../data/skill-targets.json";
-import { jsonKey, tomlKey } from "./format";
 
 export type PlatformOS = "win" | "mac" | "linux";
 export type HostFormat = "json" | "toml";
@@ -240,33 +239,5 @@ export function bridgeSnippet(host: HostAdapter, binary = "litepsm", os: Platfor
   }
 
   const body = nest(keyPath, { litepsm: bridgeEntry(host, binary) });
-  return `# ${path}\n${JSON.stringify(body, null, 2)}`;
-}
-
-/** Native (unmanaged) snippet, shown only when the user opts into raw config. */
-export function nativeSnippet(
-  host: HostAdapter,
-  slug: string,
-  command: string | undefined,
-  args: string[] | undefined,
-  os: PlatformOS = "linux"
-): string {
-  const cmd = command || "npx";
-  const argv = args && args.length ? args : [cmd === "npx" ? "-y" : "", slug].filter(Boolean);
-  const path = hostPath(host, os);
-
-  if (host.kind === "toml") {
-    const key = tomlKey(slug);
-    return `# ${path}\n[mcp_servers.${key}]\ncommand = "${cmd}"\nargs = [${argv
-      .map((a) => `"${a}"`)
-      .join(", ")}]\n`;
-  }
-
-  const entry =
-    host.shape === "local-array"
-      ? { type: "local", command: [cmd, ...argv] }
-      : { command: cmd, args: argv };
-  const keyPath = host.keyPath || "mcpServers";
-  const body = nest(keyPath, { [jsonKey(slug)]: entry });
   return `# ${path}\n${JSON.stringify(body, null, 2)}`;
 }

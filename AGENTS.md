@@ -78,7 +78,7 @@ Once configured, simply launch your agent and type:
 
 ### Tab 1: MCP Servers
 *   Full search bar filtering by name, category, or transport (`stdio` / `Streamable HTTP`).
-*   Displays verified badges, upstream GitHub links, and star counts.
+*   Displays verified badges and upstream GitHub links. No star, download or install counts are shown: no upstream source exposes them, so the catalog publishes none rather than an estimate.
 *   One-click install button that creates a verified `InstallPlan`.
 
 ### Tab 2: Agent Skills

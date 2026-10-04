@@ -13,6 +13,7 @@ import { SiteFooter } from "../components/layout/SiteFooter";
 import { Listing, categoryFacets, useTelemetry } from "../lib/telemetry";
 import { useCatalogSearch } from "../lib/useCatalogSearch";
 import { hostUniverse, verifiedItems } from "../lib/catalog";
+import { formatCount } from "../lib/format";
 import catalogData from "../data/catalog.json";
 
 const SECTION_SIZE = 8;
@@ -122,7 +123,7 @@ export default function Home() {
               items={sections.skills}
               hostCount={hostCount}
               viewAllHref="/explore/?kind=skill"
-              viewAllLabel="see all 1,103 skills"
+              viewAllLabel={`see all ${formatCount(kindCounts.skill)} skills`}
             />
             <SectionRow
               title="Plugins"
@@ -130,7 +131,7 @@ export default function Home() {
               items={sections.plugins}
               hostCount={hostCount}
               viewAllHref="/explore/?kind=plugin"
-              viewAllLabel="see all 634 plugins"
+              viewAllLabel={`see all ${formatCount(kindCounts.plugin)} plugins`}
             />
             <SectionRow
               title="End of the release manifest"

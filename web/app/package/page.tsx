@@ -6,7 +6,7 @@ import { Copy, ExternalLink, ChevronRight, Info, SearchX, Check } from "lucide-r
 import { Header } from "../../components/navigation/Header";
 import { SiteFooter } from "../../components/layout/SiteFooter";
 import { Listing } from "../../lib/telemetry";
-import { HOSTS, bridgeSnippet, nativeSnippet, hostPath, PlatformOS } from "../../lib/hosts";
+import { HOSTS, bridgeSnippet, hostPath, PlatformOS } from "../../lib/hosts";
 import { copyText } from "../../lib/clipboard";
 import { formatCount } from "../../lib/format";
 import { hostUniverse, kindLabel, listingHref, sortListings } from "../../lib/catalog";
@@ -86,7 +86,7 @@ function PackageIndexShell() {
         </p>
 
         <div className="section-head mt-9">
-          <h2>Most popular entries</h2>
+          <h2>Start of the catalog snapshot</h2>
           <Link href="/explore/" className="t-mono shrink-0 text-[12px] text-ink-2 hover:text-ink hover:underline">
             search all
           </Link>
@@ -98,7 +98,7 @@ function PackageIndexShell() {
               <li key={item.id}>
                 <Link
                   href={listingHref(item)}
-                  className="grid grid-cols-[3px_minmax(0,1fr)_auto] items-center gap-3 border-b border-rule py-2.5 transition-colors hover:bg-hover"
+                  className="grid grid-cols-[3px_minmax(0,1fr)] items-center gap-3 border-b border-rule py-2.5 transition-colors hover:bg-hover"
                 >
                   <span
                     aria-hidden="true"
@@ -112,9 +112,6 @@ function PackageIndexShell() {
                       <span className="t-mono">{item.kind}</span>
                       <span className="truncate">{item.category}</span>
                     </span>
-                  </span>
-                  <span className="t-mono t-tabular shrink-0 text-[11px] text-pop">
-                    {typeof item.stars === "number" && item.stars > 0 ? formatCount(item.stars) : "unspecified"}
                   </span>
                 </Link>
               </li>
@@ -175,7 +172,6 @@ function PackageContent() {
 
   const [activeHost, setActiveHost] = useState("claude-code");
   const [platformOs, setPlatformOs] = useState<PlatformOS>("linux");
-  const [snippetMode, setSnippetMode] = useState<"bridge" | "native">("bridge");
 
   useEffect(() => {
     const ua = typeof navigator !== "undefined" ? navigator.userAgent.toLowerCase() : "";
@@ -185,11 +181,7 @@ function PackageContent() {
   const host = HOSTS.find((h) => h.id === activeHost) ?? HOSTS[0];
   const hostTotal = HOST_TOTAL;
 
-  const snippet = item
-    ? snippetMode === "bridge"
-      ? bridgeSnippet(host, "litepsm", platformOs)
-      : nativeSnippet(host, item.slug, item.command, item.args, platformOs)
-    : "";
+  const snippet = item ? bridgeSnippet(host, "litepsm", platformOs) : "";
 
   const related = useMemo(() => {
     if (!item) return [];
@@ -439,36 +431,10 @@ function PackageContent() {
               </div>
 
               <div className="mt-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-[13px] font-semibold text-ink">
-                    Snippet
-                    <span className="ml-2 font-normal text-ink-3">
-                      {snippetMode === "bridge" ? "LitePSM bridge" : "direct native, unmanaged"}
-                    </span>
-                  </h3>
-                  <div className="flex items-center gap-0.5 border border-ink-3 bg-sunken p-0.5">
-                    <button
-                      type="button"
-                      aria-pressed={snippetMode === "bridge"}
-                      onClick={() => setSnippetMode("bridge")}
-                      className={`h-6 rounded-[3px] px-2.5 text-[11px] font-medium transition-colors ${
-                        snippetMode === "bridge" ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"
-                      }`}
-                    >
-                      LitePSM bridge
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={snippetMode === "native"}
-                      onClick={() => setSnippetMode("native")}
-                      className={`h-6 rounded-[3px] px-2.5 text-[11px] font-medium transition-colors ${
-                        snippetMode === "native" ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"
-                      }`}
-                    >
-                      Direct native
-                    </button>
-                  </div>
-                </div>
+                <h3 className="text-[13px] font-semibold text-ink">
+                  Snippet
+                  <span className="ml-2 font-normal text-ink-3">LitePSM bridge</span>
+                </h3>
 
                 <div className="on-dark mt-2 overflow-hidden rounded-panel bg-dark">
                   <div className="flex items-center justify-between gap-2 border-b border-dark-rule px-3 py-2">
@@ -486,8 +452,7 @@ function PackageContent() {
                   <Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     Running <code className="t-mono text-ink-2">litepsm</code> backs up the target file and
-                    injects this single entry, preserving existing entries. The{" "}
-                    <em>direct native</em> view is unmanaged: LitePSM will not keep it updated.
+                    injects this single entry, preserving existing entries.
                   </span>
                 </p>
               </div>

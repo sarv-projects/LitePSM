@@ -129,7 +129,7 @@ func ScoreListing(query string, candidate SearchIndexItem) int {
 }
 ```
 
-*   **Popularity is Orthogonal:** Upstream star counts or install metrics are exposed as separate filter facets (`sort: stars`), **never as an automatic relevance multiplier** that overrides exact keyword matches.
+*   **Popularity is Not a Signal:** No upstream source in the current matrix exposes star, download or install counts, so the catalog carries no popularity data. No popularity facet or sort mode (`sort: stars`) is exposed, and no popularity term may multiply relevance — scoring is the lexical tiers above alone (ARCH/26 §12.4).
 
 > Implementation note (honesty gap): `internal/catalog/search.go` adds a verification bonus (`security_audited` +10, `signature_verified` +5) on top of the tiered lexical score above. No adapter currently emits those levels (all emit `unverified`, and the catalog carries no audit evidence), so the bonus is dormant. Do not populate those levels — or rely on the bonus — until a real signature/audit check produces evidence (ARCH/26 §12.4).
 
