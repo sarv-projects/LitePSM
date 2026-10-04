@@ -4,11 +4,77 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sarv-projects/litepsm/internal/ipc"
 )
+
+// pipeListener is an in-memory net.Listener that hands a single pre-connected
+// pipe to the accepting server, so bridge tests can exercise a real ipc.Server
+// without opening sockets.
+type pipeListener struct {
+	conns chan net.Conn
+	once  sync.Once
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{conns: make(chan net.Conn, 1)}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	conn, ok := <-l.conns
+	if !ok {
+		return nil, net.ErrClosed
+	}
+	return conn, nil
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.conns) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string { return "pipe" }
+func (pipeAddr) String() string  { return "pipe" }
+
+// newDaemonBackedShim starts a real ipc.Server with the given handlers on an
+// in-memory pipe and returns a shim wired to it exactly as a live daemon
+// connection would be. Handlers are the test's stand-in for daemon handlers;
+// the shim itself must never invent data.
+func newDaemonBackedShim(t *testing.T, handlers map[string]ipc.HandlerFunc) *Shim {
+	t.Helper()
+
+	server := ipc.NewServer("test-daemon", "2026-07-28")
+	for method, handler := range handlers {
+		server.RegisterHandler(method, handler)
+	}
+
+	listener := newPipeListener()
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+
+	serverConn, clientConn := net.Pipe()
+	listener.conns <- serverConn
+
+	client := ipc.NewClientFromConn(clientConn)
+	t.Cleanup(func() {
+		_ = client.Close()
+		// Close the listener first: it is idempotent, and it also covers the
+		// race where Serve has not been scheduled yet when Stop runs.
+		_ = listener.Close()
+		_ = server.Stop()
+		<-serveDone
+	})
+
+	return NewShim("test-host", client, nil, nil)
+}
 
 func TestBridge_InitializeAndListTools(t *testing.T) {
 	ctx := context.Background()
@@ -78,7 +144,52 @@ func TestBridge_InitializeAndListTools(t *testing.T) {
 
 func TestBridge_ToolDispatchAndErrorFormatting(t *testing.T) {
 	ctx := context.Background()
-	shim := NewShim("test-host", nil, nil, nil)
+
+	// Daemon-backed shim: the connected path must relay real handler output,
+	// never canned text. The handlers below stand in for the daemon's
+	// catalog.search / tools.list RPCs over the real IPC wire format.
+	shim := newDaemonBackedShim(t, map[string]ipc.HandlerFunc{
+		"catalog.search": func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+			var req struct {
+				Query string `json:"query"`
+			}
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
+			}
+			return map[string]any{
+				"count": 1,
+				"results": []any{map[string]any{
+					"id":    "mcp:github:modelcontextprotocol:servers:postgres",
+					"name":  "postgres",
+					"query": req.Query,
+				}},
+			}, nil
+		},
+		"tools.list": func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+			return map[string]any{
+				"count": 2,
+				"installs": []CapabilityItem{
+					{
+						ID:        "mcp:github:modelcontextprotocol:servers:postgres",
+						Name:      "postgres",
+						Kind:      "mcp",
+						Summary:   "PostgreSQL Read/Write Inspection Tool",
+						Transport: "stdio",
+						Status:    StatusReady,
+						Verified:  true,
+					},
+					{
+						ID:         "external:native:fetch",
+						Name:       "fetch",
+						Kind:       "mcp",
+						Summary:    "Pre-existing host fetch utility",
+						Status:     StatusReady,
+						IsExternal: true,
+					},
+				},
+			}, nil
+		},
+	})
 
 	idRaw := json.RawMessage(`2`)
 
@@ -103,6 +214,9 @@ func TestBridge_ToolDispatchAndErrorFormatting(t *testing.T) {
 	if err := json.Unmarshal(callResp.Result, &toolRes); err != nil {
 		t.Fatal(err)
 	}
+	if toolRes.IsError {
+		t.Fatalf("daemon-backed search_catalog returned an error: %s", toolRes.Content[0].Text)
+	}
 	if len(toolRes.Content) == 0 || !strings.Contains(toolRes.Content[0].Text, "postgres") {
 		t.Errorf("unexpected content: %+v", toolRes)
 	}
@@ -123,6 +237,9 @@ func TestBridge_ToolDispatchAndErrorFormatting(t *testing.T) {
 	var listToolRes MCPToolResult
 	if err := json.Unmarshal(listCallResp.Result, &listToolRes); err != nil {
 		t.Fatal(err)
+	}
+	if listToolRes.IsError {
+		t.Fatalf("daemon-backed list_installed returned an error: %s", listToolRes.Content[0].Text)
 	}
 	if !strings.Contains(listToolRes.Content[0].Text, "LitePSM Capabilities") {
 		t.Errorf("expected 4-tab header, got: %s", listToolRes.Content[0].Text)
@@ -179,6 +296,9 @@ func TestBridge_ServeCodec(t *testing.T) {
 	}
 }
 
+// A standalone shim (nil daemon client) must fail closed for every one of the
+// 12 canonical tools: an explicit tool error that names the missing daemon
+// connection, never fabricated data, statuses, or inventory.
 func TestBridge_All12ToolsDispatch(t *testing.T) {
 	ctx := context.Background()
 	shim := NewShim("test-host", nil, nil, nil)
@@ -202,6 +322,15 @@ func TestBridge_All12ToolsDispatch(t *testing.T) {
 		{"cancel_invocation", map[string]any{"invocationId": "inv_123"}},
 	}
 
+	fabricatedMarkers := []string{
+		"invoked successfully",
+		"status: completed",
+		"executed (standalone mode)",
+		"Progressive instruction workflow",
+		"LitePSM Capabilities",
+		"Verified ✓",
+	}
+
 	for _, tc := range allTools {
 		t.Run(tc.name, func(t *testing.T) {
 			paramsBytes, _ := json.Marshal(map[string]any{
@@ -221,13 +350,58 @@ func TestBridge_All12ToolsDispatch(t *testing.T) {
 			if err := json.Unmarshal(resp.Result, &toolRes); err != nil {
 				t.Fatalf("failed to unmarshal tool result for %s: %v", tc.name, err)
 			}
-			if toolRes.IsError {
-				t.Fatalf("tool %s returned unexpected error: %s", tc.name, toolRes.Content[0].Text)
+			if !toolRes.IsError {
+				t.Fatalf("tool %s must fail closed in standalone mode, got success: %s", tc.name, toolRes.Content[0].Text)
 			}
 			if len(toolRes.Content) == 0 || toolRes.Content[0].Text == "" {
-				t.Fatalf("tool %s returned empty text", tc.name)
+				t.Fatalf("tool %s returned empty error text", tc.name)
+			}
+			text := toolRes.Content[0].Text
+			if !strings.Contains(text, "not connected to daemon") {
+				t.Errorf("tool %s error must name the missing daemon connection, got: %s", tc.name, text)
+			}
+			if !strings.Contains(text, "LPSM-IPC-DAEMON-UNREACHABLE") {
+				t.Errorf("tool %s error must carry the canonical unreachable-daemon code, got: %s", tc.name, text)
+			}
+			for _, marker := range fabricatedMarkers {
+				if strings.Contains(text, marker) {
+					t.Errorf("tool %s fabricated marker %q in standalone mode: %s", tc.name, marker, text)
+				}
 			}
 		})
 	}
 }
 
+// ping reports connection state truthfully in both modes.
+func TestBridge_PingReportsConnectionState(t *testing.T) {
+	ctx := context.Background()
+	idRaw := json.RawMessage(`7`)
+
+	pingReq := &ipc.Request{JSONRPC: "2.0", ID: &idRaw, Method: "ping"}
+
+	standalone := NewShim("test-host", nil, nil, nil)
+	resp := standalone.HandleRequest(ctx, pingReq)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("standalone ping failed: %+v", resp)
+	}
+	var standaloneResult map[string]any
+	if err := json.Unmarshal(resp.Result, &standaloneResult); err != nil {
+		t.Fatal(err)
+	}
+	if connected, ok := standaloneResult["connected"].(bool); !ok || connected {
+		t.Fatalf("standalone ping must report connected=false, got %v", standaloneResult)
+	}
+
+	connected := newDaemonBackedShim(t, nil)
+	resp = connected.HandleRequest(ctx, pingReq)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("connected ping failed: %+v", resp)
+	}
+	var connectedResult map[string]any
+	if err := json.Unmarshal(resp.Result, &connectedResult); err != nil {
+		t.Fatal(err)
+	}
+	if c, ok := connectedResult["connected"].(bool); !ok || !c {
+		t.Fatalf("daemon-backed ping must report connected=true, got %v", connectedResult)
+	}
+}

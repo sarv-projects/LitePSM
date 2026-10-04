@@ -58,9 +58,9 @@ const (
 
 // DriftReport details whether an active grant matches current runtime reality.
 type DriftReport struct {
-	HasDrift DriftKind          `json:"hasDrift"`
-	Error    *domain.LPSMError  `json:"error,omitempty"`
-	Details  string             `json:"details,omitempty"`
+	HasDrift DriftKind         `json:"hasDrift"`
+	Error    *domain.LPSMError `json:"error,omitempty"`
+	Details  string            `json:"details,omitempty"`
 }
 
 // DetectDrift checks whether an active grant has experienced schema, code, or endpoint drift.

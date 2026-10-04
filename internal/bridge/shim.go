@@ -44,26 +44,26 @@ const (
 
 // CapabilityItem represents a capability summary across the 4 tabs.
 type CapabilityItem struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Kind        string          `json:"kind"` // mcp | skill | plugin
-	Summary     string          `json:"summary"`
-	Transport   string          `json:"transport,omitempty"`
-	Status      InstalledStatus `json:"status,omitempty"`
-	IsExternal  bool            `json:"isExternal,omitempty"`
-	Verified    bool            `json:"verified,omitempty"`
-	StarCount   int             `json:"starCount,omitempty"`
-	Triggers    []string        `json:"triggers,omitempty"`
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Kind       string          `json:"kind"` // mcp | skill | plugin
+	Summary    string          `json:"summary"`
+	Transport  string          `json:"transport,omitempty"`
+	Status     InstalledStatus `json:"status,omitempty"`
+	IsExternal bool            `json:"isExternal,omitempty"`
+	Verified   bool            `json:"verified,omitempty"`
+	StarCount  int             `json:"starCount,omitempty"`
+	Triggers   []string        `json:"triggers,omitempty"`
 }
 
 // Shim serves the 12 canonical LitePSM tools over standard input/output.
 type Shim struct {
-	client    *ipc.Client
-	hostID    string
-	tools     []MCPTool
-	reader    *bufio.Reader
-	writer    io.Writer
-	writeMu   sync.Mutex
+	client  *ipc.Client
+	hostID  string
+	tools   []MCPTool
+	reader  *bufio.Reader
+	writer  io.Writer
+	writeMu sync.Mutex
 }
 
 // NewShim creates a new stdio Bridge shim.
@@ -199,7 +199,9 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 		}
 
 	case "ping":
-		result, _ := json.Marshal(map[string]any{})
+		// ping reports connection state truthfully in both modes: standalone
+		// shims answer connected=false rather than pretending to be healthy.
+		result, _ := json.Marshal(map[string]any{"connected": s.client != nil})
 		return &ipc.Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -261,6 +263,16 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 
 // DispatchTool routes a tool call to the local daemon IPC client or handler.
 func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessage) MCPToolResult {
+	if !s.knownTool(name) {
+		return FormatErrorResult(domain.ErrNotFound("tool", name))
+	}
+	if s.client == nil {
+		// Standalone mode (no daemon connection): the shim holds no capability
+		// data, so every tool fails closed with an explicit error instead of
+		// fabricating success, statuses, or inventory.
+		return standaloneError(name)
+	}
+
 	switch name {
 	case "search_catalog":
 		var req struct {
@@ -270,23 +282,20 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp struct {
-				Count   int   `json:"count"`
-				Results []any `json:"results"`
-			}
-			err := s.client.Call(ctx, "catalog.search", map[string]any{
-				"query": req.Query,
-				"kinds": req.Kinds,
-				"limit": req.Limit,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		var resp struct {
+			Count   int   `json:"count"`
+			Results []any `json:"results"`
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Catalog query for %q executed (standalone mode).", req.Query)}}}
+		err := s.client.Call(ctx, "catalog.search", map[string]any{
+			"query": req.Query,
+			"kinds": req.Kinds,
+			"limit": req.Limit,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
+		}
+		outBytes, _ := json.MarshalIndent(resp, "", "  ")
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 
 	case "get_extension":
 		var req struct {
@@ -295,19 +304,16 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp any
-			err := s.client.Call(ctx, "catalog.get_item", map[string]any{
-				"id":      req.ID,
-				"version": req.Version,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		var resp any
+		err := s.client.Call(ctx, "catalog.get_item", map[string]any{
+			"id":      req.ID,
+			"version": req.Version,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Extension details for %s retrieved.", req.ID)}}}
+		outBytes, _ := json.MarshalIndent(resp, "", "  ")
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 
 	case "prepare_install":
 		var req struct {
@@ -316,19 +322,16 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp any
-			err := s.client.Call(ctx, "resolver.prepare_plan", map[string]any{
-				"id":      req.ID,
-				"version": req.Version,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		var resp any
+		err := s.client.Call(ctx, "resolver.prepare_plan", map[string]any{
+			"id":      req.ID,
+			"version": req.Version,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Install plan preview for %s ready.", req.ID)}}}
+		outBytes, _ := json.MarshalIndent(resp, "", "  ")
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 
 	case "request_install":
 		var req struct {
@@ -337,52 +340,27 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp any
-			err := s.client.Call(ctx, "install.execute", map[string]any{
-				"planId":        req.PlanID,
-				"approvalToken": req.ApprovalToken,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		var resp any
+		err := s.client.Call(ctx, "install.execute", map[string]any{
+			"planId":        req.PlanID,
+			"approvalToken": req.ApprovalToken,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Install executed for plan %s.", req.PlanID)}}}
+		outBytes, _ := json.MarshalIndent(resp, "", "  ")
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 
 	case "list_installed":
-		if s.client != nil {
-			var resp struct {
-				Count    int              `json:"count"`
-				Installs []CapabilityItem `json:"installs"`
-			}
-			err := s.client.Call(ctx, "tools.list", nil, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(resp.Installs)}}}
+		var resp struct {
+			Count    int              `json:"count"`
+			Installs []CapabilityItem `json:"installs"`
 		}
-		items := []CapabilityItem{
-			{
-				ID:        "mcp:github:modelcontextprotocol:servers:postgres",
-				Name:      "postgres",
-				Kind:      "mcp",
-				Summary:   "PostgreSQL Read/Write Inspection Tool",
-				Transport: "stdio",
-				Status:    StatusReady,
-				Verified:  true,
-			},
-			{
-				ID:         "external:native:fetch",
-				Name:       "fetch",
-				Kind:       "mcp",
-				Summary:    "Pre-existing host fetch utility",
-				Status:     StatusReady,
-				IsExternal: true,
-			},
+		err := s.client.Call(ctx, "tools.list", nil, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(items)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(resp.Installs)}}}
 
 	case "search_capabilities":
 		var req struct {
@@ -391,19 +369,16 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp any
-			err := s.client.Call(ctx, "capabilities.search", map[string]any{
-				"query": req.Query,
-				"limit": req.Limit,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		var resp any
+		err := s.client.Call(ctx, "capabilities.search", map[string]any{
+			"query": req.Query,
+			"limit": req.Limit,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Found capabilities matching %q.", req.Query)}}}
+		outBytes, _ := json.MarshalIndent(resp, "", "  ")
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 
 	case "describe_capability":
 		var req struct {
@@ -411,18 +386,15 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp any
-			err := s.client.Call(ctx, "capabilities.describe", map[string]any{
-				"capabilityId": req.CapabilityID,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		var resp any
+		err := s.client.Call(ctx, "capabilities.describe", map[string]any{
+			"capabilityId": req.CapabilityID,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Capability schema and identity binding for %s.", req.CapabilityID)}}}
+		outBytes, _ := json.MarshalIndent(resp, "", "  ")
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 
 	case "load_skill":
 		var req struct {
@@ -431,23 +403,27 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp struct {
-				SkillID      string `json:"skillId"`
-				Instructions string `json:"instructions"`
-			}
-			err := s.client.Call(ctx, "skills.load_body", map[string]any{
-				"skillId": req.SkillID,
-				"version": req.Version,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			if resp.Instructions != "" {
-				return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Instructions}}}
-			}
+		var resp struct {
+			SkillID      string `json:"skillId"`
+			Instructions string `json:"instructions"`
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("# Skill: %s\nProgressive instruction workflow.", req.SkillID)}}}
+		err := s.client.Call(ctx, "skills.load_body", map[string]any{
+			"skillId": req.SkillID,
+			"version": req.Version,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
+		}
+		if resp.Instructions == "" {
+			// The daemon answered with no instruction body; report that
+			// instead of substituting canned instructions.
+			return FormatErrorResult(domain.NewError(
+				"LPSM-CORE-INTERNAL",
+				fmt.Sprintf("skill %s returned no instructions from the daemon", req.SkillID),
+				map[string]any{"skillId": req.SkillID},
+			))
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Instructions}}}
 
 	case "read_skill_resource":
 		var req struct {
@@ -456,20 +432,17 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp struct {
-				Content string `json:"content"`
-			}
-			err := s.client.Call(ctx, "skills.read_resource", map[string]any{
-				"skillId": req.SkillID,
-				"path":    req.Path,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Content}}}
+		var resp struct {
+			Content string `json:"content"`
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Resource %s for skill %s.", req.Path, req.SkillID)}}}
+		err := s.client.Call(ctx, "skills.read_resource", map[string]any{
+			"skillId": req.SkillID,
+			"path":    req.Path,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Content}}}
 
 	case "invoke_capability":
 		var req struct {
@@ -478,24 +451,21 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp struct {
-				Output  string `json:"output"`
-				IsError bool   `json:"isError"`
-			}
-			err := s.client.Call(ctx, "provider.invoke", map[string]any{
-				"capabilityId": req.CapabilityID,
-				"arguments":    req.Arguments,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			return MCPToolResult{
-				Content: []MCPContent{{Type: "text", Text: resp.Output}},
-				IsError: resp.IsError,
-			}
+		var resp struct {
+			Output  string `json:"output"`
+			IsError bool   `json:"isError"`
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Capability %s invoked successfully.", req.CapabilityID)}}}
+		err := s.client.Call(ctx, "provider.invoke", map[string]any{
+			"capabilityId": req.CapabilityID,
+			"arguments":    req.Arguments,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
+		}
+		return MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: resp.Output}},
+			IsError: resp.IsError,
+		}
 
 	case "get_invocation":
 		var req struct {
@@ -503,18 +473,15 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp any
-			err := s.client.Call(ctx, "invocation.get", map[string]any{
-				"invocationId": req.InvocationID,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			outBytes, _ := json.MarshalIndent(resp, "", "  ")
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		var resp any
+		err := s.client.Call(ctx, "invocation.get", map[string]any{
+			"invocationId": req.InvocationID,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s status: completed.", req.InvocationID)}}}
+		outBytes, _ := json.MarshalIndent(resp, "", "  ")
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
 
 	case "cancel_invocation":
 		var req struct {
@@ -522,19 +489,16 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		_ = json.Unmarshal(args, &req)
 
-		if s.client != nil {
-			var resp struct {
-				Cancelled bool `json:"cancelled"`
-			}
-			err := s.client.Call(ctx, "invocation.cancel", map[string]any{
-				"invocationId": req.InvocationID,
-			}, &resp)
-			if err != nil {
-				return FormatErrorResult(err)
-			}
-			return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s cancelled: %v", req.InvocationID, resp.Cancelled)}}}
+		var resp struct {
+			Cancelled bool `json:"cancelled"`
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s cancelled.", req.InvocationID)}}}
+		err := s.client.Call(ctx, "invocation.cancel", map[string]any{
+			"invocationId": req.InvocationID,
+		}, &resp)
+		if err != nil {
+			return FormatErrorResult(err)
+		}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s cancelled: %v", req.InvocationID, resp.Cancelled)}}}
 
 	default:
 		return FormatErrorResult(domain.ErrNotFound("tool", name))
@@ -584,6 +548,31 @@ func FormatInstalledPanel(items []CapabilityItem) string {
 	}
 
 	return sb.String()
+}
+
+// knownTool reports whether name is one of the 12 canonical tools this shim
+// advertises in tools/list.
+func (s *Shim) knownTool(name string) bool {
+	for _, tool := range s.tools {
+		if tool.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// standaloneError is the fail-closed tool result used when the shim has no
+// daemon connection. The bridge holds no capability data of its own, so every
+// tool reports the missing connection instead of inventing results, statuses,
+// or inventory.
+func standaloneError(tool string) MCPToolResult {
+	err := domain.NewError(
+		"LPSM-IPC-DAEMON-UNREACHABLE",
+		fmt.Sprintf("tool %s: not connected to daemon (standalone mode); no LitePSM daemon connection, so no capability data is available", tool),
+		map[string]any{"tool": tool, "mode": "standalone"},
+	)
+	err.Retryable = true
+	return FormatErrorResult(err)
 }
 
 // FormatErrorResult converts any error into a machine-readable JSON error envelope.

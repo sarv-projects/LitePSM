@@ -18,11 +18,11 @@ import (
 
 // AuthBroker coordinates OAuth 2.0 PKCE authentication, secure secret storage, and persistent profile state.
 type AuthBroker struct {
-	db          *state.DB
-	secrets     secrets.SecretStore
-	httpClient  *http.Client
-	sessions    map[string]*AuthSession
-	sessionsMu  sync.RWMutex
+	db         *state.DB
+	secrets    secrets.SecretStore
+	httpClient *http.Client
+	sessions   map[string]*AuthSession
+	sessionsMu sync.RWMutex
 }
 
 // NewAuthBroker creates a new AuthBroker.

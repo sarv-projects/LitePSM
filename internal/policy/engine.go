@@ -79,9 +79,9 @@ type PolicyInput struct {
 	Effects             []EffectDeclaration `json:"effects"`
 	RequestedAccess     []string            `json:"requestedAccess"`
 	SchemaFingerprint   string              `json:"schemaFingerprint,omitempty"`
-	CASTreeDigest       string              `json:"casTreeDigest,omitempty"`      // Local CAS Merkle digest
-	EndpointOrigin      string              `json:"endpointOrigin,omitempty"`     // Remote HTTPS origin
-	ServerVersionDigest string              `json:"serverVersionDigest,omitempty"`// Remote server version
+	CASTreeDigest       string              `json:"casTreeDigest,omitempty"`       // Local CAS Merkle digest
+	EndpointOrigin      string              `json:"endpointOrigin,omitempty"`      // Remote HTTPS origin
+	ServerVersionDigest string              `json:"serverVersionDigest,omitempty"` // Remote server version
 	Scope               domain.InstallScope `json:"scope"`
 	WorkspaceID         string              `json:"workspaceId,omitempty"`
 	ProjectRoot         string              `json:"projectRoot,omitempty"`

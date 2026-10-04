@@ -17,10 +17,10 @@ const (
 	CodeInternalError  = -32603
 
 	// LitePSM Specific RPC Error Codes
-	CodeUnauthorized   = -32001
-	CodePlanStale      = -32002
-	CodeSchemaDrift    = -32003
-	CodeRateLimited    = -32004
+	CodeUnauthorized = -32001
+	CodePlanStale    = -32002
+	CodeSchemaDrift  = -32003
+	CodeRateLimited  = -32004
 
 	// MaxMessageSize sets the upper bound for a single JSON-RPC message (16 MiB).
 	MaxMessageSize = 16 * 1024 * 1024
@@ -56,7 +56,7 @@ func (e *RPCError) Error() string {
 // HandshakeParams defines mandatory client metadata sent upon connection.
 type HandshakeParams struct {
 	ClientVersion string `json:"clientVersion"`
-	ClientKind    string `json:"clientKind"` // "cli" | "bridge"
+	ClientKind    string `json:"clientKind"`       // "cli" | "bridge"
 	HostID        string `json:"hostId,omitempty"` // "cline" | "codex" | "grok" | "pi" etc.
 	PID           int    `json:"pid"`
 }

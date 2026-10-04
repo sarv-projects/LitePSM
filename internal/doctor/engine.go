@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -8,7 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sarv-projects/litepsm/internal/artifact"
 	"github.com/sarv-projects/litepsm/internal/config"
+	"github.com/sarv-projects/litepsm/internal/domain"
 	"github.com/sarv-projects/litepsm/internal/host"
 	"github.com/sarv-projects/litepsm/internal/secrets"
 	"github.com/sarv-projects/litepsm/internal/state"
@@ -166,36 +169,186 @@ func (e *Engine) checkDatabase(ctx context.Context) CheckResult {
 	}
 }
 
+// checkOperationJournal queries the operations table for rows that never
+// reached a terminal state (crash/interrupt leftovers).
 func (e *Engine) checkOperationJournal(ctx context.Context) CheckResult {
-	return CheckResult{
-		ID:      "check_journal",
-		Name:    "Incomplete Operation Journal",
-		Status:  StatusPass,
-		Message: "clean (no orphaned or dangling operations)",
-	}
-}
-
-func (e *Engine) checkCASStore() CheckResult {
-	if e.paths == nil {
-		return CheckResult{ID: "check_cas", Name: "CAS Store Integrity", Status: "fail"}
-	}
-	casPath := e.paths.CASPath()
-	if _, err := os.Stat(casPath); os.IsNotExist(err) {
+	if e.db == nil {
 		return CheckResult{
-			ID:             "check_cas",
-			Name:           "CAS Store Integrity",
+			ID:             "check_journal",
+			Name:           "Incomplete Operation Journal",
 			Status:         StatusWarn,
-			Message:        "CAS store directory does not yet exist",
-			Recommendation: "CAS store will be created automatically on first install.",
+			Message:        "state database unavailable; operation journal was not inspected",
+			Recommendation: "See the SQLite State Database check for the underlying problem.",
+		}
+	}
+
+	ops, err := e.db.GetNonTerminalOperations(ctx)
+	if err != nil {
+		return CheckResult{
+			ID:             "check_journal",
+			Name:           "Incomplete Operation Journal",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("failed to query operation journal: %v", err),
+			Recommendation: "Run litepsm doctor --repair or inspect state.db manually.",
+		}
+	}
+
+	if len(ops) > 0 {
+		ids := make([]string, 0, len(ops))
+		states := make(map[string]int, len(ops))
+		for _, op := range ops {
+			ids = append(ids, op.OperationID)
+			states[op.State]++
+		}
+		return CheckResult{
+			ID:      "check_journal",
+			Name:    "Incomplete Operation Journal",
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("%d operation(s) never reached a terminal state", len(ops)),
+			Details: map[string]any{
+				"nonTerminalCount": len(ops),
+				"operationIds":     ids,
+				"states":           states,
+			},
+			Recommendation: "These operations were interrupted; inspect them in state.db (and clean any staging leftovers) before retrying installs.",
 		}
 	}
 
 	return CheckResult{
-		ID:      "check_cas",
-		Name:    "CAS Store Integrity",
+		ID:      "check_journal",
+		Name:    "Incomplete Operation Journal",
 		Status:  StatusPass,
-		Message: "content-addressed store verified",
+		Message: "no non-terminal operations in the journal",
 	}
+}
+
+// casVerifyLimit bounds how many CAS trees are re-hashed per doctor run so the
+// check stays responsive on large stores. Skipped trees are reported, not
+// silently passed.
+const casVerifyLimit = 32
+
+func (e *Engine) checkCASStore() CheckResult {
+	if e.paths == nil {
+		return CheckResult{ID: "check_cas", Name: "CAS Store Integrity", Status: StatusFail, Message: "platform paths uninitialized"}
+	}
+	treesRoot := filepath.Join(e.paths.CASPath(), "trees", "sha256")
+	entries, err := os.ReadDir(treesRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return CheckResult{
+				ID:             "check_cas",
+				Name:           "CAS Store Integrity",
+				Status:         StatusWarn,
+				Message:        "CAS store has no content trees yet (nothing to verify)",
+				Recommendation: "Trees are created on the first install.",
+			}
+		}
+		return CheckResult{
+			ID:             "check_cas",
+			Name:           "CAS Store Integrity",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("failed to read CAS store at %s: %v", treesRoot, err),
+			Recommendation: "Check filesystem permissions on DATA_ROOT/cas.",
+		}
+	}
+
+	if len(entries) == 0 {
+		return CheckResult{
+			ID:      "check_cas",
+			Name:    "CAS Store Integrity",
+			Status:  StatusWarn,
+			Message: "CAS store contains no content trees yet (nothing to verify)",
+			Details: map[string]any{"treeCount": 0},
+		}
+	}
+
+	verified, mismatched, unreadable, invalid := 0, 0, 0, 0
+	skipped := 0
+	var problems []string
+
+	for i, entry := range entries {
+		if i >= casVerifyLimit {
+			skipped = len(entries) - casVerifyLimit
+			break
+		}
+		if !entry.IsDir() || !isLowerHex(entry.Name(), 64) {
+			invalid++
+			problems = append(problems, fmt.Sprintf("unexpected entry %q", entry.Name()))
+			continue
+		}
+		got, err := artifact.ComputeCanonicalTreeDigest(filepath.Join(treesRoot, entry.Name()))
+		if err != nil {
+			unreadable++
+			problems = append(problems, fmt.Sprintf("%s: %v", entry.Name(), err))
+			continue
+		}
+		if got != "sha256:"+entry.Name() {
+			mismatched++
+			problems = append(problems, fmt.Sprintf("%s: digest mismatch (content changed since install)", entry.Name()))
+			continue
+		}
+		verified++
+	}
+
+	details := map[string]any{
+		"treeCount":     len(entries),
+		"verifiedCount": verified,
+		"skippedCount":  skipped,
+	}
+	if mismatched > 0 {
+		details["mismatchedCount"] = mismatched
+	}
+	if unreadable > 0 {
+		details["unreadableCount"] = unreadable
+	}
+	if invalid > 0 {
+		details["invalidEntryCount"] = invalid
+	}
+	if len(problems) > 0 {
+		details["problems"] = problems
+	}
+
+	switch {
+	case mismatched > 0 || unreadable > 0 || invalid > 0:
+		return CheckResult{
+			ID:             "check_cas",
+			Name:           "CAS Store Integrity",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("CAS integrity problems: %d mismatched, %d unreadable, %d invalid (of %d trees)", mismatched, unreadable, invalid, len(entries)),
+			Recommendation: "Reinstall the affected listing(s); the stored content no longer matches its content address.",
+			Details:        details,
+		}
+	case skipped > 0:
+		return CheckResult{
+			ID:      "check_cas",
+			Name:    "CAS Store Integrity",
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("re-verified %d of %d tree digests; %d skipped by the per-run verification limit", verified, len(entries), skipped),
+			Details: details,
+		}
+	default:
+		return CheckResult{
+			ID:      "check_cas",
+			Name:    "CAS Store Integrity",
+			Status:  StatusPass,
+			Message: fmt.Sprintf("re-verified canonical Merkle digest of %d content tree(s)", verified),
+			Details: details,
+		}
+	}
+}
+
+// isLowerHex reports whether s has exactly n lowercase hexadecimal characters.
+func isLowerHex(s string, n int) bool {
+	if len(s) != n {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Engine) checkStagingHygiene() CheckResult {
@@ -205,11 +358,22 @@ func (e *Engine) checkStagingHygiene() CheckResult {
 	stagingPath := e.paths.StagingPath()
 	entries, err := os.ReadDir(stagingPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return CheckResult{
+				ID:      "check_staging",
+				Name:    "Staging Scratch Hygiene",
+				Status:  StatusWarn,
+				Message: "staging directory not present; nothing to inspect",
+				Details: map[string]any{"readError": err.Error()},
+			}
+		}
 		return CheckResult{
-			ID:      "check_staging",
-			Name:    "Staging Scratch Hygiene",
-			Status:  StatusPass,
-			Message: "staging directory empty and clean",
+			ID:             "check_staging",
+			Name:           "Staging Scratch Hygiene",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("failed to read staging directory %s: %v", stagingPath, err),
+			Recommendation: "Check filesystem permissions on DATA_ROOT/staging.",
+			Details:        map[string]any{"readError": err.Error()},
 		}
 	}
 
@@ -234,35 +398,84 @@ func (e *Engine) checkStagingHygiene() CheckResult {
 	}
 }
 
-func (e *Engine) checkSecretVault(ctx context.Context) CheckResult {
+func (e *Engine) checkSecretVault(ctx context.Context) (result CheckResult) {
 	if e.secretStore == nil {
 		return CheckResult{
 			ID:             "check_secrets",
 			Name:           "OS Secret Store & Keyring",
 			Status:         StatusWarn,
-			Message:        "secret store is not configured",
+			Message:        "secret store is not configured; no canary was written and none can remain stored",
 			Recommendation: "Initialize OS secret vault for secure OAuth and API token storage.",
 		}
 	}
 
-	// Test with a synthetic canary
-	testRef, err := e.secretStore.Put(ctx, "canary", "test_key", []byte("canary_val"))
+	// Test with a synthetic canary: full put → read-back → delete round-trip.
+	// The canary is fixed at 'canary'/'test_key', so cleanup is possible even
+	// when the write itself failed (a store may keep a partial entry). The
+	// deferred Delete below runs on every path after the write attempt, and
+	// every reported outcome states whether the canary may remain stored.
+	// Canary values are never echoed into messages.
+	canaryValue := []byte("canary_val")
+	testRef, putErr := e.secretStore.Put(ctx, "canary", "test_key", canaryValue)
+	canaryRef := secrets.NewSecretRef("canary", "test_key")
+	if testRef != nil {
+		canaryRef = testRef
+	}
+
+	defer func() {
+		if err := e.secretStore.Delete(ctx, *canaryRef); err != nil {
+			if domain.ErrorCode(err) == "LPSM-STATE-NOT-FOUND" {
+				result.Message = fmt.Sprintf("%s; cleanup (delete) reported no stored canary, so the canary is not stored", result.Message)
+				return
+			}
+			result.Message = fmt.Sprintf("%s; cleanup (delete) failed: %v — the canary may remain stored as %s", result.Message, err, canaryRef.URI)
+			if result.Recommendation != "" {
+				result.Recommendation += " "
+			}
+			result.Recommendation += "Remove the canary secret ('canary'/'test_key') manually from the secret store."
+			if result.Status == StatusPass {
+				result.Status = StatusWarn
+			}
+			return
+		}
+		result.Message = fmt.Sprintf("%s; cleanup (delete) succeeded, the canary is not stored", result.Message)
+	}()
+
+	if putErr != nil {
+		return CheckResult{
+			ID:             "check_secrets",
+			Name:           "OS Secret Store & Keyring",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("secret vault access error: %v", putErr),
+			Recommendation: "Verify OS keyring daemon or credential manager permissions.",
+		}
+	}
+
+	readBack, err := e.secretStore.Get(ctx, *canaryRef)
 	if err != nil {
 		return CheckResult{
 			ID:             "check_secrets",
 			Name:           "OS Secret Store & Keyring",
 			Status:         StatusFail,
-			Message:        fmt.Sprintf("secret vault access error: %v", err),
+			Message:        fmt.Sprintf("canary write succeeded but read-back failed: %v", err),
 			Recommendation: "Verify OS keyring daemon or credential manager permissions.",
 		}
 	}
-	_ = e.secretStore.Delete(ctx, *testRef)
+	if !bytes.Equal(readBack, canaryValue) {
+		return CheckResult{
+			ID:             "check_secrets",
+			Name:           "OS Secret Store & Keyring",
+			Status:         StatusFail,
+			Message:        "canary read-back returned a different value than was written",
+			Recommendation: "The secret store is returning corrupted data; do not store credentials until this is resolved.",
+		}
+	}
 
 	return CheckResult{
 		ID:      "check_secrets",
 		Name:    "OS Secret Store & Keyring",
 		Status:  StatusPass,
-		Message: "functional (encrypted storage accessible with zero plaintext leaks)",
+		Message: "canary round-trip succeeded (put and read-back worked)",
 	}
 }
 
@@ -303,15 +516,38 @@ func (e *Engine) checkHostRegistrations(ctx context.Context) CheckResult {
 
 func (e *Engine) checkHostBackups() CheckResult {
 	if e.paths == nil {
-		return CheckResult{ID: "check_backups", Name: "Host Configuration Backups", Status: "pass"}
+		return CheckResult{
+			ID:      "check_backups",
+			Name:    "Host Configuration Backups",
+			Status:  StatusWarn,
+			Message: "platform paths uninitialized; backups were not inspected",
+		}
 	}
 	backupsPath := e.paths.BackupsPath()
-	entries, _ := os.ReadDir(backupsPath)
+	entries, err := os.ReadDir(backupsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return CheckResult{
+				ID:      "check_backups",
+				Name:    "Host Configuration Backups",
+				Status:  StatusWarn,
+				Message: "backup directory not present yet (created when a host config is first modified)",
+			}
+		}
+		return CheckResult{
+			ID:             "check_backups",
+			Name:           "Host Configuration Backups",
+			Status:         StatusWarn,
+			Message:        fmt.Sprintf("failed to read backup directory %s: %v", backupsPath, err),
+			Recommendation: "Check filesystem permissions on DATA_ROOT/backups.",
+		}
+	}
 	return CheckResult{
 		ID:      "check_backups",
 		Name:    "Host Configuration Backups",
 		Status:  StatusPass,
-		Message: fmt.Sprintf("%d configuration backups preserved safely in %s", len(entries), backupsPath),
+		Message: fmt.Sprintf("%d configuration backup(s) found in %s", len(entries), backupsPath),
+		Details: map[string]any{"backupCount": len(entries)},
 	}
 }
 
@@ -349,11 +585,73 @@ func (e *Engine) checkRuntimes() CheckResult {
 	}
 }
 
+// Free-space thresholds for the disk availability check.
+const (
+	diskWarnBelowBytes = 1 << 30 // 1 GiB
+	diskFailBelowBytes = 100 << 20
+)
+
 func (e *Engine) checkDiskSpace() CheckResult {
-	return CheckResult{
-		ID:      "check_disk",
-		Name:    "Local Storage Disk Space",
-		Status:  StatusPass,
-		Message: "adequate storage available in DATA_ROOT",
+	if e.paths == nil {
+		return CheckResult{
+			ID:      "check_disk",
+			Name:    "Local Storage Disk Space",
+			Status:  StatusWarn,
+			Message: "platform paths uninitialized; free space was not checked",
+		}
 	}
+
+	freeBytes, err := queryFreeBytes(e.paths.DataRoot)
+	if err != nil {
+		return CheckResult{
+			ID:      "check_disk",
+			Name:    "Local Storage Disk Space",
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("free space query failed for %s: %v", e.paths.DataRoot, err),
+		}
+	}
+
+	details := map[string]any{"freeBytes": freeBytes, "path": e.paths.DataRoot}
+	switch {
+	case freeBytes < diskFailBelowBytes:
+		return CheckResult{
+			ID:             "check_disk",
+			Name:           "Local Storage Disk Space",
+			Status:         StatusFail,
+			Message:        fmt.Sprintf("only %s free in %s (below the %s minimum)", formatBytes(freeBytes), e.paths.DataRoot, formatBytes(diskFailBelowBytes)),
+			Recommendation: "Free up disk space before installing; installs will fail on a full disk.",
+			Details:        details,
+		}
+	case freeBytes < diskWarnBelowBytes:
+		return CheckResult{
+			ID:             "check_disk",
+			Name:           "Local Storage Disk Space",
+			Status:         StatusWarn,
+			Message:        fmt.Sprintf("%s free in %s (below the %s comfort threshold)", formatBytes(freeBytes), e.paths.DataRoot, formatBytes(diskWarnBelowBytes)),
+			Recommendation: "Consider freeing disk space; large catalogs and CAS trees need room to stage.",
+			Details:        details,
+		}
+	default:
+		return CheckResult{
+			ID:      "check_disk",
+			Name:    "Local Storage Disk Space",
+			Status:  StatusPass,
+			Message: fmt.Sprintf("%s free in %s", formatBytes(freeBytes), e.paths.DataRoot),
+			Details: details,
+		}
+	}
+}
+
+// formatBytes renders a byte count as a human-readable binary size.
+func formatBytes(n uint64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := uint64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

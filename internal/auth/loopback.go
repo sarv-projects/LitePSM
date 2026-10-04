@@ -28,12 +28,12 @@ type LoopbackResult struct {
 
 // LoopbackListener manages an ephemeral HTTP server on 127.0.0.1 for OAuth 2.0 PKCE callbacks.
 type LoopbackListener struct {
-	listener    net.Listener
-	server      *http.Server
-	port        int
-	stateToken  string
-	resultChan  chan LoopbackResult
-	closeOnce   sync.Once
+	listener   net.Listener
+	server     *http.Server
+	port       int
+	stateToken string
+	resultChan chan LoopbackResult
+	closeOnce  sync.Once
 }
 
 // StartLoopbackListener binds exclusively to 127.0.0.1:0 and prepares the callback handler.

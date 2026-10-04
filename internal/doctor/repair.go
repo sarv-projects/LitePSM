@@ -2,8 +2,10 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/sarv-projects/litepsm/internal/config"
@@ -38,32 +40,105 @@ func BuildRepairPlan(report *DoctorReport, paths *config.PlatformPaths) *RepairP
 }
 
 // ApplyRepairPlan executes all proposed repair actions.
+//
+// Every action reports its own outcome: Applied is only true when the action
+// actually changed something, and failures are recorded on the action and
+// collected into the returned error instead of aborting the remaining actions.
+// Actions that need the operation journal refuse to run when db is nil rather
+// than deleting staging directories that may belong to in-flight operations.
 func ApplyRepairPlan(ctx context.Context, plan *RepairPlan, paths *config.PlatformPaths, db *state.DB) error {
+	if plan == nil {
+		return fmt.Errorf("no repair plan supplied")
+	}
+
+	var failures []error
 	for i := range plan.Actions {
 		action := &plan.Actions[i]
 		switch action.ID {
 		case "clean_staging":
-			if paths != nil {
-				stagingPath := paths.StagingPath()
-				entries, err := os.ReadDir(stagingPath)
-				if err == nil {
-					for _, entry := range entries {
-						_ = os.RemoveAll(stagingPath + "/" + entry.Name())
-					}
+			if db == nil {
+				action.Applied = false
+				action.Error = "refusing to clean staging without access to the operation journal (cannot tell active operations from orphans)"
+				failures = append(failures, fmt.Errorf("clean_staging: %s", action.Error))
+				continue
+			}
+			if paths == nil {
+				action.Applied = false
+				action.Error = "no platform paths configured; staging location unknown"
+				failures = append(failures, fmt.Errorf("clean_staging: %s", action.Error))
+				continue
+			}
+
+			active := make(map[string]bool)
+			ops, err := db.GetNonTerminalOperations(ctx)
+			if err != nil {
+				action.Applied = false
+				action.Error = fmt.Sprintf("failed to list active operations: %v", err)
+				failures = append(failures, fmt.Errorf("clean_staging: %s", action.Error))
+				continue
+			}
+			for _, op := range ops {
+				active[op.OperationID] = true
+			}
+
+			stagingPath := paths.StagingPath()
+			entries, err := os.ReadDir(stagingPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					// Nothing to clean; staging does not exist.
+					continue
 				}
-				action.Applied = true
+				action.Applied = false
+				action.Error = fmt.Sprintf("failed to read staging directory %s: %v", stagingPath, err)
+				failures = append(failures, fmt.Errorf("clean_staging: %s", action.Error))
+				continue
+			}
+
+			removed := 0
+			skippedActive := 0
+			var removeErr error
+			for _, entry := range entries {
+				if active[entry.Name()] {
+					skippedActive++
+					continue
+				}
+				if err := os.RemoveAll(filepath.Join(stagingPath, entry.Name())); err != nil {
+					removeErr = fmt.Errorf("failed to remove staging entry %s: %w", entry.Name(), err)
+					break
+				}
+				removed++
+			}
+			if removeErr != nil {
+				action.Applied = removed > 0
+				action.Error = removeErr.Error()
+				failures = append(failures, fmt.Errorf("clean_staging: %w", removeErr))
+				continue
+			}
+			action.Applied = removed > 0
+			if skippedActive > 0 && removed == 0 {
+				action.Error = fmt.Sprintf("nothing removed; all %d staging entries belong to active operations", skippedActive)
 			}
 
 		case "repair_dirs":
-			if paths != nil {
-				err := paths.EnsureDirectories()
-				if err != nil {
-					action.Error = err.Error()
-					return fmt.Errorf("failed to repair directories: %w", err)
-				}
-				action.Applied = true
+			if paths == nil {
+				action.Applied = false
+				action.Error = "no platform paths configured; directory hierarchy location unknown"
+				failures = append(failures, fmt.Errorf("repair_dirs: %s", action.Error))
+				continue
 			}
+			if err := paths.EnsureDirectories(); err != nil {
+				action.Applied = false
+				action.Error = err.Error()
+				failures = append(failures, fmt.Errorf("repair_dirs: %w", err))
+				continue
+			}
+			action.Applied = true
+
+		default:
+			action.Applied = false
+			action.Error = fmt.Sprintf("unknown repair action %q", action.ID)
+			failures = append(failures, fmt.Errorf("repair: %s", action.Error))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }

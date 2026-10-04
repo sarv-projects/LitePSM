@@ -281,6 +281,52 @@ func (h *ProviderHandle) Terminate(gracePeriod time.Duration) error {
 	return nil
 }
 
+// Snapshot is a consistent copy of a handle's runtime facts, taken under the
+// handle lock so status transitions observed by the process reaper can never
+// race with a probe.
+type HandleSnapshot struct {
+	ProviderID string         `json:"providerId"`
+	PID        int            `json:"pid,omitempty"`
+	Status     ProviderStatus `json:"status"`
+	StartedAt  time.Time      `json:"startedAt"`
+	StoppedAt  *time.Time     `json:"stoppedAt,omitempty"`
+	ExitError  string         `json:"exitError,omitempty"`
+	StderrTail string         `json:"stderrTail,omitempty"`
+}
+
+// SnapshotProvider returns the supervisor's view of one tracked provider.
+func (s *Supervisor) SnapshotProvider(providerID string) (HandleSnapshot, error) {
+	handle, err := s.GetProvider(providerID)
+	if err != nil {
+		return HandleSnapshot{}, err
+	}
+	return handle.Snapshot(), nil
+}
+
+// Snapshot locks the handle and copies its current runtime facts.
+func (h *ProviderHandle) Snapshot() HandleSnapshot {
+	h.mu.RLock()
+	snap := HandleSnapshot{
+		ProviderID: h.ProviderID,
+		PID:        h.PID,
+		Status:     h.Status,
+		StartedAt:  h.StartedAt,
+		StoppedAt:  h.StoppedAt,
+	}
+	if h.ExitError != nil {
+		snap.ExitError = h.ExitError.Error()
+	}
+	h.mu.RUnlock()
+
+	// Bound the diagnostic payload: at most the last 2 KiB of stderr.
+	tail := h.StderrLogs()
+	if len(tail) > 2048 {
+		tail = tail[len(tail)-2048:]
+	}
+	snap.StderrTail = tail
+	return snap
+}
+
 // StderrLogs returns recent stderr logs from the rotating ring buffer.
 func (h *ProviderHandle) StderrLogs() string {
 	if h.StderrBuffer == nil {

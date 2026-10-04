@@ -14,13 +14,13 @@ import (
 
 // LegacyClient implements the legacy MCP 2025-11-25 stateful handshake profile.
 type LegacyClient struct {
-	endpoint     string
-	headers      map[string]string
-	httpClient   *http.Client
-	seq          uint64
-	initialized  bool
-	initMu       sync.Mutex
-	serverCaps   map[string]any
+	endpoint    string
+	headers     map[string]string
+	httpClient  *http.Client
+	seq         uint64
+	initialized bool
+	initMu      sync.Mutex
+	serverCaps  map[string]any
 }
 
 // ConnectLegacy creates a legacy MCP 2025-11-25 client.

@@ -156,8 +156,18 @@ func (db *DB) RevokeApproval(ctx context.Context, approvalID string) error {
 
 // --- Installs & Components ---
 
+// execer is satisfied by both *sql.DB and *sql.Tx so write helpers can run
+// standalone or inside a larger transaction (see CommitInstallOperation).
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // SaveInstall persists a local installation record.
 func (db *DB) SaveInstall(ctx context.Context, rec *domain.InstallRecord) error {
+	return db.saveInstallExec(ctx, db.raw, rec)
+}
+
+func (db *DB) saveInstallExec(ctx context.Context, ex execer, rec *domain.InstallRecord) error {
 	query := `
 	INSERT OR REPLACE INTO installs (
 		install_id, listing_id, kind, version, immutable_ref,
@@ -170,7 +180,7 @@ func (db *DB) SaveInstall(ctx context.Context, rec *domain.InstallRecord) error 
 		enabledInt = 0
 	}
 
-	_, err := db.raw.ExecContext(ctx, query,
+	_, err := ex.ExecContext(ctx, query,
 		rec.InstallID,
 		rec.ListingID,
 		"mcp", // default kind
@@ -294,22 +304,106 @@ func (db *DB) ListInstalls(ctx context.Context, scope domain.InstallScope, works
 }
 
 // DeleteInstall removes an install record and cascades to components/providers.
+// Removing a record that does not exist is an explicit not-found error, never
+// a silent success.
 func (db *DB) DeleteInstall(ctx context.Context, installID string) error {
-	_, err := db.raw.ExecContext(ctx, "DELETE FROM installs WHERE install_id = ?", installID)
-	return err
+	res, err := db.raw.ExecContext(ctx, "DELETE FROM installs WHERE install_id = ?", installID)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrNotFound("install", installID)
+	}
+	return nil
 }
 
 // SaveInstallComponent persists a sub-element within an install.
 func (db *DB) SaveInstallComponent(ctx context.Context, comp *domain.InstallComponentRecord) error {
+	return db.saveInstallComponentExec(ctx, db.raw, comp)
+}
+
+func (db *DB) saveInstallComponentExec(ctx context.Context, ex execer, comp *domain.InstallComponentRecord) error {
 	query := `
 	INSERT OR REPLACE INTO install_components (component_id, install_id, kind, name, relative_path, enabled)
 	VALUES (?, ?, ?, ?, ?, 1);`
 
-	_, err := db.raw.ExecContext(ctx, query, comp.InstallID, comp.InstallID, string(comp.Kind), comp.ComponentName, comp.Path)
+	_, err := ex.ExecContext(ctx, query, comp.InstallID, comp.InstallID, string(comp.Kind), comp.ComponentName, comp.Path)
 	return err
 }
 
+// CommitInstallOperation writes the install record, its primary component
+// record, and the journal transition to "committed" in one SQLite transaction.
+// A crash therefore leaves either no install row (startup recovery rolls the
+// operation back) or a complete one (recovery finalizes the journal), never a
+// half-written install.
+func (db *DB) CommitInstallOperation(ctx context.Context, rec *domain.InstallRecord, comp *domain.InstallComponentRecord, opID string) error {
+	tx, err := db.raw.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin install commit transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := db.saveInstallExec(ctx, tx, rec); err != nil {
+		return fmt.Errorf("failed to save install %s: %w", rec.InstallID, err)
+	}
+	if err := db.saveInstallComponentExec(ctx, tx, comp); err != nil {
+		return fmt.Errorf("failed to save install component: %w", err)
+	}
+	if err := db.advanceOperationStateExec(ctx, tx, opID, "committed"); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit install metadata transaction: %w", err)
+	}
+	return nil
+}
+
 // --- Providers & Capabilities ---
+
+// ProviderConfig is the launch-relevant subset of a providers row: everything
+// the daemon needs to decide whether and how to start a configured provider.
+type ProviderConfig struct {
+	ProviderID     string
+	InstallID      string
+	Mode           string
+	LaunchSpecJSON string
+	Enabled        bool
+	Autostart      bool
+	AuthProfileID  string
+}
+
+// ListProviders returns every configured provider row, ordered by provider id.
+// It reports database state only: it never implies a process is running.
+func (db *DB) ListProviders(ctx context.Context) ([]*ProviderConfig, error) {
+	query := `
+	SELECT provider_id, install_id, mode, launch_spec_json, enabled, autostart, COALESCE(auth_profile_id, '')
+	FROM providers
+	ORDER BY provider_id;`
+
+	rows, err := db.raw.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query providers: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*ProviderConfig
+	for rows.Next() {
+		var p ProviderConfig
+		var enabled, autostart int
+		if err := rows.Scan(&p.ProviderID, &p.InstallID, &p.Mode, &p.LaunchSpecJSON, &enabled, &autostart, &p.AuthProfileID); err != nil {
+			return nil, err
+		}
+		p.Enabled = enabled == 1
+		p.Autostart = autostart == 1
+		list = append(list, &p)
+	}
+	return list, rows.Err()
+}
 
 // SaveProvider stores supervised MCP provider configuration.
 func (db *DB) SaveProvider(ctx context.Context, p *domain.ProviderRecord) error {

@@ -51,10 +51,10 @@ type ClientSession interface {
 
 // RequestMeta encapsulates standard 2026-07-28 stateless metadata.
 type RequestMeta struct {
-	ProtocolVersion string          `json:"protocolVersion"`
-	ClientInfo      ClientInfo      `json:"clientInfo"`
-	Capabilities    ClientCaps      `json:"capabilities"`
-	ProgressToken   string          `json:"progressToken,omitempty"`
+	ProtocolVersion string     `json:"protocolVersion"`
+	ClientInfo      ClientInfo `json:"clientInfo"`
+	Capabilities    ClientCaps `json:"capabilities"`
+	ProgressToken   string     `json:"progressToken,omitempty"`
 }
 
 // ClientInfo describes LitePSM client identity to downstream providers.
@@ -65,8 +65,8 @@ type ClientInfo struct {
 
 // ClientCaps strictly clamps downstream permissions to protect user privacy.
 type ClientCaps struct {
-	Roots        *RootsCap `json:"roots,omitempty"`        // Clamped: nil or false by default
-	Sampling     *struct{} `json:"sampling,omitempty"`     // Clamped: nil by default
+	Roots        *RootsCap      `json:"roots,omitempty"`    // Clamped: nil or false by default
+	Sampling     *struct{}      `json:"sampling,omitempty"` // Clamped: nil by default
 	Experimental map[string]any `json:"experimental,omitempty"`
 }
 

@@ -181,25 +181,25 @@ type ProvenanceRecord struct {
 
 // Listing represents a normalized discovery entry in the LitePSM catalog.
 type Listing struct {
-	SchemaVersion        int                   `json:"schemaVersion"`
-	ID                   string                `json:"id"` // ListingId
-	Kind                 ListingKind           `json:"kind"`
-	Name                 string                `json:"name"`
-	Title                string                `json:"title,omitempty"`
-	Summary              string                `json:"summary"`
-	Description          string                `json:"description,omitempty"`
-	Categories           []string              `json:"categories"`
-	Keywords             []string              `json:"keywords"`
-	PublisherClaim       PublisherClaim        `json:"publisherClaim"`
-	Source               SourceReference       `json:"source"`
-	Versions             []VersionSummary      `json:"versions"`
-	ComponentsSummary    []ComponentSummary    `json:"componentsSummary"`
-	RequirementsSummary  []string              `json:"requirementsSummary"`
-	CompatibilitySummary []CompatibilityFact   `json:"compatibilitySummary"`
-	VerificationSummary  VerificationSummary   `json:"verificationSummary"`
-	Provenance           ProvenanceRecord      `json:"provenance"`
-	Status               ListingStatus         `json:"status"`
-	RawMetadataRef       string                `json:"rawMetadataRef,omitempty"`
+	SchemaVersion        int                 `json:"schemaVersion"`
+	ID                   string              `json:"id"` // ListingId
+	Kind                 ListingKind         `json:"kind"`
+	Name                 string              `json:"name"`
+	Title                string              `json:"title,omitempty"`
+	Summary              string              `json:"summary"`
+	Description          string              `json:"description,omitempty"`
+	Categories           []string            `json:"categories"`
+	Keywords             []string            `json:"keywords"`
+	PublisherClaim       PublisherClaim      `json:"publisherClaim"`
+	Source               SourceReference     `json:"source"`
+	Versions             []VersionSummary    `json:"versions"`
+	ComponentsSummary    []ComponentSummary  `json:"componentsSummary"`
+	RequirementsSummary  []string            `json:"requirementsSummary"`
+	CompatibilitySummary []CompatibilityFact `json:"compatibilitySummary"`
+	VerificationSummary  VerificationSummary `json:"verificationSummary"`
+	Provenance           ProvenanceRecord    `json:"provenance"`
+	Status               ListingStatus       `json:"status"`
+	RawMetadataRef       string              `json:"rawMetadataRef,omitempty"`
 }
 
 // DependencyConstraint specifies version constraints for dependencies.
@@ -224,8 +224,8 @@ type PermissionDeclaration struct {
 
 // TestEvidenceRecord documents test run status.
 type TestEvidenceRecord struct {
-	HostID    string    `json:"hostId"`
-	Passed    bool      `json:"passed"`
+	HostID     string    `json:"hostId"`
+	Passed     bool      `json:"passed"`
 	ExecutedAt time.Time `json:"executedAt"`
 }
 
@@ -434,38 +434,38 @@ type RequestedAccess struct {
 
 // InstallPlan strictly adheres to schemas/install-plan.schema.json.
 type InstallPlan struct {
-	SchemaVersion    int                `json:"schemaVersion"`
-	PlanID           string             `json:"planId"`
-	PlanHash         string             `json:"planHash"`
-	CreatedAt        time.Time          `json:"createdAt"`
-	ExpiresAt        time.Time          `json:"expiresAt"`
-	CatalogReleaseID string             `json:"catalogReleaseId"`
-	SourceSnapshots  []string           `json:"sourceSnapshots,omitempty"`
-	Request          PlanRequest        `json:"request"`
-	Resolved         PlanResolved       `json:"resolved"`
-	Effects          []string           `json:"effects"`
-	Preconditions    PlanPreconditions  `json:"preconditions"`
-	Approval         PlanApproval       `json:"approval"`
-	HostChanges      []HostChange       `json:"hostChanges,omitempty"`
-	ProviderLaunches []ProviderLaunch   `json:"providerLaunches,omitempty"`
-	RequestedAccess  *RequestedAccess   `json:"requestedAccess,omitempty"`
+	SchemaVersion    int               `json:"schemaVersion"`
+	PlanID           string            `json:"planId"`
+	PlanHash         string            `json:"planHash"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	ExpiresAt        time.Time         `json:"expiresAt"`
+	CatalogReleaseID string            `json:"catalogReleaseId"`
+	SourceSnapshots  []string          `json:"sourceSnapshots,omitempty"`
+	Request          PlanRequest       `json:"request"`
+	Resolved         PlanResolved      `json:"resolved"`
+	Effects          []string          `json:"effects"`
+	Preconditions    PlanPreconditions `json:"preconditions"`
+	Approval         PlanApproval      `json:"approval"`
+	HostChanges      []HostChange      `json:"hostChanges,omitempty"`
+	ProviderLaunches []ProviderLaunch  `json:"providerLaunches,omitempty"`
+	RequestedAccess  *RequestedAccess  `json:"requestedAccess,omitempty"`
 }
 
 // ProviderRecord tracks a registered MCP provider daemon process or remote endpoint.
 type ProviderRecord struct {
-	ProviderID    string     `json:"providerId"`
-	InstallID     string     `json:"installId"`
-	ComponentName string     `json:"componentName"`
-	Transport     string     `json:"transport"`
-	Endpoint      string     `json:"endpoint,omitempty"`
-	Command       string     `json:"command,omitempty"`
-	ArgsJSON      string     `json:"argsJson,omitempty"`
-	EnvJSON       string     `json:"envJson,omitempty"`
-	WorkingDir    string     `json:"workingDir,omitempty"`
-	AuthProfileID string     `json:"authProfileId,omitempty"`
-	Status        string     `json:"status"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedAt     time.Time  `json:"updatedAt"`
+	ProviderID    string    `json:"providerId"`
+	InstallID     string    `json:"installId"`
+	ComponentName string    `json:"componentName"`
+	Transport     string    `json:"transport"`
+	Endpoint      string    `json:"endpoint,omitempty"`
+	Command       string    `json:"command,omitempty"`
+	ArgsJSON      string    `json:"argsJson,omitempty"`
+	EnvJSON       string    `json:"envJson,omitempty"`
+	WorkingDir    string    `json:"workingDir,omitempty"`
+	AuthProfileID string    `json:"authProfileId,omitempty"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 // CapabilityRecord stores individual discovered tools and schemas.

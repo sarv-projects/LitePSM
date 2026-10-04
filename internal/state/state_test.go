@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,9 +152,14 @@ func TestOperationJournalAndRollback(t *testing.T) {
 	_ = os.WriteFile(testFile, []byte("in flight data"), 0600)
 
 	// Execute crash recovery
-	err := db.RecoverIncompleteOperations(ctx, tmpDir, nil, nil)
+	summary, err := db.RecoverIncompleteOperations(ctx, filepath.Join(tmpDir, "staging"), func(string) string {
+		return filepath.Join(tmpDir, "cas", "missing")
+	})
 	if err != nil {
 		t.Fatalf("RecoverIncompleteOperations failed: %v", err)
+	}
+	if summary.Examined != 1 || summary.RolledBack != 1 || summary.Committed != 0 || summary.Failed != 0 {
+		t.Fatalf("unexpected recovery summary: %+v", summary)
 	}
 
 	// Verify operation state rolled_back
@@ -207,20 +213,22 @@ func TestSafeCASRollbackPreservation(t *testing.T) {
 	_ = os.WriteFile(pathCreated, []byte("created tree content"), 0600)
 	_ = os.WriteFile(pathShared, []byte("shared tree content"), 0600)
 
-	// Simulate verifyTreeComplete returning false (tree incomplete)
+	// Resolve tree digests to on-disk paths for recovery cleanup
 	treePathMap := map[string]string{
 		treeDigestCreated: pathCreated,
 		treeDigestShared:  pathShared,
 	}
 
-	err := db.RecoverIncompleteOperations(
+	summary, err := db.RecoverIncompleteOperations(
 		ctx,
-		tmpDir,
-		func(digest string) bool { return false }, // Incomplete!
+		filepath.Join(tmpDir, "staging"),
 		func(digest string) string { return treePathMap[digest] },
 	)
 	if err != nil {
 		t.Fatalf("RecoverIncompleteOperations failed: %v", err)
+	}
+	if summary.Examined != 1 || summary.RolledBack != 1 || summary.Committed != 0 || summary.Failed != 0 {
+		t.Fatalf("unexpected recovery summary: %+v", summary)
 	}
 
 	// Tree created by op must have been deleted
@@ -274,5 +282,226 @@ func TestProjectScopedInstalls(t *testing.T) {
 	}
 	if len(list) != 1 {
 		t.Fatalf("expected 1 install in workspace, got %d", len(list))
+	}
+}
+
+func TestDeleteInstall_NotFoundIsAnError(t *testing.T) {
+	db, tmpDir := openTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	rec := &domain.InstallRecord{
+		InstallID:   "inst_user_del_0001",
+		ListingID:   "mcp:builtin:mcp-registry:del",
+		Version:     "1.0.0",
+		TreeDigest:  "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		Scope:       domain.ScopeUser,
+		Status:      domain.InstallActive,
+		InstalledAt: now,
+		UpdatedAt:   now,
+	}
+	if err := db.SaveInstall(ctx, rec); err != nil {
+		t.Fatalf("SaveInstall failed: %v", err)
+	}
+
+	if err := db.DeleteInstall(ctx, rec.InstallID); err != nil {
+		t.Fatalf("DeleteInstall failed: %v", err)
+	}
+	if _, err := db.GetInstall(ctx, rec.InstallID); err == nil {
+		t.Fatal("install still readable after delete")
+	}
+
+	// Deleting the same record again must be an explicit not-found error.
+	err := db.DeleteInstall(ctx, rec.InstallID)
+	if err == nil {
+		t.Fatal("second delete must fail, not report success")
+	}
+	if code := domain.ErrorCode(err); code != "LPSM-STATE-NOT-FOUND" {
+		t.Fatalf("expected LPSM-STATE-NOT-FOUND, got %s (%v)", code, err)
+	}
+}
+
+func TestCommitInstallOperation_Transactional(t *testing.T) {
+	db, tmpDir := openTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer db.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	treeDigest := "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+	// Success path: install + component + journal state land together.
+	if err := db.CreateOperation(ctx, "op_tx_commit", nil, "install", ""); err != nil {
+		t.Fatalf("CreateOperation failed: %v", err)
+	}
+	if err := db.AdvanceOperationState(ctx, "op_tx_commit", "committing"); err != nil {
+		t.Fatalf("AdvanceOperationState failed: %v", err)
+	}
+	rec := &domain.InstallRecord{
+		InstallID: "inst_user_tx_ok", ListingID: "mcp:builtin:mcp-registry:tx", Version: "1.0.0",
+		TreeDigest: treeDigest, Scope: domain.ScopeUser, Status: domain.InstallActive,
+		InstalledAt: now, UpdatedAt: now,
+	}
+	comp := &domain.InstallComponentRecord{
+		InstallID: rec.InstallID, Kind: domain.ComponentMCPProvider,
+		ComponentName: "default", Path: "/cas/tree",
+	}
+	if err := db.CommitInstallOperation(ctx, rec, comp, "op_tx_commit"); err != nil {
+		t.Fatalf("CommitInstallOperation failed: %v", err)
+	}
+	if _, err := db.GetInstall(ctx, rec.InstallID); err != nil {
+		t.Fatalf("install missing after commit: %v", err)
+	}
+	nonTerminal, err := db.GetNonTerminalOperations(ctx)
+	if err != nil {
+		t.Fatalf("GetNonTerminalOperations failed: %v", err)
+	}
+	if len(nonTerminal) != 0 {
+		t.Errorf("operation must be terminal after commit, still open: %+v", nonTerminal)
+	}
+
+	// Failure path: a component row that violates its FK must roll back the
+	// install row written earlier in the same transaction.
+	if err := db.CreateOperation(ctx, "op_tx_fail", nil, "install", ""); err != nil {
+		t.Fatalf("CreateOperation failed: %v", err)
+	}
+	if err := db.AdvanceOperationState(ctx, "op_tx_fail", "committing"); err != nil {
+		t.Fatalf("AdvanceOperationState failed: %v", err)
+	}
+	badRec := &domain.InstallRecord{
+		InstallID: "inst_user_tx_bad", ListingID: "mcp:builtin:mcp-registry:tx", Version: "1.0.0",
+		TreeDigest: treeDigest, Scope: domain.ScopeUser, Status: domain.InstallActive,
+		InstalledAt: now, UpdatedAt: now,
+	}
+	badComp := &domain.InstallComponentRecord{
+		InstallID: "inst_does_not_exist", Kind: domain.ComponentMCPProvider,
+		ComponentName: "default", Path: "/cas/tree",
+	}
+	if err := db.CommitInstallOperation(ctx, badRec, badComp, "op_tx_fail"); err == nil {
+		t.Fatal("expected the transactional commit to fail")
+	}
+	if _, err := db.GetInstall(ctx, badRec.InstallID); err == nil {
+		t.Fatal("install row must not survive a failed commit transaction")
+	}
+	var stateName string
+	if err := db.Raw().QueryRow("SELECT state FROM operations WHERE operation_id = ?", "op_tx_fail").Scan(&stateName); err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+	if stateName != "committing" {
+		t.Errorf("journal must not advance on a failed commit, got %s", stateName)
+	}
+}
+
+func TestListProviders_DecodesConfiguration(t *testing.T) {
+	db, tmpDir := openTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer db.Close()
+
+	ctx := context.Background()
+	if list, err := db.ListProviders(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("expected an empty provider list on a fresh database, got %d (err=%v)", len(list), err)
+	}
+
+	now := time.Now().UTC()
+	installID := "inst_user_prov_0001"
+	if err := db.SaveInstall(ctx, &domain.InstallRecord{
+		InstallID:   installID,
+		ListingID:   "mcp:builtin:mcp-registry:prov",
+		Version:     "1.0.0",
+		TreeDigest:  "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+		Scope:       domain.ScopeUser,
+		Status:      domain.InstallActive,
+		InstalledAt: now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveInstall failed: %v", err)
+	}
+	// SaveInstallComponent keys component_id by install id (existing behaviour),
+	// which is also the value SaveProvider stores in component_id.
+	if err := db.SaveInstallComponent(ctx, &domain.InstallComponentRecord{
+		InstallID: installID, Kind: domain.ComponentMCPProvider,
+		ComponentName: "default", Path: "/cas/tree",
+	}); err != nil {
+		t.Fatalf("SaveInstallComponent failed: %v", err)
+	}
+
+	launchSpec := `{"executable":"/bin/sh","args":["-c","sleep 1"]}`
+	if err := db.SaveProvider(ctx, &domain.ProviderRecord{
+		ProviderID:    "prov_test_0001",
+		InstallID:     installID,
+		ComponentName: installID,
+		Transport:     "local-stdio",
+		ArgsJSON:      launchSpec,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("SaveProvider failed: %v", err)
+	}
+
+	list, err := db.ListProviders(ctx)
+	if err != nil {
+		t.Fatalf("ListProviders failed: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(list))
+	}
+	p := list[0]
+	if p.ProviderID != "prov_test_0001" || p.Mode != "local-stdio" || p.LaunchSpecJSON != launchSpec {
+		t.Errorf("unexpected provider config: %+v", p)
+	}
+	if !p.Enabled {
+		t.Error("provider row defaults to enabled")
+	}
+	if p.Autostart {
+		t.Error("provider row must not claim autostart it was not configured with")
+	}
+}
+
+// A rollback interrupted half-way leaves the journal in "rolling_back"; the
+// next recovery sweep must still resolve it to a terminal state and clean only
+// what that operation created.
+func TestRecovery_ResolvesInterruptedRollback(t *testing.T) {
+	db, tmpDir := openTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer db.Close()
+
+	ctx := context.Background()
+	opID := "op_rolling_back_001"
+	treeDigest := "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+
+	if err := db.CreateOperation(ctx, opID, nil, "install", ""); err != nil {
+		t.Fatalf("CreateOperation failed: %v", err)
+	}
+	if err := db.AdvanceOperationState(ctx, opID, "rolling_back"); err != nil {
+		t.Fatalf("AdvanceOperationState failed: %v", err)
+	}
+	if err := db.RecordOperationTree(ctx, opID, treeDigest, true); err != nil {
+		t.Fatalf("RecordOperationTree failed: %v", err)
+	}
+
+	treeDir := filepath.Join(tmpDir, "cas", "trees", "sha256", strings.Repeat("9", 64))
+	if err := os.MkdirAll(treeDir, 0700); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	stagingDir := filepath.Join(tmpDir, "staging", opID)
+	if err := os.MkdirAll(stagingDir, 0700); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+
+	summary, err := db.RecoverIncompleteOperations(ctx, filepath.Join(tmpDir, "staging"), func(string) string {
+		return treeDir
+	})
+	if err != nil {
+		t.Fatalf("RecoverIncompleteOperations failed: %v", err)
+	}
+	if summary.RolledBack != 1 || summary.Failed != 0 {
+		t.Errorf("unexpected summary: %+v", summary)
+	}
+	if _, err := os.Stat(treeDir); !os.IsNotExist(err) {
+		t.Error("tree created by the interrupted rollback must be removed")
+	}
+	if _, err := os.Stat(stagingDir); !os.IsNotExist(err) {
+		t.Error("staging of the interrupted rollback must be removed")
 	}
 }

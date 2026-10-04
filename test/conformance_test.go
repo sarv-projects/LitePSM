@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +27,37 @@ import (
 	"github.com/sarv-projects/litepsm/internal/skills"
 	"github.com/sarv-projects/litepsm/internal/state"
 )
+
+// pipeListener hands a single pre-connected pipe to the accepting server so
+// the conformance suite can run a real ipc.Server without opening sockets.
+type pipeListener struct {
+	conns chan net.Conn
+	once  sync.Once
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{conns: make(chan net.Conn, 1)}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	conn, ok := <-l.conns
+	if !ok {
+		return nil, net.ErrClosed
+	}
+	return conn, nil
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.conns) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string { return "pipe" }
+func (pipeAddr) String() string  { return "pipe" }
 
 type conformanceListingProvider struct {
 	listings map[string]*domain.Listing
@@ -207,7 +240,39 @@ func TestE2E_FullLifecycleConformance(t *testing.T) {
 	_ = sup.StopProvider(ctx, "test-conformance-proc")
 
 	// 8. Stdio MCP Bridge Shim Tool Calling
-	shim := bridge.NewShim("cline", nil, nil, nil)
+	// Daemon-backed: a real ipc.Server serves tools.list from the install
+	// written in step 5, and the shim must relay exactly that data. The same
+	// tool with no daemon connection must fail closed instead of fabricating
+	// an inventory.
+	server := ipc.NewServer("conformance-daemon", "2026-07-28")
+	server.RegisterHandler("tools.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+		items := make([]bridge.CapabilityItem, 0, len(installs))
+		for _, inst := range installs {
+			item := bridge.CapabilityItem{
+				ID:      inst.ListingID,
+				Name:    inst.ListingID,
+				Summary: fmt.Sprintf("Installed capability (v%s)", inst.Version),
+			}
+			if lid, err := domain.ParseListingID(inst.ListingID); err == nil {
+				item.Kind = string(lid.Kind())
+			}
+			items = append(items, item)
+		}
+		return map[string]any{"installs": items, "count": len(items)}, nil
+	})
+
+	listener := newPipeListener()
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	serverConn, clientConn := net.Pipe()
+	listener.conns <- serverConn
+	daemonClient := ipc.NewClientFromConn(clientConn)
+
+	shim := bridge.NewShim("cline", daemonClient, nil, nil)
 	idRaw := json.RawMessage(`100`)
 	listCallParams, _ := json.Marshal(map[string]any{
 		"name":      "list_installed",
@@ -227,8 +292,46 @@ func TestE2E_FullLifecycleConformance(t *testing.T) {
 	if err := json.Unmarshal(callResp.Result, &toolResult); err != nil {
 		t.Fatal(err)
 	}
+	if toolResult.IsError {
+		t.Fatalf("daemon-backed list_installed returned an error: %s", toolResult.Content[0].Text)
+	}
 	if len(toolResult.Content) == 0 || !strings.Contains(toolResult.Content[0].Text, "LitePSM Capabilities") {
 		t.Errorf("unexpected bridge tool result: %+v", toolResult)
+	}
+	// The panel must carry the capability installed in step 5 — real data from
+	// the state database, not a fixture.
+	if !strings.Contains(toolResult.Content[0].Text, listings[0].ID) {
+		t.Errorf("panel does not list the installed capability %s: %s", listings[0].ID, toolResult.Content[0].Text)
+	}
+
+	_ = daemonClient.Close()
+	_ = listener.Close()
+	_ = server.Stop()
+	<-serveDone
+
+	// Standalone shim (no daemon connection) must fail closed for the same call.
+	standaloneShim := bridge.NewShim("cline", nil, nil, nil)
+	standaloneResp := standaloneShim.HandleRequest(ctx, &ipc.Request{
+		JSONRPC: "2.0",
+		ID:      &idRaw,
+		Method:  "tools/call",
+		Params:  listCallParams,
+	})
+	if standaloneResp == nil || standaloneResp.Error != nil {
+		t.Fatalf("standalone bridge HandleRequest failed: %+v", standaloneResp)
+	}
+	var standaloneResult bridge.MCPToolResult
+	if err := json.Unmarshal(standaloneResp.Result, &standaloneResult); err != nil {
+		t.Fatal(err)
+	}
+	if !standaloneResult.IsError {
+		t.Fatalf("standalone list_installed must fail closed, got: %+v", standaloneResult)
+	}
+	if !strings.Contains(standaloneResult.Content[0].Text, "not connected to daemon") {
+		t.Errorf("standalone error must name the missing daemon connection: %s", standaloneResult.Content[0].Text)
+	}
+	if strings.Contains(standaloneResult.Content[0].Text, "LitePSM Capabilities") {
+		t.Errorf("standalone shim fabricated an inventory: %s", standaloneResult.Content[0].Text)
 	}
 
 	// 9. Diagnostic Doctor & Automated Repair

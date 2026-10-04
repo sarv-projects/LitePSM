@@ -6,7 +6,50 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  static-checks:
+    name: Static Checks (gofmt, vet, scripts)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Check gofmt Formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Check Shell Script Syntax
+        run: bash -n scripts/*.sh
+
+      - name: Byte-compile Python Scripts
+        run: python3 -m py_compile scripts/*.py
+
+      - name: Check Node.js Entry Points
+        run: |
+          node --check npm/bin/litepsm.js
+          node --check npm/scripts/install-binary.js
+
   test-go:
     name: Test Go Engine (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -49,6 +92,10 @@ jobs:
       - name: Install Web Dependencies
         working-directory: ./web
         run: npm ci
+
+      - name: Type-check Web
+        working-directory: ./web
+        run: npx tsc --noEmit
 
       - name: Build Web Static Export
         working-directory: ./web

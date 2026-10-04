@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +30,7 @@ import (
 	"github.com/sarv-projects/litepsm/internal/ipc"
 	"github.com/sarv-projects/litepsm/internal/policy"
 	"github.com/sarv-projects/litepsm/internal/provider"
+	"github.com/sarv-projects/litepsm/internal/resolver"
 	"github.com/sarv-projects/litepsm/internal/secrets"
 	"github.com/sarv-projects/litepsm/internal/skills"
 	"github.com/sarv-projects/litepsm/internal/state"
@@ -73,10 +76,6 @@ func main() {
 		runSearch(query)
 
 	case "install", "add", "i":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: litepsm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]")
-			os.Exit(1)
-		}
 		runInstall(os.Args[2:])
 
 	case "catalog":
@@ -263,9 +262,15 @@ func runBridge(args []string) {
 
 	paths, err := config.ResolvePlatformPaths()
 	var client *ipc.Client
-	if err == nil {
-		c, err := ipc.Dial(paths.IPCEndpoint())
-		if err == nil {
+	if err != nil {
+		// Standalone mode has no capability data; say so instead of letting a
+		// silent path failure masquerade as a working bridge.
+		fmt.Fprintf(os.Stderr, "litepsm bridge: platform path resolution failed: %v; running standalone with no capabilities\n", err)
+	} else {
+		c, dialErr := ipc.Dial(paths.IPCEndpoint())
+		if dialErr != nil {
+			fmt.Fprintf(os.Stderr, "litepsm bridge: daemon dial failed: %v; running standalone with no capabilities (start the daemon with 'litepsm daemon serve')\n", dialErr)
+		} else {
 			client = c
 			defer client.Close()
 		}
@@ -641,11 +646,11 @@ func runSearch(query string) {
 	results := catClient.Search(query, catalog.SearchOptions{Limit: 25})
 
 	if len(results) == 0 {
-		seedDefaultListings(catClient)
-		results = catClient.Search(query, catalog.SearchOptions{Limit: 25})
-	}
-
-	if len(results) == 0 {
+		if catClient.Count() == 0 {
+			fmt.Printf("No capabilities found: the local catalog index is empty.\n")
+			fmt.Println("Run 'litepsm catalog sync' to populate it from the registry.")
+			return
+		}
 		fmt.Printf("No capabilities found matching %q.\n", query)
 		return
 	}
@@ -666,30 +671,81 @@ func runSearch(query string) {
 	}
 }
 
-func runInstall(args []string) {
-	listingID := args[0]
-	version := ""
-	scope := domain.ScopeUser
-	workspaceID := ""
+// installFlags holds the parsed command line for `litepsm install`.
+type installFlags struct {
+	listingID   string
+	version     string
+	scope       domain.InstallScope
+	workspaceID string
+	showHelp    bool
+}
 
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
+const installUsage = "Usage: litepsm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]"
+
+// parseInstallFlags parses `litepsm install` arguments strictly: unknown
+// flags, missing flag values, an out-of-range --scope, extra positional
+// arguments, and a missing listing id are all errors (the caller exits 2).
+// `--help`/`-h` is reported separately so it can exit 0.
+func parseInstallFlags(args []string) (installFlags, error) {
+	flags := installFlags{scope: domain.ScopeUser}
+	positional := 0
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--help", "-h":
+			flags.showHelp = true
+			return flags, nil
 		case "--version", "-v":
-			if i+1 < len(args) {
-				version = args[i+1]
-				i++
+			if i+1 >= len(args) {
+				return flags, fmt.Errorf("flag %s requires a value", arg)
 			}
+			i++
+			flags.version = args[i]
 		case "--scope", "-s":
-			if i+1 < len(args) {
-				scope = domain.InstallScope(args[i+1])
-				i++
+			if i+1 >= len(args) {
+				return flags, fmt.Errorf("flag %s requires a value", arg)
 			}
+			i++
+			scope := domain.InstallScope(args[i])
+			if scope != domain.ScopeUser && scope != domain.ScopeProject {
+				return flags, fmt.Errorf("invalid --scope %q: must be %s or %s", args[i], domain.ScopeUser, domain.ScopeProject)
+			}
+			flags.scope = scope
 		case "--workspace", "-w":
-			if i+1 < len(args) {
-				workspaceID = args[i+1]
-				i++
+			if i+1 >= len(args) {
+				return flags, fmt.Errorf("flag %s requires a value", arg)
 			}
+			i++
+			flags.workspaceID = args[i]
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return flags, fmt.Errorf("unknown flag %q", arg)
+			}
+			positional++
+			if positional > 1 {
+				return flags, fmt.Errorf("unexpected argument %q", arg)
+			}
+			flags.listingID = arg
 		}
+	}
+
+	if flags.listingID == "" {
+		return flags, fmt.Errorf("missing <listing-id>")
+	}
+	return flags, nil
+}
+
+func runInstall(args []string) {
+	flags, err := parseInstallFlags(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Install error: %v\n", err)
+		fmt.Println(installUsage)
+		os.Exit(2)
+	}
+	if flags.showHelp {
+		fmt.Println(installUsage)
+		return
 	}
 
 	paths, err := config.ResolvePlatformPaths()
@@ -710,14 +766,6 @@ func runInstall(args []string) {
 	}
 	defer db.Close()
 
-	cfg, _ := config.LoadConfig("")
-	regURL := "https://registry.litepsm.dev"
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		regURL = cfg.Catalog.RegistryURL
-	}
-	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
-	seedDefaultListings(catClient)
-
 	installEngine, err := install.NewEngine(db, paths.CASPath(), paths.StagingPath())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal: failed to initialize install engine: %v\n", err)
@@ -726,15 +774,18 @@ func runInstall(args []string) {
 
 	ctx := context.Background()
 
-	// In test/local mode without an upstream HTTP artifact, generate synthetic valid package
-	artifactData := createSyntheticPackageArtifact(listingID)
+	// The CLI has no upstream artifact endpoint yet: it packages a locally
+	// generated archive so the real staging/CAS/journal path can be exercised.
+	// The success line below says exactly that — it never claims a remote
+	// package was fetched or verified.
+	artifactData := createSyntheticPackageArtifact(flags.listingID)
 
-	fmt.Printf("Resolving and installing %s...\n", listingID)
+	fmt.Printf("Resolving and installing %s...\n", flags.listingID)
 	rec, err := installEngine.Execute(ctx, install.InstallOptions{
-		ListingID:   listingID,
-		Version:     version,
-		Scope:       scope,
-		WorkspaceID: workspaceID,
+		ListingID:   flags.listingID,
+		Version:     flags.version,
+		Scope:       flags.scope,
+		WorkspaceID: flags.workspaceID,
 		ArchiveSource: func(ctx context.Context, lid string, ver string) (io.ReadCloser, string, error) {
 			return io.NopCloser(bytes.NewReader(artifactData)), "zip", nil
 		},
@@ -744,12 +795,13 @@ func runInstall(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ Successfully installed %s\n", listingID)
-	fmt.Printf("  • Install ID:   %s\n", rec.InstallID)
-	fmt.Printf("  • Version:      %s\n", rec.Version)
-	fmt.Printf("  • Scope:        %s\n", rec.Scope)
-	fmt.Printf("  • CAS Digest:   %s\n", rec.TreeDigest)
-	fmt.Printf("  • Status:       %s\n", rec.Status)
+	fmt.Printf("✓ Installed (local synthetic package; remote resolve/verify not yet wired)\n")
+	fmt.Printf("  • Listing ID:  %s\n", flags.listingID)
+	fmt.Printf("  • Install ID:  %s\n", rec.InstallID)
+	fmt.Printf("  • Version:     %s\n", rec.Version)
+	fmt.Printf("  • Scope:       %s\n", rec.Scope)
+	fmt.Printf("  • CAS Digest:  %s\n", rec.TreeDigest)
+	fmt.Printf("  • Status:      %s\n", rec.Status)
 }
 
 func runCatalogSync() {
@@ -773,10 +825,9 @@ func runCatalogSync() {
 
 	res, err := catClient.Sync(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Notice: remote registry unreachable (%v); loading local index.\n", err)
-		seedDefaultListings(catClient)
-		fmt.Printf("✓ Catalog ready (offline fallback: %d capabilities indexed).\n", catClient.Count())
-		return
+		fmt.Fprintf(os.Stderr, "Catalog synchronization failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "No catalog data was written; the existing local cache was left unchanged.")
+		os.Exit(1)
 	}
 
 	fmt.Printf("✓ Catalog synchronization complete (Release %s, %d capabilities indexed).\n", res.ReleaseID, res.ItemCount)
@@ -792,58 +843,6 @@ func createSyntheticPackageArtifact(listingID string) []byte {
 
 	zw.Close()
 	return buf.Bytes()
-}
-
-func seedDefaultListings(catClient *catalog.Client) {
-	seeds := []*domain.Listing{
-		{
-			SchemaVersion:  1,
-			ID:             "mcp:github:modelcontextprotocol:servers:postgres",
-			Kind:           domain.KindMCP,
-			Name:           "postgres",
-			Title:          "PostgreSQL MCP Server",
-			Summary:        "Read and inspect schema, run queries, and analyze Postgres DBs",
-			Categories:     []string{"database", "developer-tools"},
-			Keywords:       []string{"postgres", "sql", "db"},
-			PublisherClaim: domain.PublisherClaim{Name: "Model Context Protocol"},
-			Status:         domain.ListingStatusActive,
-			VerificationSummary: domain.VerificationSummary{
-				Level: "unverified",
-			},
-		},
-		{
-			SchemaVersion:  1,
-			ID:             "mcp:github:modelcontextprotocol:servers:github",
-			Kind:           domain.KindMCP,
-			Name:           "github",
-			Title:          "GitHub MCP Server",
-			Summary:        "Interact with GitHub repos, pull requests, issues, and actions",
-			Categories:     []string{"developer-tools", "vcs"},
-			Keywords:       []string{"github", "git", "prs"},
-			PublisherClaim: domain.PublisherClaim{Name: "GitHub"},
-			Status:         domain.ListingStatusActive,
-			VerificationSummary: domain.VerificationSummary{
-				Level: "unverified",
-			},
-		},
-		{
-			SchemaVersion:  1,
-			ID:             "skill:builtin:agentskills:git-release",
-			Kind:           domain.KindSkill,
-			Name:           "git-release",
-			Title:          "Git Semantic Release Assistant",
-			Summary:        "Automated changelog generation, semver bumping, and GitHub releases",
-			Categories:     []string{"devops", "automation"},
-			Keywords:       []string{"git", "release", "semver"},
-			PublisherClaim: domain.PublisherClaim{Name: "AgentSkills"},
-			Status:         domain.ListingStatusActive,
-			VerificationSummary: domain.VerificationSummary{
-				Level: "unverified",
-			},
-		},
-	}
-
-	catClient.IndexListings(seeds)
 }
 
 func runDoctor(args []string) {
@@ -871,9 +870,44 @@ func runDoctor(args []string) {
 		defer db.Close()
 	}
 
-	secretStore, _ := secrets.OpenSecretStore()
+	// The doctor must keep diagnosing even when the credential vault cannot be
+	// opened (that is one of the conditions it has to report), so a failure here
+	// is announced loudly and injected as a FAIL check instead of being
+	// discarded: `secretStore, _ :=` used to hide it completely.
+	secretStore, storeErr := secrets.OpenSecretStore()
+	if storeErr != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: [%s] secure credential vault unavailable: %v\n",
+			domain.CodeAuthVaultUnavailable, storeErr)
+	}
 	eng := doctor.NewEngine(paths, db, secretStore)
 	report := eng.RunChecks(ctx)
+	if storeErr != nil {
+		report.Checks = append(report.Checks, doctor.CheckResult{
+			ID:             "check_secrets_open",
+			Name:           "Secret Vault Availability",
+			Status:         doctor.StatusFail,
+			Message:        fmt.Sprintf("the secure credential vault could not be opened: %v", storeErr),
+			Recommendation: "Provide a functional OS credential vault; LitePSM refuses to store credentials in plaintext (ARCH/19).",
+		})
+		// Re-aggregate so the printed summary matches the checks actually listed.
+		report.PassedCount, report.WarnCount, report.FailCount = 0, 0, 0
+		report.OverallStatus = doctor.StatusPass
+		for _, c := range report.Checks {
+			switch c.Status {
+			case doctor.StatusPass:
+				report.PassedCount++
+			case doctor.StatusWarn:
+				report.WarnCount++
+			case doctor.StatusFail:
+				report.FailCount++
+			}
+		}
+		if report.FailCount > 0 {
+			report.OverallStatus = doctor.StatusFail
+		} else if report.WarnCount > 0 {
+			report.OverallStatus = doctor.StatusWarn
+		}
+	}
 
 	fmt.Println("\nLitePSM Diagnostic Health Report")
 	fmt.Println(strings.Repeat("=", 60))
@@ -947,6 +981,14 @@ func runDaemonServe() {
 		os.Exit(1)
 	}
 
+	// ARCH/19: without a functional credential vault LitePSM halts rather than
+	// storing credentials anywhere unprotected.
+	secretStore, err := secrets.OpenSecretStore()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal: [%s] %v\n", domain.CodeAuthVaultUnavailable, err)
+		os.Exit(1)
+	}
+
 	cfg, _ := config.LoadConfig("")
 	lockFile, err := acquireLock(paths.DaemonLockPath())
 	if err != nil {
@@ -962,20 +1004,45 @@ func runDaemonServe() {
 	}
 	defer db.Close()
 
-	regURL := "https://registry.litepsm.dev"
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		regURL = cfg.Catalog.RegistryURL
-	}
-	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
-	if len(catClient.Search("", catalog.SearchOptions{})) == 0 {
-		seedDefaultListings(catClient)
-	}
-
 	installEngine, err := install.NewEngine(db, paths.CASPath(), paths.StagingPath())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal: failed to create install engine: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Crash recovery runs BEFORE the IPC listener is bound: an interrupted
+	// install is resolved (committed or rolled back) before any client can ask
+	// the daemon about state it has not yet reconciled. A journal failure here
+	// halts startup instead of serving unreconciled state.
+	if _, err := runStartupRecovery(context.Background(), db, paths.StagingPath(), func(digest string) string {
+		p, pathErr := installEngine.TreePath(digest)
+		if pathErr != nil {
+			return ""
+		}
+		return p
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal: startup recovery failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	regURL := "https://registry.litepsm.dev"
+	if cfg != nil && cfg.Catalog.RegistryURL != "" {
+		regURL = cfg.Catalog.RegistryURL
+	}
+	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
+
+	// Provider lifecycle: construct the supervisor, start what the state
+	// database says should autostart, and stop everything on shutdown.
+	supervisor := provider.NewSupervisor()
+	configured, cfgErr := loadConfiguredProviders(context.Background(), db)
+	if cfgErr != nil {
+		fmt.Fprintf(os.Stderr, "Fatal: failed to read provider configuration: %v\n", cfgErr)
+		os.Exit(1)
+	}
+	for _, rep := range provider.StartConfigured(context.Background(), supervisor, configured) {
+		fmt.Printf("[daemon] provider %s: %s — %s\n", rep.ProviderID, rep.Action, rep.Detail)
+	}
+	defer supervisor.StopAll(context.Background())
 
 	endpoint := paths.IPCEndpoint()
 	listener, err := ipc.ListenIPC(endpoint)
@@ -990,7 +1057,7 @@ func runDaemonServe() {
 	server := ipc.NewServer(Version, ProtocolVersion)
 
 	// Register Core Handlers
-	registerCoreHandlers(server, db, catClient, installEngine, paths)
+	registerCoreHandlers(server, db, catClient, installEngine, paths, secretStore, supervisor)
 
 	// Signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -1015,13 +1082,16 @@ func runDaemonServe() {
 	fmt.Println("[daemon] Shutdown complete.")
 }
 
-func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client, installEngine *install.Engine, paths *config.PlatformPaths) {
+func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client, installEngine *install.Engine, paths *config.PlatformPaths, secretStore secrets.SecretStore, supervisor *provider.Supervisor) {
 	policyEngine := policy.NewEngine(db, nil)
 	installEngine.SetPolicy(policyEngine)
-	supervisor := provider.NewSupervisor()
-	secretStore, _ := secrets.OpenSecretStore()
 
-	// 1. tools.list returns installed capabilities & external detected tools
+	// 1. tools.list returns installed capabilities & external detected tools.
+	// Truthfulness: LitePSM does not health-check or verify installed
+	// capabilities at runtime, so Verified stays false and Status/Transport are
+	// omitted (unknown) unless derivable from real data. Kind is parsed from
+	// the canonical listing ID; external entries carry the kind detected in the
+	// host's own config file.
 	server.RegisterHandler("tools.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
 		if err != nil {
@@ -1030,15 +1100,15 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 
 		var items []bridge.CapabilityItem
 		for _, inst := range installs {
-			items = append(items, bridge.CapabilityItem{
-				ID:        inst.ListingID,
-				Name:      inst.ListingID,
-				Kind:      "mcp",
-				Summary:   fmt.Sprintf("Installed capability (v%s)", inst.Version),
-				Transport: "stdio",
-				Status:    bridge.StatusReady,
-				Verified:  true,
-			})
+			item := bridge.CapabilityItem{
+				ID:      inst.ListingID,
+				Name:    inst.ListingID,
+				Summary: fmt.Sprintf("Installed capability (v%s)", inst.Version),
+			}
+			if lid, err := domain.ParseListingID(inst.ListingID); err == nil {
+				item.Kind = string(lid.Kind())
+			}
+			items = append(items, item)
 		}
 
 		// Detect external tools
@@ -1050,7 +1120,6 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 						Name:       ec.Name,
 						Kind:       ec.Kind,
 						Summary:    fmt.Sprintf("Pre-existing host tool from %s", ec.SourcePath),
-						Status:     bridge.StatusReady,
 						IsExternal: true,
 					})
 				}
@@ -1063,7 +1132,8 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		}, nil
 	})
 
-	// 2. catalog.search performs live search over catalog index
+	// 2. catalog.search performs live search over catalog index. The `kinds`
+	// parameter is honored with a local client-side filter over the results.
 	server.RegisterHandler("catalog.search", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
 			Query    string   `json:"query"`
@@ -1072,13 +1142,44 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 			Limit    int      `json:"limit,omitempty"`
 		}
 		if len(params) > 0 {
-			_ = json.Unmarshal(params, &req)
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
+			}
 		}
 
+		limit := req.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+
+		kinds := make(map[string]struct{}, len(req.Kinds))
+		for _, k := range req.Kinds {
+			kinds[strings.ToLower(strings.TrimSpace(k))] = struct{}{}
+		}
+
+		// When filtering by kind, over-fetch so `limit` applies after the
+		// filter rather than truncating before it.
+		searchLimit := limit
+		if len(kinds) > 0 {
+			searchLimit = 1 << 30
+		}
 		results := catClient.Search(req.Query, catalog.SearchOptions{
 			Category: req.Category,
-			Limit:    req.Limit,
+			Limit:    searchLimit,
 		})
+
+		if len(kinds) > 0 {
+			filtered := make([]*catalog.SearchResult, 0, len(results))
+			for _, r := range results {
+				if _, ok := kinds[strings.ToLower(string(r.Listing.Kind))]; ok {
+					filtered = append(filtered, r)
+				}
+			}
+			results = filtered
+		}
+		if len(results) > limit {
+			results = results[:limit]
+		}
 
 		return map[string]any{
 			"count":   len(results),
@@ -1086,78 +1187,111 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		}, nil
 	})
 
-	// 3. catalog.get_item retrieves full listing metadata
+	// 3. catalog.get_item retrieves full listing metadata by exact ID lookup
 	server.RegisterHandler("catalog.get_item", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
 			ID      string `json:"id"`
 			Version string `json:"version,omitempty"`
 		}
-		_ = json.Unmarshal(params, &req)
-
-		results := catClient.Search(req.ID, catalog.SearchOptions{Limit: 1})
-		if len(results) > 0 {
-			return results[0].Listing, nil
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
 		}
-		return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: fmt.Sprintf("listing %s not found", req.ID)}
+
+		listing, err := catClient.GetListing(req.ID)
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: fmt.Sprintf("listing %s not found", req.ID)}
+		}
+		return listing, nil
 	})
 
-	// 4. resolver.prepare_plan generates an immutable InstallPlan preview
+	// 4. resolver.prepare_plan performs real dependency resolution over the
+	// local catalog index, builds an InstallPlan, seals it with a planHash and
+	// persists it so install.execute can re-verify exactly this document.
 	server.RegisterHandler("resolver.prepare_plan", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
 			ID      string `json:"id"`
 			Version string `json:"version,omitempty"`
 			Scope   string `json:"scope,omitempty"`
 		}
-		_ = json.Unmarshal(params, &req)
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
+		}
+		if strings.TrimSpace(req.ID) == "" {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params: id is required"}
+		}
+		scope := domain.InstallScope(req.Scope)
+		if scope == "" {
+			scope = domain.ScopeUser
+		}
+		if scope != domain.ScopeUser && scope != domain.ScopeProject {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams,
+				Message: fmt.Sprintf("invalid scope %q: must be %q or %q", req.Scope, domain.ScopeUser, domain.ScopeProject)}
+		}
 
-		plan := &domain.InstallPlan{
-			SchemaVersion: 2,
-			PlanID:        fmt.Sprintf("plan_%s_%s", req.ID, req.Version),
-			Request: domain.PlanRequest{
-				ListingID:        req.ID,
-				RequestedVersion: req.Version,
-				TargetScope:      domain.ScopeUser,
-			},
-			Resolved: domain.PlanResolved{
-				Version: req.Version,
-			},
-			Approval: domain.PlanApproval{
-				Decision: "approve",
-			},
+		listing, err := catClient.GetListing(req.ID)
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams,
+				Message: fmt.Sprintf("listing %s not found in the local catalog index: %v", req.ID, err)}
+		}
+
+		plan, rpcErr := buildInstallPlan(ctx, catClient, req.ID, req.Version, scope, listing)
+		if rpcErr != nil {
+			return nil, rpcErr
+		}
+
+		if err := db.SavePlan(ctx, plan); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError,
+				Message: fmt.Sprintf("failed to persist plan %s: %v", plan.PlanID, err)}
 		}
 		return plan, nil
 	})
 
-	// 5. install.execute installs a package
+	// 5. install.execute installs a package. A planId (the shape the bridge
+	// shim sends) binds the run to a persisted, hash-verified plan; bare
+	// listing/version parameters still work. Every failure maps to a real RPC
+	// error — there is no success path that skips verification.
 	server.RegisterHandler("install.execute", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
-			ListingID  string `json:"listingId"`
-			Version    string `json:"version"`
-			Scope      string `json:"scope"`
-			ApprovalID string `json:"approvalId,omitempty"`
+			ListingID     string `json:"listingId,omitempty"`
+			Version       string `json:"version,omitempty"`
+			Scope         string `json:"scope,omitempty"`
+			ApprovalID    string `json:"approvalId,omitempty"`
+			PlanID        string `json:"planId,omitempty"`
+			ApprovalToken string `json:"approvalToken,omitempty"`
 		}
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid install parameters"}
+		}
+
+		approvalID := req.ApprovalID
+		if approvalID == "" {
+			approvalID = req.ApprovalToken
 		}
 
 		rec, err := installEngine.Execute(ctx, install.InstallOptions{
 			ListingID:  req.ListingID,
 			Version:    req.Version,
 			Scope:      domain.InstallScope(req.Scope),
-			ApprovalID: req.ApprovalID,
+			ApprovalID: approvalID,
+			PlanID:     req.PlanID,
 		})
 		if err != nil {
-			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+			return nil, installRPCError(err)
 		}
 
-		return map[string]any{
+		result := map[string]any{
 			"installId":  rec.InstallID,
 			"treeDigest": rec.TreeDigest,
 			"status":     rec.Status,
-		}, nil
+		}
+		if req.PlanID != "" {
+			result["planId"] = req.PlanID
+		}
+		return result, nil
 	})
 
-	// 6. install.remove removes an installed package
+	// 6. install.remove removes an installed package. A missing install is
+	// reported as not-found instead of a fake `removed: true`.
 	server.RegisterHandler("install.remove", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
 			InstallID string `json:"installId"`
@@ -1165,31 +1299,73 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid parameters"}
 		}
-		_ = db.DeleteInstall(ctx, req.InstallID)
+		if strings.TrimSpace(req.InstallID) == "" {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params: installId is required"}
+		}
+		if err := db.DeleteInstall(ctx, req.InstallID); err != nil {
+			var lpsmErr *domain.LPSMError
+			if errors.As(err, &lpsmErr) && lpsmErr.Code == "LPSM-STATE-NOT-FOUND" {
+				return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
+			}
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
 		return map[string]any{"removed": true, "installId": req.InstallID}, nil
 	})
 
-	// 7. skills.list returns progressive disclosure index
+	// 7. skills.list returns progressive disclosure index.
+	// Level-1 summaries only: name/description/metadata. Instruction bodies and
+	// raw SKILL.md content stay behind skills.load_body.
 	server.RegisterHandler("skills.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
 		if err != nil {
 			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
 		}
 
-		var loadedSkills []*skills.SkillPackage
+		type loadedSkill struct {
+			id  string
+			pkg *skills.SkillPackage
+		}
+		var loaded []loadedSkill
 		for _, inst := range installs {
 			treePath, err := installEngine.TreePath(inst.TreeDigest)
-			if err == nil {
-				if sp, err := skills.LoadSkillFromDirectory(treePath); err == nil {
-					loadedSkills = append(loadedSkills, sp)
-				}
+			if err != nil {
+				continue
+			}
+			if sp, err := skills.LoadSkillFromDirectory(treePath); err == nil {
+				loaded = append(loaded, loadedSkill{id: inst.ListingID, pkg: sp})
 			}
 		}
 
-		progressiveIndex := skills.RenderProgressiveIndex(loadedSkills)
+		pkgs := make([]*skills.SkillPackage, 0, len(loaded))
+		summaries := make([]map[string]any, 0, len(loaded))
+		for _, l := range loaded {
+			pkgs = append(pkgs, l.pkg)
+			summary := map[string]any{
+				"id":          l.id,
+				"name":        l.pkg.Name,
+				"description": l.pkg.Description,
+			}
+			if l.pkg.License != "" {
+				summary["license"] = l.pkg.License
+			}
+			if l.pkg.Version != "" {
+				summary["version"] = l.pkg.Version
+			}
+			if l.pkg.Author != "" {
+				summary["author"] = l.pkg.Author
+			}
+			if len(l.pkg.Triggers) > 0 {
+				summary["triggers"] = l.pkg.Triggers
+			}
+			if len(l.pkg.ToolsRequired) > 0 {
+				summary["toolsRequired"] = l.pkg.ToolsRequired
+			}
+			summaries = append(summaries, summary)
+		}
+
 		return map[string]any{
-			"skills":           loadedSkills,
-			"progressiveIndex": progressiveIndex,
+			"skills":           summaries,
+			"progressiveIndex": skills.RenderProgressiveIndex(pkgs),
 		}, nil
 	})
 
@@ -1199,151 +1375,178 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 			SkillID string `json:"skillId"`
 			Version string `json:"version,omitempty"`
 		}
-		_ = json.Unmarshal(params, &req)
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
+		}
+		if strings.TrimSpace(req.SkillID) == "" {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params: skillId is required"}
+		}
 
 		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
-		if err == nil {
-			for _, inst := range installs {
-				if inst.ListingID == req.SkillID {
-					treePath, err := installEngine.TreePath(inst.TreeDigest)
-					if err == nil {
-						if sp, err := skills.LoadSkillFromDirectory(treePath); err == nil {
-							return map[string]any{
-								"skillId":      req.SkillID,
-								"instructions": sp.Instructions,
-							}, nil
-						}
-					}
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+
+		for _, inst := range installs {
+			if inst.ListingID != req.SkillID {
+				continue
+			}
+			treePath, err := installEngine.TreePath(inst.TreeDigest)
+			if err != nil {
+				return nil, &ipc.RPCError{
+					Code:    ipc.CodeInternalError,
+					Message: fmt.Sprintf("skill %s has an invalid CAS tree reference: %v", req.SkillID, err),
 				}
 			}
+			sp, err := skills.LoadSkillFromDirectory(treePath)
+			if err != nil {
+				return nil, &ipc.RPCError{
+					Code:    ipc.CodeInternalError,
+					Message: fmt.Sprintf("skill %s is installed but its SKILL.md could not be read: %v", req.SkillID, err),
+				}
+			}
+			return map[string]any{
+				"skillId":      req.SkillID,
+				"instructions": sp.Instructions,
+			}, nil
 		}
-		return map[string]any{
-			"skillId":      req.SkillID,
-			"instructions": fmt.Sprintf("# Skill: %s\nProgressive instruction workflow ready.", req.SkillID),
-		}, nil
+
+		return nil, &ipc.RPCError{
+			Code:    ipc.CodeInvalidParams,
+			Message: fmt.Sprintf("skill %s not found: not installed", req.SkillID),
+		}
 	})
 
-	// 9. skills.read_resource reads a supporting file from skill CAS directory
+	// 9. skills.read_resource reads a supporting file from skill CAS directory.
+	// Fail-closed like skills.load_body: every failure path returns a real RPC
+	// error (not-installed -> -32602, unreadable CAS/file -> -32603) instead of
+	// fabricating a resource body. The path-traversal guards are unchanged.
 	server.RegisterHandler("skills.read_resource", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
 			SkillID string `json:"skillId"`
 			Path    string `json:"path"`
 		}
-		_ = json.Unmarshal(params, &req)
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
+		}
+		if strings.TrimSpace(req.SkillID) == "" {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params: skillId is required"}
+		}
 
 		installs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
-		if err == nil {
-			for _, inst := range installs {
-				if inst.ListingID == req.SkillID {
-					treePath, err := installEngine.TreePath(inst.TreeDigest)
-					if err == nil {
-						cleanRel := filepath.Clean(req.Path)
-						if filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, "..") {
-							return nil, &ipc.RPCError{Code: -32602, Message: "path traversal denied"}
-						}
-						filePath := filepath.Join(treePath, cleanRel)
-						rel, err := filepath.Rel(treePath, filePath)
-						if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-							return nil, &ipc.RPCError{Code: -32602, Message: "path traversal denied"}
-						}
-						if data, err := os.ReadFile(filePath); err == nil {
-							return map[string]any{"content": string(data)}, nil
-						}
-					}
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+
+		for _, inst := range installs {
+			if inst.ListingID != req.SkillID {
+				continue
+			}
+			treePath, err := installEngine.TreePath(inst.TreeDigest)
+			if err != nil {
+				return nil, &ipc.RPCError{
+					Code:    ipc.CodeInternalError,
+					Message: fmt.Sprintf("skill %s has an invalid CAS tree reference: %v", req.SkillID, err),
 				}
 			}
+			cleanRel := filepath.Clean(req.Path)
+			if filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, "..") {
+				return nil, &ipc.RPCError{Code: -32602, Message: "path traversal denied"}
+			}
+			filePath := filepath.Join(treePath, cleanRel)
+			rel, err := filepath.Rel(treePath, filePath)
+			if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+				return nil, &ipc.RPCError{Code: -32602, Message: "path traversal denied"}
+			}
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return nil, &ipc.RPCError{
+					Code:    ipc.CodeInternalError,
+					Message: fmt.Sprintf("skill %s resource %q could not be read: %v", req.SkillID, cleanRel, err),
+				}
+			}
+			return map[string]any{"content": string(data)}, nil
 		}
-		return map[string]any{"content": fmt.Sprintf("Resource %s for skill %s.", req.Path, req.SkillID)}, nil
+
+		return nil, &ipc.RPCError{
+			Code:    ipc.CodeInvalidParams,
+			Message: fmt.Sprintf("skill %s not found: not installed", req.SkillID),
+		}
 	})
 
-	// 10. capabilities.search searches capabilities and tools
+	// 10. capabilities.search: not wired yet (canned results were removed).
+	// Catalog discovery over real data lives in catalog.search.
 	server.RegisterHandler("capabilities.search", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		var req struct {
-			Query string `json:"query"`
-			Limit int    `json:"limit,omitempty"`
+		return nil, &ipc.RPCError{
+			Code:    ipc.CodeMethodNotFound,
+			Message: "not implemented: capabilities.search is not wired yet; use catalog.search",
 		}
-		_ = json.Unmarshal(params, &req)
-		return map[string]any{
-			"query":   req.Query,
-			"results": []string{"query_db", "fetch_url", "git_commit"},
-		}, nil
 	})
 
-	// 11. capabilities.describe inspects capability schema and identity binding
+	// 11. capabilities.describe: not wired yet (canned schema/status removed).
+	// Listing metadata over real data lives in catalog.get_item.
 	server.RegisterHandler("capabilities.describe", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		var req struct {
-			CapabilityID string `json:"capabilityId"`
+		return nil, &ipc.RPCError{
+			Code:    ipc.CodeMethodNotFound,
+			Message: "not implemented: capabilities.describe is not wired yet; use catalog.get_item",
 		}
-		_ = json.Unmarshal(params, &req)
-		return map[string]any{
-			"capabilityId": req.CapabilityID,
-			"effects":      []string{"filesystem.read"},
-			"status":       "ready",
-		}, nil
 	})
 
-	// 12. provider.probe checks provider health
+	// 12. provider.probe reports the supervisor's real view of one provider:
+	// tracked processes return live status/PID/uptime/stderr tail; anything the
+	// supervisor is not tracking is an explicit not-found, never a guessed
+	// status.
 	server.RegisterHandler("provider.probe", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		return map[string]any{
-			"status": "ready",
-			"tools":  []string{"query", "inspect"},
-		}, nil
-	})
-
-	// 13. provider.invoke executes capability under strict fail-closed policy
-	server.RegisterHandler("provider.invoke", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
-			CapabilityID string          `json:"capabilityId"`
-			Arguments    json.RawMessage `json:"arguments"`
+			ProviderID string `json:"providerId"`
 		}
-		_ = json.Unmarshal(params, &req)
-
-		// Strict Policy Evaluation
-		decision := policyEngine.Evaluate(ctx, policy.PolicyInput{
-			Actor:        "agent",
-			CapabilityID: req.CapabilityID,
-			Operation:    "invoke",
-			Effects: []policy.EffectDeclaration{
-				{Effect: policy.EffectFilesystemRead, Provenance: domain.ProvenanceCurated},
-			},
-		})
-
-		if decision.Decision == policy.DecisionDeny {
-			return nil, &ipc.RPCError{
-				Code:    ipc.CodeInternalError,
-				Message: fmt.Sprintf("policy denied invocation of %s: %s", req.CapabilityID, decision.Detail),
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
 			}
 		}
+		if strings.TrimSpace(req.ProviderID) == "" {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params: providerId is required"}
+		}
 
-		return map[string]any{
-			"output":  fmt.Sprintf("Executed capability %s with arguments %s.", req.CapabilityID, string(req.Arguments)),
-			"isError": false,
-		}, nil
+		snap, err := supervisor.SnapshotProvider(req.ProviderID)
+		if err != nil {
+			var lpsmErr *domain.LPSMError
+			if errors.As(err, &lpsmErr) && lpsmErr.Code == "LPSM-STATE-NOT-FOUND" {
+				return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams,
+					Message: fmt.Sprintf("provider %s is not tracked by this daemon (never started or already reaped)", req.ProviderID)}
+			}
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+		return snap, nil
 	})
 
-	// 14. invocation.get retrieves invocation status and logs
+	// 13. provider.invoke stays unimplemented with the concrete reason: the
+	// daemon writes no capability rows (nothing to resolve a capabilityId
+	// against) and the supervisor has no MCP session dispatch to call into.
+	server.RegisterHandler("provider.invoke", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+		return nil, &ipc.RPCError{
+			Code: ipc.CodeMethodNotFound,
+			Message: "not implemented: no capability rows are persisted to resolve a capabilityId against, " +
+				"and the provider supervisor exposes no MCP session dispatch; tool execution is fail-closed until both exist",
+		}
+	})
+
+	// 14. invocation.get: the daemon has no invocation registry to query.
 	server.RegisterHandler("invocation.get", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		var req struct {
-			InvocationID string `json:"invocationId"`
+		return nil, &ipc.RPCError{
+			Code:    ipc.CodeMethodNotFound,
+			Message: "not implemented: the daemon records no invocation registry, so no invocationId can be looked up",
 		}
-		_ = json.Unmarshal(params, &req)
-		return map[string]any{
-			"invocationId": req.InvocationID,
-			"status":       "completed",
-		}, nil
 	})
 
-	// 15. invocation.cancel cancels an active invocation
+	// 15. invocation.cancel: without an invocation registry there is nothing to
+	// cancel; the supervisor only manages provider processes.
 	server.RegisterHandler("invocation.cancel", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		var req struct {
-			InvocationID string `json:"invocationId"`
+		return nil, &ipc.RPCError{
+			Code:    ipc.CodeMethodNotFound,
+			Message: "not implemented: no invocation registry exists to cancel from (the supervisor only starts/stops provider processes)",
 		}
-		_ = json.Unmarshal(params, &req)
-		_ = supervisor.StopProvider(ctx, req.InvocationID)
-		return map[string]any{
-			"invocationId": req.InvocationID,
-			"cancelled":    true,
-		}, nil
 	})
 
 	// 16. host.detect_config probes configured agent hosts
@@ -1361,7 +1564,9 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 			HostID     string `json:"hostId"`
 			BinaryPath string `json:"binaryPath"`
 		}
-		_ = json.Unmarshal(params, &req)
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
+		}
 		adapter, err := host.GetAdapter(req.HostID)
 		if err != nil {
 			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
@@ -1398,6 +1603,167 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 			"pid":             os.Getpid(),
 		}, nil
 	})
+}
+
+// runStartupRecovery sweeps the operation journal before the daemon starts
+// serving and reports exactly what it did. Any failure to read or reconcile
+// the journal is returned so startup can halt instead of serving unreconciled
+// state.
+func runStartupRecovery(ctx context.Context, db *state.DB, stagingRoot string, treePath func(string) string) (state.RecoverySummary, error) {
+	summary, err := db.RecoverIncompleteOperations(ctx, stagingRoot, treePath)
+	if err != nil {
+		return summary, fmt.Errorf("journal recovery could not complete: %w", err)
+	}
+	fmt.Printf("[daemon] startup recovery: examined=%d rolledBack=%d committed=%d failed=%d\n",
+		summary.Examined, summary.RolledBack, summary.Committed, summary.Failed)
+	return summary, nil
+}
+
+// loadConfiguredProviders reads every providers row and decodes its stored
+// launch spec. Rows whose launch spec cannot be decoded are returned with
+// SpecErr set rather than dropped, so startup reports them as failed.
+func loadConfiguredProviders(ctx context.Context, db *state.DB) ([]provider.ConfiguredProvider, error) {
+	rows, err := db.ListProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]provider.ConfiguredProvider, 0, len(rows))
+	for _, row := range rows {
+		entry := provider.ConfiguredProvider{
+			ProviderID: row.ProviderID,
+			Mode:       row.Mode,
+			Enabled:    row.Enabled,
+			Autostart:  row.Autostart,
+		}
+		if strings.TrimSpace(row.LaunchSpecJSON) != "" {
+			var spec provider.LaunchSpec
+			if err := json.Unmarshal([]byte(row.LaunchSpecJSON), &spec); err != nil {
+				entry.SpecErr = err.Error()
+			} else {
+				entry.Spec = &spec
+			}
+		} else {
+			entry.SpecErr = "launch_spec_json is empty"
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// planIDAlphabet is the Crockford base32 alphabet (32 symbols, no I/L/O/U).
+const planIDAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// newPlanID returns an id matching schemas/install-plan.schema.json
+// (`^plan_[0-9A-Za-z]{26}$`). The 26 symbols come from crypto/rand masked to
+// 5 bits; since 256 is a multiple of 32 the mask is unbiased.
+func newPlanID() (string, error) {
+	var buf [26]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", fmt.Errorf("failed to generate plan id: %w", err)
+	}
+	for i, b := range buf {
+		buf[i] = planIDAlphabet[b&0x1f]
+	}
+	return "plan_" + string(buf[:]), nil
+}
+
+// catalogResolutionProvider adapts the local catalog index to the
+// resolver.ListingProvider interface. Dependency edges come back empty because
+// the normalized index stores versions without a dependency list; the resolver
+// therefore produces a single-node graph for index-only listings, which is
+// reported in the plan rather than guessed.
+type catalogResolutionProvider struct {
+	client *catalog.Client
+}
+
+func (p *catalogResolutionProvider) GetListing(ctx context.Context, listingID string) (*domain.Listing, error) {
+	return p.client.GetListing(listingID)
+}
+
+func (p *catalogResolutionProvider) GetListingVersions(ctx context.Context, listingID string) ([]resolver.ListingVersionMetadata, error) {
+	listing, err := p.client.GetListing(listingID)
+	if err != nil {
+		return nil, err
+	}
+	metas := make([]resolver.ListingVersionMetadata, 0, len(listing.Versions))
+	for _, v := range listing.Versions {
+		metas = append(metas, resolver.ListingVersionMetadata{Version: v.Version})
+	}
+	return metas, nil
+}
+
+// buildInstallPlan resolves the requested listing with the real resolver and
+// seals the outcome into a persisted InstallPlan. Resolution failures are
+// returned as RPC errors carrying the resolver's LPSM-RESOLVE-* details.
+func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, version string, scope domain.InstallScope, listing *domain.Listing) (*domain.InstallPlan, *ipc.RPCError) {
+	r := resolver.NewResolver(&catalogResolutionProvider{client: catClient})
+	res, err := r.Resolve(ctx, id, version)
+	if err != nil {
+		return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+	}
+
+	planID, err := newPlanID()
+	if err != nil {
+		return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+	}
+
+	now := time.Now().UTC()
+	plan := &domain.InstallPlan{
+		SchemaVersion: 2,
+		PlanID:        planID,
+		CreatedAt:     now,
+		ExpiresAt:     now.Add(15 * time.Minute),
+		Request: domain.PlanRequest{
+			ListingID:        id,
+			RequestedVersion: version,
+			TargetScope:      scope,
+		},
+		Resolved: domain.PlanResolved{
+			Version:   res.SelectedVersions[id],
+			Artifacts: []domain.PlanArtifact{},
+		},
+		Effects: []string{"package.install"},
+	}
+
+	// Immutable ref of the selected version, sourced from the catalog index.
+	selected := plan.Resolved.Version
+	for _, v := range listing.Versions {
+		if v.Version == selected && v.ImmutableRef != "" {
+			plan.Resolved.ImmutableRefs = []string{v.ImmutableRef}
+			break
+		}
+	}
+
+	// Dependency graph minus the root listing, in deterministic topological order.
+	for _, dep := range res.TopologicalOrder {
+		if dep == id {
+			continue
+		}
+		plan.Resolved.Dependencies = append(plan.Resolved.Dependencies, dep)
+	}
+
+	planHash, err := domain.ComputePlanHash(plan)
+	if err != nil {
+		return nil, &ipc.RPCError{Code: ipc.CodeInternalError,
+			Message: fmt.Sprintf("failed to compute plan hash: %v", err)}
+	}
+	plan.PlanHash = planHash
+	return plan, nil
+}
+
+// installRPCError maps install engine failures onto the JSON-RPC codes the
+// contract reserves for them. Nothing is collapsed into a generic success.
+func installRPCError(err error) *ipc.RPCError {
+	switch domain.ErrorCode(err) {
+	case "LPSM-PLAN-STALE", "LPSM-PLAN-EXPIRED":
+		return &ipc.RPCError{Code: ipc.CodePlanStale, Message: err.Error()}
+	case "LPSM-POLICY-UNAUTHORIZED", "LPSM-POLICY-APPROVAL-CONSUMED", "LPSM-POLICY-APPROVAL-EXPIRED":
+		return &ipc.RPCError{Code: ipc.CodeUnauthorized, Message: err.Error()}
+	case "LPSM-STATE-NOT-FOUND", "LPSM-DOMAIN-INVALID-ID", "LPSM-STATE-CONFLICT":
+		return &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
+	default:
+		return &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+	}
 }
 
 func acquireLock(lockPath string) (*os.File, error) {

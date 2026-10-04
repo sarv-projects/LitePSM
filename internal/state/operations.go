@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -44,12 +45,16 @@ func (db *DB) CreateOperation(ctx context.Context, opID string, planID *string, 
 
 // AdvanceOperationState transitions the state of an operation and updates updated_at.
 func (db *DB) AdvanceOperationState(ctx context.Context, opID, newState string) error {
+	return db.advanceOperationStateExec(ctx, db.raw, opID, newState)
+}
+
+func (db *DB) advanceOperationStateExec(ctx context.Context, ex execer, opID, newState string) error {
 	query := `
 	UPDATE operations
 	SET state = ?, updated_at = CURRENT_TIMESTAMP
 	WHERE operation_id = ?;`
 
-	res, err := db.raw.ExecContext(ctx, query, newState, opID)
+	res, err := ex.ExecContext(ctx, query, newState, opID)
 	if err != nil {
 		return fmt.Errorf("failed to update state of operation %s to %s: %w", opID, newState, err)
 	}
@@ -112,6 +117,63 @@ func (db *DB) WasTreeCreatedByOperation(ctx context.Context, opID, treeDigest st
 	return createdByOp == 1, nil
 }
 
+// OperationTree mirrors one operation_trees row: which CAS tree an operation
+// touched and whether it created that tree itself (shared trees are never
+// deleted by a single operation's rollback).
+type OperationTree struct {
+	TreeDigest  string
+	CreatedByOp bool
+}
+
+// GetOperationTrees lists every CAS tree linked to an operation.
+func (db *DB) GetOperationTrees(ctx context.Context, opID string) ([]OperationTree, error) {
+	query := `SELECT tree_digest, created_by_op FROM operation_trees WHERE operation_id = ? ORDER BY tree_digest;`
+
+	rows, err := db.raw.QueryContext(ctx, query, opID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query trees for operation %s: %w", opID, err)
+	}
+	defer rows.Close()
+
+	var trees []OperationTree
+	for rows.Next() {
+		var t OperationTree
+		var createdBy int
+		if err := rows.Scan(&t.TreeDigest, &createdBy); err != nil {
+			return nil, err
+		}
+		t.CreatedByOp = createdBy == 1
+		trees = append(trees, t)
+	}
+	return trees, rows.Err()
+}
+
+// HasInstallsForTrees reports whether any install record references one of the
+// given CAS tree digests. Recovery uses it to decide whether a interrupted
+// metadata commit actually completed (the install row exists) or never ran.
+func (db *DB) HasInstallsForTrees(ctx context.Context, digests []string) (bool, error) {
+	if len(digests) == 0 {
+		return false, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(digests)), ",")
+	query := `SELECT 1 FROM installs WHERE tree_digest IN (` + placeholders + `) LIMIT 1;`
+
+	args := make([]any, len(digests))
+	for i, d := range digests {
+		args[i] = d
+	}
+
+	var one int
+	err := db.raw.QueryRowContext(ctx, query, args...).Scan(&one)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // GetNonTerminalOperations fetches all operations not in a final terminal state.
 func (db *DB) GetNonTerminalOperations(ctx context.Context) ([]*OperationRecord, error) {
 	query := `
@@ -144,69 +206,132 @@ func (db *DB) GetNonTerminalOperations(ctx context.Context) ([]*OperationRecord,
 	return results, rows.Err()
 }
 
-// RecoverIncompleteOperations handles crash recovery on daemon startup.
-// It rolls back staging directories and incomplete state transitions safely.
-func (db *DB) RecoverIncompleteOperations(ctx context.Context, dataRoot string, verifyTreeComplete func(string) bool, treePath func(string) string) error {
+// RecoverySummary reports exactly what RecoverIncompleteOperations did. Every
+// examined operation is counted in at most one outcome bucket.
+type RecoverySummary struct {
+	Examined   int // non-terminal operations found in the journal
+	RolledBack int // interrupted operations reverted (staging cleaned, own trees removed)
+	Committed  int // interrupted operations whose install row already existed; journal finalized
+	Failed     int // operations that could not be recovered; reason in operation_steps
+}
+
+// RecoverIncompleteOperations handles crash recovery, normally run once on
+// daemon startup before it starts serving.
+//
+// stagingRoot must be the shared staging directory itself
+// (config.PlatformPaths.StagingPath()): each operation's scratch space lives at
+// <stagingRoot>/<operation_id>, the exact layout install.Engine uses. This
+// function is the global startup sweep; per-operation rollback must go through
+// install.Engine.Rollback so one operation can never clean another's staging.
+//
+// Each non-terminal operation reaches exactly one terminal state:
+//   - pre-commit states (created/resolving/awaiting_approval/approved/fetching/staging)
+//     lose only their staging directory;
+//   - post-placement states (commit_intent/verified/committing/rolling_back) are
+//     finalized as committed when an install row already references a tree this
+//     operation created (the metadata transaction completed and only the journal
+//     advance was lost), and are otherwise rolled back after deleting ONLY trees
+//     with operation_trees.created_by_op = 1 — shared pre-existing trees are
+//     never touched.
+//
+// treePath maps a tree digest to its CAS directory; when nil no tree is removed.
+func (db *DB) RecoverIncompleteOperations(ctx context.Context, stagingRoot string, treePath func(string) string) (RecoverySummary, error) {
+	var summary RecoverySummary
+
 	ops, err := db.GetNonTerminalOperations(ctx)
 	if err != nil {
-		return err
+		return summary, err
 	}
 
 	for _, op := range ops {
-		switch op.State {
-		case "created", "resolving", "awaiting_approval", "approved", "fetching", "verified", "staging":
-			stagingPath := filepath.Join(dataRoot, "staging", op.OperationID)
-			_ = os.RemoveAll(stagingPath)
-			_ = db.AdvanceOperationState(ctx, op.OperationID, "rolled_back")
-			_ = db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "done", "cleaned staging and rolled back")
-
-		case "commit_intent":
-			// Query all trees linked to this operation
-			treeRows, err := db.raw.QueryContext(ctx, "SELECT tree_digest, created_by_op FROM operation_trees WHERE operation_id = ?", op.OperationID)
-			if err == nil {
-				allComplete := true
-				type treeEntry struct {
-					digest      string
-					createdByOp bool
-				}
-				var trees []treeEntry
-
-				for treeRows.Next() {
-					var digest string
-					var createdInt int
-					if err := treeRows.Scan(&digest, &createdInt); err == nil {
-						complete := verifyTreeComplete != nil && verifyTreeComplete(digest)
-						if !complete {
-							allComplete = false
-						}
-						trees = append(trees, treeEntry{digest: digest, createdByOp: createdInt == 1})
-					}
-				}
-				treeRows.Close()
-
-				if allComplete && len(trees) > 0 {
-					_ = db.AdvanceOperationState(ctx, op.OperationID, "committed")
-					_ = db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "done", "finalized commit for complete trees")
-				} else {
-					// Incomplete: only remove trees created by this operation
-					for _, t := range trees {
-						if t.createdByOp && treePath != nil {
-							_ = os.RemoveAll(treePath(t.digest))
-						}
-					}
-					stagingPath := filepath.Join(dataRoot, "staging", op.OperationID)
-					_ = os.RemoveAll(stagingPath)
-					_ = db.AdvanceOperationState(ctx, op.OperationID, "rolled_back")
-					_ = db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "done", "rolled back incomplete commit_intent trees")
-				}
-			}
-
-		case "committing":
-			stagingPath := filepath.Join(dataRoot, "staging", op.OperationID)
-			_ = os.RemoveAll(stagingPath)
-			_ = db.AdvanceOperationState(ctx, op.OperationID, "rolled_back")
-			_ = db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "done", "rolled back interrupted transaction")
+		summary.Examined++
+		finalState, err := db.recoverOperation(ctx, op, stagingRoot, treePath)
+		if err != nil {
+			summary.Failed++
+			_ = db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "failed", err.Error())
+			continue
+		}
+		switch finalState {
+		case "committed":
+			summary.Committed++
+		case "rolled_back":
+			summary.RolledBack++
 		}
 	}
-	return nil
+	return summary, nil
+}
+
+// recoverOperation resolves a single interrupted operation to a terminal state.
+func (db *DB) recoverOperation(ctx context.Context, op *OperationRecord, stagingRoot string, treePath func(string) string) (string, error) {
+	stagingPath := filepath.Join(stagingRoot, op.OperationID)
+
+	switch op.State {
+	case "created", "resolving", "awaiting_approval", "approved", "fetching", "staging":
+		if err := os.RemoveAll(stagingPath); err != nil {
+			return "", fmt.Errorf("failed to remove staging directory %s: %w", stagingPath, err)
+		}
+		if err := db.AdvanceOperationState(ctx, op.OperationID, "rolled_back"); err != nil {
+			return "", err
+		}
+		if err := db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "done", "cleaned staging and rolled back"); err != nil {
+			return "", err
+		}
+		return "rolled_back", nil
+
+	case "verified", "commit_intent", "committing", "rolling_back":
+		trees, err := db.GetOperationTrees(ctx, op.OperationID)
+		if err != nil {
+			return "", err
+		}
+
+		// Only trees this operation created can carry its install row: a
+		// reused (shared) tree may legitimately be referenced by an older
+		// install and says nothing about this operation's metadata commit.
+		var createdByOp []string
+		for _, t := range trees {
+			if t.CreatedByOp {
+				createdByOp = append(createdByOp, t.TreeDigest)
+			}
+		}
+
+		installExists, err := db.HasInstallsForTrees(ctx, createdByOp)
+		if err != nil {
+			return "", err
+		}
+		if installExists {
+			if err := db.AdvanceOperationState(ctx, op.OperationID, "committed"); err != nil {
+				return "", err
+			}
+			if err := db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "done", "install row already present; finalized interrupted commit"); err != nil {
+				return "", err
+			}
+			return "committed", nil
+		}
+
+		for _, t := range trees {
+			if !t.CreatedByOp || treePath == nil {
+				continue
+			}
+			p := treePath(t.TreeDigest)
+			if p == "" {
+				continue
+			}
+			if err := os.RemoveAll(p); err != nil {
+				return "", fmt.Errorf("failed to remove tree %s created by operation %s: %w", t.TreeDigest, op.OperationID, err)
+			}
+		}
+		if err := os.RemoveAll(stagingPath); err != nil {
+			return "", fmt.Errorf("failed to remove staging directory %s: %w", stagingPath, err)
+		}
+		if err := db.AdvanceOperationState(ctx, op.OperationID, "rolled_back"); err != nil {
+			return "", err
+		}
+		if err := db.RecordOperationStep(ctx, op.OperationID, "crash_recovery", "done", "rolled back interrupted operation; removed only trees created by this operation"); err != nil {
+			return "", err
+		}
+		return "rolled_back", nil
+
+	default:
+		return "", fmt.Errorf("operation %s is in unhandled state %q; inspect state.db manually", op.OperationID, op.State)
+	}
 }
