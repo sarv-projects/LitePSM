@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 // HandlerFunc handles an individual RPC method invocation.
@@ -21,16 +22,23 @@ type Server struct {
 	activeConns     map[net.Conn]struct{}
 	mu              sync.RWMutex
 	quit            chan struct{}
+	stopOnce        sync.Once
+	ctx             context.Context
+	cancelCtx       context.CancelFunc
+	wg              sync.WaitGroup
 	daemonVersion   string
 	protocolVersion string
 }
 
 // NewServer creates a new IPC JSON-RPC server with baseline handshake registered.
 func NewServer(daemonVersion, protocolVersion string) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		handlers:        make(map[string]HandlerFunc),
 		activeConns:     make(map[net.Conn]struct{}),
 		quit:            make(chan struct{}),
+		ctx:             ctx,
+		cancelCtx:       cancel,
 		daemonVersion:   daemonVersion,
 		protocolVersion: protocolVersion,
 	}
@@ -85,7 +93,11 @@ func (s *Server) Serve(l net.Listener) error {
 		s.activeConns[conn] = struct{}{}
 		s.mu.Unlock()
 
-		go s.handleConnection(conn)
+		s.wg.Add(1)
+		go func(c net.Conn) {
+			defer s.wg.Done()
+			s.handleConnection(c)
+		}(conn)
 	}
 }
 
@@ -107,7 +119,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return
 			}
-			// Write parse error
+			// Write parse error with deadline
+			_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			_ = codec.WriteResponse(&Response{
 				JSONRPC: "2.0",
 				Error: &RPCError{
@@ -115,6 +128,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 					Message: err.Error(),
 				},
 			})
+			_ = conn.SetWriteDeadline(time.Time{})
 			return
 		}
 
@@ -140,6 +154,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 		if !exists {
 			if req.ID != nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 				_ = codec.WriteResponse(&Response{
 					JSONRPC: "2.0",
 					ID:      req.ID,
@@ -148,21 +163,39 @@ func (s *Server) handleConnection(conn net.Conn) {
 						Message: fmt.Sprintf("method %q not found", req.Method),
 					},
 				})
+				_ = conn.SetWriteDeadline(time.Time{})
 			}
 			continue
 		}
 
-		// Create cancellable context for this request
-		reqCtx, cancel := context.WithCancel(context.Background())
+		// Create cancellable context for this request derived from the server lifecycle context
+		reqCtx, cancel := context.WithCancel(s.ctx)
 		var idKey string
 		if req.ID != nil {
 			idKey = string(*req.ID)
 			cancelMu.Lock()
+			if _, exists := cancelFuncs[idKey]; exists {
+				cancelMu.Unlock()
+				cancel()
+				_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_ = codec.WriteResponse(&Response{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Error: &RPCError{
+						Code:    CodeInvalidRequest,
+						Message: fmt.Sprintf("duplicate request id %s already in flight", idKey),
+					},
+				})
+				_ = conn.SetWriteDeadline(time.Time{})
+				continue
+			}
 			cancelFuncs[idKey] = cancel
 			cancelMu.Unlock()
 		}
 
+		s.wg.Add(1)
 		go func(r *Request, ctx context.Context, idStr string, cancel context.CancelFunc) {
+			defer s.wg.Done()
 			// Always release the per-request context, including notifications
 			// (which are never stored in cancelFuncs) so no context leaks.
 			defer cancel()
@@ -201,26 +234,32 @@ func (s *Server) handleConnection(conn net.Conn) {
 				}
 			}
 
+			_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			_ = codec.WriteResponse(resp)
+			_ = conn.SetWriteDeadline(time.Time{})
 		}(req, reqCtx, idKey, cancel)
 	}
 }
 
 // Stop gracefully shuts down the server.
 func (s *Server) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	close(s.quit)
-
 	var err error
-	if s.listener != nil {
-		err = s.listener.Close()
-	}
+	s.stopOnce.Do(func() {
+		s.cancelCtx()
+		close(s.quit)
 
-	for conn := range s.activeConns {
-		_ = conn.Close()
-	}
+		s.mu.Lock()
+		if s.listener != nil {
+			err = s.listener.Close()
+		}
+
+		for conn := range s.activeConns {
+			_ = conn.Close()
+		}
+		s.mu.Unlock()
+
+		s.wg.Wait()
+	})
 
 	return err
 }

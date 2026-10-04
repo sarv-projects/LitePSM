@@ -281,6 +281,18 @@ func ErrDaemonUnreachable(pipeOrSocketPath string) *LPSMError {
 	}
 }
 
+func ErrAuthVaultUnavailable(reason string) *LPSMError {
+	return &LPSMError{
+		Code:      CodeAuthVaultUnavailable,
+		Message:   fmt.Sprintf("secure platform authentication vault is unavailable: %s", reason),
+		Category:  "LPSM-AUTH",
+		Retryable: false,
+		Details: map[string]any{
+			"reason": reason,
+		},
+	}
+}
+
 func ErrInternal(msg string, cause error) *LPSMError {
 	err := &LPSMError{
 		Code:      "LPSM-CORE-INTERNAL",

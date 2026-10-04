@@ -3,45 +3,50 @@
 package secrets
 
 import (
-	"context"
-	"sync"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"os/exec"
+	"strings"
+
+	"github.com/sarv-projects/litepsm/internal/domain"
 )
 
-// DarwinSecretStore wraps macOS Keychain Services.
-type DarwinSecretStore struct {
-	fallback *MemorySecretStore
-	mu       sync.RWMutex
+func getOrGenerateDarwinMasterKey() ([]byte, error) {
+	if _, err := exec.LookPath("/usr/bin/security"); err != nil {
+		return nil, domain.ErrAuthVaultUnavailable("macOS security CLI not found")
+	}
+
+	cmdLookup := exec.Command("/usr/bin/security", "find-generic-password", "-s", "litepsm", "-a", "master-key", "-w")
+	out, err := cmdLookup.Output()
+	lookupStr := strings.TrimSpace(string(out))
+	if err == nil && len(lookupStr) > 0 {
+		key, decodeErr := hex.DecodeString(lookupStr)
+		if decodeErr == nil && len(key) == 32 {
+			return key, nil
+		}
+	}
+
+	// Generate new 32-byte key
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("failed to generate random vault key: %w", err)
+	}
+
+	hexKey := hex.EncodeToString(key)
+	cmdStore := exec.Command("/usr/bin/security", "add-generic-password", "-U", "-s", "litepsm", "-a", "master-key", "-w", hexKey)
+	if err := cmdStore.Run(); err != nil {
+		return nil, domain.ErrAuthVaultUnavailable(fmt.Sprintf("failed to store vault master key in macOS Keychain: %v", err))
+	}
+
+	return key, nil
 }
 
 func newPlatformSecretStore() (SecretStore, error) {
 	vaultPath := DefaultVaultPath()
-	store, err := NewFileEncryptedSecretStore(vaultPath)
+	key, err := getOrGenerateDarwinMasterKey()
 	if err != nil {
-		return NewMemorySecretStore()
+		return nil, err
 	}
-	return store, nil
-}
-
-func (s *DarwinSecretStore) Put(ctx context.Context, namespace, key string, secretBytes []byte) (*SecretRef, error) {
-	return s.fallback.Put(ctx, namespace, key, secretBytes)
-}
-
-func (s *DarwinSecretStore) Get(ctx context.Context, ref SecretRef) ([]byte, error) {
-	return s.fallback.Get(ctx, ref)
-}
-
-func (s *DarwinSecretStore) Delete(ctx context.Context, ref SecretRef) error {
-	return s.fallback.Delete(ctx, ref)
-}
-
-func (s *DarwinSecretStore) Exists(ctx context.Context, ref SecretRef) (bool, error) {
-	return s.fallback.Exists(ctx, ref)
-}
-
-func (s *DarwinSecretStore) ListMetadata(ctx context.Context, namespace string) ([]SecretMetadata, error) {
-	return s.fallback.ListMetadata(ctx, namespace)
-}
-
-func (s *DarwinSecretStore) Close() error {
-	return s.fallback.Close()
+	return NewFileEncryptedSecretStoreWithKey(vaultPath, key)
 }

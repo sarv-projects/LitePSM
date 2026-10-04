@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litepsm/internal/policy"
 	"github.com/sarv-projects/litepsm/internal/state"
 )
 
@@ -207,5 +208,115 @@ func TestInstall_SafeRollbackPreservesSharedTrees(t *testing.T) {
 	// 3. Verify that the pre-existing shared tree from tool-shared is STILL INTACT on disk!
 	if _, err := os.Stat(sharedTreePath); err != nil {
 		t.Fatalf("CRITICAL BUG: pre-existing shared tree was deleted during rollback of tool-failing: %v", err)
+	}
+}
+
+func TestInstall_PathTraversalRejected(t *testing.T) {
+	ctx := context.Background()
+	engine, db, _ := setupTestEngine(t)
+	defer db.Close()
+
+	badIDs := []string{
+		"../../etc/passwd",
+		"tool/../escaped",
+		"sub\\bad",
+		"../relative",
+		"/absolute/path",
+	}
+
+	for _, bad := range badIDs {
+		_, err := engine.Execute(ctx, InstallOptions{
+			ListingID: bad,
+			Version:   "1.0.0",
+		})
+		if err == nil {
+			t.Errorf("expected error for path traversal listing ID %q, got nil", bad)
+		}
+	}
+}
+
+func TestInstall_ScopeCollisionFix(t *testing.T) {
+	ctx := context.Background()
+	engine, db, _ := setupTestEngine(t)
+	defer db.Close()
+
+	zipData := createTestZip(t, map[string][]byte{
+		"main.js": []byte("console.log('scoped');\n"),
+	})
+	archiveSource := func(ctx context.Context, listingID string, version string) (io.ReadCloser, string, error) {
+		return io.NopCloser(bytes.NewReader(zipData)), "zip", nil
+	}
+
+	// Install under User scope
+	recUser, err := engine.Execute(ctx, InstallOptions{
+		ListingID:     "mcp:test:scoped",
+		Version:       "1.0.0",
+		Scope:         domain.ScopeUser,
+		ArchiveSource: archiveSource,
+	})
+	if err != nil {
+		t.Fatalf("user install failed: %v", err)
+	}
+
+	// Install same package and version under Project scope
+	recProj, err := engine.Execute(ctx, InstallOptions{
+		ListingID:     "mcp:test:scoped",
+		Version:       "1.0.0",
+		Scope:         domain.ScopeProject,
+		ArchiveSource: archiveSource,
+	})
+	if err != nil {
+		t.Fatalf("project install failed: %v", err)
+	}
+
+	if recUser.InstallID == recProj.InstallID {
+		t.Fatalf("expected distinct install IDs across scopes, but both were %s", recUser.InstallID)
+	}
+
+	// Verify both exist independently in SQLite
+	storedUser, err := db.GetInstall(ctx, recUser.InstallID)
+	if err != nil || storedUser == nil {
+		t.Fatalf("failed to retrieve stored user install: %v", err)
+	}
+	storedProj, err := db.GetInstall(ctx, recProj.InstallID)
+	if err != nil || storedProj == nil {
+		t.Fatalf("failed to retrieve stored project install: %v", err)
+	}
+}
+
+func TestInstall_PolicyEnforcement(t *testing.T) {
+	ctx := context.Background()
+	engine, db, _ := setupTestEngine(t)
+	defer db.Close()
+
+	zipData := createTestZip(t, map[string][]byte{
+		"exec.sh": []byte("#!/bin/sh\necho hi\n"),
+	})
+	archiveSource := func(ctx context.Context, listingID string, version string) (io.ReadCloser, string, error) {
+		return io.NopCloser(bytes.NewReader(zipData)), "zip", nil
+	}
+
+	// Deny rule matching "forbidden-package"
+	denyRules := []policy.DenyRule{
+		{
+			RuleID:    "deny-forbidden",
+			TargetRef: "forbidden-package",
+			Effect:    policy.EffectPackageInstall,
+		},
+	}
+	policyEng := policy.NewEngine(db, denyRules)
+	engine.SetPolicy(policyEng)
+
+	// Attempting to install forbidden package must fail
+	_, err := engine.Execute(ctx, InstallOptions{
+		ListingID:     "forbidden-package",
+		Version:       "1.0.0",
+		ArchiveSource: archiveSource,
+	})
+	if err == nil {
+		t.Fatal("expected policy denial for forbidden package, but install succeeded")
+	}
+	if !strings.Contains(err.Error(), "denied by policy") {
+		t.Errorf("expected 'denied by policy' error, got: %v", err)
 	}
 }

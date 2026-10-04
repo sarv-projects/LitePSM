@@ -2,9 +2,12 @@ package secrets
 
 import (
 	"context"
+	"crypto/rand"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sarv-projects/litepsm/internal/domain"
 )
 
 func TestSecretStore_CRUD(t *testing.T) {
@@ -145,5 +148,77 @@ func TestZeroPlaintextCanaryLeak(t *testing.T) {
 	_, err = store.Get(ctx, *ref)
 	if err != nil && strings.Contains(err.Error(), canarySecret) {
 		t.Fatalf("canary leaked into error message!")
+	}
+}
+
+func TestFileEncryptedSecretStoreWithKey(t *testing.T) {
+	ctx := context.Background()
+	vaultPath := filepath.Join(t.TempDir(), "vault.enc")
+
+	// 1. Invalid key length must be rejected
+	_, err := NewFileEncryptedSecretStoreWithKey(vaultPath, []byte("short-key"))
+	if err == nil {
+		t.Fatal("expected error for invalid key length, got nil")
+	}
+
+	// 2. Valid random 32-byte key
+	keyA := make([]byte, 32)
+	if _, err := rand.Read(keyA); err != nil {
+		t.Fatalf("failed to read random key: %v", err)
+	}
+
+	storeA, err := NewFileEncryptedSecretStoreWithKey(vaultPath, keyA)
+	if err != nil {
+		t.Fatalf("failed to initialize store: %v", err)
+	}
+
+	secretPayload := []byte("top_secret_oauth_token_12345")
+	ref, err := storeA.Put(ctx, "oauth:google", "token", secretPayload)
+	if err != nil {
+		t.Fatalf("failed to put secret: %v", err)
+	}
+
+	// Read back with same key
+	got, err := storeA.Get(ctx, *ref)
+	if err != nil {
+		t.Fatalf("failed to get secret: %v", err)
+	}
+	if string(got) != string(secretPayload) {
+		t.Fatalf("secret mismatch: got %q, want %q", string(got), string(secretPayload))
+	}
+	_ = storeA.Close()
+
+	// 3. Open existing vault with DIFFERENT 32-byte key: decrypt must fail
+	keyB := make([]byte, 32)
+	if _, err := rand.Read(keyB); err != nil {
+		t.Fatalf("failed to read random key: %v", err)
+	}
+	storeB, err := NewFileEncryptedSecretStoreWithKey(vaultPath, keyB)
+	if err != nil {
+		t.Fatalf("opening existing vault file should succeed at load: %v", err)
+	}
+	defer storeB.Close()
+
+	_, err = storeB.Get(ctx, *ref)
+	if err == nil {
+		t.Fatal("expected decryption failure with wrong key, but Get succeeded!")
+	}
+}
+
+func TestOpenSecretStore_FailClosed(t *testing.T) {
+	// If the native platform keystore is unavailable in this environment,
+	// OpenSecretStore must fail closed with ErrAuthVaultUnavailable, never
+	// silently fallback to an ephemeral in-memory store.
+	store, err := OpenSecretStore()
+	if err != nil {
+		if domain.ErrorCode(err) != domain.CodeAuthVaultUnavailable {
+			t.Fatalf("expected error code %s, got %s: %v", domain.CodeAuthVaultUnavailable, domain.ErrorCode(err), err)
+		}
+	} else {
+		// If native keystore was available, store must not be nil
+		if store == nil {
+			t.Fatal("store was nil without returning error")
+		}
+		_ = store.Close()
 	}
 }

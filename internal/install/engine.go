@@ -12,6 +12,7 @@ import (
 
 	"github.com/sarv-projects/litepsm/internal/artifact"
 	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litepsm/internal/policy"
 	"github.com/sarv-projects/litepsm/internal/state"
 )
 
@@ -37,6 +38,7 @@ type InstallOptions struct {
 // Engine coordinates artifact acquisition, CAS placement, and SQLite transactional commits.
 type Engine struct {
 	db          *state.DB
+	policy      *policy.Engine
 	casRoot     string
 	stagingRoot string
 }
@@ -57,16 +59,46 @@ func NewEngine(db *state.DB, casRoot, stagingRoot string) (*Engine, error) {
 	}, nil
 }
 
+// SetPolicy attaches a policy engine for consent and security evaluation during installation.
+func (e *Engine) SetPolicy(p *policy.Engine) {
+	e.policy = p
+}
+
 // Execute performs safe installation with atomic CAS promotion and safe rollback.
 func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.InstallRecord, error) {
 	if strings.TrimSpace(opts.ListingID) == "" {
 		return nil, domain.ErrInvalidIdentifier(opts.ListingID, "valid non-empty listing id")
+	}
+	if strings.Contains(opts.ListingID, "..") || strings.Contains(opts.ListingID, "/") || strings.Contains(opts.ListingID, "\\") {
+		return nil, domain.ErrInvalidIdentifier(opts.ListingID, "listing ID must not contain path traversal characters ('..', '/', '\\')")
 	}
 	if strings.TrimSpace(opts.Version) == "" {
 		opts.Version = "latest"
 	}
 	if opts.Scope == "" {
 		opts.Scope = domain.ScopeUser
+	}
+
+	// Policy evaluation: enforce security tiers and human approval requirements
+	if e.policy != nil {
+		decision := e.policy.Evaluate(ctx, policy.PolicyInput{
+			Actor:     "user",
+			Operation: "install",
+			TargetRef: opts.ListingID,
+			Scope:     opts.Scope,
+			Effects: []policy.EffectDeclaration{
+				{
+					Effect: policy.EffectPackageInstall,
+					Target: opts.ListingID,
+				},
+			},
+		})
+		if decision.Decision == policy.DecisionDeny {
+			return nil, domain.ErrUnauthorized("package.install", fmt.Sprintf("installation denied by policy: %s (%v)", decision.Detail, decision.ReasonCodes))
+		}
+		if decision.Decision == policy.DecisionAsk && opts.ApprovalID == "" {
+			return nil, domain.ErrUnauthorized("package.install", "human approval required before installation")
+		}
 	}
 
 	limits := artifact.DefaultExtractionLimits
@@ -200,7 +232,13 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 	if len(digestShort) > 8 {
 		digestShort = digestShort[:8]
 	}
-	installID := fmt.Sprintf("inst_%s_%s", opts.ListingID, digestShort)
+	safeListing := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			return r
+		}
+		return '_'
+	}, opts.ListingID)
+	installID := fmt.Sprintf("inst_%s_%s_%s", opts.Scope, safeListing, digestShort)
 
 	now := time.Now().UTC()
 	installRec := &domain.InstallRecord{

@@ -19,9 +19,15 @@ import (
 	"github.com/sarv-projects/litepsm/internal/domain"
 )
 
+type vaultDiskEntry struct {
+	EncryptedData []byte         `json:"encrypted_data"`
+	Nonce         []byte         `json:"nonce"`
+	Metadata      SecretMetadata `json:"metadata"`
+}
+
 type serializedVault struct {
-	Version int                    `json:"version"`
-	Entries map[string]memoryEntry `json:"entries"`
+	Version int                       `json:"version"`
+	Entries map[string]vaultDiskEntry `json:"entries"`
 }
 
 // FileEncryptedSecretStore provides a persistent encrypted secret vault on disk using AES-256-GCM.
@@ -29,13 +35,16 @@ type FileEncryptedSecretStore struct {
 	vaultPath string
 	key       []byte
 	gcm       cipher.AEAD
-	entries   map[string]memoryEntry
+	entries   map[string]vaultDiskEntry
 	mu        sync.RWMutex
 }
 
-// NewFileEncryptedSecretStore initializes or loads a persistent AES-256-GCM encrypted vault.
-func NewFileEncryptedSecretStore(vaultPath string) (*FileEncryptedSecretStore, error) {
-	key := deriveVaultKey(vaultPath)
+// NewFileEncryptedSecretStoreWithKey initializes or loads a persistent AES-256-GCM encrypted vault with an explicit 32-byte key.
+func NewFileEncryptedSecretStoreWithKey(vaultPath string, key []byte) (*FileEncryptedSecretStore, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("encryption key must be exactly 32 bytes, got %d", len(key))
+	}
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("cipher init error: %w", err)
@@ -50,13 +59,20 @@ func NewFileEncryptedSecretStore(vaultPath string) (*FileEncryptedSecretStore, e
 		vaultPath: vaultPath,
 		key:       key,
 		gcm:       gcm,
-		entries:   make(map[string]memoryEntry),
+		entries:   make(map[string]vaultDiskEntry),
 	}
 
 	if err := store.load(); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to load encrypted vault: %w", err)
 	}
 	return store, nil
+}
+
+// NewFileEncryptedSecretStore initializes or loads a persistent AES-256-GCM encrypted vault.
+// Note: For native keystore integration, use OpenSecretStore().
+func NewFileEncryptedSecretStore(vaultPath string) (*FileEncryptedSecretStore, error) {
+	key := deriveVaultKey(vaultPath)
+	return NewFileEncryptedSecretStoreWithKey(vaultPath, key)
 }
 
 // DefaultVaultPath returns the platform-standard location of the encrypted secrets vault.
@@ -109,7 +125,7 @@ func (s *FileEncryptedSecretStore) load() error {
 
 	s.entries = vault.Entries
 	if s.entries == nil {
-		s.entries = make(map[string]memoryEntry)
+		s.entries = make(map[string]vaultDiskEntry)
 	}
 	return nil
 }
@@ -161,13 +177,13 @@ func (s *FileEncryptedSecretStore) Put(ctx context.Context, namespace, key strin
 	existing, ok := s.entries[ref.URI]
 	createdAt := now
 	if ok {
-		createdAt = existing.metadata.CreatedAt
+		createdAt = existing.Metadata.CreatedAt
 	}
 
-	s.entries[ref.URI] = memoryEntry{
-		encryptedData: ciphertext,
-		nonce:         nonce,
-		metadata: SecretMetadata{
+	s.entries[ref.URI] = vaultDiskEntry{
+		EncryptedData: ciphertext,
+		Nonce:         nonce,
+		Metadata: SecretMetadata{
 			URI:       ref.URI,
 			Namespace: namespace,
 			Key:       key,
@@ -191,7 +207,7 @@ func (s *FileEncryptedSecretStore) Get(ctx context.Context, ref SecretRef) ([]by
 		return nil, domain.ErrNotFound("secret", ref.URI)
 	}
 
-	plaintext, err := s.gcm.Open(nil, entry.nonce, entry.encryptedData, []byte(ref.URI))
+	plaintext, err := s.gcm.Open(nil, entry.Nonce, entry.EncryptedData, []byte(ref.URI))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt secret %s: %w", ref.URI, err)
 	}
@@ -228,8 +244,8 @@ func (s *FileEncryptedSecretStore) ListMetadata(ctx context.Context, namespace s
 
 	var result []SecretMetadata
 	for _, entry := range s.entries {
-		if namespace == "" || entry.metadata.Namespace == namespace {
-			result = append(result, entry.metadata)
+		if namespace == "" || entry.Metadata.Namespace == namespace {
+			result = append(result, entry.Metadata)
 		}
 	}
 	return result, nil
@@ -242,6 +258,6 @@ func (s *FileEncryptedSecretStore) Close() error {
 	for i := range s.key {
 		s.key[i] = 0
 	}
-	s.entries = make(map[string]memoryEntry)
+	s.entries = make(map[string]vaultDiskEntry)
 	return nil
 }

@@ -169,3 +169,142 @@ func TestIPCCancellation(t *testing.T) {
 		t.Fatal("timed out waiting for server handler context to cancel")
 	}
 }
+
+func TestServerStopIdempotentAndCancelsHandlers(t *testing.T) {
+	server := NewServer("0.1.0", "2026-07-28")
+	handlerEntered := make(chan struct{})
+	handlerCancelled := make(chan struct{})
+
+	server.RegisterHandler("test.blocking", func(ctx context.Context, params json.RawMessage) (any, *RPCError) {
+		close(handlerEntered)
+		select {
+		case <-ctx.Done():
+			close(handlerCancelled)
+			return nil, &RPCError{Code: CodeInternalError, Message: "server stopped"}
+		case <-time.After(5 * time.Second):
+			return "done", nil
+		}
+	})
+
+	listener := newMockListener()
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	serverConn, clientConn := net.Pipe()
+	listener.conns <- serverConn
+
+	client := NewClientFromConn(clientConn)
+	defer client.Close()
+
+	go func() {
+		var res string
+		_ = client.Call(context.Background(), "test.blocking", nil, &res)
+	}()
+
+	<-handlerEntered
+
+	// Call Stop from multiple goroutines concurrently to verify idempotence and safe WaitGroup shutdown
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 5; i++ {
+			go func() {
+				_ = server.Stop()
+			}()
+		}
+		_ = server.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-handlerCancelled:
+		// Handler context was canceled by Stop()
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler context was not canceled when server stopped")
+	}
+
+	select {
+	case <-done:
+		// Stop completed cleanly
+	case <-time.After(2 * time.Second):
+		t.Fatal("server.Stop() timed out or deadlocked")
+	}
+}
+
+func TestDuplicateRequestID(t *testing.T) {
+	server := NewServer("0.1.0", "2026-07-28")
+	handlerEntered := make(chan struct{})
+	unblock := make(chan struct{})
+
+	server.RegisterHandler("test.pause", func(ctx context.Context, params json.RawMessage) (any, *RPCError) {
+		select {
+		case <-handlerEntered:
+		default:
+			close(handlerEntered)
+		}
+		select {
+		case <-unblock:
+			return "ok", nil
+		case <-ctx.Done():
+			return nil, &RPCError{Code: CodeInternalError, Message: "canceled"}
+		}
+	})
+
+	listener := newMockListener()
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer func() {
+		_ = server.Stop()
+		_ = listener.Close()
+	}()
+
+	serverConn, clientConn := net.Pipe()
+	listener.conns <- serverConn
+
+	codec := NewLineDelimitedCodec(clientConn)
+	defer clientConn.Close()
+
+	reqID := json.RawMessage(`"req-dup-1"`)
+	req1 := &Request{
+		JSONRPC: "2.0",
+		ID:      &reqID,
+		Method:  "test.pause",
+	}
+
+	if err := codec.WriteRequest(req1); err != nil {
+		t.Fatalf("failed to write req1: %v", err)
+	}
+
+	// Wait for req1 to start processing
+	<-handlerEntered
+
+	// Send duplicate request with identical ID while req1 is in flight
+	req2 := &Request{
+		JSONRPC: "2.0",
+		ID:      &reqID,
+		Method:  "test.pause",
+	}
+	if err := codec.WriteRequest(req2); err != nil {
+		t.Fatalf("failed to write req2: %v", err)
+	}
+
+	// Read response for duplicate request - should immediately reject
+	resp2, err := codec.ReadResponse()
+	if err != nil {
+		t.Fatalf("failed to read response for duplicate request: %v", err)
+	}
+	if resp2.Error == nil || resp2.Error.Code != CodeInvalidRequest {
+		t.Fatalf("expected CodeInvalidRequest for duplicate request, got: %+v", resp2)
+	}
+
+	// Unblock req1 and read its response
+	close(unblock)
+	resp1, err := codec.ReadResponse()
+	if err != nil {
+		t.Fatalf("failed to read response for first request: %v", err)
+	}
+	if resp1.Error != nil {
+		t.Fatalf("first request failed: %+v", resp1.Error)
+	}
+}

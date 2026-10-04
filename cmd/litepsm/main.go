@@ -871,7 +871,7 @@ func runDoctor(args []string) {
 		defer db.Close()
 	}
 
-	secretStore, _ := secrets.NewMemorySecretStore()
+	secretStore, _ := secrets.OpenSecretStore()
 	eng := doctor.NewEngine(paths, db, secretStore)
 	report := eng.RunChecks(ctx)
 
@@ -1017,8 +1017,9 @@ func runDaemonServe() {
 
 func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client, installEngine *install.Engine, paths *config.PlatformPaths) {
 	policyEngine := policy.NewEngine(db, nil)
+	installEngine.SetPolicy(policyEngine)
 	supervisor := provider.NewSupervisor()
-	secretStore, _ := secrets.NewMemorySecretStore()
+	secretStore, _ := secrets.OpenSecretStore()
 
 	// 1. tools.list returns installed capabilities & external detected tools
 	server.RegisterHandler("tools.list", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
@@ -1130,18 +1131,20 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 	// 5. install.execute installs a package
 	server.RegisterHandler("install.execute", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
-			ListingID string `json:"listingId"`
-			Version   string `json:"version"`
-			Scope     string `json:"scope"`
+			ListingID  string `json:"listingId"`
+			Version    string `json:"version"`
+			Scope      string `json:"scope"`
+			ApprovalID string `json:"approvalId,omitempty"`
 		}
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid install parameters"}
 		}
 
 		rec, err := installEngine.Execute(ctx, install.InstallOptions{
-			ListingID: req.ListingID,
-			Version:   req.Version,
-			Scope:     domain.InstallScope(req.Scope),
+			ListingID:  req.ListingID,
+			Version:    req.Version,
+			Scope:      domain.InstallScope(req.Scope),
+			ApprovalID: req.ApprovalID,
 		})
 		if err != nil {
 			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}

@@ -39,7 +39,7 @@ function findItem(key: string | null | undefined): Listing | null {
 /** A data field that may legitimately be missing in the snapshot. */
 function Value({ children, absent }: { children?: React.ReactNode; absent?: string }) {
   if (children === undefined || children === null || children === "") {
-    return <span className="absent">{absent || "not published"}</span>;
+    return <span className="absent">{absent || "unspecified"}</span>;
   }
   return <>{children}</>;
 }
@@ -108,13 +108,13 @@ function PackageIndexShell() {
                   <span className="min-w-0">
                     <span className="t-cond block truncate text-[14px] font-medium text-ink">{item.name}</span>
                     <span className="row-meta">
-                      <span>{item.publisher?.name || "not published"}</span>
+                      <span>{item.publisher?.name || "unspecified"}</span>
                       <span className="t-mono">{item.kind}</span>
                       <span className="truncate">{item.category}</span>
                     </span>
                   </span>
                   <span className="t-mono t-tabular shrink-0 text-[11px] text-pop">
-                    not published
+                    {typeof item.stars === "number" && item.stars > 0 ? formatCount(item.stars) : "unspecified"}
                   </span>
                 </Link>
               </li>
@@ -570,7 +570,7 @@ function PackageContent() {
                       item.publisher.name
                     )
                   ) : (
-                    <span className="absent">not published</span>
+                    <span className="absent">unspecified</span>
                   )}
                 </dd>
               </div>
@@ -587,13 +587,13 @@ function PackageContent() {
               <div>
                 <dt>Version</dt>
                 <dd className="t-mono !text-[12px]">
-                  <Value absent="not published">{item.version}</Value>
+                  <Value absent="unspecified">{item.version}</Value>
                 </dd>
               </div>
               <div>
                 <dt>Transport</dt>
                 <dd className="t-mono !text-[12px]">
-                  <Value absent={item.kind === "mcp" ? "not published" : "not applicable"}>
+                  <Value absent={item.kind === "mcp" ? "unspecified" : "not applicable"}>
                     {item.transport}
                   </Value>
                 </dd>
@@ -601,7 +601,7 @@ function PackageContent() {
               <div>
                 <dt>Runtime</dt>
                 <dd className="t-mono !text-[12px]">
-                  <Value absent={item.kind === "mcp" ? "not published" : "not applicable"}>{item.runtime}</Value>
+                  <Value absent={item.kind === "mcp" ? "unspecified" : "not applicable"}>{item.runtime}</Value>
                 </dd>
               </div>
               <div>
@@ -613,7 +613,7 @@ function PackageContent() {
                       {item.args?.length ? ` ${item.args.join(" ")}` : ""}
                     </span>
                   ) : (
-                    <span className="absent">not published</span>
+                    <span className="absent">unspecified</span>
                   )}
                 </dd>
               </div>
@@ -629,14 +629,14 @@ function PackageContent() {
                     >
                       {(() => {
                         try {
-                          return new URL(item.skillSource).host;
+                           return new URL(item.skillSource).host;
                         } catch {
                           return item.skillSource;
                         }
                       })()}
                     </a>
                   ) : (
-                    <span className="absent">{item.kind === "skill" ? "not published" : "not applicable"}</span>
+                    <span className="absent">{item.kind === "skill" ? "unspecified" : "not applicable"}</span>
                   )}
                 </dd>
               </div>
@@ -647,7 +647,7 @@ function PackageContent() {
                     className="absent"
                     title="The upstream sources expose no machine-readable star, download or install counts, so this catalog publishes none rather than an estimate."
                   >
-                    not published
+                    unspecified
                   </span>
                 </dd>
               </div>

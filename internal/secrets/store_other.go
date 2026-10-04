@@ -1,12 +1,14 @@
-//go:build !windows && !darwin && !linux
+//go:build !linux && !windows && !darwin
 
 package secrets
 
+import (
+	"fmt"
+	"runtime"
+
+	"github.com/sarv-projects/litepsm/internal/domain"
+)
+
 func newPlatformSecretStore() (SecretStore, error) {
-	vaultPath := DefaultVaultPath()
-	store, err := NewFileEncryptedSecretStore(vaultPath)
-	if err != nil {
-		return NewMemorySecretStore()
-	}
-	return store, nil
+	return nil, domain.ErrAuthVaultUnavailable(fmt.Sprintf("unsupported platform OS %q for secure secret store", runtime.GOOS))
 }

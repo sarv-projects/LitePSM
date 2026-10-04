@@ -38,7 +38,7 @@ export function ExtensionCard({ item, hostCount }: ExtensionCardProps) {
   const total = hostCount ?? hosts.length;
   const detail = [
     kindLabel(item.kind),
-    item.publisher?.name ? `by ${item.publisher.name}` : "publisher not published",
+    item.publisher?.name ? `by ${item.publisher.name}` : "publisher unspecified",
     item.summary,
   ].join(". ");
 

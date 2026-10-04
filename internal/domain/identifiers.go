@@ -16,9 +16,9 @@ var (
 	// e.g. mcp:builtin:mcp-registry:%40modelcontextprotocol%2Fpg
 	RegexListingID = regexp.MustCompile(`^(plugin|mcp|skill|connector|agent|rule|hook|tool|lsp):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$`)
 
-	// RegexInstallID validates inst_<26-char-ULID-or-UUIDv7>
-	// e.g. inst_01J9X8K2M4N5P6Q7R8S9T0U1V2
-	RegexInstallID = regexp.MustCompile(`^inst_[0-9A-Za-z_-]{20,36}$`)
+	// RegexInstallID validates inst_<26-char-ULID-or-UUIDv7-or-scoped-id>
+	// e.g. inst_01J9X8K2M4N5P6Q7R8S9T0U1V2 or inst_user_sqlite_a1b2c3d4
+	RegexInstallID = regexp.MustCompile(`^inst_[0-9A-Za-z_-]{10,64}$`)
 
 	// RegexDigest validates sha256:<hex>
 	RegexDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)

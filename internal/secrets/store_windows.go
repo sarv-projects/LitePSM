@@ -3,45 +3,76 @@
 package secrets
 
 import (
-	"context"
-	"sync"
+	"crypto/rand"
+	"fmt"
+	"os"
+	"path/filepath"
+	"unsafe"
+
+	"github.com/sarv-projects/litepsm/internal/domain"
+	"golang.org/x/sys/windows"
 )
 
-// WindowsSecretStore wraps Windows credential management and DPAPI.
-type WindowsSecretStore struct {
-	fallback *MemorySecretStore
-	mu       sync.RWMutex
+func getOrGenerateWindowsMasterKey(vaultPath string) ([]byte, error) {
+	keyFile := filepath.Join(filepath.Dir(vaultPath), "master.key")
+
+	// If key file exists, decrypt with DPAPI
+	if data, err := os.ReadFile(keyFile); err == nil && len(data) > 0 {
+		var inBlob windows.DataBlob
+		inBlob.Size = uint32(len(data))
+		inBlob.Data = &data[0]
+
+		var outBlob windows.DataBlob
+		err := windows.CryptUnprotectData(&inBlob, nil, nil, 0, nil, 0, &outBlob)
+		if err != nil {
+			return nil, domain.ErrAuthVaultUnavailable(fmt.Sprintf("failed to decrypt master key via Windows DPAPI: %v", err))
+		}
+		defer windows.LocalFree(windows.Handle(unsafe.Pointer(outBlob.Data)))
+
+		key := make([]byte, outBlob.Size)
+		copy(key, unsafe.Slice(outBlob.Data, outBlob.Size))
+		if len(key) == 32 {
+			return key, nil
+		}
+	}
+
+	// Generate a new 32-byte random key
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("failed to generate random key: %w", err)
+	}
+
+	var inBlob windows.DataBlob
+	inBlob.Size = uint32(len(key))
+	inBlob.Data = &key[0]
+
+	desc, _ := windows.UTF16PtrFromString("LitePSM Vault Master Key")
+	var outBlob windows.DataBlob
+	err := windows.CryptProtectData(&inBlob, desc, nil, 0, nil, 0, &outBlob)
+	if err != nil {
+		return nil, domain.ErrAuthVaultUnavailable(fmt.Sprintf("failed to protect master key via Windows DPAPI: %v", err))
+	}
+	defer windows.LocalFree(windows.Handle(unsafe.Pointer(outBlob.Data)))
+
+	encryptedBytes := make([]byte, outBlob.Size)
+	copy(encryptedBytes, unsafe.Slice(outBlob.Data, outBlob.Size))
+
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0700); err != nil {
+		return nil, fmt.Errorf("failed to create directory for master key: %w", err)
+	}
+
+	if err := os.WriteFile(keyFile, encryptedBytes, 0600); err != nil {
+		return nil, fmt.Errorf("failed to save encrypted master key: %w", err)
+	}
+
+	return key, nil
 }
 
 func newPlatformSecretStore() (SecretStore, error) {
 	vaultPath := DefaultVaultPath()
-	store, err := NewFileEncryptedSecretStore(vaultPath)
+	key, err := getOrGenerateWindowsMasterKey(vaultPath)
 	if err != nil {
-		return NewMemorySecretStore()
+		return nil, err
 	}
-	return store, nil
-}
-
-func (s *WindowsSecretStore) Put(ctx context.Context, namespace, key string, secretBytes []byte) (*SecretRef, error) {
-	return s.fallback.Put(ctx, namespace, key, secretBytes)
-}
-
-func (s *WindowsSecretStore) Get(ctx context.Context, ref SecretRef) ([]byte, error) {
-	return s.fallback.Get(ctx, ref)
-}
-
-func (s *WindowsSecretStore) Delete(ctx context.Context, ref SecretRef) error {
-	return s.fallback.Delete(ctx, ref)
-}
-
-func (s *WindowsSecretStore) Exists(ctx context.Context, ref SecretRef) (bool, error) {
-	return s.fallback.Exists(ctx, ref)
-}
-
-func (s *WindowsSecretStore) ListMetadata(ctx context.Context, namespace string) ([]SecretMetadata, error) {
-	return s.fallback.ListMetadata(ctx, namespace)
-}
-
-func (s *WindowsSecretStore) Close() error {
-	return s.fallback.Close()
+	return NewFileEncryptedSecretStoreWithKey(vaultPath, key)
 }

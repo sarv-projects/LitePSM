@@ -47,6 +47,9 @@ func TestAgentTableIntegrity(t *testing.T) {
 			if a.Base == BaseEnv && a.DefaultBase == "" && a.EnvVar == "" {
 				t.Errorf("agent %q has no fallback base", a.ID)
 			}
+			if a.Base == BaseHome && a.GlobalDir == "skills" {
+				t.Errorf("agent %q must not use bare 'skills' as GlobalDir (pollutes ~/skills)", a.ID)
+			}
 		}
 		if a.Universal != (a.ProjectDir == ".agents/skills") {
 			t.Errorf("agent %q Universal flag disagrees with ProjectDir %q", a.ID, a.ProjectDir)
@@ -80,6 +83,10 @@ func TestAgentSkillDirResolution(t *testing.T) {
 		{"windsurf", "project", filepath.Join(project, ".windsurf", "skills"), true},
 		{"kimi-code-cli", "global", filepath.Join(home, ".agents", "skills"), true},
 		{"amp", "global", filepath.Join(home, ".config", "agents", "skills"), true},
+		{"adal", "global", filepath.Join(home, ".adal", "skills"), true},
+		{"continue", "global", filepath.Join(home, ".continue", "skills"), true},
+		{"roo", "global", filepath.Join(home, ".roo", "skills"), true},
+		{"zencoder", "global", filepath.Join(home, ".zencoder", "skills"), true},
 		// No documented global location.
 		{"eve", "global", "", false},
 		{"promptscript", "global", "", false},

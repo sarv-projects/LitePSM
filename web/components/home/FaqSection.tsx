@@ -23,7 +23,7 @@ const FAQS: Array<{ q: string; a: React.ReactNode }> = [
       <>
         They are the publisher's own repository star count, carried through from the upstream registry. They
         are a popularity signal only. LitePSM does not collect install counts, and entries whose source
-        publishes no star count are shown as <span className="absent">not published</span> rather than zero.
+        publishes no star count are shown as <span className="absent">unspecified</span> rather than zero.
       </>
     ),
   },
