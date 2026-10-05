@@ -1,8 +1,19 @@
 # Host Adapters & In-Agent UX
 
+> **Reality check (read first).** `internal/host` is `WIRED` for exactly one
+> operation: merging **a single `litespm` MCP entry** into one host config file,
+> atomically and comment/sibling-preserving (`STATUS.md` §1). The `HostAdapter`
+> interface has **no compile or projection method**, no instruction / skill /
+> command file is written into any host (the one exception is Pi's companion
+> extension, §3.2), and no `/marketplace` hook is registered anywhere.
+> Anything below that describes richer projection or automated slash-command
+> registration is `DESIGNED`.
+
+---
+
 ## 1. Extensible HostAdapter Architecture
 
-LiteSPM connects to AI agent hosts through a strongly typed, compiled-in `HostAdapter` interface (`internal/host`).
+LiteSPM connects to AI agent hosts through a strongly typed, compiled-in `HostAdapter` interface (`internal/host/types.go:58-66`).
 
 ```go
 type HostAdapter interface {
@@ -18,23 +29,49 @@ type HostAdapter interface {
 type HostDescriptor struct {
     HostID                 string   `json:"hostId"`                 // e.g. cline, pi-agent, grok-build, claude-code
     DisplayName            string   `json:"displayName"`            // e.g. "Cline (VS Code Extension)"
-    SupportedVersions      []string `json:"supportedVersions"`      // Pinned SemVer ranges
+    SupportedVersions      []string `json:"supportedVersions"`      // Declared ranges, e.g. ">=2.0.0"
     DefaultConfigFileName  string   `json:"defaultConfigFileName"`  // e.g. cline_mcp_settings.json
-    ConfigFormat           string   `json:"configFormat"`           // json | toml | yaml
-    SupportsFormElicit     bool     `json:"supportsFormElicit"`     // MCP 2026-07-28 input_required
-    RequiresBootstrapSkill bool     `json:"requiresBootstrapSkill"` // Needs companion SKILL.md / command
-    SlashCommandTrigger    string   `json:"slashCommandTrigger"`    // e.g. "/marketplace"
+    ConfigFormat           string   `json:"configFormat"`           // json | toml
+    SupportsFormElicit     bool     `json:"supportsFormElicit"`     // Declared only; nothing consumes it
+    RequiresBootstrapSkill bool     `json:"requiresBootstrapSkill"` // Declared only; no skill file is written
+    SlashCommandTrigger    string   `json:"slashCommandTrigger"`    // e.g. "/marketplace"; declared only
 }
 ```
 
+**Contract facts:**
+
+*   The seven methods above are the whole interface. There is no `Compile`, `Project`, `WriteInstruction`, or `RegisterCommand` method, so the "write instructions/skills/commands into the host" behaviour is **`DESIGNED`, not implemented** — see §5.
+*   `SupportsFormElicit`, `RequiresBootstrapSkill` and `SlashCommandTrigger` are descriptor metadata: each adapter sets them and `Descriptor()` returns them, but no setup, verify, detect, remove or wizard path branches on them. `RequiresBootstrapSkill` is declared `true` for `claude-code` and `codex`, and LiteSPM writes no companion skill for either.
+*   `PlanSetup` → `ApplySetup` writes exactly one server entry named `litespm` (the pre-rename `litepsm` entry is detected, deleted and replaced so only one bridge entry survives — `internal/host/target.go:99-105`).
+*   Removal is the inverse of merge: `stripBridgeEntry` (`internal/host/remove.go:170-185`) deletes **both** the `litespm` and the legacy `litepsm` entry and touches no sibling; for JSON configs the produced file must re-parse with both entries gone before anything is written (`remove.go:138-149`). `litespm host remove <id>` / `host remove --all` (`cmd/litespm/main.go:424-463`) and `litespm uninstall` all go through this path.
+*   `DetectPreExistingComponents` always returns `ReadOnly: true` components of kind `mcp`; no adapter emits `kind: "skill"` today.
+
 ---
 
-## 2. Dynamic Runtime Adapter Advisory & Metadata Discovery
+## 2. Advisory & Metadata Discovery
 
-When a user runs `litespm`, the client reads the remote catalog release pointer (`/v1/current.json`), which carries an `advisories` array (hostId, status, minVersion) — there is no separate `adapters.json` endpoint. The interactive wizard (`cmd/litespm/wizard.go:verifyRuntimeAdvisories`) currently reports compiled-in protocol/adapters without a network fetch:
-*   **Advisory Compatibility Metadata:** `current.json.advisories` contains per-host status and minimum versions. It does **not** deliver dynamic executable Go code; config file parsing and mutation are strictly performed by the compiled-in binary. Adding new config parsers requires a client binary release.
-*   **Zero Local Mutation:** Reading advisory metadata is a passive read. It allows the CLI to inform the user if an updated client binary is required for a newer agent release without altering existing host configurations.
-*   **Offline Fallback:** If internet access is unavailable, LiteSPM uses the compiled-in adapter registry (`internal/host/registry.go`).
+**Today this is offline.** When a user runs `litespm`, the wizard prints advisory
+metadata compiled into the binary — `cmd/litespm/wizard.go:138-143`
+(`verifyRuntimeAdvisories`) performs **no HTTP request at all**; it prints the
+protocol version and the string `✓ 6 Verified Host Adapters Compiled & Available`
+(the six bespoke adapters — `litespm host list` reports **50** adapters, §3.7).
+
+*   **Where advisories actually exist:** the published release pointer
+    `GET /v1/current.json` does carry an `advisories` array of
+    `{hostId, status, minVersion}` (three entries in `web/public/v1/current.json`).
+    There is no separate `adapters.json` endpoint.
+*   **Nobody parses it yet.** No Go code reads `advisories`; `catalog.SyncResult`
+    (`internal/catalog/client.go:20-26`) decodes only `releaseId`, `sequence`,
+    `itemCount` and `updated`. The only network fetch of `/v1/current.json` is
+    `catalog sync` (`Client.Sync` → `FetchCurrent`, `internal/catalog/client.go:196-197`
+    and `91-101`), which is `WIRED` but **broken at the live origin**: the
+    pointer answers 200 while the release tree it points at 404s (`STATUS.md` §2).
+*   **Zero local mutation.** Reading advisory metadata (when it is wired) is a
+    passive read; it may tell the user a newer client binary is required. Config
+    parsing and mutation are performed exclusively by the compiled-in binary, so
+    supporting a new host config format requires a client release.
+*   **Offline fallback.** With no network, the wizard uses the compiled-in
+    adapter registry (`internal/host/registry.go`); this is the path that runs today.
 
 ---
 
@@ -42,64 +79,70 @@ When a user runs `litespm`, the client reads the remote catalog release pointer 
 
 ### 3.1 Cline (VS Code Extension) (`internal/host/cline.go`)
 *   **Host ID:** `cline`
-*   **Target Configuration:**
-    *   **Windows:** `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
-    *   **macOS:** `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
-    *   **Linux:** `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+*   **Target Configuration (user scope only — `DetectConfig` ignores `scope`):**
+    *   **Windows:** `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json` (plus the `Code - Insiders` variant)
+    *   **macOS:** `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (plus `Code - Insiders`)
+    *   **Linux:** `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (plus `Code - Insiders`)
 *   **Format:** JSON.
 *   **Managed Injection:** Injects under `mcpServers.litespm`.
 *   **Cline CLI:** The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LiteSPM does not currently manage.
-*   **Detected External Capabilities:** Scans sibling keys in `mcpServers` (e.g., `filesystem`, `postgres`, `github`) as read-only detected entries.
+*   **Detected External Capabilities:** Scans sibling keys under `mcpServers` (skipping `litespm`/`litepsm`) as read-only detected entries.
 
 ### 3.2 Pi Agent (`pi-coding-agent`) (`internal/host/piagent.go`)
 *   **Host ID:** `pi-agent`
-*   **Target Configuration Candidate Paths:**
-    *   User scope: `~/.pi/agent/mcp.json` (Unix/macOS) or `%USERPROFILE%\.pi\agent\mcp.json` (Windows)
-    *   Project scope: `.pi/mcp.json` (trust-gated)
-    *   Legacy fallback: `~/.pi/config.json` / `~/.pi/mcp.json`
+*   **Target Configuration candidates (in order):**
+    *   `~/.pi/agent/mcp.json`
+    *   `~/.pi/config.json`
+    *   `~/.pi/mcp.json`
+*   **Project scope:** `.pi/mcp.json` is documented for the host, but `DetectConfig` never scans the working directory — setup and detection are user-scope.
 *   **Format:** JSON.
-*   **Managed Injection:** Registers LiteSPM under the `mcpServers` key in Pi's MCP config and writes a companion command extension (`~/.pi/agent/extensions/litespm.ts`).
+*   **Managed Injection:** Writes the bridge entry into whichever container exists (`mcp.servers`, `mcp`, or `mcpServers`, defaulting to `mcpServers`) **and** creates `~/.pi/agent/extensions/litespm.ts` if absent (`piagent.go:136-153`).
+*   **Companion extension:** the generated file registers a Pi command named **`litespm`** (not `/marketplace`) whose handler calls the bridge's `list_installed`. **It is never removed by `host remove` / `uninstall`** — removal only strips config entries (`internal/host/remove.go`).
 *   **Detected External Capabilities:** Detects external tools from the discovered config file in read-only mode.
 
 ### 3.3 Grok Build (`internal/host/grokbuild.go`)
 *   **Host ID:** `grok-build`
-*   **Target Configuration:**
-    *   **Unix / macOS:** `~/.grok/config.toml` (global) or `.grok/config.toml` (project)
+*   **Target Configuration (user scope):**
+    *   **Unix / macOS:** `~/.grok/config.toml`
     *   **Windows:** `%USERPROFILE%\.grok\config.toml` (`%APPDATA%\Grok\config.toml` is a legacy fallback)
+    *   Project scope `.grok/config.toml` is host-documented; the adapter does not scan it.
 *   **Format:** TOML.
 *   **Managed Injection:** Injects under `[mcp_servers.litespm]`.
 *   **Detected External Capabilities:** Parses declared external `[mcp_servers.*]` sections in read-only mode.
 
 ### 3.4 Claude Code (`internal/host/claudecode.go`)
 *   **Host ID:** `claude-code`
-*   **Target Configuration:** User scope `~/.claude.json` (Windows `%USERPROFILE%\.claude.json`), project scope `.mcp.json` in the project root, and a per-project local entry inside `~/.claude.json`. `CLAUDE_CONFIG_DIR` overrides the config directory.
+*   **Target Configuration:** user scope `~/.claude.json` only (`DetectConfig` returns that path unconditionally). Windows is `%USERPROFILE%\.claude.json`; `CLAUDE_CONFIG_DIR`, project `.mcp.json` and the per-project local entry inside `~/.claude.json` are host-documented locations LiteSPM does **not** read or write today.
 *   **Format:** JSON.
 *   **Managed Injection:** Injects under `mcpServers.litespm`.
-*   **Detected External Capabilities:** Scans existing `mcpServers` and `.claude/skills/` in read-only mode.
+*   **Detected External Capabilities:** Scans `mcpServers` in that file in read-only mode. **`.claude/skills/` is not scanned** — no adapter inspects any skills directory.
 
 ### 3.5 OpenAI Codex (`internal/host/codex.go`)
 *   **Host ID:** `codex`
-*   **Target Configuration:**
-    *   **Unix / macOS:** `~/.codex/config.toml` (project `.codex/config.toml`)
-    *   **Windows:** `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback; `$CODEX_HOME` overrides the directory)
+*   **Target Configuration (user scope):**
+    *   **Unix / macOS:** `~/.codex/config.toml`
+    *   **Windows:** `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback; `$CODEX_HOME` overrides the directory for the host, but the adapter does not honour it)
+    *   Project scope `.codex/config.toml` is host-documented; the adapter does not scan it.
 *   **Format:** TOML.
 *   **Managed Injection:** Injects under `[mcp_servers.litespm]`.
 *   **Detected External Capabilities:** Parses declared external `[mcp_servers.*]` sections in read-only mode.
 
 ### 3.6 OpenCode (`internal/host/opencode.go`)
 *   **Host ID:** `opencode`
-*   **Target Configuration:** `~/.config/opencode/opencode.json` (Unix/macOS) or `%USERPROFILE%\.config\opencode\opencode.json` (native Windows; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback). Project scope supports `opencode.json` in the project root or `.opencode/`.
+*   **Target Configuration candidates:** `~/.config/opencode/opencode.json`, then `~/.opencode.json`; on native Windows `%USERPROFILE%\.config\opencode\opencode.json` with `%APPDATA%\OpenCode\opencode.json` as legacy fallback. Project scope (`opencode.json` / `.opencode/`) is host-documented; the adapter does not scan it.
 *   **Format:** JSON.
 *   **Local Entry Shape:** Local MCP entries require `"type": "local"` and a combined string array `"command"`, e.g. `{"mcp":{"servers":{"litespm":{"type":"local","command":["litespm","bridge","stdio","--host","opencode"]}}}}`.
 *   **Version Mapping Profile:**
-    *   `v1.x`: Uses root `mcp` dictionary (`mcp.litespm`).
-    *   `v2.x`: Uses nested `mcp.servers` object (`mcp.servers.litespm`).
-    The adapter inspects the existing document structure or schema version to write the correct layout.
+    *   `v1.x`: uses a root `mcp` dictionary (`mcp.litespm`).
+    *   `v2.x`: uses the nested `mcp.servers` object (`mcp.servers.litespm`).
+    The adapter inspects the existing document structure — if `mcp.servers` exists it writes v2, if `mcp` exists without `servers` it writes v1, and a new document defaults to v2 (`opencode.go:94-124`).
 *   **Detected External Capabilities:** Scans existing configured servers in read-only mode.
 
 ### 3.7 Data-driven targets: 44 generic + 6 bespoke = 50 total (`internal/host/target.go`, `ARCH/30`)
 *   The six adapters above are hand-written and retained (they carry behaviour the generic path does not model: OpenCode v1/v2 layouts, TOML handling, Pi extension generation, Cline comment preservation).
-*   All other agents are data rows (`verifiedBridgeTargets` in `internal/host/targets_data.go`, 44 rows) served by the single `GenericAdapter` (`internal/host/generic.go`). Bespoke IDs always win name collisions (`TestBridgeTargetTableDoesNotShadowBespokeAdapters`).
+*   All other agents are data rows (`verifiedBridgeTargets` in `internal/host/targets_data.go`, **44 rows**) served by the single `GenericAdapter` (`internal/host/generic.go`). Bespoke IDs always win name collisions (`TestBridgeTargetTableDoesNotShadowBespokeAdapters`).
+*   **Counts:** `litespm host list` prints `Registered Agent Host Adapters (50)`. Skill installation targets are a separate set of **77** rows in `internal/skills/agents.go` (`ARCH/30` §10); the two sets overlap but are not equal, and `host list` reports bridge adapters only.
+*   **Scope:** only `GenericAdapter.DetectConfig` honours `domain.ScopeProject`; every other `DetectConfig` ignores the `scope` argument and all production callers pass `ScopeUser`.
 *   Surgical merge (`internal/host/jsonc_merge.go` + TOML merger) preserves comments/key order; strict-JSON hosts refuse commented files rather than guessing. See ARCH/30 for the honesty contract, exclusion table (23 unverified agents), and integrity tests.
 
 ---
@@ -123,22 +166,49 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 └─────────────────────────────────┘           └─────────────────────────────────┘
 ```
 
-### 4.1 Portable Contract vs. Rich Host UI
-*   **Baseline Portable Contract:** Universal MCP does not support arbitrary GUI windows or webviews. For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` prints structured markdown tables, action shortcuts, and standard MCP discovery tools (`search_catalog`, `describe_capability`, `invoke_capability`, `list_installed`).
-*   **Rich Host Renderer:** Where agent hosts support custom extensions or webviews (e.g. Cline's VS Code extension panel or Pi's interactive terminal TUI), the companion extension renders the interactive 4-tab visual capability browser:
+### 4.1 Portable Contract vs. Rich Host UI — and what actually resolves
+
+*   **Baseline Portable Contract:** Universal MCP does not support arbitrary GUI windows or webviews. For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` means the 12 tools the stdio shim advertises in `tools/list` (`internal/bridge/shim.go:93-156`). Their real status today:
+
+| Bridge tool | Daemon method | Status |
+|---|---|---|
+| `search_catalog` | `catalog.search` | resolves |
+| `get_extension` | `catalog.get_item` | resolves |
+| `prepare_install` | `resolver.prepare_plan` | resolves (plan only) |
+| `request_install` | `install.execute` | **reaches the handler but cannot complete** — no artifact source is supplied, so an agent cannot install anything (`STATUS.md` §3) |
+| `list_installed` | `tools.list` | resolves |
+| `load_skill` | `skills.load_body` | resolves |
+| `read_skill_resource` | `skills.read_resource` | resolves |
+| `search_capabilities` | `capabilities.search` | **JSON-RPC `-32601`**, explicit reason (`cmd/litespm/main.go:1628`) |
+| `describe_capability` | `capabilities.describe` | **JSON-RPC `-32601`** (`main.go:1637`) |
+| `invoke_capability` | `provider.invoke` | **JSON-RPC `-32601`** — no capability rows, no session dispatch (`main.go:1676`) |
+| `get_invocation` | `invocation.get` | **JSON-RPC `-32601`** — no invocation registry (`main.go:1685`) |
+| `cancel_invocation` | `invocation.cancel` | **JSON-RPC `-32601`** (`main.go:1694`) |
+
+  A shim with no daemon connection answers every tool with
+  `LPSM-IPC-DAEMON-UNREACHABLE` rather than inventing inventory
+  (`internal/bridge/shim.go:575-587`).
+
+*   **Rich Host Renderer:** where an agent host supports a webview or TUI extension, that companion renders the interactive 4-tab browser:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                          LiteSPM Capabilities                          │
 ├──────────────┬──────────────┬──────────────┬───────────────────────────┤
-│ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │     [INSTALLED (4)] ●     │
+│ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │     [INSTALLED (N)] ●     │
 └──────────────┴──────────────┴──────────────┴───────────────────────────┘
 ```
+
+  The tab counts are **not fixed copy**: `FormatInstalledPanel`
+  (`internal/bridge/shim.go:514-523`) prints `[INSTALLED (%d)]` from
+  `len(items)` of the current `tools.list` response, and prints
+  `No capabilities currently installed…` when that list is empty. Any sample in
+  this document showing a number is illustrative of the layout only.
 
 ### Tab 1: MCP Servers
 *   Search bar for filtering MCP servers by keyword or category (`database`, `developer-tools`, `browser`).
 *   Lists server cards with publisher, verified status, and transport (`stdio` / `Streamable HTTP`).
-*   One-click "Install" action triggering the `prepare_install` flow.
+*   One-click "Install" action triggering the `prepare_install` flow (plan preview only — see the table above; execution cannot complete).
 
 ### Tab 2: Agent Skills
 *   Browse portable `SKILL.md` skills from `agentskills.io` and public Git sources.
@@ -146,39 +216,60 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 
 ### Tab 3: Plugins
 *   Curated plugins and bundles combining MCP servers, skills, and tools.
-*   Reports per-host compatibility badges (`Claude`, `Codex`, `Cline`, `Grok Build`).
+*   Reports per-host compatibility badges (declared per target, not test evidence — `ARCH/26` §4.2).
 
 ### Tab 4: Installed & Detected External Capabilities
-The final tab provides complete situational visibility across the host environment:
-*   **Green Light Indicator (●):** Visual indicator showing whether the server/skill is currently active, connected, and responding (`● Active / Ready`), degraded (`🟡 Needs Auth`), or off (`○ Disabled / Stopped`).
-*   **Detected External Capabilities (Read-Only by Default):**
-    *   LiteSPM scans the host's primary documented configuration file for pre-existing native tools (e.g., servers previously added manually to `cline_mcp_settings.json`, `~/.claude.json`, or `.codex/config.toml`).
-    *   **Scope Limitation:** Detection is strictly limited to documented on-disk config files known to the adapter; in-memory sessions, proprietary cloud-managed extensions, or undocumented registries are not scanned.
-    *   **Read-Only Observation:** To prevent data loss or config corruption, external tools are strictly **read-only** in the status view. LiteSPM never toggles or edits external tools without explicit permission.
-    *   **Explicit Adopt Action:** To bring an external tool under LiteSPM lifecycle supervision, the user must explicitly choose **"Import / Adopt into LiteSPM"**, which generates an atomic backup and creates a managed `InstallRecord`.
+The final tab provides situational visibility across the host environment:
+
+*   **Status lights are truthful, not decorative.** The renderer offers `● Ready`, `🟡 Needs Auth`, `○ Stopped` and `— Unknown` (`internal/bridge/shim.go:530-549`). The daemon's `tools.list` deliberately omits `Status` because it does not health-check installs (`cmd/litespm/main.go:1238-1243`), so **anything LiteSPM has not observed renders as `— Unknown`**; `Verified` is likewise false unless the data carries it. There is no simulated "active/connected" state.
+*   **Detected External Capabilities (Read-Only):**
+    *   `tools.list` unions ledger installs with components each adapter reports from its own documented config file (`main.go:1263-1276`).
+    *   **Scope limitation:** detection is limited to documented on-disk config files known to the adapter; in-memory sessions, cloud-managed extensions, skills directories and undocumented registries are not scanned.
+    *   **Read-only observation:** external tools are never toggled or edited by the status view.
+    *   **Adopt is `DESIGNED`, not implemented.** The panel renders the note `[External / Detected] (Adopt)` (`shim.go:551-556`) and the setup wizard prints `(use 'Adopt' in /marketplace to manage)` (`cmd/litespm/wizard.go:271`), but **no adopt handler, bridge tool or `InstallRecord` creation exists** — adoption needs the deployment ledger (`STATUS.md` §5). The label is a placeholder and must not be presented as a working action.
 
 ```text
-INSTALLED & DETECTED CAPABILITIES:
+FormatInstalledPanel output (format sample — the count is len(items), and
+every Status below is what the daemon actually reported, not a decoration):
 
-[MCP SERVERS]
-  ● postgres-prod        [LiteSPM]   v1.4.0   Status: Ready (3 tools)
-  ● github-native        [Detected]  external Status: Ready (Read-Only) [Adopt]
-  ○ memory-store         [LiteSPM]   v1.0.0   Status: Stopped
+┌────────────────────────────────────────────────────────────────────────┐
+│                          LiteSPM Capabilities                          │
+├──────────────┬──────────────┬──────────────┬───────────────────────────┤
+│ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │     [INSTALLED (2)] ●     │
+└──────────────┴──────────────┴──────────────┴───────────────────────────┘
 
-[AGENT SKILLS]
-  ● pr-reviewer          [LiteSPM]   v1.2.0   Active (SKILL.md)
-  ● release-drafter      [Detected]  external Active (.claude/skills/)
+Status: ● Ready | 🟡 Needs Auth | ○ Stopped | — Unknown | [External / Detected] Read-Only
 
-[PLUGINS]
-  ● web-navigator        [LiteSPM]   v2.0.1   Active
+| Status  | Kind | Name / ID       | Notes / Action                   |
+|---------|------|-----------------|----------------------------------|
+| — Unknown | MCP | **postgres-prod** | Managed                        |
+| — Unknown | MCP | **github-native** | [External / Detected] (Adopt)  |
 ```
+
+Rows appear only for what `tools.list` returns: install-ledger entries (kind
+parsed from the listing ID) plus adapter-detected external components, all of
+which are `mcp` today (§1). Skills managed by `litespm skills add` are listed by
+`skills list`, not by this panel.
 
 ---
 
-## 5. Automated Slash Command (`/marketplace`) Registration
+## 5. Automated Slash Command (`/marketplace`) Registration — `DESIGNED`
 
-To guarantee that `/marketplace` is immediately accessible the next time the agent opens:
-1.  **Cline:** Registers a custom prompt/workflow or workspace command triggering the LiteSPM MCP bridge.
-2.  **Pi Agent:** Writes a TypeScript command extension to `~/.pi/agent/extensions/litespm.ts` (or `~/.pi/extensions/litespm.ts`) registering `/marketplace`.
-3.  **Claude Code & Codex:** Installs a companion bootstrap skill `litespm.skill.md` with trigger keyword `/marketplace`.
-4.  **Grok Build:** Registers a custom command hook in `.grok/config.toml` (project scope).
+**What setup actually writes:** one `litespm` MCP entry in the host config
+(§1), plus — for Pi only — `~/.pi/agent/extensions/litespm.ts` (§3.2). The
+wizard ends by **printing** next-step instructions
+(`cmd/litespm/wizard.go:280-309`), e.g. "Type `/marketplace` in the prompt".
+It writes no instruction file, no skill and no command hook, and it does not
+register `/marketplace` in any host.
+
+The following registrations are the intended design and do not exist yet:
+
+1.  **Cline:** register a custom prompt/workflow or workspace command triggering the LiteSPM MCP bridge.
+2.  **Pi Agent:** the extension exists (§3.2) but registers `/marketplace` rather than the current `litespm` command — `DESIGNED`.
+3.  **Claude Code & Codex:** install a companion bootstrap skill `litespm.skill.md` with trigger keyword `/marketplace`. `RequiresBootstrapSkill` is already declared `true` for both, and nothing consumes it.
+4.  **Grok Build:** register a companion command hook in `.grok/config.toml` (project scope).
+
+Projection of instruction/skill/command components is listed as the "to reach
+the next state" step for host adapters in `STATUS.md` §1; until then, treat any
+doc, wizard string or UI hint promising `/marketplace` registration as a
+description of the target design, not of shipped behaviour.

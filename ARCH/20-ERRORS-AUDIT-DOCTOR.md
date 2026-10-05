@@ -14,30 +14,87 @@ Every error returned by LiteSPM across CLI, IPC, and Bridge MCP interfaces confo
 │ LPSM-PLAN-*         │ Plan expiration, precondition failures, and hash mismatches      │
 │ LPSM-APPROVAL-*     │ Approval token invalidation, missing actor, or rejected consent  │
 │ LPSM-ARTIFACT-*     │ Archive corruption, size limit breaches, and path traversal      │
+│ LPSM-CAS-*          │ Content-addressed store: archive slips and unsafe extraction     │
+│ LPSM-CORE-*         │ Core internal failures (e.g. an empty skill body from the daemon) │
 │ LPSM-INSTALL-*      │ Two-phase staging, atomic rename, and SQLite commit failures     │
-│ LPSM-STATE-*        │ SQLite locks, foreign key violations, and database corruption    │
+│ LPSM-STATE-*        │ SQLite locks, foreign key violations, and database corruption     │
 │ LPSM-HOST-*         │ Host configuration discovery, parse errors, and name collisions  │
 │ LPSM-PROVIDER-*     │ Provider process supervision, child exit codes, and schema drift │
 │ LPSM-MCP-*          │ MCP protocol handshake, JSON-RPC framing, and transport timeouts │
 │ LPSM-AUTH-*         │ Vault access failures, OAuth state mismatch, and expired tokens  │
 │ LPSM-POLICY-*       │ Hard invariant denials and policy rule rejections                │
 │ LPSM-CONFIG-*       │ Local config.toml syntax errors and missing environment paths     │
+│ LPSM-IPC-*          │ Local IPC transport, daemon-unreachable, and framing failures     │
+│ LPSM-DOMAIN-*       │ Invalid canonical IDs and domain-model violations                 │
+│ LPSM-VERIFY-*       │ Checksum / digest verification failures                           │
 │ LPSM-INTERNAL-*     │ Unhandled panics and operating system kernel errors              │
 └─────────────────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
+> The table is the contract. The set actually constructed in the tree today is
+> discoverable with `grep -rhoE 'LPSM-[A-Z0-9-]+' internal/ cmd/ | sort -u`; some
+> categories above (notably `LPSM-CATALOG-*`, `LPSM-SOURCE-*`, `LPSM-APPROVAL-*`,
+> `LPSM-INSTALL-*`, `LPSM-MCP-*`, `LPSM-CONFIG-*`, `LPSM-INTERNAL-*`) are reserved
+> but not yet emitted. Approval failures currently surface as
+> `LPSM-POLICY-APPROVAL-CONSUMED` / `LPSM-POLICY-APPROVAL-EXPIRED`, and install
+> failures as `LPSM-PLAN-*`, `LPSM-POLICY-*`, `LPSM-STATE-*`, `LPSM-CAS-*` or
+> `LPSM-VERIFY-*` — there is no `LPSM-APPROVAL-*` or `LPSM-INSTALL-*` code in the
+> tree. `LPSM-ARTIFACT-*` is in the same reserved state: `SpoolDownloadBounded`
+> rejects oversized downloads with unstructured text (`exceeds maximum download
+> limit`), extraction failures are `LPSM-CAS-ARCHIVE-SLIP`, and the literal
+> `LPSM-ARTIFACT-PATH-TRAVERSAL` appears **only** inside a test assertion
+> (`internal/artifact/artifact_test.go:104`); §1.2 records the emission status of
+> every code that does appear in the tree.
+
 ### 1.1 Representative Machine Error Codes
 *   `LPSM-PLAN-STALE`: Preconditions or source digests changed between plan creation and commit.
-*   `LPSM-APPROVAL-UNAVAILABLE`: Operation requires user consent, but host lacks an elicitation channel.
-*   `LPSM-ARTIFACT-UNSAFE-PATH`: Archive contains directory traversal (`../`) or absolute paths.
+*   `LPSM-POLICY-UNAUTHORIZED`: Operation denied by policy.
+*   `LPSM-CAS-ARCHIVE-SLIP`: Archive contains directory traversal (`../`), an absolute path, or another unsafe entry — the extractor's single failure error (`internal/artifact/extractor.go`).
+*   `LPSM-CORE-INTERNAL`: Core invariant failure, e.g. a skill answered with no instruction body.
 *   `LPSM-PROVIDER-SCHEMA-DRIFT`: Downstream tool schema changed; existing grant invalidated.
-*   `LPSM-HOST-NAME-COLLISION`: Target agent configuration already has an unmanaged `litespm` entry.
+*   `LPSM-HOST-CONFIG-NOT-FOUND`: No host configuration file was located for the adapter. *(Defined at `errors.go:261` but currently has **zero callers** — §1.2; host adapters return plain `fmt.Errorf` today.)*
+
+### 1.2 Full Inventory of Codes in the Tree (emission status)
+
+Verified 2026-10-05 against `internal/domain/errors.go` and every non-test call
+site. **22** distinct `LPSM-*` strings exist in Go sources; each row states where
+the code is defined and whether production code actually emits it today.
+
+| Code | Defined | Emitted in production? |
+|---|---|---|
+| `LPSM-POLICY-UNAUTHORIZED` | `errors.go:11,201` | Yes — `install/engine.go:223,226` (policy gate + approval required) |
+| `LPSM-POLICY-APPROVAL-CONSUMED` | `errors.go:177` | Yes — `state/repositories.go:125` (one-time consumption) |
+| `LPSM-POLICY-APPROVAL-EXPIRED` | `errors.go:189` | Yes — `state/repositories.go:128` |
+| `LPSM-PLAN-STALE` | `errors.go:113` | Yes — `install/engine.go:104,112` (planHash mismatch) |
+| `LPSM-PLAN-EXPIRED` | `errors.go:126` | Yes — `install/engine.go:116` |
+| `LPSM-RESOLVE-CONFLICT` | `errors.go:152` | Yes — `resolver/resolver.go:37,95,126,168` |
+| `LPSM-RESOLVE-CYCLE` | `errors.go:165` | Yes — `resolver/resolver.go:73,201` |
+| `LPSM-STATE-NOT-FOUND` | `errors.go:214` | Yes — 18 production `ErrNotFound` call sites |
+| `LPSM-STATE-CONFLICT` | `errors.go:227` | Yes — 6 production `ErrStateConflict` call sites |
+| `LPSM-DOMAIN-INVALID-ID` | `errors.go:100` | Yes — 5 production `ErrInvalidIdentifier` call sites |
+| `LPSM-VERIFY-CHECKSUM-MISMATCH` | `errors.go:236` | Yes — 4 production call sites |
+| `LPSM-CAS-ARCHIVE-SLIP` | `errors.go:249` | Yes — 16 production `ErrArchiveSlip` call sites |
+| `LPSM-CORE-INTERNAL` | `errors.go:296` | Yes — 5 `ErrInternal` call sites + `bridge/shim.go:426` |
+| `LPSM-IPC-DAEMON-UNREACHABLE` | `errors.go:274` | Yes — `bridge/shim.go:581` (fail-closed bridge; the `errors.go` constructor itself has no callers) |
+| `LPSM-AUTH-VAULT-UNAVAILABLE` | `errors.go:15,284` | Yes — 7 sites in `internal/secrets` (fail-closed vault open) |
+| `LPSM-PROVIDER-SCHEMA-DRIFT` | `errors.go:12,138` | Partly — emitted as a **policy reason code** at `policy/engine.go:287`; the `ErrSchemaDrift` constructor is test-only (`domain_test.go:254`) |
+| `LPSM-PROVIDER-CODE-DRIFT` | `errors.go:13` | Partly — policy reason code at `policy/engine.go:296,314` |
+| `LPSM-PROVIDER-ENDPOINT-DRIFT` | `errors.go:14` | Partly — policy reason code at `policy/engine.go:305` |
+| `LPSM-AUTH-OAUTH-STATE-MISMATCH` | `errors.go:16` | Code path exists (`auth/loopback.go:118`) but `internal/auth` has **no production consumer** — not reachable end-to-end |
+| `LPSM-AUTH-CALLBACK-TIMEOUT` | `errors.go:17` | Same as above (`auth/loopback.go:161`) — not reachable end-to-end |
+| `LPSM-HOST-CONFIG-NOT-FOUND` | `errors.go:261` | **No** — `ErrHostConfigNotFound` has zero callers in the tree; `internal/host` returns plain `fmt.Errorf` instead |
+| `LPSM-ARTIFACT-PATH-TRAVERSAL` | *(none)* | **No** — never constructed; the literal exists only in `internal/artifact/artifact_test.go:104` |
 
 ---
 
-## 2. CLI Exit Code Contract (target — current CLI exits 0/1 only)
+## 2. CLI Exit Code Contract
 
-CLI exit codes follow stable numerical ranges to allow robust shell scripting. Implementation note: `cmd/litespm/*.go` currently calls `os.Exit(1)` for every failure mode, so distinct codes are not yet observable; the table below is the contract to implement:
+CLI exit codes follow stable numerical ranges to allow robust shell scripting. The
+category codes **10–70 are implemented** for `litespm doctor`: each failing check
+carries a category and `doctorCategoryExitCode` maps it to the documented code,
+worst-wins (`cmd/litespm/main.go:935-982`). Other commands currently return `0`,
+`1` (internal failure), or `2` (usage error); the table below is the contract they
+should adopt as they gain categorized failures.
 
 | Exit Code | Classification | Meaning |
 |---|---|---|

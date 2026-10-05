@@ -1,8 +1,18 @@
 # ARCH-29 — Connector System: Local Proxy Execution & Credential Custody
 
-Status: **design record, not implemented; catalog type still deferred.**
+Status: **design record, not implemented; catalog type still deferred.** Current direction: resurrect and wire it, prerequisite = re-decide `D1` (see the execution-status block below and `D-021`).
 Scope: the `connector` type deferred to v2 in [26 — Ecosystem IA & Package Model](26-ECOSYSTEM-IA-PACKAGE-MODEL.md) §3.4.1.
-Supersedes: the rationale "no portable v1 contract" for deferring `connector`. This document supplies that contract's shape; implementation remains v2.
+Supersedes: the rationale "no portable v1 contract" for deferring `connector`. This document supplies that contract's shape.
+
+**Execution status.** The `internal/connector` package that once implemented part of
+this design was **deleted** under decision `D1` (9 files, 2,072 lines) for having zero
+production importers (`STATUS.md` §4, `REMEDIATION-PLAN.md` D1). **Current direction —
+which supersedes the deletion: resurrect this design and wire it.** Re-deciding `D1` is
+the prerequisite recorded in `STATUS.md` §4; until that happens this file is a design
+record and no connector code ships. Related designs: [34 — Runtime, Invocation Engine & Receipts](34-RUNTIME-INVOCATION-RECEIPTS.md)
+(execution + receipts), [35 — Profiles & Capability Leases](35-PROFILES-AND-CAPABILITY-LEASES.md)
+(credential brokering and leases), [19 — Secrets & OAuth Broker](19-SECRETS-OAUTH.md)
+(the vault every credential in this design must go through).
 
 ---
 
@@ -78,7 +88,7 @@ An additional finding worth recording: Nango's refresh daemon runs **at least on
 | `autoRefresh` + 4xx policy: on refresh failure mark **stale**, stop retrying, hold dependent work, surface reconnect | Zapier | Retry-forever on a 4xx is a footgun. |
 | `:censored:` log redaction keyed off a per-field secret flag | Zapier | Correlatable without being readable. |
 | semver policy: MAJOR for required-field or auth-scheme changes | Zapier | From the opposite direction to n8n; same discipline. |
-| **auth-config / connected-account split**, `PRIVATE` by default, explicit opt-in sharing | Composio | Right default posture. The ACL is honestly labelled experimental there; we ship it PRIVATE with no sharing in v1. |
+| **auth-config / connected-account split**, `PRIVATE` by default, explicit opt-in sharing | Composio | Right default posture. The ACL is honestly labelled experimental there; the v1 posture specified here is `PRIVATE` with no sharing. |
 | **Capability-scoped keys** — raw proxy is a *separate permission* from named tools | Composio | Least privilege, and proxy access is reviewable on its own. |
 | **Proxy-execute guardrails**: same scheme + same eTLD+1; reject cross-domain; refuse caller-supplied `Authorization` | Composio | Kills the two obvious exfiltration paths: attacker-chosen base URL and header override. Their docs call this "an intentional security boundary, not a quota". |
 | **Callback identity verification** against OAuth session fixation | Composio | A concrete attack class that is rarely handled. |
@@ -107,6 +117,31 @@ An additional finding worth recording: Nango's refresh daemon runs **at least on
 ---
 
 ## 4. Proposed architecture
+
+> **Status note (2026-10-05).** This is a **design record only**. The `internal/connector` package it
+> describes was **deleted** under locked decision D1 (9 files, 2,072 lines) because it had zero
+> importers — shipping unreachable code was judged worse than removing it. Nothing in this document
+> is implemented, and the “never receives a raw token” line in the diagram below applies **only** to
+> the brokered-connector model this document proposes.
+>
+> **Current direction:** resurrect and wire this design (the header of this file). Execution and
+> receipts belong with [34](34-RUNTIME-INVOCATION-RECEIPTS.md), credential brokering and
+> capability leases with [35](35-PROFILES-AND-CAPABILITY-LEASES.md), and every secret it handles
+> with the vault in [19](19-SECRETS-OAUTH.md). None of those three subsystems is
+> built for connectors today.
+>
+> That distinction matters when this design is eventually built, and it must be preserved in any
+> user-facing wording. There are two distinct credential exposure modes:
+>
+> | Mode | Path | Credential exposure |
+> |---|---|---|
+> | **Brokered connector** *(proposed here; not built — resurrection planned)* | agent → LiteSPM daemon → upstream API | The token is decrypted inside the daemon for a single call and never reaches the agent, the plugin, or any MCP process. |
+> | **MCP server** *(what LiteSPM does today)* | agent → LiteSPM daemon → MCP server process → upstream API | A provider launched by LiteSPM necessarily receives a scoped credential in its own process memory or environment. LiteSPM cannot prevent this, and must not claim otherwise. |
+>
+> LiteSPM should prefer the first mode where the protocol allows it, and the two must never be
+> marketed as equivalent secret-exposure guarantees. See [05 — Security](05-SECURITY.md) for the
+> client-side guarantee that does hold in both modes: no credential is written to the state
+> database, a config file, a log, or the hosted catalog.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -255,10 +290,27 @@ Sources actually fetched during this research:
 
 ## 8. Status and next steps
 
-**Not implemented:** no `internal/connector` package exists. An earlier local execution core (manifest, executor, egress, lifecycle, grant store, redaction — see ARCH/24 §22) was removed as unreachable code: it had no production importer and no wiring path, so local proxy execution with vault-backed grants is unbuilt and this document remains a design record only. Catalog promotion is also deferred: no portable `connector` rows ship in the catalog (5814 rows carry only `mcp`/`skill`/`plugin`), and no ingestion adapter produces them (ARCH/26 §3.4.1, §7 bar: portable format + ingestion adapter + real data).
+**Not implemented.** No `internal/connector` package exists. An earlier local
+execution core (manifest, executor, egress, lifecycle, grant store, redaction)
+was removed as unreachable code — zero production importers, no wiring path —
+and is recorded only as a tombstone in [24](24-FUNCTION-INVENTORY.md) §1
+("Removed / non-existent packages"). Local proxy execution with vault-backed
+grants is unbuilt; this document remains a design record. Catalog promotion is
+also deferred: no portable `connector` rows ship in the catalog (5814 rows carry
+only `mcp`/`skill`/`plugin` — `mcp` 4079, `skill` 1103, `plugin` 632), and no
+ingestion adapter produces them (ARCH/26 §3.4.1, §7 bar: portable format +
+ingestion adapter + real data).
 
-**Before implementation, in order:**
+**Direction:** resurrect this design and wire it — the deletion under `D1` is
+superseded, subject to re-deciding `D1` (`STATUS.md` §4). When that happens the
+execution half belongs with [34](34-RUNTIME-INVOCATION-RECEIPTS.md) (invocation
+engine + tamper-evident receipts), the credential/lease half with
+[35](35-PROFILES-AND-CAPABILITY-LEASES.md), and every secret with the vault in
+[19](19-SECRETS-OAUTH.md).
 
+**Before writing code, in order:**
+
+0. Re-decide `D1` explicitly; this file is a design record, not the decision record.
 1. Record the `connector` v1 contract as a schema with a round-trip conformance test, exactly as [26](26-ECOSYSTEM-IA-PACKAGE-MODEL.md) §7 requires of every other type.
 2. Prove the credential boundary with a test that asserts the agent process cannot read the vault file — a structural test, not a policy statement.
 3. Build the egress policy (Nango's SSRF controls) before the first connector exists, so the first real integration cannot skip it.

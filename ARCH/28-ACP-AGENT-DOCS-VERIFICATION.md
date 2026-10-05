@@ -87,16 +87,19 @@ is what `internal/agent/overrides.go` does about it.
 | vtcode | repo ACP guide | `vtcode acp` | `["acp"]` | match (args) | — |
 
 **Tally:** 41 agents; 3 launch-affecting defects corrected (sigit, minimax-code,
-github-copilot-cli), 1 deprecation (kimi), 15 informational notes. No package or
-binary name was wrong in a way that required remapping beyond `minimax-code`.
+github-copilot-cli), 1 deprecation (kimi), and 13 rows that carry an
+informational note only (§2.4). 13 + 3 + 1 = **17** entries in `launchOverrides`;
+the remaining 24 rows needed no action. No package or binary name was wrong in a
+way that required remapping beyond `minimax-code`.
 
 ---
 
 ## 2. Corrections applied (`internal/agent/overrides.go`)
 
 The registry is discovery-truth; the override layer is a small, documented,
-per-id patch applied *after* normal resolution. It changes only three launches
-and attaches notes otherwise.
+per-id patch consulted at the top of `Resolve` and applied while the
+`LaunchSpec` is built (`internal/agent/acp.go:74, 81-133, 148-151`). It changes
+only three launches and attaches notes otherwise.
 
 ### 2.1 Launch-affecting
 
@@ -145,23 +148,37 @@ and attaches notes otherwise.
 Binary distributions do **not** all carry a `sha256`. The adapter records the
 digest when present and an empty digest otherwise; it never fabricates one.
 
-*   **With digest:** `kimi`, `sigit`, `mistral-vibe`, `opencode`, `poolside`, and others.
-*   **Without digest:** `stakpak`, `vtcode`, `cursor`, `devin` (observed empty).
+Measured against `fixtures/source/acp/registry.json`: **19** of the 41 agents
+have a `binary` distribution at all (the other 22 launch via `npx`/`uvx` and have
+no digest to carry).
 
-`agent install` (not yet implemented) must therefore treat the digest as
-*optional-but-verified-when-present*, and must refuse or warn when a binary has
-no digest. This is a known gap, not an acceptance result.
+*   **With digest (10):** `amp-acp`, `goose`, `harn`, `kilo`, `kimchi`, `kimi`, `mistral-vibe`, `opencode`, `poolside`, `sigit`.
+*   **Without digest (9):** `antigravity-acp`, `cortex-code`, `corust-agent`, `crow-cli`, `cursor`, `devin`, `junie`, `stakpak`, `vtcode`.
+
+`agent install` — **`DESIGNED`; the subcommand does not exist.**
+`runAgentCommand` accepts only `list` (`cmd/litespm/main.go:615`) and `resolve`
+(`main.go:641`), and its usage string says `litespm agent [list|resolve <id> …]`
+(`main.go:566`) — there is no dispatcher path for `agent install` at all. When it
+is built, it must treat the digest as *optional-but-verified-when-present*, and
+must refuse or warn when a binary has no digest. This is a known gap, not an
+acceptance result.
 
 ---
 
 ## 5. Consequences for the adapter
 
-1.  `Resolve` now applies `launchOverrides` after distribution resolution and
-    returns `Notes` and `Deprecated` on the `LaunchSpec`.
-2.  `litespm agent list` marks deprecated agents; `litespm agent resolve` prints
-    warnings and notes.
-3.  Catalog ingestion maps deprecated agents to `domain.ListingStatusDeprecated`.
-4.  Tests in `internal/agent/agent_test.go` (`TestOverridesAgainstRegistry`)
+1.  `Resolve` (`internal/agent/acp.go:72-154`) consults `overrideFor` before
+    building each strategy's `LaunchSpec` — `Args`, `Executable`/`NpxBin` and
+    `Env` replace the registry values in place (`acp.go:81-133`) — then attaches
+    `Notes` and `Deprecated` at the end (`acp.go:148-151`).
+2.  `litespm agent list` marks deprecated agents (`cmd/litespm/main.go:628-637`);
+    `litespm agent resolve` prints `Warning:` for deprecation and one `Note:`
+    line per note (`main.go:684-687`).
+3.  Catalog ingestion maps deprecated agents to `domain.ListingStatusDeprecated`
+    (`internal/source/acp_registry.go:89-92`). State: `internal/source` is
+    `IMPLEMENTED` with **test-only callers** (`STATUS.md` §2) — this is code that
+    exists, not a publish path that runs.
+4.  Tests in `internal/agent/agent_test.go:64` (`TestOverridesAgainstRegistry`)
     assert the three launch corrections, the deprecation flag, and that an
     already-correct registry entry (`cline`) is left untouched.
 
@@ -171,7 +188,8 @@ no digest. This is a known gap, not an acceptance result.
 
 *   **Runtime launch acceptance** for each strategy (npx / uvx / binary) on
     Windows — not done.
-*   **Binary download + digest verification** (`agent install`) — not implemented.
+*   **Binary download + digest verification** (`agent install`) — `DESIGNED`;
+    the subcommand is absent from the dispatcher (§4).
 *   **Auth-state detection** (which agents need a key vs. interactive login) —
     documented per agent above, not yet wired into readiness.
 *   **Config-directory detection** — documented for several agents, not yet

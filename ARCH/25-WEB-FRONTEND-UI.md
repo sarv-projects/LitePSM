@@ -6,7 +6,7 @@ Inspired by the design of `mcpmarket.com`, LiteSPM Market is a static web applic
 ┌────────────────────────────────────────────────────────────────────────┐
 │                   LiteSPM Market Web Architecture                      │
 │                                                                        │
-│   Next.js 15 / React 19 Static Export (Tailwind CSS + Radix UI)       │
+│   Next.js 15 / React 19 Static Export (Tailwind CSS, local primitives)│
 │                               │                                        │
 │   Static Client Search ◄──────┴──────► Immutable Static Releases       │
 │   (MiniSearch in Web Worker)           (Cloudflare Pages /v1/releases/)│
@@ -75,8 +75,7 @@ web/
 
 ### 3.2 Dynamic Omni-Search & Category Rail
 *   **Search Form:** Centered input with glassmorphism blur, leading search icon, trailing keyboard shortcut pill (`⌘K`), and clear button.
-*   **Category Rail:** Horizontally scrollable pill rail featuring categories:
-    *   *All*, *Developer Tools*, *Data Science & ML*, *API Development*, *Database Management*, *Browser Automation*, *Productivity*, *Security & Testing*, *DevOps*, *Official*.
+*   **Category Rail:** A wrapped chip group (not a fixed list) rendered from the live facets. `categoryFacets(listings, limit = 16)` (`web/lib/telemetry.ts`) returns the **top 16 categories by frequency**, each chip carrying its inline count, plus a leading *All categories* chip. The label header reports `{facets.length} most common of {total} entries`. There is no hard-coded category list: the chips are data-driven, so the set changes with the dataset. (Earlier drafts listed a fixed set of labels; those were illustrative, not a contract.)
 
 ### 3.3 Extension Cards
 Each capability is rendered as a clean card:

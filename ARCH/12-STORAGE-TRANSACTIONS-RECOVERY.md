@@ -301,44 +301,65 @@ committed ◄── committing ◄── commit_intent ◄───────�
 
 ## 4. Crash Recovery Algorithm
 
-On startup, before binding the IPC listener, the daemon executes `RecoverIncompleteOperations()`:
+On startup, before binding the IPC listener, the daemon calls
+`DB.RecoverIncompleteOperations(ctx, stagingRoot, treePath)` (`internal/state/operations.go:243`),
+which returns a `RecoverySummary` and an error. If recovery returns an error the daemon **halts**
+with exit **1** (`Fatal: startup recovery failed`) rather than serving (`cmd/litespm/main.go:1173-1175`;
+REMEDIATION-PLAN finding 102 / `m3`). `70` is a *doctor* category code only (`main.go:932`,
+`ARCH/20` §2) and is never returned on this path.
+
+The real decision procedure differs from an earlier draft that referenced a non-existent
+`VerifyTreeComplete` / `FinalizeOperationCommit` pair. The implementation is:
 
 ```go
-func (d *Daemon) RecoverIncompleteOperations(ctx context.Context) error {
-    ops, err := d.db.GetNonTerminalOperations(ctx)
-    if err != nil {
-        return err
-    }
+// internal/state/operations.go
+func (db *DB) RecoverIncompleteOperations(
+    ctx context.Context,
+    stagingRoot string,
+    treePath func(string) string,
+) (RecoverySummary, error)
 
-    for _, op := range ops {
-        switch op.State {
-        case "created", "resolving", "awaiting_approval", "approved", "fetching", "verified", "staging":
-            // Clean up staging directory
-            stagingPath := filepath.Join(d.dataRoot, "staging", op.OperationID)
-            _ = os.RemoveAll(stagingPath)
-            d.db.UpdateOperationState(ctx, op.OperationID, "rolled_back")
+func (db *DB) recoverOperation(
+    ctx context.Context, op *OperationRecord, stagingRoot string, treePath func(string) string,
+) (string, error) {
+    stagingPath := filepath.Join(stagingRoot, op.OperationID)
 
-        case "commit_intent":
-            // Check if final tree directory was completely created
-            if d.fs.VerifyTreeComplete(op.ExpectedTreeDigest) {
-                // Complete SQLite write transaction
-                d.db.FinalizeOperationCommit(ctx, op.OperationID)
-                d.db.UpdateOperationState(ctx, op.OperationID, "committed")
-            } else {
-                // Target incomplete; roll back ONLY trees created by this operation
-                if d.db.WasTreeCreatedByOperation(ctx, op.OperationID, op.ExpectedTreeDigest) {
-                    _ = os.RemoveAll(d.fs.TreePath(op.ExpectedTreeDigest))
-                }
-                stagingPath := filepath.Join(d.dataRoot, "staging", op.OperationID)
-                _ = os.RemoveAll(stagingPath)
-                d.db.UpdateOperationState(ctx, op.OperationID, "rolled_back")
+    switch op.State {
+    case "created", "resolving", "awaiting_approval", "approved", "fetching", "staging":
+        // No tree was promoted yet: delete staging, mark rolled_back.
+        os.RemoveAll(stagingPath)
+        db.AdvanceOperationState(ctx, op.OperationID, "rolled_back")
+
+    case "verified", "commit_intent", "committing", "rolling_back":
+        // Trees a shared operation re-used are never deleted. Only trees this
+        // operation created are considered, and a commit is only finalized as
+        // "committed" when an install row already references those trees.
+        trees, _ := db.GetOperationTrees(ctx, op.OperationID)
+        var createdByOp []string
+        for _, t := range trees {
+            if t.CreatedByOp {
+                createdByOp = append(createdByOp, t.TreeDigest)
             }
-
-        case "committing":
-            // SQLite transaction was interrupted; rollback cleanly
-            d.db.UpdateOperationState(ctx, op.OperationID, "rolled_back")
         }
+        if installExists, _ := db.HasInstallsForTrees(ctx, createdByOp); installExists {
+            db.AdvanceOperationState(ctx, op.OperationID, "committed")
+            return "committed", nil
+        }
+        for _, t := range trees {
+            if t.CreatedByOp && treePath != nil {
+                os.RemoveAll(treePath(t.TreeDigest))
+            }
+        }
+        os.RemoveAll(stagingPath)
+        db.AdvanceOperationState(ctx, op.OperationID, "rolled_back")
+
+    default:
+        // committed / rolled_back / failed / cancelled are terminal.
     }
-    return nil
+    return "", nil
 }
 ```
+
+**Safe rollback invariant:** a CAS tree is deleted only when
+`operation_trees.created_by_op = 1` for that operation; a tree that pre-existed
+(`created_by_op = 0`) is preserved even when the operation rolls back.

@@ -8,7 +8,7 @@ LiteSPM is compiled as a single native static Go binary (`cmd/litespm`):
 ┌─────────────────┬──────────────────────┬───────────────────────────────────────────┐
 │ Target OS       │ Architecture         │ Native System Integrations                │
 ├─────────────────┼──────────────────────┼───────────────────────────────────────────┤
-│ Windows         │ amd64, arm64         │ WinCred API, Named Pipes with DACL, Jobs  │
+│ Windows         │ amd64, arm64         │ DPAPI, Named Pipes with DACL, Job Objects │
 ├─────────────────┼──────────────────────┼───────────────────────────────────────────┤
 │ macOS           │ arm64 (Apple Silicon)│ Apple Keychain Services, Domain Sockets   │
 │                 │ amd64 (Intel)        │                                           │
@@ -54,12 +54,14 @@ LiteSPM binary updates are isolated from extension package updates:
 │         │                                                              │
 │         ▼                                                              │
 │   1. Check Active Transactions (Abort if operation in-flight)          │
-│   2. Fetch Latest Release Manifest & SHA-256 Checksums                 │
+│   2. Fetch Latest Release Manifest & SHA256SUMS.txt checksums          │
 │   3. Download Target Platform Binary to staging/litespm.new            │
-│   4. Verify Cryptographic Signature & Checksum                         │
+│   4. Verify SHA-256 checksum only (no signature check yet)             │
 │   5. On Windows: Rename running binary to litespm.old (File in use)    │
 │      On Unix: Atomic rename staging/litespm.new -> current binary      │
 │   6. Verify New Binary Boots ('litespm --version')                     │
 │   7. Clean up backup binary (litespm.old)                              │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Current verification is SHA-256 only.** `internal/update/updater.go` fetches `SHA256SUMS.txt`, requires a matching entry for the platform binary, and refuses an update with no expected checksum (`refusing to apply an update with no expected SHA-256 checksum`). It performs **no** signature, cosign, or attestation verification. Because the checksum travels in the same release as the binary, it proves transit integrity, not publisher authenticity. Signed releases (cosign) are a target tracked in [31 §12](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md) Phase 5 and specified in [36 — Enterprise Policy & Audit](36-ENTERPRISE-POLICY-AND-AUDIT.md); do not describe self-update as signature-verified until that lands.

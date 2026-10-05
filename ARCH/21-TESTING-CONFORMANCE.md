@@ -6,9 +6,9 @@ LiteSPM's reliability is enforced through a multi-tier testing strategy:
 
 ```text
                ┌───────────────────────────────┐
-               │    End-to-End & Conformance    │  (Real MCP Hosts & Fakes)
+               │    End-to-End & Conformance    │  (test/conformance_test.go)
                ├───────────────────────────────┤
-               │    Crash-Injection Harness    │  (Fault injection at 11 stages)
+               │  Crash-Injection Harness       │  (DESIGNED — no harness in tree)
                ├───────────────────────────────┤
                │   Property & Fuzzing Suites   │  (Malicious archives, parser fuzzing)
                ├───────────────────────────────┤
@@ -38,9 +38,15 @@ Automated CI runs extraction against malicious archive payloads constructed in-t
 
 ---
 
-## 4. Crash-Injection Fault Matrix (target — systematic harness planned)
+## 4. Crash-Injection Fault Matrix (`DESIGNED` — no harness in tree)
 
-Crash recovery logic exists (`DB.RecoverIncompleteOperations` in `internal/state/operations.go`, exercised by `test/conformance_test.go`), but no systematic kill-at-each-checkpoint harness (`CP-01`…`CP-11` markers) exists in-tree yet. The matrix below is the acceptance target for that harness, which must inject simulated process termination (`SIGKILL` / `os.Exit(1)`) across 11 critical operational checkpoints:
+**The truth:** there is **no crash-injection harness** in this repository, and there never was.
+The recovery *logic* exists (`DB.RecoverIncompleteOperations` in `internal/state/operations.go`) and
+is exercised by ordinary Go tests in `test/conformance_test.go` (which restart the daemon against a
+seeded database rather than killing a live process). A kill-at-each-checkpoint harness with
+`CP-01`…`CP-11` markers does **not** exist. If `TODO.md` or any other document claims otherwise, this
+paragraph is correct and the claim is wrong. The matrix below is the acceptance target for the
+harness that must be built:
 
 | Injection Point | Operation State | Verification on Daemon Restart |
 |---|---|---|
@@ -58,9 +64,11 @@ Crash recovery logic exists (`DB.RecoverIncompleteOperations` in `internal/state
 
 ---
 
-## 5. MCP Conformance Test Matrix
+## 5. MCP Conformance Test Matrix (`DESIGNED` — provider dispatch is not wired)
 
-LiteSPM's Bridge shim and provider supervisor are validated against both real hosts and automated mock MCP servers:
+`internal/mcpclient` currently has **zero production importers** and the daemon's `provider.invoke`
+returns `-32601`, so LiteSPM does not yet validate a live MCP exchange. The matrix below is the
+intended coverage once provider dispatch lands; it is not executed today.
 *   **Version Negotiation:** Tests client behavior when server advertises modern `2026-07-28` vs. legacy `2025-11-25`.
 *   **Header Mirroring:** Verifies that HTTP POST requests mirror `Mcp-Method` headers.
 *   **Cancellation:** Verifies that sending `$/cancelRequest` cleanly terminates child process computation.

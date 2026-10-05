@@ -3,21 +3,22 @@
 ## 1. System Topology & Architecture
 
 LiteSPM is bifurcated into two strictly isolated environments:
-1.  **Public Discovery Plane (Cloud):** A static, read-only distribution architecture hosted on Cloudflare Pages, serving immutable catalog releases generated from a private source repository.
+1.  **Public Discovery Plane (Cloud):** A static, read-only distribution. The deployed catalog data is produced by `scripts/build_full_catalog.py` (the Python builder is the deployed producer; CI does not run it — [STATUS.md](../STATUS.md) §6) and served from a static origin: `/v1/current.json` is live today, while immutable `/v1/releases/<id>/…` trees are not yet published.
 2.  **Local Control Plane (Workstation):** A client-side system consisting of thin, host-specific **Bridge Shims** communicating via secure local IPC with a persistent, single-writer **LiteSPM Daemon**.
 
 ```text
                                  PUBLIC DISCOVERY PLANE
     ┌─────────────────────────────────────────────────────────────────────────┐
-    │ Private GitHub Source Repository                                        │
-    │ (Curation inputs · Source Adapters · Builder CI · Schemas · Web app)    │
+    │ Source Repository (contributor checkout)                               │
+    │ (Curation inputs · Source Adapters · Python catalog builder · Schemas · Web app) │
     └────────────────────────────────────┬────────────────────────────────────┘
-                                         │ CI validates, deduplicates & builds
+                                         │ Builder run (script; CI does not run it)
                                          ▼
     ┌─────────────────────────────────────────────────────────────────────────┐
-    │ Cloudflare Pages (Static CDN)                                           │
-    │ /v1/current.json (Pointer)                                              │
-    │ /v1/releases/<release-id>/ (Immutable metadata · Shards · Manifests)     │
+    │ Static Origin (Cloudflare Pages / Workers)                              │
+    │ /v1/current.json (Pointer — live, HTTP 200)                             │
+    │ /v1/releases/<id>/{listings,versions,manifest}.json (compiler layout;   │
+    │   NOT published today — live origin answers 404 for the release tree)   │
     └────────────────────────────────────┬────────────────────────────────────┘
                                          │ HTTPS (Read-only, cached)
 ═════════════════════════════════════════╪══════════════════════════════════════════
@@ -45,13 +46,13 @@ LiteSPM is bifurcated into two strictly isolated environments:
     │                ▼                  ▼                   ▼                 │
     │ ┌─────────────────────────┐ ┌───────────────┐ ┌───────────────────────┐ │
     │ │ SQLite State (WAL mode) │ │ Policy Engine │ │ OS Secret Broker      │ │
-    │ │ (22 Relational Tables)  │ │ & Approvals   │ │ (WinCred/DPAPI/Keych) │ │
+    │ │ (22 Relational Tables)  │ │ & Approvals   │ │ (DPAPI/Keychain/DBus) │ │
     │ └─────────────────────────┘ └───────────────┘ └───────────────────────┘ │
     │                │                  │                   │                 │
     │                ▼                  ▼                   ▼                 │
     │ ┌─────────────────────────┐ ┌─────────────────────────────────────────┐ │
     │ │ Content-Addressed Store │ │ Provider Supervisor                     │ │
-    │ │ (trees/ & artifacts/)   │ │ (Process Groups / Windows Job Objects)  │ │
+    │ │ (cas/trees/sha256/<hex>)│ │ (Process Groups / Windows Job Objects)  │ │
     │ └─────────────────────────┘ └────────────────────┬────────────────────┘ │
     └──────────────────────────────────────────────────┼──────────────────────┘
                                                        │
@@ -62,6 +63,8 @@ LiteSPM is bifurcated into two strictly isolated environments:
                       │ (Node / Python / Bin) │                 │ HTTP Provider         │
                       └───────────────────────┘                 └───────────────────────┘
 ```
+
+> **Discovery-plane status.** The compiler (`internal/catalogbuild/compiler.go:101,117,150,172`) and the client (`internal/catalog/client.go:73,124,160`) agree on the `/v1/current.json` + `/v1/releases/<id>/{listings,versions,manifest}.json` layout, pinned by `TestReleasePathContractPinsDocumentedLayout` (`internal/catalog/catalog_test.go:217`). The live origin still serves **only** `/v1/current.json` (HTTP 200); `GET /v1/releases/rel-2026-09-30-01/manifest.json` answers **404**, so `litespm catalog sync` is `WIRED` **but broken at origin** ([STATUS.md](../STATUS.md) §2). The compiler emits exactly four files — there are no shards.
 
 ---
 
@@ -75,8 +78,8 @@ To guarantee data integrity and prevent concurrency hazards across multiple simu
 *   **Responsibilities:**
     1.  Speaks standard MCP JSON-RPC over `stdin`/`stdout`.
     2.  Identifies host identity (`--host claude-code`) and session attributes.
-    3.  Establishes or reuses a local IPC connection to the LiteSPM Daemon (launching the daemon in the background if not running).
-    4.  Translates MCP tool calls (`search_catalog`, `invoke_capability`) to internal IPC RPCs.
+    3.  Dials the local IPC endpoint of the LiteSPM Daemon. **It never launches the daemon**: if the dial fails, `litespm bridge` runs standalone with no capabilities and says so on stderr, telling the user to start `litespm daemon serve` (`cmd/litespm/main.go:344-348`).
+    4.  Translates MCP tool calls to internal IPC RPCs (`search_catalog` → `catalog.search`, `prepare_install` → `resolver.prepare_plan`, …). Five tools (`search_capabilities`, `describe_capability`, `invoke_capability`, `get_invocation`, `cancel_invocation`) map to handlers that return explicit `-32601` today ([STATUS.md](../STATUS.md) §4).
     5.  Exits cleanly when the host agent terminates stdio.
 *   **Prohibitions:** The Bridge Shim **never** opens SQLite directly, never writes to configuration files, and never launches downstream provider child processes.
 
@@ -84,7 +87,7 @@ To guarantee data integrity and prevent concurrency hazards across multiple simu
 *   **Role:** Authoritative local control plane and state owner.
 *   **Execution:** Runs as a background service per operating system user account.
 *   **Responsibilities:**
-    1.  **Sole SQLite Writer:** Exclusively holds SQLite write transactions in WAL mode, ensuring atomic commits and eliminating file-lock collisions.
+    1.  **Authoritative Writer:** Holds SQLite write transactions in WAL mode for every daemon-mediated operation and excludes competing daemon instances with `DATA_ROOT/daemon.lock`. (Direct-write CLI commands are the one exception — see §3.)
     2.  **Process Supervisor:** Launches, monitors, and terminates downstream MCP provider processes using Windows Job Objects or Unix process groups to prevent zombie processes.
     3.  **Policy & Approval Authority:** Evaluates tool invocation permissions and validates plan hashes against user approvals.
     4.  **Secret Store Broker:** Interacts with the platform's credential vault (Windows Credential Manager, macOS Keychain, Linux Secret Service).
@@ -95,8 +98,8 @@ To guarantee data integrity and prevent concurrency hazards across multiple simu
 ## 3. Concurrency & Transaction Model
 
 *   **Read Concurrency:** SQLite in Write-Ahead Logging (WAL) mode enables concurrent, non-blocking reads. The Bridge Shims can query catalog caches, installed capability lists, and schema metadata simultaneously without lock contention.
-*   **Write Serialization:** All mutating operations (installing packages, modifying host configuration, granting capability approvals, launching providers) are serialized through the daemon's internal event queue.
-*   **Atomic Two-Phase Commits:** Filesystem mutations (extracting trees) and database state updates are synchronized via a two-phase journal (`commit_intent` $\rightarrow$ atomic directory rename $\rightarrow$ SQLite transaction commit $\rightarrow$ `committed`).
+*   **Write Serialization:** Long-lived writes flow through the daemon, which excludes concurrent daemon instances with an exclusive `DATA_ROOT/daemon.lock` (pid-stamped, `cmd/litespm/main.go:1142,1919-1934` — there is no separate pid file). Short-lived CLI commands (`install`, `skills …`) open the state DB directly, so safety comes from SQLite WAL transactions plus the `sync.RWMutex` in `internal/state.DB` (`internal/state/db.go:22`). Bridge Shims never open SQLite (§2.1).
+*   **Atomic Two-Phase Commits:** Filesystem mutations and database state updates are synchronized by the operation journal: `created → resolving → [awaiting_approval → approved] → fetching → staging → commit_intent` → atomic placement into `cas/trees/sha256/<hex>` → digest re-verification (`verified`) → one SQLite transaction (`committing → committed`); any failure walks `rolling_back → rolled_back` (`internal/install/engine.go:244-435`, `internal/state/operations.go:280-343`).
 
 ---
 
@@ -111,31 +114,33 @@ sequenceDiagram
     participant Host as Agent Host (e.g. Claude)
     participant Shim as Bridge Shim (stdio)
     participant Daemon as LiteSPM Daemon
-    participant CDN as Cloudflare Pages (Catalog)
+    participant Origin as Static Origin (Catalog)
 
     User->>Host: "Search for postgres MCP"
     Host->>Shim: MCP tools/call: search_catalog(query="postgres")
-    Shim->>Daemon: IPC: Catalog.Search("postgres")
-    alt Local cache expired or missing
-        Daemon->>CDN: HTTPS GET /v1/current.json
-        CDN-->>Daemon: { releaseId: "rel-2026-09-30", ... }
-        Daemon->>CDN: HTTPS GET /v1/releases/rel-2026-09-30/shards/mcp/db.json
-        CDN-->>Daemon: Shard JSON with item summaries
-        Daemon->>Daemon: Update local search index
+    Shim->>Daemon: IPC: catalog.search(query)
+    Note over Daemon: Search reads the in-memory index only — no network I/O.<br/>The index is loaded from the local cache (DATA_ROOT/v1/current.json +<br/>DATA_ROOT/v1/releases/&lt;id&gt;/listings.json) when the client is created.
+    alt Local cache populated
+        Daemon-->>Shim: Matching listings summary
+    else Local cache empty (no successful sync yet)
+        Daemon-->>Shim: count: 0 (hint: run `litespm catalog sync`)
     end
-    Daemon-->>Shim: Matching listings summary
-    Shim-->>Host: MCP ToolResult: [{ id: "mcp:builtin:postgres", ... }]
+    Shim-->>Host: MCP ToolResult: [{ id: "mcp:builtin:mcp-registry:postgres", ... }]
     Host-->>User: Displays search results
 
+    Note over Daemon,Origin: The only network path is the separate `litespm catalog sync`: GET /v1/current.json<br/>(200 today) then GET /v1/releases/&lt;id&gt;/manifest.json + listings.json<br/>(404 at the live origin — sync currently fails; STATUS §2).
+
     User->>Host: "Install postgres"
-    Host->>Shim: MCP tools/call: prepare_install(id="mcp:builtin:postgres")
-    Shim->>Daemon: IPC: Resolver.ResolvePlan("mcp:builtin:postgres")
-    Daemon->>Daemon: Pure DFS dependency resolution
+    Host->>Shim: MCP tools/call: prepare_install(id="mcp:builtin:mcp-registry:postgres")
+    Shim->>Daemon: IPC: resolver.prepare_plan(...)
+    Daemon->>Daemon: Pure DFS dependency resolution + semver constraint intersection
     Daemon->>Daemon: Compute effects, permissions, preconditions
-    Daemon->>Daemon: Generate canonical planHash & Plan v2
-    Daemon-->>Shim: Return InstallPlan
+    Daemon->>Daemon: Generate canonical planHash; persist plan (db.SavePlan)
+    Daemon-->>Shim: Return InstallPlan + planId
     Shim-->>Host: MCP ToolResult: InstallPlan summary + planId
 ```
+
+> **Status of §4.1.** `search_catalog` → `catalog.search` (local index) and `prepare_install` → `resolver.prepare_plan` (persisted plan + `planHash`) are `WIRED`. `litespm catalog sync` is `WIRED` **but broken at origin** (release tree 404). No shard/`index.json` path exists — shards are `DESIGNED` ([STATUS.md](../STATUS.md) §2; `ARCH/18`).
 
 ### 4.2 Plan Approval & Transactional Installation
 
@@ -146,27 +151,34 @@ sequenceDiagram
     participant Host as Agent Host
     participant Shim as Bridge Shim
     participant Daemon as LiteSPM Daemon
-    participant Store as Local CAS Store (trees/)
+    participant Store as Local CAS (cas/trees/)
     participant DB as SQLite (state.db)
 
     alt Host supports reliable form elicitation
         Host->>User: Prompts with Plan details & planHash
         User->>Host: Approves installation
         Host->>Shim: MCP tools/call: request_install(planId, approvalToken)
-        Shim->>Daemon: IPC: Install.Execute(planId, approvalToken)
-    else Host does not support elicitation (CLI fallback)
-        Shim-->>Host: Returns CLI command: "litespm install --plan-id ..."
-        User->>Daemon: Terminal command: litespm install --plan-id ...
+        Shim->>Daemon: IPC: install.execute(planId, approvalToken)
+        Note over Daemon: install.execute supplies no artifact source<br/>(cmd/litespm/main.go:1420-1426); the engine refuses<br/>before journaling (internal/install/engine.go:204-206).
+        Daemon-->>Shim: ERROR: no artifact or tree source provided
+        Shim-->>Host: MCP tool error — install cannot complete (STATUS §3)
+    else Host does not support elicitation (human CLI path)
+        User->>User: litespm install "listing-id" --version "ver" --scope user or project
+        Note over User: The CLI takes no --plan-id: it does not consume the persisted plan.<br/>It packages a local synthetic archive (cmd/litespm/main.go:851-872).
     end
 
-    Daemon->>Daemon: Verify planHash matches approval & plan not expired
-    Daemon->>DB: INSERT INTO operations (state='staging')
-    Daemon->>Store: Download artifact into staging/<op-id>/
-    Daemon->>Store: Verify SHA-256 digest & inspect archive limits
-    Daemon->>Store: Extract to staging tree (no symlinks, no scripts)
-    Daemon->>DB: UPDATE operations SET state='commit_intent'
-    Daemon->>Store: Atomic directory rename staging/ -> trees/<tree-digest>/
-    Daemon->>DB: BEGIN TRANSACTION; INSERT INTO installs; UPDATE operations SET state='committed'; COMMIT;
+    Note over Daemon,Store: The steps below are the engine's real executed path; today only the<br/>CLI's synthetic archive reaches it.
+
+    Daemon->>Daemon: Verify planHash & expiry when a planId was bound (engine.loadPlan)
+    Daemon->>DB: INSERT INTO operations (state='created')
+    Daemon->>DB: state='resolving' [-> 'awaiting_approval' -> 'approved']
+    Daemon->>Store: Fetch archive into staging/op_.../source.archive (bounded spool)
+    Daemon->>Store: Verify declared SHA-256 digest & archive limits
+    Daemon->>Store: Extract to staging/op_.../extracted (no symlinks, no scripts)
+    Daemon->>DB: state='commit_intent'
+    Daemon->>Store: Atomic placement staging/extracted -> cas/trees/sha256/…
+    Daemon->>Store: Recompute canonical tree digest (state='verified')
+    Daemon->>DB: BEGIN TRANSACTION; INSERT INTO installs; state='committed'; COMMIT;
     Daemon-->>User: Installation succeeded & verified
 ```
 
@@ -212,30 +224,50 @@ sequenceDiagram
 
     Daemon->>DB: Open state.db (PRAGMA journal_mode = WAL)
     Daemon->>DB: Run pending schema migrations
-    Daemon->>DB: SELECT * FROM operations WHERE state NOT IN ('committed', 'rolled_back', 'failed')
+    Daemon->>DB: SELECT non-terminal operations (state NOT IN terminal states)
     loop For each incomplete operation
-        alt Operation state == 'staging' or 'fetching'
-            Daemon->>FS: Clean up staging/<op-id>/ directory
+        alt state in ('created','resolving','awaiting_approval','approved','fetching','staging')
+            Daemon->>FS: Remove staging/op_.../ (this operation only)
             Daemon->>DB: UPDATE operations SET state='rolled_back'
-        else Operation state == 'commit_intent'
-            alt Target tree directory exists and is complete
-                Daemon->>DB: Complete SQLite records & SET state='committed'
-            else Target tree directory missing or corrupted
-                Daemon->>FS: Remove incomplete target tree
+        else state in ('verified','commit_intent','committing','rolling_back')
+            alt An install row references a tree this operation created (metadata committed, journal advance lost)
+                Daemon->>DB: Finalize journal: SET state='committed'
+            else No completed metadata
+                Daemon->>FS: Delete only trees with operation_trees.created_by_op=1
                 Daemon->>DB: UPDATE operations SET state='rolled_back'
             end
         end
     end
+    Note over Daemon: Any operation that cannot be recovered fails the sweep:<br/>the daemon HALTS startup instead of serving unreconciled state<br/>(cmd/litespm/main.go:1162-1175).
     Daemon->>Daemon: Start IPC listener (Named Pipe / Domain Socket)
 ```
+
+> **Status of §4.3–§4.4.** Recovery is implemented and test-covered (`internal/state/operations.go:243-343`; `TESTED` per [STATUS.md](../STATUS.md) §1). The §4.3 invocation flow is **not**: `provider.invoke` / `invocation.get` / `invocation.cancel` and the Bridge tools `invoke_capability` / `get_invocation` / `cancel_invocation` return explicit `-32601` — there is no invocation registry and no persisted capability rows (`cmd/litespm/main.go:1673-1698`; [STATUS.md](../STATUS.md) §4). §4.3 is target design specified in `ARCH/34` (`DESIGNED`).
 
 ---
 
 ## 5. Trust Boundaries & Security Invariants
 
-1.  **Public Metadata is Untrusted:** Upstream package listings and catalog files are untrusted external inputs. The builder and client parse them with bounded memory, validate them against strict JSON schemas, and never execute scripts contained within them.
+1.  **Public Metadata is Untrusted:** Upstream package listings and catalog files are untrusted external inputs. They are decoded with strict typed JSON and never executed; IPC messages are capped at 16 MiB (`internal/ipc/protocol.go:26`), archives at `ExtractionLimits` (ARCH/17 §3). Note what does **not** exist today: no JSON-Schema validation layer runs on catalog files (ARCH/23 schemas are documents), and catalog HTTP reads are bounded only by the 30 s client timeout (`internal/catalog/client.go:40`), not by a body-size cap.
 2.  **No Dynamic Code Execution during Installation:** Installing a skill or MCP server never triggers post-install scripts (e.g., `npm postinstall`, shell hooks). Files are unpacked passively into the Content-Addressed Store.
 3.  **Local Daemon Security Descriptor:** The daemon IPC listener rejects connections from any other user account on the operating system:
     *   **Windows:** Named Pipe secured with a DACL granting access strictly to the current user's Security Identifier (`SDDL: D:(A;;GA;;;OW)`).
     *   **Unix / macOS:** Domain socket created in a directory with permissions `0700`, with socket file permissions `0600`.
 4.  **Credential Locality:** The public catalog API, discovery plane, and build infrastructure never receive or store user credentials. Downstream API keys and OAuth tokens are brokered strictly on-device through operating system secret stores.
+
+---
+
+## 6. Control-Plane Extensions (`DESIGNED`)
+
+[STATUS.md](../STATUS.md) decomposes the product into five working planes — **control**, **catalog & source**, **install**, **provider & invocation runtime**, and **governance & evidence** (plus interfaces & packaging) — and `ARCH/31` proposal #1 keeps that 5-plane decomposition. The next-generation control-plane capabilities live in `ARCH/32`–`ARCH/37`; every one of them is `DESIGNED` and none has code:
+
+| Plane (STATUS.md) | Extension | Design record | State |
+|---|---|---|---|
+| Install + governance | Project manifest (`litespm.yml`) + lockfile (`litespm.lock`), frozen resolve, SBOM/verify verbs, interop import/export, canonical identity/alias graph | `ARCH/32` | `DESIGNED` |
+| Install + governance | Deployment mutation ledger, three-way reconciliation, ownership-aware uninstall/update | `ARCH/33` | `DESIGNED` |
+| Provider & invocation runtime | Capability registry, real `provider.invoke` / `invocation.get` / `invocation.cancel`, invocation engine, tamper-evident receipts | `ARCH/34` | `DESIGNED` |
+| Provider & invocation runtime (+ governance leases) | Runtime profiles with OCI distribution; time/scope-bounded capability leases | `ARCH/35` | `DESIGNED` |
+| Governance & evidence | Tighten-only policy hierarchy + `policy explain`, `audit --ci`/SARIF, advisories/quarantine, TUF-style signed catalog, SBOM/Sigstore/SLSA, air-gapped bundles | `ARCH/36` | `DESIGNED` |
+| Interfaces & packaging | TUI, local dashboard, shell completion, `why` | `ARCH/37` | `DESIGNED` |
+
+Today's control plane — the 12-tool bridge shim, the single-writer daemon, policy/skills gates, `doctor`, `self-update` (SHA-256 only, no signature), host MCP-entry merge, and local catalog search — is `WIRED`; see [STATUS.md](../STATUS.md) §1 for the per-subsystem evidence.

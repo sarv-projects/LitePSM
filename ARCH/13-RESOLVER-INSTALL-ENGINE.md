@@ -34,65 +34,25 @@ The dependency resolver (`internal/resolver`) is a pure, side-effect-free functi
 ```
 
 ### 1.1 Cycle Detection & Diamond Dependency Resolution Algorithm
-The resolver aggregates incoming constraints across all paths in the dependency DAG, verifies that a non-empty version intersection exists, and ensures the selected version satisfies every parent constraint. Entry point is `Resolver.Resolve(ctx, rootListingID, rootConstraintStr)` (`internal/resolver/resolver.go`), returning `*domain.DependencyResolutionResult`; errors use `domain.ErrResolveCycle` (`LPSM-RESOLVE-CYCLE`) and `domain.ErrResolveConflict` (`LPSM-RESOLVE-CONFLICT`):
+The resolver aggregates incoming constraints across all paths in the dependency DAG, verifies that a
+non-empty version intersection exists, and ensures the selected version satisfies every parent
+constraint. Entry point is `Resolver.Resolve(ctx, rootListingID, rootConstraintStr)`
+(`internal/resolver/resolver.go:35`), returning `*domain.DependencyResolutionResult`; errors use
+`domain.ErrResolveCycle` (`LPSM-RESOLVE-CYCLE`) and `domain.ErrResolveConflict`
+(`LPSM-RESOLVE-CONFLICT`):
 
 ```go
-// Sketch — field/method names follow internal/resolver/resolver.go
-type VersionConstraints struct {
-    ListingID   string
-    Constraints []string
-}
+// internal/resolver/resolver.go — the real surface
+func NewResolver(provider ListingProvider) *Resolver
+func (r *Resolver) Resolve(ctx context.Context, rootListingID string, rootConstraintStr string) (*domain.DependencyResolutionResult, error)
 
-// Actual signature: Resolve(ctx, rootListingID, rootConstraintStr) (*domain.DependencyResolutionResult, error)
-// Cycle: domain.ErrResolveCycle(chain) → LPSM-RESOLVE-CYCLE
-// Conflict: domain.ErrResolveConflict(id, reason) → LPSM-RESOLVE-CONFLICT
-func (r *Resolver) Resolve(ctx context.Context, rootListingID, rootConstraintStr string) (*domain.DependencyResolutionResult, error) {
-    resolved := make([]domain.DependencyResolution, 0)
-    selected := make(map[string]*domain.VersionRecord)
-    aggregatedConstraints := make(map[string][]string)
-    visiting := make(map[string]bool)
-
-    // Phase 1: Collect and intersect all dependency constraints across the graph
-    var collectConstraints func(listingID, verConstraint string) error
-    collectConstraints = func(listingID, verConstraint string) error {
-        if visiting[listingID] {
-            return domain.ErrResolveCycle(listingID) // LPSM-RESOLVE-CYCLE
-        }
-
-        aggregatedConstraints[listingID] = append(aggregatedConstraints[listingID], verConstraint)
-
-        visiting[listingID] = true
-        defer func() { visiting[listingID] = false }()
-
-        // Select or verify candidate version against ALL accumulated constraints
-        candidate, err := r.selectBestVersionIntersect(ctx, listingID, aggregatedConstraints[listingID])
-        if err != nil {
-            return domain.ErrResolveConflict(listingID, err.Error()) // LPSM-RESOLVE-CONFLICT
-        }
-        selected[listingID] = candidate
-
-        for _, dep := range candidate.Dependencies {
-            if err := collectConstraints(dep.ListingID, dep.VersionConstraint); err != nil {
-                return err
-            }
-        }
-        return nil
-    }
-
-    if err := collectConstraints(root.ID, targetVer); err != nil {
-        return nil, err
-    }
-
-    // Phase 2: Produce topologically sorted resolution slice
-    for id, verRec := range selected {
-        resolved = append(resolved, domain.DependencyResolution{
-            ListingID: id,
-            Selected:  verRec,
-        })
-    }
-    return resolved, nil
-}
+// unexported helper (topological sort of the resolved graph)
+func computeTopologicalOrder(root string, graph map[string][]string) ([]string, error)
 ```
+
+Earlier drafts of this section sketched helper methods (`collectConstraints`,
+`selectBestVersionIntersect`) that do not exist in the package; the signature above is the
+authoritative one.
 
 ---
 
@@ -188,7 +148,8 @@ func ExtractArchiveSafelyWithLimits(r io.ReaderAt, size int64, archiveType strin
 Staging Directory (staging/<op-id>/)
         │
         ▼ 1. Compute Content-Addressed Tree Digest
-trees/sha256/a1/a1b2c3d4... (Created if missing, tracked in operation_trees)
+DATA_ROOT/cas/trees/sha256/<64-hex-digest> (flat digest directory; created if
+        missing, tracked in operation_trees). Not a two-level fan-out.
         │
         ▼ 2. Atomic Directory Rename (Same Filesystem)
 Target Tree Ready
@@ -202,6 +163,10 @@ Target Tree Ready
      UPDATE operations SET state = 'committed' WHERE operation_id = ?;
    COMMIT;
 ```
+
+The tree path is computed by `Engine.TreePath` (`internal/install/engine.go:471-481`): it validates
+a `sha256:<64-hex>` digest and joins `casRoot/trees/sha256/<hex>`. The CAS root itself is
+`DATA_ROOT/cas` (`internal/config/paths.go:213`).
 
 ### Safe CAS Rollback Rules
 If an error occurs before or during commit:

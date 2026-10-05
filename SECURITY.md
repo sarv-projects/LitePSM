@@ -33,14 +33,16 @@ stated plainly.
 | **Daemon** | Supervise provider processes, enforce policy, broker secrets | Single writer to its own database; secrets go through the OS vault (Keychain / DPAPI / Secret Service), never to a config file |
 | **Skill installer** | Copy a `SKILL.md` directory into an agent's skills tree | Refuses symlinks, non-https sources and overwrites; caps a skill at 32 MiB |
 | **Self-update** | Replace its own binary | Fails closed on a missing checksum (see below) |
-| **Connector executor** (design only) | Not implemented: the connector type is deferred and no connector executor ships | The credential-custody design — the agent supplies a connection handle rather than a secret, the target host is pinned by the connector manifest, private/loopback/link-local addresses are refused after DNS resolution, and caller-supplied `Authorization`, `Cookie` and `Proxy-Authorization` headers are stripped — is recorded in [29 — Connector System Design](ARCH/29-CONNECTOR-SYSTEM-DESIGN.md) and carries no shipped guarantee |
+| **Connector executor** (design only) | Not implemented: `internal/connector` was deleted under decision D1 for having zero production importers, and no connector executor ships | The credential-custody design — the agent supplies a connection handle rather than a secret, the target host is pinned by the connector manifest, private/loopback/link-local addresses are refused after DNS resolution, and caller-supplied `Authorization`, `Cookie` and `Proxy-Authorization` headers are stripped — is recorded in [29 — Connector System Design](ARCH/29-CONNECTOR-SYSTEM-DESIGN.md) and carries no shipped guarantee |
 
 ## Supply chain
 
 **Releases are integrity-checked, not signature-verified.** Each release
-publishes `SHA256SUMS.txt` alongside the binaries. The updater and the npm
-installer both verify the downloaded binary against that file and refuse to
-proceed on a mismatch.
+publishes `SHA256SUMS.txt` alongside the binaries. The updater verifies the
+downloaded binary against that file and refuses to proceed on a mismatch. The
+npm installer aborts on a mismatch, but if the manifest has **no entry for your
+platform** (or the manifest cannot be fetched) it prints a warning and proceeds
+unverified rather than failing the install — see `npm/scripts/install-binary.js:185-204`.
 
 The honest limit: those checksums travel in the same release as the binaries, so
 they prove the download was not corrupted in transit. They do **not** prove the
@@ -57,7 +59,7 @@ was absent and carried a hard-coded bypass string. Both were removed.
 `npm install -g litespm` runs a `postinstall` script that downloads the platform
 binary from the GitHub release and verifies it against `SHA256SUMS.txt`. Read
 `npm/scripts/install-binary.js` before installing if you want to see exactly
-what it fetches.
+what it fetches; note the missing-entry fallback described above.
 
 ## What we do not claim
 

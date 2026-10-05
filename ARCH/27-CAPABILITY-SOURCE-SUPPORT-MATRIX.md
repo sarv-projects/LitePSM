@@ -1,6 +1,6 @@
 # Capability & Source Support Matrix
 
-A research-backed reference describing, for each of the eight v1 capability types and for each catalog source, (a) what the object actually is, (b) where it comes from, (c) how agent hosts consume it, and (d) whether this repository implements it today. Implementation status is derived by reading the code, not from intent.
+A research-backed reference describing, for each of the eight v1 capability types and for each catalog source, (a) what the object actually is, (b) where it comes from, (c) how agent hosts consume it, and (d) whether this repository implements it today. The compiled `ListingKind` enum has **nine** members (the eight v1 targets plus the deprecated `connector`); the v1 *target* taxonomy is eight. Implementation status is derived by reading the code, not from intent.
 
 This document is the companion to [26 — Ecosystem IA & Package Model](26-ECOSYSTEM-IA-PACKAGE-MODEL.md). `26` defines the normative target model (`type` / `source` / `compatibility` axes) and its milestone vocabulary. This document is a **status snapshot**: it describes reality and names the exact files/functions that back each claim. It introduces no new normative contract.
 
@@ -10,7 +10,7 @@ This document is the companion to [26 — Ecosystem IA & Package Model](26-ECOSY
 
 *   **Grounding rule (binding):** a capability type is `Working` only when a compiled code path exists and is exercised by a passing test in `internal/`. `Partial` means some layer exists (typically metadata ingestion) but the end-to-end path does not. `Not implemented` means no code path exists. Where a type has no catalog rows, that is stated as an absence, never inferred.
 *   **No fabricated evidence:** a passing unit test is not runtime acceptance. No Windows/host runtime acceptance record exists for the types below; see §4.
-*   **Concurrent work:** `internal/` and `ARCH/26` are owned by a parallel workstream. During this investigation the ACP adapters (`internal/source/acp_registry.go`, `internal/agent/`) and the eight-type domain constants landed in the working tree and were subsequently committed as `09ba4cb feat(agent,taxonomy): ACP agent adapter and registry ingestion`. That change is reflected here and explicitly labelled Partial / In progress (§1.4, §2, §4), because ingestion and launch-spec resolution are not the full install/launch path.
+*   **Concurrent work:** `internal/` and `ARCH/26` are owned by a parallel workstream. During this investigation the ACP adapters (`internal/source/acp_registry.go`, `internal/agent/`) and the domain kind constants landed in the working tree and were subsequently committed as `09ba4cb feat(agent,taxonomy): ACP agent adapter and registry ingestion`. That change is reflected here and explicitly labelled Partial / In progress (§1.4, §2, §4), because ingestion and launch-spec resolution are not the full install/launch path.
 *   **Snapshot provenance:** repository state read 2026-10-01; ecosystem facts verified live on the same date.
 
 Status legend used throughout:
@@ -24,9 +24,9 @@ Status legend used throughout:
 
 ---
 
-## 1. The Eight v1 Capability Types
+## 1. The v1 Capability Types
 
-The v1 taxonomy is a closed enum of eight members — `mcp | skill | plugin | agent | rule | hook | tool | lsp` ([ARCH/26 §3.4](26-ECOSYSTEM-IA-PACKAGE-MODEL.md)). Domain constants for all eight now exist in `internal/domain/models.go` (`ListingKind` and `ComponentKind`), but a domain constant is not an implementation.
+The v1 target taxonomy is a closed enum of eight members — `mcp | skill | plugin | agent | rule | hook | tool | lsp` ([ARCH/26 §3.4](26-ECOSYSTEM-IA-PACKAGE-MODEL.md)). The compiled `ListingKind` enum in `internal/domain/models.go` has **nine** values, adding the deprecated/deferred `connector` (`KindConnector`, v2 per [ARCH/26 §3.4.1](26-ECOSYSTEM-IA-PACKAGE-MODEL.md)); that value MUST NOT surface as a v1 filter or type. `ComponentKind` additionally carries `command`, `agent-definition`, and `asset`. Domain constants are groundwork, not an implementation.
 
 ### 1.1 `mcp` — Model Context Protocol server
 
@@ -151,7 +151,7 @@ The v1 taxonomy is a closed enum of eight members — `mcp | skill | plugin | ag
 
 ## 2. Package Sources
 
-Source adapters live in `internal/source`, implement `Adapter` (`SourceID()` + `Ingest(ctx, snapshotID)`, `internal/source/adapter.go`), and are statically compiled. Per [ARCH/03](03-CATALOG-SOURCES.md) and [ARCH/17](17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) they perform **metadata ingestion only** and never download bytes or execute code.
+Source adapters live in `internal/source` and are statically compiled. Per [ARCH/03](03-CATALOG-SOURCES.md) and [ARCH/17](17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) they perform **metadata ingestion only** and never download bytes or execute code. **Interface applicability:** `internal/source/adapter.go` declares `Adapter` as `SourceID()` + `Ingest(ctx, snapshotID)`. Only three adapters satisfy it verbatim (`MCPRegistryAdapter`, `AgentSkillsAdapter`, `ACPAgentAdapter`). The five marketplace adapters (`Claude`, `Codex`, `Cursor`, `Grok`, `OpenAIPlugin`) accept an **extra `rawManifest []byte`** because the build-pipeline caller supplies the already-fetched manifest; they implement the same behaviour but not the two-method interface. See [ARCH/17 §2.1](17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md).
 
 The roster below matches the required source list. **Known to exist today in `internal/source`: `mcp_registry.go`, `skills.go` (Agent Skills), `claude_marketplace.go`, `openai_plugin.go`, `codex_marketplace.go`, `cursor_marketplace.go`, `grok_marketplace.go`, `sources.go` (checked-in source registry) — plus `acp_registry.go`, which landed concurrently (see §1.4). Everything else is Not implemented.**
 

@@ -3,8 +3,8 @@
 ## 1. Product Identity
 
 *   **LiteSPM Market:** The public, federated discovery surface for AI agent plugins, skills, and MCP servers. Available as a fast, static web application and a read-only HTTP catalog.
-*   **LiteSPM Client:** The local manager and control plane running on the user's workstation. It resolves, verifies, installs, updates, and supervises capabilities across supported agents (Codex, Claude Code, Grok Build, OpenCode, Cline, etc.).
-*   **Expansion & Acronym:** **LiteSPM** — *The Lightweight Skill & Package Manager for AI Agents*. **SPM** expands to **Skill & Package Manager**; the catalog spans Plugins, Skills, and MCP servers. Connectors represent user-facing integration listings that resolve to MCP servers or plugin packages.
+*   **LiteSPM Client:** The local manager and control plane running on the user's workstation. It resolves, verifies, installs, updates, and supervises capabilities across supported agents — the six wizard hosts (Cline, Pi Agent, Grok Build, Claude Code, OpenAI Codex, OpenCode) plus 44 additional generic bridge targets, 50 in total (ARCH/30).
+*   **Expansion & Acronym:** **LiteSPM** — *The Lightweight Skill & Package Manager for AI Agents*. **SPM** expands to **Skill & Package Manager**; the catalog spans Plugins, Skills, and MCP servers. A `connector` listing kind remains in the domain enum but is **deprecated and deferred to v2**: `internal/connector` was removed under decision `D1`, and `ARCH/29` is a design record only ([STATUS.md](../STATUS.md) §4).
 
 ---
 
@@ -29,14 +29,27 @@ LiteSPM solves this by providing **centralized federated discovery** combined wi
 4.  **Preservation of Upstream Semantics:** Retain original package formats, upstream identifiers, and version digests. Normalization is a discovery projection, not an erasure of provenance.
 5.  **Multi-Stage Capability Verification:** Clearly report the independent operational status of every item (`listed`, `resolvable`, `installable`, `runnable`, `tested`).
 6.  **Fail-Closed User Approval:** Agents cannot self-authorize capabilities. Effectful actions (filesystem writes, command execution, network requests) require explicit user approval.
-7.  **Passive Freshness & Non-Destructive Invocations:** Invocations of `litespm` or in-agent `/marketplace` check for available catalog updates without mutating local installations or configuration unless explicitly confirmed.
+7.  **Passive Freshness & Non-Destructive Invocations:** Invocations of `litespm` or in-agent `/marketplace` check for available catalog updates without mutating local installations or configuration unless explicitly confirmed. *(Target: today the wizard prints only compiled-in advisory metadata and in-agent reads resolve against the local catalog index — see §5.1 step 5.)*
 
 ### Non-Goals
 1.  **Cloud Tool Proxying:** LiteSPM hosted services will never proxy tool requests, execute plugin code in the cloud, or store downstream service credentials.
-2.  **Universal OS Sandbox:** The local LiteSPM daemon enforces capability routing, schema validation, and policy checks, but it is **not an OS-level sandbox**. Executing a local stdio MCP provider runs under the user's operating system privileges.
+2.  **Universal OS Sandbox:** The local LiteSPM daemon enforces capability routing, schema validation, and policy checks, but it is **not an OS-level sandbox**. Executing a local stdio MCP provider runs under the user's operating system privileges. This is consistent with `ARCH/08` §3 (no OS-kernel-sandboxing claims) and `ARCH/05` §10. A formal **isolation-tier declaration** is `DESIGNED` only — no tier is declared or reported by `doctor` today ([STATUS.md](../STATUS.md) §5; `ARCH/31` proposal #22, "sandbox tiers 0–3").
 3.  **Automatic Capability Grants:** LiteSPM will never automatically grant permissions or install packages simply because an LLM requested them.
 4.  **Proprietary Adapter Scripting:** Third-party execution code is not downloaded dynamically during ingestion or resolution.
 5.  **Universal Direct Tool Projection:** LiteSPM does not project thousands of catalog tools into an agent's context window simultaneously. Tool discovery is progressively routed on-demand.
+
+### Forward-Looking Scope (all `DESIGNED`)
+
+Several product expectations above imply capabilities that are specified but **not implemented**. Each is documented in a dedicated design record and must not be presented as working:
+
+| Product expectation | Design record | State |
+|---|---|---|
+| Reproducible installs, project manifest/lockfile, interop export, canonical identity graph | `ARCH/32` (Manifest, Lockfile & Interop) | `DESIGNED` |
+| Durable ownership of host-config edits and uninstall/update reconciliation | `ARCH/33` (Deployment Ledger & Reconciliation) | `DESIGNED` |
+| Real capability invocation, receipts, schema-drift session handling at runtime | `ARCH/34` (Runtime, Invocation & Receipts) | `DESIGNED` |
+| Runtime profiles and time/scope-bounded capability leases | `ARCH/35` (Profiles & Capability Leases) | `DESIGNED` |
+| Policy hierarchy + `policy explain`, `audit --ci`, advisories/quarantine, signed catalog, SBOM | `ARCH/36` (Enterprise Policy, Audit, Provenance & Supply-Chain Trust) | `DESIGNED` |
+| Terminal TUI, local dashboard, shell completion, `why` | `ARCH/37` (TUI, Local Dashboard & Shell Completion) | `DESIGNED` |
 
 ---
 
@@ -53,7 +66,7 @@ To prevent misleading claims of compatibility, LiteSPM categorizes every item ac
 1.  **Listed:** The item's metadata has been ingested from an upstream source and normalized into a valid LiteSPM Listing record.
 2.  **Resolvable:** All package artifacts, external references, and dependencies can be resolved to immutable hashes (Git commit SHA, archive SHA-256 digest).
 3.  **Installable:** The artifact has been verified to unpack safely into the local Content-Addressed Store (CAS) without exceeding security limits or triggering path-traversal errors.
-4.  **Runnable:** The user's workstation satisfies the necessary runtime prerequisites (e.g., Node.js, Python, or native executable) and a compatible LiteSPM `RuntimeAdapter` exists.
+4.  **Runnable:** The user's workstation satisfies the necessary runtime prerequisites (e.g., Node.js, Python, or native executable) and a compatible LiteSPM `RuntimeAdapter` exists (the `RuntimeAdapter` seam itself is `DESIGNED` — ARCH/17 §5).
 5.  **Tested:** Automated integration tests have executed the provider or skill against a specific host agent and verified successful initialization, schema discovery, and safe cleanup.
 
 ---
@@ -78,18 +91,19 @@ Select your primary AI Agent Host:
 > Implementation note: the wizard lists only the 6 bespoke adapters (`cmd/litespm/wizard.go:supportedAgents`). The remaining 44 generic `BridgeTarget` rows are managed via `litespm host setup <id>` / `litespm host list` (50 total — see ARCH/30). There is no separate `Generic MCP Configuration (JSON export)` wizard entry.
 
 1.  **Agent Selection:** User selects their agent from the interactive terminal dropdown.
-2.  **Automated Path Discovery:** LiteSPM scans documented default paths across Windows, macOS, and Linux (e.g., `~/.claude.json`, `%APPDATA%\Codex\config.json`).
-3.  **Graceful Fallback:** If the configuration file is not found, LiteSPM provides clear feedback:
+2.  **Automated Path Discovery:** LiteSPM scans documented default paths across Windows, macOS, and Linux (e.g., `~/.claude.json`, `~/.codex/config.toml`; native Windows user scope is `%USERPROFILE%\.codex\config.toml` — `%APPDATA%\Codex\config.toml` is only a legacy fallback, `internal/host/codex.go:35-42`).
+3.  **Graceful Fallback:** If the configuration file is not found, LiteSPM provides clear feedback (`cmd/litespm/wizard.go:187-197`):
     ```text
-    [!] Unable to locate default configuration for Claude Code.
-    ? How would you like to proceed?
-      > Enter custom path to configuration file
-      > Print manual setup snippet (copy & paste)
-      > Retry auto-detection
-      > Exit
+    ⚠ Configuration file not found in default locations for Claude Code.
+
+    Choose a configuration option:
+      [1] Enter configuration path manually
+      [2] Print copy-paste snippet
+      [3] Retry auto-detection
+      [q] Cancel setup
     ```
-4.  **Atomic Registration:** Upon locating or receiving the path, LiteSPM creates a timestamped pre-edit backup, safely parses the file, injects the pinned LiteSPM Bridge entry, and atomically replaces the file.
-5.  **Passive Advisory Notice (target — currently compiled-in only):** The intended flow queries the static catalog pointer (`/v1/current.json`) for capability updates without touching local state. Current `verifyRuntimeAdvisories` (`cmd/litespm/wizard.go`) prints only the compiled-in protocol version and adapter count with no network fetch; `litespm update` / `self-update` updates the LiteSPM binary itself (`internal/update`), not installed capabilities. Capability refresh is `litespm catalog sync` followed by reinstall until an update-notice lands:
+4.  **Atomic Registration:** Upon locating or receiving the path, LiteSPM creates a timestamped pre-edit backup (`DATA_ROOT/backups/<host-id>_<timestamp>_<hash>.bak`), safely parses the file, injects a single `litespm` bridge entry (`<binary> bridge stdio --host <host-id>` — no version field and no per-capability snippets are written), and atomically replaces the file.
+5.  **Passive Advisory Notice (target — currently compiled-in only):** The intended flow queries the static catalog pointer (`/v1/current.json`) for capability updates without touching local state. Current `verifyRuntimeAdvisories` (`cmd/litespm/wizard.go:138-143`) prints only the compiled-in protocol version and adapter count with no network fetch; `litespm update` / `self-update` updates the LiteSPM binary itself (`internal/update`), not installed capabilities. Capability refresh is `litespm catalog sync` followed by reinstall until an update-notice lands:
     ```text
     [*] 2 installed capabilities have updates available. Run 'litespm catalog sync' to refresh, then reinstall to inspect changes.
     ```
@@ -102,15 +116,15 @@ Inside any configured agent (e.g., Claude Code, Codex, OpenCode), the agent or u
 User / Agent: /marketplace search postgres
 ```
 
-1.  **Bounded MCP Surface:** The agent queries the local LiteSPM Bridge shim using `search_catalog`, `describe_capability`, `list_installed`, `get_extension`, `load_skill`, and related tools (`internal/bridge/shim.go:initTools`).
+1.  **Bounded MCP Surface:** The agent queries the local LiteSPM Bridge shim — 12 registered tools (`internal/bridge/shim.go:initTools`). Today `search_catalog`, `get_extension`, `prepare_install`, `list_installed`, `load_skill`, and `read_skill_resource` resolve against the daemon; `search_capabilities`, `describe_capability`, `invoke_capability`, `get_invocation`, and `cancel_invocation` return explicit JSON-RPC `-32601` with a concrete reason ([STATUS.md](../STATUS.md) §4); `request_install` reaches `install.execute` but cannot complete (see item 3).
 2.  **Progressive Disclosure:** Search results return compact summaries (name, kind, publisher, verified status). Detailed tool schemas and skill contents are retrieved only when specifically requested.
-3.  **Install Plan Display:** When an agent proposes installing a capability, it calls `prepare_install`, which previews an immutable `InstallPlan` detailing affected paths, runtime commands, and declared permissions. Execution goes through `request_install` (`planId` + human approval token), not CLI flags.
-4.  **User Confirmation Boundary:** The Bridge enforces that installation cannot proceed without out-of-band user approval. If the agent's host UI does not support reliable interactive form elicitation, the Bridge returns the exact CLI command for the user to execute (current CLI takes no `--plan-id` flag — see `litespm install --help`):
+3.  **Install Plan Display:** When an agent proposes installing a capability, it calls `prepare_install`, which previews an immutable `InstallPlan` (resolver → plan, `planHash` persisted) detailing affected paths, runtime commands, and declared permissions. Execution goes through `request_install` (`planId` + human approval token), not CLI flags — **but execution cannot complete today**: the daemon's `install.execute` supplies no artifact source, so the install engine refuses the operation (`cmd/litespm/main.go:1420-1426`; `internal/install/engine.go:204-206`; [STATUS.md](../STATUS.md) §3).
+4.  **User Confirmation Boundary:** Installation cannot proceed without out-of-band user approval. If the agent's host UI does not support reliable interactive form elicitation, the human path is the CLI. The Bridge surfaces the daemon's refusal as an MCP tool error; it does **not** generate a command string. The documented CLI invocation is:
     ```text
     To approve this installation, run in your terminal:
     litespm install <listing-id> --version <ver> --scope user|project
     ```
-    (`litespm install` usage: `litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]` — `cmd/litespm/main.go`.)
+    (`litespm install` usage: `litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]` — `cmd/litespm/main.go:757`. There is no `--plan-id` flag: the CLI does not consume a persisted plan, and today it installs a **local synthetic package** labelled `remote resolve/verify not yet wired` — `cmd/litespm/main.go:851-872`.)
 
 ---
 
@@ -127,3 +141,5 @@ The primary user-facing interfaces (CLI, Web Market, in-agent outputs) must stri
 | **Capabilities** | Bundled MCP tools, skills, or plugin components | "Heterogeneous RPC endpoints" |
 | **Verified** | Automated host test evidence passed on date X | "Certified 100% secure" |
 | **Needs Approval** | Policy engine returned `ask` requirement | "Elicitation boundary triggered" |
+
+> State note: the table is the **vocabulary contract**, not a status claim. `Install` runs the real staging → CAS verify → journal commit path (locally, from a synthetic archive until remote resolve is wired). `Update` delta evaluation and lockfile pointer swap do not exist yet (`ARCH/32`, `DESIGNED`), and `Remove` currently deletes DB rows and host-config entries but performs **no CAS pruning** (`install.remove` deletes rows; no prune routine exists — [STATUS.md](../STATUS.md) §3). `Verified` may only be printed when real test evidence exists (ARCH/26 §12.4).

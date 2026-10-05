@@ -1,65 +1,160 @@
 # Local Runtime & IPC Architecture
 
+Transcribed from the tree at `ff0a1db`. State labels use the vocabulary of
+[`STATUS.md`](../STATUS.md); where a behaviour below is specified but absent from
+the code, it is marked `DESIGNED` rather than described as running.
+
 ## 1. Daemon Process Lifecycle
 
-The LiteSPM Daemon is a single-instance background worker per operating system user account. It manages all state mutations, provider processes, and security policies.
+The LiteSPM Daemon is a single-instance background worker per operating system
+user account (`litespm daemon serve`). It manages state mutations, provider
+processes, and security policy evaluation. **It is started by an operator, not by
+a client**: no code path spawns it (§1.2).
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Daemon Lifecycle States                         │
-│                                                                        │
-│   [Not Running]                                                        │
-│         │ Bridge Shim or CLI boots daemon if absent                    │
-│         ▼                                                              │
-│   [Initializing] ──> Acquire Lock -> Run SQLite Migrations -> Recovery │
-│         │                                                              │
-│         ▼                                                              │
-│   [Listening]    ──> Serve Named Pipe / Domain Socket IPC              │
-│         │                                                              │
-│         ▼ (Idle timeout after 30 min with 0 sessions OR SIGTERM)       │
-│   [Shutting Down]──> Stop Provider Procs -> Close DB -> Release Lock   │
-│         │                                                              │
-│         ▼                                                              │
-│   [Terminated]                                                         │
-└────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        Daemon Lifecycle States                             │
+│                                                                            │
+│   [Not Running]                                                            │
+│         │  operator: `litespm daemon serve`   (no auto-boot — §1.2)        │
+│         ▼                                                                  │
+│   [Initializing] ──> Open secret store -> Acquire DATA_ROOT/daemon.lock    │
+│                      -> Open SQLite (run migrations) -> Startup recovery   │
+│                      -> Start configured providers -> Bind IPC endpoint    │
+│         │            (any failure here exits non-zero before serving)      │
+│         ▼                                                                  │
+│   [Listening]    ──> Serve Named Pipe / Domain Socket JSON-RPC             │
+│         │                                                                  │
+│         ▼ (SIGINT / SIGTERM — cmd/litespm/main.go:1211-1232)               │
+│   [Shutting Down]──> server.Stop -> close listener -> StopAll providers    │
+│                      -> close DB -> release daemon.lock                    │
+│         │                                                                  │
+│         ▼                                                                  │
+│   [Terminated]                                                             │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1.1 Exclusive Instance Locking
-To prevent split-brain scenarios where two daemon processes run concurrently:
-*   **Windows:** Opens `RUNTIME_ROOT/daemon.lock` with `LockFileEx` (`LOCKFILE_EXCLUSIVE_LOCK`).
-*   **Linux / macOS:** Opens `RUNTIME_ROOT/daemon.lock` with `flock(fd, LOCK_EX | LOCK_NB)`.
-*   If another process holds the lock, the new invocation connects to the existing daemon rather than starting a duplicate listener.
+Ordering facts, `cmd/litespm/main.go:1121-1233`:
 
-### 1.2 Autostart Behavior
-When a host agent boots a Bridge Shim (e.g., `litespm bridge stdio --host claude-code`), the shim attempts to connect to the IPC endpoint. If connection fails (`ECONNREFUSED` or `ENOENT`):
-1.  The shim spawns `litespm daemon serve --background` detached.
-2.  Polls the IPC endpoint with exponential backoff (initial: 20ms, max: 200ms, timeout: 5s).
-3.  Once connected, completes the handshake and proceeds.
+*   **Secrets first.** `secrets.OpenSecretStore()` runs before anything else; if
+    the vault is unavailable the daemon halts rather than storing credentials
+    unprotected (`LPSM-AUTH-VAULT-UNAVAILABLE`, `main.go:1135-1140`).
+*   **Recovery before serving.** `runStartupRecovery` executes *after* the DB
+    opens and *before* the IPC listener is bound (`main.go:1162-1176`); a journal
+    failure halts startup instead of serving unreconciled state.
+*   **Providers start before the listener accepts.** `provider.StartConfigured`
+    runs at `main.go:1184-1194`; `supervisor.StopAll` is deferred.
+*   **Shutdown order** is the defer chain LIFO: listener → `StopAll` → DB → lock.
+
+### 1.1 Exclusive Instance Locking
+
+To prevent split-brain scenarios where two daemon processes run concurrently:
+
+*   **Location:** `DATA_ROOT/daemon.lock` — `DaemonLockPath()` returns
+    `filepath.Join(p.DataRoot, "daemon.lock")` (`internal/config/paths.go:207-209`).
+    The lock is **not** under `RuntimeRoot`, and there is **no `daemon.pid`
+    file**: the PID is the *contents* of `daemon.lock`.
+*   **Mechanism (all platforms):** an atomic `O_CREATE|O_EXCL` file creation
+    holding the daemon's PID (`cmd/litespm/main.go:1919-1937`, mode `0600`), not
+    `flock`/`LockFileEx`. A pre-existing lock is read; if its PID looks alive the
+    daemon refuses to start with `active daemon process running with PID %d`
+    (`main.go:1142-1147`), otherwise the stale file is removed and re-created.
+*   **Stale-lock caveat:** liveness is `processAlive`, which signals `0` on Unix
+    but returns `true` unconditionally on Windows whenever `os.FindProcess`
+    succeeds (`main.go:1946-1957`). A leftover `daemon.lock` after a Windows
+    crash therefore blocks startup until the file is deleted by hand.
+*   **A second invocation does not attach.** `daemon serve` exits on lock
+    contention; it does not connect to the running daemon. The only production
+    IPC client is the bridge shim, which dials the endpoint itself
+    (`cmd/litespm/main.go:344`).
+
+### 1.2 Autostart Behavior — `DESIGNED`, not implemented
+
+The previously documented flow (shim spawns `litespm daemon serve --background`
+and polls with exponential backoff) **does not exist**. What actually happens:
+
+1.  `litespm bridge stdio --host <id>` resolves platform paths and performs
+    **one** `ipc.Dial(paths.IPCEndpoint())` (`cmd/litespm/main.go:328-358`).
+2.  If the dial fails (`ENOENT` / `ECONNREFUSED` / no listener), the shim prints
+    `daemon dial failed: …; running standalone with no capabilities (start the
+    daemon with 'litespm daemon serve')` and starts anyway with a `nil` client
+    (`main.go:346`).
+3.  In standalone mode every tool fails closed with
+    `LPSM-IPC-DAEMON-UNREACHABLE` — no inventory, status, or result is fabricated
+    (`internal/bridge/shim.go:274-280`, `:575-587`); `ping` honestly reports
+    `{"connected": false}` (`shim.go:206-214`).
+
+There is no spawn, no connect retry, and no backoff for the daemon endpoint
+anywhere in the tree (the only `exec.Command` uses in the CLI are `git` in
+`cmd/litespm/skills_update.go`). An
+idle-timeout exit is equally absent: `config.DefaultConfig` defines
+`IdleTimeout: 30 * time.Minute` (`internal/config/config.go:66`) but **no code
+reads it**, so the daemon runs until a signal arrives. Both behaviours remain
+`DESIGNED`; `STATUS.md` does not claim them.
 
 ---
 
 ## 2. Platform IPC Transports
 
 ### 2.1 Windows Named Pipes
-*   **Pipe Path:** `\\.\pipe\litespm-daemon-<SHA256(Username+UserSID)[:16]>`
-*   **Security Descriptor:** Created with a custom Security Descriptor Definition Language (SDDL) string that grants Full Control (`GA`) exclusively to the Creator/Owner (`OW`) and denies all other users:
+*   **Pipe Path:** `\\.\pipe\litespm-daemon-<hex>` where `<hex>` is the **first
+    12 hex characters of `SHA256(username)`** —
+    `hex.EncodeToString(hasher.Sum(nil))[:12]` over the username only
+    (`internal/config/paths.go:60-64`). No UserSID is mixed in, and the digest is
+    12 characters, not 16. The pipe prefix always uses the current brand
+    (`litespm`), so an adopted legacy `litepsm` root never changes the endpoint.
+*   **Security Descriptor:** created with the SDDL string that grants Generic All
+    (`GA`) exclusively to the object owner (`OW`):
     ```text
     SDDL: D:(A;;GA;;;OW)
     ```
-*   **Buffer Sizes:** In/out buffers initialized to 64 KiB with message-mode or byte-stream framing.
+    (`internal/ipc/transport_windows.go:13-16`, via `winio.PipeConfig`).
+*   **Buffers / framing:** `InputBufferSize` and `OutputBufferSize` are 65,536
+    bytes (64 KiB) and `MessageMode: false` — byte-stream framing carrying
+    **line-delimited** JSON-RPC (`transport_windows.go:17-19`), not message-mode
+    frames.
 
 ### 2.2 Linux & macOS Domain Sockets
-*   **Socket Path:** `$XDG_RUNTIME_DIR/litespm/daemon.sock` (fallback: `~/.local/state/litespm/daemon.sock`).
-*   **Permissions:** The containing directory is initialized with `0700` (`rwx------`). The socket file itself is restricted to `0600` (`rw-------`).
+*   **Socket Path:** `<RuntimeRoot>/litespm.sock`, where `RuntimeRoot` resolves in
+    this order (`internal/config/paths.go:73-93, 146-154`):
+    1.  `LITESPM_RUNTIME_ROOT` (then legacy `LITEPSM_RUNTIME_ROOT`) if set;
+    2.  `$XDG_RUNTIME_DIR/litespm` when `XDG_RUNTIME_DIR` is set;
+    3.  **fallback `/tmp/litespm-<uid>`** when it is not
+        (`filepath.Join("/tmp", fmt.Sprintf("%s-%s", brand.unixDir, uid))`);
+    4.  on macOS: `~/Library/Caches/LiteSPM/run/litespm.sock`.
+    A legacy `litepsm` runtime root is adopted when it already exists and the new
+    default does not (`paths.go:163-175`), but the socket *file* name is always
+    `litespm.sock` (`applyRootOverrides`, `paths.go:146-154`).
+    The previously documented `~/.local/state/litespm/daemon.sock` is **not** a
+    path this code produces (`~/.local/state` appears nowhere), and the file is
+    named `litespm.sock`, not `daemon.sock`.
+*   **Permissions:** the containing directory is created `0700` and the socket
+    file is `chmod`'d `0600` after bind; any stale socket is unlinked first
+    (`internal/ipc/transport_unix.go:13-34`).
 
 ---
 
 ## 3. IPC Protocol Contract (JSON-RPC 2.0)
 
-All communications between clients (CLI, Bridge Shims, Doctor) and the Daemon use standard JSON-RPC 2.0 over the streaming IPC channel.
+All communications between clients (the bridge shim, and any future CLI/doctor
+client) and the daemon use JSON-RPC 2.0 over line-delimited streaming messages:
+newline-terminated frames, `MaxMessageSize = 16 MiB`
+(`internal/ipc/protocol.go:25-26, 110-166`), sequential integer request IDs minted by
+the caller (`internal/ipc/client.go:110-114`), and ID-less notifications.
 
-### 3.1 Handshake Procedure
-Every new connection must issue `daemon.handshake` as its first request before invoking any other RPC method:
+The daemon registers `daemon.handshake` plus 19 application methods
+(`cmd/litespm/main.go:1244-1750`): `tools.list`, `catalog.search`,
+`catalog.get_item`, `resolver.prepare_plan`, `install.execute`, `install.remove`,
+`skills.list`, `skills.load_body`, `skills.read_resource`,
+`capabilities.search`, `capabilities.describe`, `provider.probe`,
+`provider.invoke`, `invocation.get`, `invocation.cancel`, `host.detect_config`,
+`host.apply_setup`, `doctor.run_checks`, `system.status`. Method-by-method
+contract lives in [ARCH/06 §3.2](06-API-CONTRACTS.md).
+
+### 3.1 Handshake Procedure (`daemon.handshake`)
+
+The wire types are `HandshakeParams` / `HandshakeResult`
+(`internal/ipc/protocol.go:55-69`):
 
 ```json
 // Request -> Daemon
@@ -80,17 +175,43 @@ Every new connection must issue `daemon.handshake` as its first request before i
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "daemonVersion": "0.2.0",
+    "daemonVersion": "0.3.0",
     "protocolVersion": "2026-07-28",
     "pid": 54321
   }
 }
 ```
 
-Field names follow `internal/ipc/protocol.go` (`HandshakeParams`/`HandshakeResult`). No `sessionId`, `serverVersion`, `supportedFeatures`, or `minimumClientVersion` fields exist. Version gating (`LPSM-IPC-VERSION-INCOMPATIBLE`) is planned but the current `daemon.handshake` handler in `internal/ipc/server.go:NewServer` accepts the handshake without enforcement.
+Exact field inventory — nothing else exists:
+
+| Direction | Fields |
+|---|---|
+| Request params | `clientVersion` (string), `clientKind` (`"cli"` \| `"bridge"`), `hostId` (optional), `pid` (int) |
+| Response result | `daemonVersion`, `protocolVersion`, `pid` |
+
+*   **No** `sessionId`, `serverVersion`, `supportedFeatures`,
+    `minimumClientVersion`, `protocolVersion`-in-params, or `clientType` fields
+    exist.
+*   **The handshake is neither mandatory nor enforced.** The server handler
+    accepts any well-formed params (including empty) and returns the result
+    without version gating (`internal/ipc/server.go:48-64`); no other method
+    checks that a handshake happened. Version rejection
+    (`LPSM-IPC-VERSION-INCOMPATIBLE`) is `DESIGNED` — no such error code exists in
+    `internal/domain/errors.go`, whose only `LPSM-IPC-*` code is
+    `LPSM-IPC-DAEMON-UNREACHABLE`.
+*   **No production client calls it.** `ipc.Client.Handshake`
+    (`internal/ipc/client.go:94-109`, sends `clientVersion: "0.1.0"`) has a single
+    caller, `internal/ipc/ipc_test.go:78`; `runBridge` dials and serves without
+    handshaking. Treat the procedure as the contract to wire, not as a step that
+    occurs today.
+*   **Agrees with ARCH/06.** [ARCH/06 §3.1](06-API-CONTRACTS.md) shows the same
+    example and the same field inventory; both match `protocol.go`, and the
+    earlier "ARCH/06 §3.1 is stale" flag has been withdrawn.
 
 ### 3.2 Request Cancellation (`$/cancelRequest`)
-Clients can cancel long-running operations (such as multi-megabyte artifact downloads or long-running provider calls) by sending a standard notification:
+
+Clients can cancel in-flight work by sending a standard notification:
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -100,4 +221,19 @@ Clients can cancel long-running operations (such as multi-megabyte artifact down
   }
 }
 ```
-The daemon cancels the associated Go context, propagating cancellation to network requests or provider child processes.
+
+*   **Implemented both ways.** The client emits it automatically when a caller's
+    `context` is cancelled before the response arrives
+    (`internal/ipc/client.go:143-151`, `CancelParams` at `protocol.go:71-73`); the
+    server intercepts the notification **before** handler dispatch, looks up the
+    per-connection `cancelFuncs` map keyed by the raw request id, and cancels that
+    request's context (`internal/ipc/server.go:155-166, 191-207`).
+*   Each request runs under `context.WithCancel(s.ctx)` derived from the server
+    lifecycle context, so `server.Stop()` also cancels every in-flight handler.
+*   Propagation depth: cancellation reaches whatever the handler honours its
+    `ctx` (HTTP fetches, catalog reads). Provider child processes are *not*
+    killed by this path — process teardown is the supervisor's job
+    ([ARCH/14 §2](14-BRIDGE-PROVIDER-MCP.md)), and `provider.invoke` is
+    unimplemented anyway ([STATUS.md](../STATUS.md) §4).
+*   Cancelling an unknown or already-finished id is a silent no-op, and a
+    notification never produces a response.

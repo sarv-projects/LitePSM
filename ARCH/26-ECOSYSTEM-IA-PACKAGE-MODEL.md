@@ -7,7 +7,7 @@ A normative decision record for reshaping the public LiteSPM Market website and 
 ## 1. Status & Precedence
 
 *   **Status:** Normative for the website information architecture, the public package-model vocabulary, and the source-adapter matrix. Informative for ecosystem observations and roadmap sequencing.
-*   **Precedence:** Follows [25 — Web Frontend UI](25-WEB-FRONTEND-UI.md) and [10 — Domain Model](10-DOMAIN-MODEL.md). Where this document conflicts with `25` on navigation, routing, or detail-page shape, this document is the updated contract for the next milestone; `25` remains authoritative for the frozen stack (Next.js App Router, `output: 'export'`, Tailwind, Radix primitives, client-side search).
+*   **Precedence:** Follows [25 — Web Frontend UI](25-WEB-FRONTEND-UI.md) and [10 — Domain Model](10-DOMAIN-MODEL.md). Where this document conflicts with `25` on navigation, routing, or detail-page shape, this document is the updated contract for the next milestone; `25` remains authoritative for the frozen stack (Next.js App Router, `output: 'export'`, Tailwind CSS, local component primitives, client-side search). There is no Radix dependency (`web/package.json`).
 *   **Data/state authority unchanged:** [05 — Security](05-SECURITY.md) and [10 — Domain Model](10-DOMAIN-MODEL.md) retain authority over security and canonical identifiers. Nothing here weakens the one-bridge-per-host, Plan-bound, approval-gated install boundary.
 *   **Honesty rule (binding):** any field this document specifies but the current dataset cannot populate MUST render as `Not published`, `Unknown`, or an explicit absence — never as an inferred, defaulted, or fabricated value. See §12.4.
 *   **Index registration:** Adding this document to [00 — Index](00-INDEX.md) is a follow-up edit owned by the maintainer; this file does not modify the index.
@@ -247,7 +247,7 @@ This is the correct honest default: no signature check runs at ingestion. Per th
 | Detail route | `/package/?slug=<key>` query route (static-export compatible; `slug` when unique, else full `id`) | `web/app/package/page.tsx`; links via `listingHref()` in `web/lib/catalog.ts` | Target keeps query-route shape; `slug` uniqueness validated at build time (§6.3) |
 | Primary nav | Header renders `Explore / Agents / Categories / Trending` | `web/components/navigation/Header.tsx` (`PRIMARY_NAV`) | Implemented routes exist for all four; target nav adds `Collections`, `Sources`, `Security`, `Docs`, `Download` (§6) |
 | Existing routes | `/`, `/explore`, `/package`, `/categories`, `/agents`, `/trending` | `web/app/` contains `page.tsx`, `explore/`, `package/`, `categories/`, `agents/`, `trending/`, `layout.tsx`, `globals.css` | Target ~16 routes (§6); `/collections`, `/sources`, `/publishers`, `/security`, `/docs`, `/download` remain missing |
-| Categories | Flat `CategoryRail` pills; top 16–18 by frequency; 12 hard-coded labels in doc | `web/components/hero/CategoryRail.tsx`; `web/lib/telemetry.ts`; `ARCH/25` §3.2 | Replace with real hierarchical categories and `/categories/<slug>` |
+| Categories | Dynamic `CategoryRail` chips; **top 16 by frequency** (`categoryFacets` default `limit = 16`), counts inline, plus *All categories* | `web/components/hero/CategoryRail.tsx`; `web/lib/telemetry.ts`; `ARCH/25` §3.2 | Replace with real hierarchical categories and `/categories/<slug>`. The rail is data-driven, **not** a fixed label list (earlier "12 hard-coded labels" was a doc artifact, not the implementation) |
 | Filters | `kind` + `category` only | `web/lib/useCatalogSearch.ts` options; `web/app/page.tsx` | Target power filters (§7.2) |
 | Detail tabs | Single long page with host config + related items | `web/app/package/page.tsx` | Target tabs Overview/Setup/Compatibility/Configuration/Files/Versions/Security/Reviews |
 | Per-capability host snippet | `nativeSnippet(host, slug, command, args)` emits a direct native per-package config | `web/lib/hosts.ts` | Contradicts one-bridge-per-host; remove/relabel (§10, §11) |
@@ -367,7 +367,7 @@ Filter groups:
 | Runtime | node / python / docker / binary / … |
 | Platform | win / mac / linux |
 | License | SPDX (only when present; otherwise excluded from facet) |
-| Popularity | Stars (illustrative only, clearly labelled) |
+| Popularity | **No v1 facet.** No popularity signal exists in the dataset; stars/installs render `Not published` and the sort mode is omitted rather than shown with fabricated zeroes (see §12.4) |
 | Recently updated | Only when `updatedAt` is genuinely present |
 
 Sort: **relevance · trending · most installed · recently updated · newest**.
@@ -378,7 +378,7 @@ Rules:
 
 ### 7.3 `/package/<slug>` — detail
 
-Identity block (npm-style): icon/avatar, canonical name (monospace), publisher, type tag, category tag, one-line summary, `Available from` source list (§9), stars (labelled illustrative), version.
+Identity block (npm-style): icon/avatar, canonical name (monospace), publisher, type tag, category tag, one-line summary, `Available from` source list (§9), version. No stars: the dataset carries no popularity signal, so any popularity slot renders `Not published` (§12.4).
 
 Compatibility matrix: rows = consumer hosts, columns = status (`verified` / `compatible` / `unknown`) and evidence (`declared` / `tested` / `none`). This is the primary differentiator and must be visible without scrolling past the fold on desktop.
 
@@ -422,7 +422,7 @@ Restrained, Docker/Cursor-style; information-dense, no marketing chrome.
 
 ```text
 ┌───────────────────────────────────────────────────────────┐
-│ [icon]  package-name                 ★ 12.4k  (illustr.) │
+│ [icon]  package-name                                      │
 │         by publisher                                      │
 │         One to two line summary of what it does.          │
 │         [type] [category]                                 │
@@ -431,10 +431,10 @@ Restrained, Docker/Cursor-style; information-dense, no marketing chrome.
 ```
 
 Rules:
-*   Elements: icon/avatar, name, publisher, 1–2 line description, **exactly two tags** (type + category), host-compatibility chips, stars/installs.
+*   Elements: icon/avatar, name, publisher, 1–2 line description, **exactly two tags** (type + category), host-compatibility chips. No stars or install counts: the dataset has no popularity signal.
 *   **No oversized install CTA.** Clicking the card opens `/package/?slug=…`. Install lives on the detail page.
 *   Package names and commands render in monospace.
-*   Popularity is labelled illustrative until a real usage source exists.
+*   Popularity renders `Not published` until a real usage source exists (§12.4).
 *   The whole card is one keyboard-focusable link with a visible focus ring (WCAG 2.2).
 
 ---
@@ -526,7 +526,7 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 | Item | Why | Milestone |
 |---|---|---|
 | `/item?id=` route and all links to it | Replaced by `/package/?slug=` (no `/item` route exists) | Done |
-| Flat 12-label category rail | Replaced by real hierarchical categories | M1 |
+| Fixed-label category rail (the implementation is already the dynamic top-16 `CategoryRail`; this row removes any doc-level fixed list) | Replaced by real hierarchical categories | M1 |
 | Per-capability (as opposed to per-host) install snippets, i.e. `nativeSnippet(host, slug, command, args)` and the "Direct Native" toggle | Contradicts one-bridge-per-host (D-010); bypasses the daemon | M1 |
 | Single Boolean `publisher.verified` as a trust badge | Replaced by separate source/publisher verification signals | M3 |
 | `signature_verified` defaults from source adapters | Fixed — adapters emit `unverified`; keep regression test | Done |
@@ -595,7 +595,7 @@ No surface may display, sort by, or rank on a usage, install-count, download, se
 *   omit the facet, or
 *   render an explicit `Not published` / `Unknown` empty state.
 
-Stars present in the v1 dataset are **illustrative only** (the builder seeds them from hard-coded maps), must be labelled as such, and must not be promoted to a trust or usage signal. Review counts, "verified" checkmarks, and security grades are forbidden until a real source exists.
+The v1 dataset contains **no popularity signal**: `stars` is present on all 5,814 rows but `null` on every row, and the builder hard-codes `"stars": null`. Stars MUST therefore render as `Not published` — never as illustrative, estimated, or seeded values, and never as a trust or usage signal. Review counts, "verified" checkmarks, and security grades are forbidden until a real source exists.
 
 ---
 

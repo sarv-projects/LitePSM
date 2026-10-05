@@ -94,10 +94,13 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
     2. Invoke `adapter.DetectConfig(ctx, domain.ScopeUser)`.
     3. Assert returned path matches the platform specification.
 
-### Test Case 2: Missing Configuration Fallback Flow
+### Test Case 2: Missing Configuration Fallback Flow (`DESIGNED` — no non-interactive setup)
 *   **Objective:** Verify the interactive CLI gracefully prompts when configuration is missing.
-*   **Procedure:**
-    1. Run `litespm setup cline` in an environment without VS Code.
+*   **Status:** There is **no non-interactive `litespm setup <agent>`**. `setup`/`init` simply
+    launches the interactive wizard (`cmd/litespm/main.go:62-63`), which requires a TTY. The
+    behaviour below is the intended design and is not currently scriptable.
+*   **Procedure (intended):**
+    1. Run `litespm` (wizard) in an environment without VS Code and choose Cline.
     2. Assert stdout displays: `[!] Unable to locate default configuration file`.
     3. Pass custom path via stdin (`fixtures/hosts/cline/existing_servers_cline_mcp_settings.json`).
     4. Assert configuration completes successfully.
@@ -110,29 +113,37 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
     3. Assert `filesystem` and `github` entries remain intact in the modified file.
     4. Assert `mcpServers.litespm` is injected with the version-pinned executable path.
 
-### Test Case 4: Pre-Existing Tool Discovery & Read-Only Detection (Installed Tab)
-*   **Objective:** Verify that LiteSPM scans and correctly detects pre-existing native tools in read-only mode.
+### Test Case 4: Pre-Existing Tool Discovery & Read-Only Detection (Installed Tab) (`DESIGNED` — `adopt_tool` does not exist)
+*   **Objective:** Verify that LiteSPM scans and detects pre-existing native tools in read-only mode.
+*   **Status:** Detection is implemented (`tools.list` returns external components from
+    `DetectPreExistingComponents`, `cmd/litespm/main.go:1262-1276`). There is **no `adopt_tool()`
+    tool and no `LPSM-HOST-READONLY-EXTERNAL` error code**; adopting an external tool is not
+    implemented ([STATUS.md](STATUS.md) §5).
 *   **Procedure:**
     1. Boot Bridge Shim with `--host cline`.
     2. Call MCP tool `list_installed()`.
-    3. Assert returned list includes:
-       - `filesystem` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: true`, `readOnly: true`
-       - `github` $\rightarrow$ `status: "disabled"`, `greenLight: false`, `isExternal: true`, `readOnly: true`
-       - `litespm` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: false`
-    4. Assert attempting to mutate/toggle external tools without `adopt_tool()` returns `LPSM-HOST-READONLY-EXTERNAL`.
+    3. Assert the returned list includes the pre-existing tools marked `isExternal: true` with no
+       health status (the daemon does not health-check installs, so status renders `— Unknown`
+       rather than `ready`/`disabled`).
+    4. Assert no mutation of external entries is possible (there is no adopt/toggle tool).
 
 ### Test Case 5: Slash Command (`/marketplace`) Registration
-*   **Objective:** Confirm slash command trigger is registered for the agent.
-*   **Procedure:**
-    1. For **Pi Agent**: verify `~/.pi/agent/extensions/litespm.ts` exists and registers `/marketplace`.
-    2. For **Cline**: verify custom instructions or prompt templates contain `/marketplace` trigger keyword.
-    3. For **Grok Build**: verify `.grok/config.toml` command hook exists.
+*   **Objective:** Confirm the host descriptor advertises the `/marketplace` trigger.
+*   **Status:** Host adapters perform an **MCP-entry merge only**; they record
+    `SlashCommandTrigger` metadata (`internal/host/*.go`) but do **not** write an extension, custom
+    instruction, or command hook into the host. Assertions 1 and 3 below therefore describe an
+    intended projection, not shipped behavior.
+*   **Procedure (implemented part):** Assert the adapter descriptor for each host reports
+    `SlashCommandTrigger: "/marketplace"` (`internal/host/targets_data_test.go:376`).
 
-### Test Case 6: Dynamic Runtime Adapter Advisory Fetching
+### Test Case 6: Dynamic Runtime Adapter Advisory Fetching (`DESIGNED` — not implemented)
 *   **Objective:** Verify the client queries the remote manifest at runtime for compatibility advisories without executing remote code.
-*   **Procedure:**
+*   **Status:** The setup wizard does **not** fetch `/v1/current.json` and there is **no
+    `--catalog-url` flag**; advisories are compiled-in strings (`cmd/litespm/wizard.go:138-143`).
+    Runtime advisory fetching is not implemented.
+*   **Procedure (intended):**
     1. Start local mock HTTP server serving `/v1/current.json` (with its `advisories` array; there is no separate `/v1/adapters.json` endpoint).
-    2. Execute `litespm` with `--catalog-url http://127.0.0.1:<mock-port>`.
+    2. Point the client at it via `LITESPM_REGISTRY_URL` (the implemented override; no `--catalog-url` flag exists).
     3. Verify that advisory metadata and version warnings from `current.json` appear without executing remote code.
     4. Disconnect network and verify clean fallback to compiled-in adapters.
 
@@ -150,6 +161,6 @@ go test -v ./internal/host/...
 # so adapter-specific tests are selected with -run filters, e.g.:
 go test -v ./internal/host/... -run 'Test(PiAgent|GrokBuild|Codex|ClaudeCode|OpenCode)Adapter'
 
-# Run end-to-end integration harness
-go test -v ./tests/e2e/hosts_test.go
+# Run end-to-end integration harness (package `test`: canary, conformance, hostile-archive fuzz)
+go test -v ./test/...
 ```

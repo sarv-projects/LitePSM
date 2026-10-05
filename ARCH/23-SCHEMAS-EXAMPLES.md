@@ -15,7 +15,7 @@ All public contracts and local plans are validated against strict JSON Schema (D
 
 ## 2. Specification: `install-plan.schema.json`
 
-> Implementation note (honest gap): the daemon's `resolver.prepare_plan` preview in `cmd/litespm/main.go:registerCoreHandlers` currently emits `plan_<listing>_<version>` placeholder IDs, and `internal/install/engine.go:Execute` emits `inst_<listing>_<digest8>` install IDs. Both violate the strict patterns below (`^plan_[0-9A-Za-z]{26}$`, `^inst_[0-9A-Za-z_-]{20,36}$` with no colons). Until ULID issuance lands, treat handler-emitted IDs as placeholders: validate persisted `plans`/`installs` rows strictly, and do not present preview IDs as conforming.
+> Implementation note (ID honesty). Plan IDs are now real, not placeholders: `newPlanID()` (`cmd/litespm/main.go`) emits `plan_` followed by 26 Crockford base32 symbols drawn from `crypto/rand`, matching the schema pattern `^plan_[0-9A-Za-z]{26}$` below. Install IDs are deterministic, not random: `internal/install/engine.go:Execute` emits `inst_<scope>_<safeListing>_<digest8>` (scope `user`/`project`; `digest8` = first 8 hex chars of the tree SHA-256). **No JSON Schema declares an install-ID pattern**; the real validation is the Go regex `RegexInstallID = ^inst_[0-9A-Za-z_-]{10,64}$` in `internal/domain/identifiers.go`. The earlier `^inst_[0-9A-Za-z_-]{20,36}$` reference was a phantom that never appeared in `schemas/` or code, and has been removed. Persisted `plans`/`installs` rows should still be validated strictly against the patterns that actually exist.
 
 ```json
 {

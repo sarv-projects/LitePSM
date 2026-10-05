@@ -1,6 +1,6 @@
 # ARCH-30 — Data-Driven Agent Bridge Targets
 
-Status: **implemented.**
+Status: **`WIRED`.** The 44-row table is compiled into the adapter registry (`internal/host/registry.go:34-41`) and drives `host detect/setup` through `GenericAdapter`; `litespm host list` reports 50 adapters (6 bespoke + 44 generic).
 Related: [16 — Host Adapters](16-HOST-ADAPTERS.md), [14 — Bridge & Provider MCP](14-BRIDGE-PROVIDER-MCP.md), [29 — Connector System Design](29-CONNECTOR-SYSTEM-DESIGN.md).
 
 ---
@@ -28,7 +28,7 @@ The six hand-written adapters are **retained unchanged**. They predate this desi
 
 A row ships only if its config path, MCP key and entry shape were read from that agent's own documentation or repository. `DocsURL` records the source and is required — enforced by `TestBridgeTargetRowsAreComplete`.
 
-Agents that could not be verified are **absent from the table**, with the reason recorded in a comment block above it so the gap is not silently re-filled later. Current exclusions and their causes:
+Agents that could not be verified are **absent from the table**, with the reason recorded in a comment block above it so the gap is not silently re-filled later. The list below names **24 agents**, but one of them (`roo`) is excluded only at *user scope* — its repo-scope target **is** shipped — so the number of agents with **no** shipped bridge target is **23** (see §10). Current exclusions and their causes:
 
 | Excluded | Reason |
 |---|---|
@@ -73,7 +73,15 @@ MCP key paths in use: `mcpServers`, nested `mcp` and `amp.mcpServers`, `mcp.serv
 
 `resolveHomeDir()` honours `USERPROFILE` on Windows and `HOME` on Unix. `%APPDATA%` is read **only** when `runtime.GOOS == "windows"` — gating on the variable merely being set silently redirected config paths during testing, since `APPDATA` is meaningless on Unix. `XDG_CONFIG_HOME` is honoured via `xdgConfigDir`.
 
-Per-agent overrides implemented where documented: `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `XDG_CONFIG_HOME`, `AUTOHAND_HOME`, `HERMES_HOME`, `VIBE_HOME`, `SARVAM_HOME`, `GEMINI_CLI_HOME`, `COPILOT_HOME`, `KIMI_CODE_HOME`, `QODER_CONFIG_DIR`, `QODERCN_CONFIG_DIR`, `KODE_CONFIG_DIR`, `AIDER_DESK_HOME_DIR`, `ASTRBOT_ROOT`, `OH_PERSISTENCE_DIR`, `CRUSH_GLOBAL_CONFIG`.
+Per-target overrides actually read by this resolver (`internal/host/targets_data.go`): `XDG_CONFIG_HOME`
+(via `xdgConfigDir`), `ASTRBOT_ROOT`, `GEMINI_CLI_HOME`, `COPILOT_HOME`, `KIMI_CODE_HOME`,
+`QODER_CONFIG_DIR`, `QODERCN_CONFIG_DIR`, `KODE_CONFIG_DIR`, `OH_PERSISTENCE_DIR`,
+`CRUSH_GLOBAL_CONFIG`.
+
+Agent-home variables `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GROK_HOME`, `AUTOHAND_HOME`,
+`HERMES_HOME`, `VIBE_HOME` and `SARVAM_HOME` are honoured by **`internal/skills`** only — they
+select where skill directories are written, not where a host's config file lives; no host adapter
+reads them (`ARCH/16` §3.4–§3.5). `AIDER_DESK_HOME_DIR` is not read anywhere in the tree.
 
 ## 7. Integrity tests
 
@@ -106,7 +114,7 @@ Registered adapters after this change: **50** (6 hand-written + 44 verified targ
 * `TolerateComments` is advisory metadata. The writer preserves comments for all JSON targets regardless; the flag records which hosts document the format as comment-tolerant.
 * `DetectPaths` and `DetectBinaries` are recorded but install-detection is not yet wired into a CLI command; `DetectInstalledHosts` currently reports verification state only.
 * Several rows note that a **Windows-native path is derived from `~` expansion** rather than stated by the vendor. `resolveHomeDir` applies the standard expansion, which is correct but is an inference, not a quotation.
-* No target supports TOML array-of-tables or YAML. Those two formats account for the majority of the 23 exclusions.
+* No target supports TOML array-of-tables or YAML. Those two formats account for the majority of the 23 fully-excluded agents (the §3 table names 24 agents; `roo` is a scope-only exclusion, shipped at repo scope).
 
 ## 10. Relationship to the 77 skill targets
 
@@ -115,4 +123,4 @@ Two different registries, deliberately not conflated:
 * **Bridge targets** (this document, 44 rows) — agents whose **config file LiteSPM can edit** to register the MCP bridge.
 * **Skill install targets** (`internal/skills/agents.go`, 77 entries) — agents where LiteSPM can **write a `SKILL.md`** into a skills directory.
 
-The sets overlap but are not equal. 67 agents were researched for bridge support (44 shipped, 23 excluded). Some skill targets are IDE extensions with no CLI config file; some bridge targets are cloud products with no skills directory. `litespm host list` reports bridge adapters only — it does not claim skill coverage.
+The sets overlap but are not equal. 67 agents were researched for bridge support: **44 shipped** and **23 fully excluded**. (The §3 exclusion table names 24 agents, but `roo` is excluded only at user scope; its repo-scope target is shipped, so it is counted among the 44, not among the 23.) Some skill targets are IDE extensions with no CLI config file; some bridge targets are cloud products with no skills directory. `litespm host list` reports bridge adapters only — it does not claim skill coverage.
