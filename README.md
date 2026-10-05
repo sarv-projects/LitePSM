@@ -28,7 +28,7 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `DESIGNED` | `ARCH/00`–`ARCH/37` exist. `ARCH/24` is an aspirational inventory, not a compiled one; `ARCH/18` specifies an output tree (`index.json`, `shards/`, `items/`) that the compiler does not emit (those outputs are labelled `DESIGNED`) |
 | **Phase B** | **Foundations, Storage & Local IPC** | `TESTED` | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL, 22 tables), `internal/ipc` (named pipes / Unix sockets). Contract tests bind; see [STATUS.md](STATUS.md) §1 |
 | **Phase C** | **Static Catalog & Discovery Plane** | `SHIPPED` | `internal/catalogbuild` + `litespm catalog build` are `TESTED` (real-dataset + end-to-end build→serve→sync→search tests); the release tree **is published** and `litespm catalog sync` was verified against the live origin from a clean data root (2026-10-05: release `rel-2026-10-05-01`, 5,814 indexed). `ARCH/18` §1–§2's `index.json`/`shards`/`items` remain un-emitted (shards are `DESIGNED`) |
-| **Phase D** | **Safe Extraction & Skill Store** | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | `internal/resolver` and `internal/skills` are reached from production paths and `internal/artifact` is test-covered ([STATUS.md](STATUS.md) §1/§3); `internal/install` is `IMPLEMENTED`. The daemon's `install.execute` supplies no artifact source, so an agent-driven install cannot complete — [ARCH/31 §4.1](ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#41-the-agent-facing-install-path-cannot-complete--wired-is-false) |
+| **Phase D** | **Safe Extraction & Skill Store** | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | `internal/resolver` and `internal/skills` are reached from production paths and `internal/artifact` is test-covered ([STATUS.md](STATUS.md) §1/§3); skills install end to end (verified against the live catalog). The archive engine still has no artifact source for MCP/plugin — [ARCH/31 §4.1](ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#41-the-agent-facing-install-path-cannot-complete--wired-is-false) |
 | **Phase E** | **Process Supervision, Bridge & Host Adapters** | `WIRED` for hosts; `IMPLEMENTED` for provider runtime | 6 bespoke adapters + 44 generic BridgeTargets (50 total, `ARCH/30`) + 77 skill targets are registered. Provider autostart is inert: the `providers` table is never populated by non-test code (finding `m4`). See [STATUS.md](STATUS.md) §1/§4 |
 | **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | `WIRED` (secrets) / `IMPLEMENTED` (mcpclient, auth) | Dual-profile client, native OS keystores, OAuth PKCE loopback exist; the secrets vault is opened before serving (`WIRED`), but secrets are not injected at provider launch and `mcpclient` / `auth` have zero production importers — the `AuthBroker` currently has no consumer (finding 99), [STATUS.md](STATUS.md) §1/§4 |
 | **Phase G** | **In-Agent `/marketplace` Panel & Web UI** | `WIRED` for the static web marketplace; panel `WIRED` except install | The Next.js static export and Bridge tool surface exist; the panel's install action is blocked by Phase D. See [STATUS.md](STATUS.md) §1 |
@@ -204,8 +204,9 @@ render the installed view as a table. Tool-by-tool state is in [STATUS.md](STATU
 *   **Discovery (`search_catalog`, `get_extension`):** resolve against the daemon over real catalog
     data (`catalog.search` / `catalog.get_item`).
 *   **Plan (`prepare_install`):** resolves a real plan (`resolver.prepare_plan`).
-*   **Install (`request_install`):** reaches `install.execute`, which supplies **no artifact
-    source** and therefore cannot complete — [STATUS.md](STATUS.md) §3.
+*   **Install (`request_install`):** reaches `install.execute`. Skill listings install their real
+    files; MCP/plugin listings fail closed with `LPSM-ARTIFACT-UNAVAILABLE` because the catalog
+    carries no artifact locator for them — [STATUS.md](STATUS.md) §3.
 *   **Skills (`load_skill`, `read_skill_resource`):** resolve against real skill data.
 *   **Capabilities & invocation (`search_capabilities`, `describe_capability`,
     `invoke_capability`, `get_invocation`, `cancel_invocation`):** return an explicit `-32601`
@@ -351,7 +352,7 @@ litespm setup | init                     same as `litespm`
 litespm version                          version + protocol + build target
 litespm search <query>                   search the local catalog index
 litespm install <id> [--version <v>] [--scope user|project] [--workspace <id>]
-                                         NOTE: uses a synthetic in-memory package (see §3.1 / STATUS.md)
+                                         NOTE: skills install for real; MCP/plugin need artifact wiring (STATUS.md)
 litespm uninstall [--dry-run]            remove the bridge entry from every host config
 litespm catalog sync                     fetch the release pointer (live origin — STATUS.md §2)
 litespm daemon serve                     start the supervisor + IPC engine

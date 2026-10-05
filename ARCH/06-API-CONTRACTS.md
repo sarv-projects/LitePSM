@@ -223,7 +223,7 @@ Status column = highest honest state per [STATUS.md](../STATUS.md) §1/§4.
 | `catalog.search` | Queries the local catalog index with filters and limits | Resolves (`:1286`); empty until `catalog sync` succeeds |
 | `catalog.get_item` | Retrieves full listing metadata and version history | Resolves (`:1340`) |
 | `resolver.prepare_plan` | Pure dependency resolution producing an `InstallPlan`, persisted with `planHash` | Resolves (`:1359`) |
-| `install.execute` | Submits approval and begins transactional execution | `IMPLEMENTED`, **cannot complete**: no artifact source (`main.go:1420-1426`, `internal/install/engine.go:204-207`) |
+| `install.execute` | Submits approval and begins transactional execution | Resolves **for skill listings** (`main.go` routes `kind=skill` through the skills ledger); MCP/plugin return `LPSM-ARTIFACT-UNAVAILABLE` (no artifact source; `internal/install/engine.go:204-207`) |
 | `install.remove` | Safe removal and unreferenced CAS pruning | Resolves (`:1444`) |
 | `skills.list` | Returns progressive-disclosure skill index for installed trees | Resolves (`:1467`) |
 | `skills.load_body` | Retrieves progressive `SKILL.md` body on demand | Resolves (`:1522`) |
@@ -281,10 +281,11 @@ Dispatch status (per [STATUS.md](../STATUS.md) §1/§4):
 
 *   **Resolve:** `search_catalog` (`shim.go:282`), `get_extension` (`:305`), `prepare_install`
     (`:323`), `list_installed` (`:359`), `load_skill` (`:404`), `read_skill_resource` (`:433`).
-*   **Reach but cannot complete:** `request_install` (`shim.go:341`) forwards to `install.execute`,
-    which supplies no `ArchiveSource`/`TreeSource`; the engine rejects it
-    (`internal/install/engine.go:204-207`). **An agent cannot install anything through
-    `/marketplace` today.**
+*   **Resolve but only complete for skills:** `request_install` (`shim.go:341`) forwards to
+    `install.execute`; for `kind=skill` it installs real files through the skills ledger. For
+    MCP/plugin it supplies no `ArchiveSource`/`TreeSource` and returns `LPSM-ARTIFACT-UNAVAILABLE`
+    (`internal/install/engine.go:204-207`). **An agent can install skills through `/marketplace`
+    today; MCP/plugin installs cannot complete until an artifact source exists.**
 *   **Daemon answers `-32601`:** `search_capabilities` (`:370`), `describe_capability` (`:388`),
     `invoke_capability` (`:452`), `get_invocation` (`:475`), `cancel_invocation` (`:491`) — the
     shim forwards, the daemon rejects with the reasons in §3.2.

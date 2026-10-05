@@ -45,6 +45,12 @@ type SkillSource struct {
 	// `https://host/repo@ref`, or a `?ref=` query parameter. Empty means the
 	// source default branch.
 	Pin string
+	// Subpath is the directory inside the repository that holds the skill,
+	// set when the source was a browse URL such as
+	// `https://github.com/owner/repo/tree/<ref>/skills/name`. Empty means the
+	// repository root. Callers that scan the checkout must join this onto the
+	// clone root before discovering skills.
+	Subpath string
 }
 
 // knownGitHosts are hosts where a bare `owner/name` path is a git remote and a
@@ -129,6 +135,33 @@ func ParseSkillSource(raw string) (SkillSource, error) {
 	u.Path = strings.TrimRight(u.Path, "/")
 	u.RawPath = ""
 
+	// A GitHub *browse* URL names a directory inside a repository
+	// (/<owner>/<repo>/tree/<ref>/<path>), not the repository itself. The
+	// generic ".git" suffixing below would produce a clone URL like
+	// "/owner/repo/tree/main/skills/x.git", which no git server serves, so
+	// split it into a repository clone target plus the pinned ref and subpath.
+	if isGitHubHost(u.Host) {
+		if repoPath, ref, sub, ok := splitGitTreeBrowsePath(u.Path); ok {
+			clone := fmt.Sprintf("https://%s%s.git", u.Host, repoPath)
+			display := strings.TrimSuffix(clone, ".git")
+			if sub != "" {
+				display += "/" + sub
+			}
+			if pin == "" {
+				pin = ref
+			}
+			return SkillSource{
+				Kind:     "url",
+				Display:  display,
+				CloneURL: clone,
+				RepoPath: strings.TrimPrefix(repoPath, "/"),
+				Git:      true,
+				Pin:      pin,
+				Subpath:  sub,
+			}, nil
+		}
+	}
+
 	// Only infer a git clone URL on a recognized git host; otherwise leave the
 	// URL exactly as the user wrote it.
 	if knownGitHosts[u.Host] && !strings.HasSuffix(u.Path, ".git") {
@@ -168,6 +201,31 @@ func (s SkillSource) RecordedRef(observedCommit string) string {
 }
 
 var validOwnerRepo = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`).MatchString
+
+// isGitHubHost reports whether the host is GitHub's web front end, whose
+// /tree/<ref>/<path> browse URLs address a directory rather than a repository.
+func isGitHubHost(host string) bool {
+	return host == "github.com" || host == "www.github.com"
+}
+
+// splitGitTreeBrowsePath splits a GitHub browse path
+// /<owner>/<repo>/tree/<ref>[/<subpath>...] (or /blob/) into the repository
+// path, the ref and the subpath. It reports false for anything that is not a
+// browse path.
+//
+// The ref is taken as a single path segment: browse URLs whose ref contains a
+// slash (a feature branch) are ambiguous to parse and are left to the generic
+// handling rather than guessed at.
+func splitGitTreeBrowsePath(p string) (repoPath, ref, subpath string, ok bool) {
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 4 || parts[0] == "" || parts[1] == "" || parts[3] == "" {
+		return "", "", "", false
+	}
+	if parts[2] != "tree" && parts[2] != "blob" {
+		return "", "", "", false
+	}
+	return "/" + parts[0] + "/" + parts[1], parts[3], strings.Join(parts[4:], "/"), true
+}
 
 // guessRepoPath extracts "owner/name" from a github.com URL for display and
 // skills.sh detail links. Returns "" when the URL is not a GitHub repo URL.

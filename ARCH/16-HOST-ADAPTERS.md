@@ -175,7 +175,7 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 | `search_catalog` | `catalog.search` | resolves |
 | `get_extension` | `catalog.get_item` | resolves |
 | `prepare_install` | `resolver.prepare_plan` | resolves (plan only) |
-| `request_install` | `install.execute` | **reaches the handler but cannot complete** — no artifact source is supplied, so an agent cannot install anything (`STATUS.md` §3) |
+| `request_install` | `install.execute` | **Completes for skills** (installs files through the skills ledger); MCP/plugin fail closed with `LPSM-ARTIFACT-UNAVAILABLE` (no artifact source) (`STATUS.md` §3) |
 | `list_installed` | `tools.list` | resolves |
 | `load_skill` | `skills.load_body` | resolves |
 | `read_skill_resource` | `skills.read_resource` | resolves |
@@ -208,7 +208,7 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 ### Tab 1: MCP Servers
 *   Search bar for filtering MCP servers by keyword or category (`database`, `developer-tools`, `browser`).
 *   Lists server cards with publisher, verified status, and transport (`stdio` / `Streamable HTTP`).
-*   One-click "Install" action triggering the `prepare_install` flow (plan preview only — see the table above; execution cannot complete).
+*   One-click "Install" action triggering the `prepare_install` flow (plan preview). Execution completes for skills and fails closed for MCP/plugin (see the table above).
 
 ### Tab 2: Agent Skills
 *   Browse portable `SKILL.md` skills from `agentskills.io` and public Git sources.

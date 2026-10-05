@@ -58,7 +58,7 @@ Two honesty notes bound this diagram:
 
 ## 2. Artifact Extraction & Filesystem Safety
 
-Third-party packages (skills, MCP distribution archives, plugins) are untrusted. Artifact extraction is centralized in `internal/artifact` and called from the install engine (`internal/install/engine.go:322,345`), which the CLI install path exercises end to end with a local synthetic zip (`cmd/litespm/main.go:856-867`).
+Third-party packages (skills, MCP distribution archives, plugins) are untrusted. Artifact extraction is centralized in `internal/artifact` and called from the install engine (`internal/install/engine.go:322,345`). No production path currently supplies an archive to that engine (MCP/plugin installs fail closed with `LPSM-ARTIFACT-UNAVAILABLE`); skills install as files through `internal/skills`, which refuses symlinks and bounds the copied tree.
 
 ### 2.1 Extraction Safety Thresholds
 

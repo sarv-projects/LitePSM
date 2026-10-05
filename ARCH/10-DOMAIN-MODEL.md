@@ -193,10 +193,10 @@ type InstallRecord struct {
 ```
 **Written in production:** yes — `CommitInstallOperation` persists the record and
 its `InstallComponentRecord` (`internal/install/engine.go:462` →
-`internal/state/repositories.go:343`). The only reachable writer today is the
-CLI's synthetic-zip path (`cmd/litespm/main.go:856-872`, `ArchiveSource` over an
-in-memory archive); `install.execute` cannot reach commit because the handler
-supplies no artifact source ([STATUS.md](../STATUS.md) §3).
+`internal/state/repositories.go:343`). No production path reaches this writer
+today: no archive artifact source is supplied, so MCP/plugin installs fail
+closed (`LPSM-ARTIFACT-UNAVAILABLE`). Skill installs are recorded as ordinary
+`InstallRecord` rows through the skills ledger path ([STATUS.md](../STATUS.md) §3).
 
 ### 2.6 HostRegistrationRecord
 Tracks integration bindings injected into agent host configurations:

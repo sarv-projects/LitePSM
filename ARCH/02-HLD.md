@@ -159,15 +159,15 @@ sequenceDiagram
         User->>Host: Approves installation
         Host->>Shim: MCP tools/call: request_install(planId, approvalToken)
         Shim->>Daemon: IPC: install.execute(planId, approvalToken)
-        Note over Daemon: install.execute supplies no artifact source<br/>(cmd/litespm/main.go:1420-1426); the engine refuses<br/>before journaling (internal/install/engine.go:204-206).
-        Daemon-->>Shim: ERROR: no artifact or tree source provided
-        Shim-->>Host: MCP tool error — install cannot complete (STATUS §3)
+        Note over Daemon: skills install through the skills ledger;<br/>MCP/plugin fail closed (LPSM-ARTIFACT-UNAVAILABLE —<br/>no artifact source; internal/install/engine.go:204).
+        Daemon-->>Shim: ERROR: LPSM-ARTIFACT-UNAVAILABLE (MCP/plugin)
+        Shim-->>Host: MCP tool error — MCP/plugin install cannot complete (STATUS §3)
     else Host does not support elicitation (human CLI path)
         User->>User: litespm install "listing-id" --version "ver" --scope user or project
-        Note over User: The CLI takes no --plan-id: it does not consume the persisted plan.<br/>It packages a local synthetic archive (cmd/litespm/main.go:851-872).
+        Note over User: The CLI takes no --plan-id: it does not consume the persisted plan.<br/>It routes by kind: skills install real files; MCP/plugin fail closed.
     end
 
-    Note over Daemon,Store: The steps below are the engine's real executed path; today only the<br/>CLI's synthetic archive reaches it.
+    Note over Daemon,Store: The steps below are the engine's real executed path; today nothing<br/>supplies an archive artifact source, so only skill installs (a different path) complete.
 
     Daemon->>Daemon: Verify planHash & expiry when a planId was bound (engine.loadPlan)
     Daemon->>DB: INSERT INTO operations (state='created')

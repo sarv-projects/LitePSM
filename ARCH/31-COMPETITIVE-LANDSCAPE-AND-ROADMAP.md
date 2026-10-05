@@ -103,6 +103,18 @@ fabricating the package locally. `cmd/litespm/main.go:872` is honest about this 
 the highest-value single fix in the repository: it is the difference between a package manager and
 a config editor.
 
+> **Update (2026-10-05).** The **skills half of this defect is closed.** Skills are files, not
+> archives, so they never needed the artifact engine: `install.execute` and `litespm install` now
+> route `kind=skill` through `installSkillFromListing` (`cmd/litespm/install_skill.go`) onto the
+> ledger- and policy-gated skills path, with GitHub tree/blob browse URLs resolved to a clone
+> target + pinned ref + subpath (`internal/skills/install.go`). Verified against the live catalog
+> (`skill:phuryn:ab-test-analysis`): `prepare_install` → `install.execute` cloned the repo, wrote
+> `SKILL.md` into the detected agent directory, and persisted the install record
+> (`TestInstallExecuteSkillThroughDaemon`). The **synthetic package is removed**: MCP and plugin
+> listings now fail closed with `LPSM-ARTIFACT-UNAVAILABLE` because the published catalog carries
+> no artifact locator for them. Closing the archive half (MCP/plugin) is the remaining `M3` work;
+> the artifact source that would feed it is ARCH/17 §4's `ArtifactFetcher` (`DESIGNED`).
+
 ### 4.2 The published catalog and the client read different files — the sync path is dead at the origin
 
 `internal/catalog.Client.Sync` fetches `/v1/current.json`, then `/v1/releases/<id>/manifest.json`

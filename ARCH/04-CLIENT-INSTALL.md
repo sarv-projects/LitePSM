@@ -31,8 +31,8 @@ LiteSPM provides both an interactive terminal interface for humans and a structu
 │     ├── get_extension(id) / list_installed()         — resolves        │
 │     ├── load_skill(id) / read_skill_resource(...)    — resolves        │
 │     ├── prepare_install(id, version) -> InstallPlan  — resolves        │
-│     ├── request_install(planId, approvalToken)       — reaches         │
-│     │     install.execute but cannot complete (no artifact source)     │
+│     ├── request_install(planId, approvalToken)       — completes for    │
+│     │     skills (installs files); MCP/plugin need artifact source       │
 │     └── search_capabilities / describe_capability /                    │
 │           invoke_capability / get_invocation /                         │
 │           cancel_invocation                      — JSON-RPC -32601     │
@@ -45,12 +45,12 @@ LiteSPM provides both an interactive terminal interface for humans and a structu
 > `litespm setup` / `litespm init` simply open the interactive wizard (they take no agent
 > argument — use `litespm host setup <host-id>` for scripted setup).
 >
-> **Remote install resolution is not wired.** `litespm install <listing-id> [--version <ver>]
-> [--scope user|project] [--workspace <id>]` exercises the real resolver/engine/CAS/journal path
-> but sources bytes from an **in-memory synthetic archive** and prints
-> `local synthetic package; remote resolve/verify not yet wired` (`cmd/litespm/main.go:851-872`);
-> the bridge's `request_install` cannot complete at all because `install.execute` supplies no
-> artifact source ([STATUS.md](../STATUS.md) §3).
+> **Remote archive install resolution is not wired.** `litespm install <listing-id> [--version <ver>]
+> [--scope user|project] [--workspace <id>]` resolves the listing from the local catalog index and
+> routes by kind: **skills install for real** (fetch → ledger → record), MCP/plugin fail closed with
+> `LPSM-ARTIFACT-UNAVAILABLE` because the published catalog carries no artifact locator for them.
+> The earlier in-memory synthetic archive is gone; the bridge's `request_install` completes for
+> skills and fails closed for the rest ([STATUS.md](../STATUS.md) §3).
 
 ---
 

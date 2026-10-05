@@ -69,6 +69,13 @@ type harness struct {
 // newHarness builds the daemon's real handler set over an in-memory pipe.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil)
+}
+
+// newHarnessWith is newHarness plus extra catalog listings, so tests can drive
+// install.execute for kinds other than the seeded MCP listing.
+func newHarnessWith(t *testing.T, extra []*domain.Listing) *harness {
+	t.Helper()
 	tempDir := t.TempDir()
 	paths := &config.PlatformPaths{
 		ConfigRoot:  filepath.Join(tempDir, "config"),
@@ -90,7 +97,7 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	catClient := catalog.NewClient("https://registry.invalid", filepath.Join(tempDir, "catalog"), nil)
-	catClient.IndexListings([]*domain.Listing{{
+	seed := []*domain.Listing{{
 		SchemaVersion: 2,
 		ID:            testListingID,
 		Kind:          domain.KindMCP,
@@ -100,7 +107,9 @@ func newHarness(t *testing.T) *harness {
 			{Version: "1.0.0", ImmutableRef: "git:1111111111111111111111111111111111111111"},
 			{Version: "2.0.0", ImmutableRef: "git:2222222222222222222222222222222222222222"},
 		},
-	}})
+	}}
+	seed = append(seed, extra...)
+	catClient.IndexListings(seed)
 
 	store, err := secrets.NewMemorySecretStore()
 	if err != nil {
@@ -322,7 +331,7 @@ func TestInstallExecute_ErrorMapping(t *testing.T) {
 		}
 	})
 
-	t.Run("valid plan without an artifact source fails explicitly", func(t *testing.T) {
+	t.Run("valid plan for a kind without an artifact locator fails explicitly", func(t *testing.T) {
 		var plan domain.InstallPlan
 		if err := h.client.Call(ctx, "resolver.prepare_plan", map[string]any{"id": testListingID, "version": "1.0.0"}, &plan); err != nil {
 			t.Fatalf("prepare_plan failed: %v", err)
@@ -333,7 +342,7 @@ func TestInstallExecute_ErrorMapping(t *testing.T) {
 		if code := rpcCode(t, err); code != ipc.CodeInternalError {
 			t.Fatalf("code=%d, want %d (err=%v)", code, ipc.CodeInternalError, err)
 		}
-		if !strings.Contains(err.Error(), "no artifact or tree source provided") {
+		if !strings.Contains(err.Error(), "LPSM-ARTIFACT-UNAVAILABLE") {
 			t.Errorf("unexpected failure reason: %v", err)
 		}
 

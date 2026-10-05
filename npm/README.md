@@ -59,9 +59,10 @@ checks it against the published SHA-256 checksums — aborting on a mismatch, bu
 **warning and proceeding unverified** if the manifest has no entry for your
 platform (see [`SECURITY.md`](https://github.com/sarv-projects/LiteSPM/blob/main/SECURITY.md)).
 
-> **Honest status.** The catalog is live end-to-end: `litespm catalog sync` fetches the published
-> release from the origin and indexes it. The install path is still not end-to-end — `litespm
-> install` uses a synthetic local package because remote resolve/verify is not wired. See
+> **Honest status.** The catalog is live end-to-end and skills install from it
+> (`litespm install <skill-id>` fetches the source and writes the skill files).
+> MCP and plugin installs are not end-to-end: the published catalog carries no
+> artifact locator for them, so they fail closed. See
 > [`STATUS.md`](https://github.com/sarv-projects/LiteSPM/blob/main/STATUS.md).
 
 ## Quickstart
@@ -69,7 +70,7 @@ platform (see [`SECURITY.md`](https://github.com/sarv-projects/LiteSPM/blob/main
 ```bash
 litespm                    # interactive setup wizard
 litespm search postgres    # search the federated catalog
-litespm install <id>       # install from a synthetic local package (remote resolve/verify not wired)
+litespm install <id>       # install a capability (skills install for real; MCP/plugin pending)
 litespm host list          # show supported agents
 litespm doctor             # run local health checks
 litespm self-update        # update the binary
@@ -93,9 +94,9 @@ Inside a configured agent, just type:
   paths, symlinks, device files, case-fold collisions, and oversize payloads,
   and unpacks into a content-addressed store.
 - **Fail-closed by design.** Effectful actions are intended to require explicit,
-  cryptographically bound approval. Today the install path cannot complete and
-  `invoke_capability` returns `-32601`, so nothing effectful actually executes
-  yet — the wiring is tracked in [`STATUS.md`](https://github.com/sarv-projects/LiteSPM/blob/main/STATUS.md).
+  cryptographically bound approval. Skills install for real through the ledger;
+  MCP/plugin installs and `invoke_capability` (`-32601`) do not execute yet —
+  the wiring is tracked in [`STATUS.md`](https://github.com/sarv-projects/LiteSPM/blob/main/STATUS.md).
 - **Drift-bound approvals** (`IMPLEMENTED`, not yet wired). Approvals are designed
   to bind to a tool's schema fingerprint and content digest, so a change forces
   re-confirmation; the grant store is not yet reachable from a user workflow.
@@ -117,7 +118,7 @@ Inside a configured agent, just type:
 |---|---|
 | `litespm` / `litespm setup` / `init` | Interactive agent selection and setup (no non-interactive form) |
 | `litespm search <query>` | Search MCP servers, skills, and plugins |
-| `litespm install <id>` | Install from a synthetic local package (remote resolve/verify not wired) |
+| `litespm install <id>` | Install a capability (skills install for real; MCP/plugin pending an artifact source) |
 | `litespm uninstall [--dry-run]` | Remove the bridge entry from every agent host config |
 | `litespm bridge stdio --host <id>` | MCP stdio bridge used by hosts |
 | `litespm host [list\|detect\|setup\|remove]` | Inspect and configure host adapters |

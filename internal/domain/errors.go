@@ -256,6 +256,24 @@ func ErrArchiveSlip(path string) *LPSMError {
 	}
 }
 
+// ErrArtifactUnavailable reports that a capability cannot be installed because
+// no fetchable artifact was supplied for it. It is the honest fail-closed
+// answer for kinds whose artifact ingestion is not wired yet: the message names
+// the listing and the specific gap instead of presenting a fabricated package
+// as a real install.
+func ErrArtifactUnavailable(listingID, detail string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-ARTIFACT-UNAVAILABLE",
+		Message:   fmt.Sprintf("no fetchable artifact for %s: %s", listingID, detail),
+		Category:  "LPSM-ARTIFACT",
+		Retryable: false,
+		Details: map[string]any{
+			"listingId": listingID,
+			"detail":    detail,
+		},
+	}
+}
+
 func ErrHostConfigNotFound(hostID, searchedPaths string) *LPSMError {
 	return &LPSMError{
 		Code:      "LPSM-HOST-CONFIG-NOT-FOUND",

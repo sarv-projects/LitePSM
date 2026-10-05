@@ -184,7 +184,19 @@ func runSkillsAdd(args []string) {
 		observedRef = gitHeadCommit(workRoot)
 	}
 
-	found, err := skills.DiscoverSkills(workRoot)
+	scanRoot := workRoot
+	if src.Subpath != "" {
+		scanRoot = filepath.Join(workRoot, filepath.FromSlash(src.Subpath))
+	}
+	var found []skills.DiscoveredSkill
+	if src.Subpath != "" {
+		// A browse URL points at the skill directory itself, which may hold
+		// SKILL.md at its root; a repository scan deliberately skips a root
+		// SKILL.md, so use the root-inclusive discovery here.
+		found, err = discoverSkillsIncludingRoot(scanRoot)
+	} else {
+		found, err = skills.DiscoverSkills(scanRoot)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

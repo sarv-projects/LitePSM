@@ -72,7 +72,7 @@ Once configured, simply launch your agent and type:
 ```
 
 ### UX Architecture: Portable Contract vs. Rich Host UI
-*   **Portable Text / MCP Contract:** For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` exposes 12 Bridge tools. Those that resolve against the daemon today: `search_catalog`, `get_extension`, `prepare_install`, `list_installed`, `load_skill`, `read_skill_resource`. `request_install` reaches `install.execute` but cannot complete (the daemon supplies no artifact source — [STATUS.md](STATUS.md) §3). The following are `IMPLEMENTED` but return JSON-RPC `-32601` ("not implemented"): `search_capabilities`, `describe_capability`, `invoke_capability`, `get_invocation`, `cancel_invocation`.
+*   **Portable Text / MCP Contract:** For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` exposes 12 Bridge tools. Those that resolve against the daemon today: `search_catalog`, `get_extension`, `prepare_install`, `list_installed`, `load_skill`, `read_skill_resource`. `request_install` reaches `install.execute`, which **completes for skill listings** (installs real skill files through the skills ledger) and fails closed with `LPSM-ARTIFACT-UNAVAILABLE` for MCP/plugin listings, whose artifact source is not wired ([STATUS.md](STATUS.md) §3). The following are `IMPLEMENTED` but return JSON-RPC `-32601` ("not implemented"): `search_capabilities`, `describe_capability`, `invoke_capability`, `get_invocation`, `cancel_invocation`.
 *   **Rich Host Renderer:** In hosts supporting rich extension panels or terminal TUIs (e.g. Cline in VS Code or Pi Agent TUI), `/marketplace` opens the **LiteSPM Capability Panel** with 4 dedicated tabs:
 
 ```text
@@ -90,7 +90,7 @@ reads `[INSTALLED (0)]` on an empty install and grows with the ledger plus detec
 ### Tab 1: MCP Servers
 *   Full search bar filtering by name, category, or transport (`stdio` / `Streamable HTTP`).
 *   Displays verified badges and upstream GitHub links. No star, download or install counts are shown: no upstream source exposes them, so the catalog publishes none rather than an estimate.
-*   One-click install button that prepares an `InstallPlan`. **Execution is blocked** until the daemon supplies an artifact source ([STATUS.md](STATUS.md) §3).
+*   One-click install button that prepares an `InstallPlan`. **Execution completes for skills** (installs files through the skills ledger); MCP/plugin installs still need an artifact source ([STATUS.md](STATUS.md) §3).
 
 ### Tab 2: Agent Skills
 *   Search portable `SKILL.md` workflows from `agentskills.io`.

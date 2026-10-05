@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   committed release, with the pointer digest matching the served manifest;
   `litespm catalog sync` and `search` were verified against it from a clean data
   root with no registry override.
+- **Marketplace skill installs.** `litespm install <skill-id>` and the Bridge
+  `request_install` → `install.execute` path install real skills: the listing's
+  source is fetched (GitHub `/tree/<ref>/<path>` browse URLs resolve to a clone
+  target plus pinned ref and subpath), the skill is written into the detected
+  agents' skill directories through the existing ledger and policy gate, and an
+  install record is persisted. The previous in-memory synthetic package is
+  removed; MCP/plugin listings fail closed with `LPSM-ARTIFACT-UNAVAILABLE`
+  because the catalog carries no artifact locator for them.
 
 ### Changed
 

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -161,7 +159,7 @@ Usage:
 Available Commands:
   setup                       Interactive setup wizard for AI agent hosts
   search <query>              Search global catalog of MCP servers, skills, and plugins
-  install <id>                Install and verify a capability into the local CAS store
+  install <id>                Install a capability (skills install now; MCP/plugin pending artifact wiring)
   catalog sync                Synchronize latest catalog release from upstream
   catalog build               Build the static /v1 release tree from the dataset
   bridge stdio [--host h]     Launch stateless stdio MCP bridge shim for host agent
@@ -851,42 +849,53 @@ func runInstall(args []string) {
 	}
 	defer db.Close()
 
-	installEngine, err := install.NewEngine(db, paths.CASPath(), paths.StagingPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal: failed to initialize install engine: %v\n", err)
-		os.Exit(1)
-	}
-
 	ctx := context.Background()
 
-	// The CLI has no upstream artifact endpoint yet: it packages a locally
-	// generated archive so the real staging/CAS/journal path can be exercised.
-	// The success line below says exactly that — it never claims a remote
-	// package was fetched or verified.
-	artifactData := createSyntheticPackageArtifact(flags.listingID)
+	// Resolve the listing from the local catalog index so the install can route
+	// by kind. A skill installs as files through the skills ledger; every other
+	// kind needs an artifact the catalog does not carry yet and fails closed.
+	cfg, _ := config.LoadConfig("")
+	regURL := config.DefaultRegistryURL
+	if cfg != nil && cfg.Catalog.RegistryURL != "" {
+		regURL = cfg.Catalog.RegistryURL
+	}
+	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
 
 	fmt.Printf("Resolving and installing %s...\n", flags.listingID)
-	rec, err := installEngine.Execute(ctx, install.InstallOptions{
-		ListingID:   flags.listingID,
-		Version:     flags.version,
-		Scope:       flags.scope,
-		WorkspaceID: flags.workspaceID,
-		ArchiveSource: func(ctx context.Context, lid string, ver string) (io.ReadCloser, string, error) {
-			return io.NopCloser(bytes.NewReader(artifactData)), "zip", nil
-		},
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
+	listing, listingErr := catClient.GetListing(flags.listingID)
+	if listingErr != nil {
+		msg := fmt.Sprintf("listing %s is not in the local catalog index", flags.listingID)
+		if catClient.Count() == 0 {
+			msg += "; run 'litespm catalog sync' first"
+		}
+		fmt.Fprintf(os.Stderr, "Install failed: %s\n", msg)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ Installed (local synthetic package; remote resolve/verify not yet wired)\n")
-	fmt.Printf("  • Listing ID:  %s\n", flags.listingID)
-	fmt.Printf("  • Install ID:  %s\n", rec.InstallID)
-	fmt.Printf("  • Version:     %s\n", rec.Version)
-	fmt.Printf("  • Scope:       %s\n", rec.Scope)
-	fmt.Printf("  • CAS Digest:  %s\n", rec.TreeDigest)
-	fmt.Printf("  • Status:      %s\n", rec.Status)
+	if listing.Kind == domain.KindSkill {
+		home, _ := os.UserHomeDir()
+		project, _ := os.Getwd()
+		outcome, err := installSkillFromListing(ctx, db, paths.DataRoot, project, home, listing, versionOrLatest(flags.version), flags.scope, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
+			os.Exit(1)
+		}
+		printSkillInstall(outcome)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "Install failed: %v\n", domain.ErrArtifactUnavailable(flags.listingID,
+		fmt.Sprintf("the %q install path is not wired yet: the published catalog carries no artifact locator for it", listing.Kind)))
+	os.Exit(1)
+}
+
+// versionOrLatest mirrors the install engine's default: an empty requested
+// version means "latest".
+func versionOrLatest(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "latest"
+	}
+	return v
 }
 
 func runCatalogSync() {
@@ -1171,18 +1180,6 @@ func runCatalogBuild(args []string) {
 	fmt.Printf("  Manifest: %s\n", manifest.ContentDigest)
 	fmt.Printf("  Pointer:  %s\n", filepath.Join(*outDir, "v1", "current.json"))
 	fmt.Printf("  Tree:     %s\n", filepath.Join(*outDir, "v1", "releases", manifest.ReleaseID))
-}
-
-func createSyntheticPackageArtifact(listingID string) []byte {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-
-	// Add package.json or SKILL.md
-	f, _ := zw.Create("SKILL.md")
-	f.Write([]byte(fmt.Sprintf("---\nname: %s\ndescription: Package %s\n---\n# %s\nProgressive instruction workflow.\n", listingID, listingID, listingID)))
-
-	zw.Close()
-	return buf.Bytes()
 }
 
 // ARCH/20 §2 CLI exit-code contract. Only the doctor-producible codes are
@@ -1683,10 +1680,55 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 			approvalID = req.ApprovalToken
 		}
 
+		// Resolve the listing so the install can route by kind. A skill listing
+		// installs as files through the skills ledger; every other kind falls
+		// through to the archive engine, which requires an artifact source the
+		// daemon does not supply yet and therefore fails closed.
+		listingID, version, scope := req.ListingID, req.Version, domain.InstallScope(req.Scope)
+		if req.PlanID != "" {
+			if plan, perr := db.GetPlan(ctx, req.PlanID); perr == nil {
+				listingID = plan.Request.ListingID
+				if version == "" {
+					version = plan.Resolved.Version
+				}
+				if scope == "" {
+					scope = plan.Request.TargetScope
+				}
+			}
+		}
+		if scope == "" {
+			scope = domain.ScopeUser
+		}
+		if listing, lerr := catClient.GetListing(listingID); lerr == nil {
+			if listing.Kind == domain.KindSkill {
+				home, _ := os.UserHomeDir()
+				project, _ := os.Getwd()
+				outcome, ierr := installSkillFromListing(ctx, db, paths.DataRoot, project, home, listing, versionOrLatest(version), scope, nil)
+				if ierr != nil {
+					return nil, installRPCError(ierr)
+				}
+				result := map[string]any{
+					"installId":    outcome.InstallID,
+					"treeDigest":   outcome.ContentDigest,
+					"status":       string(domain.InstallActive),
+					"kind":         string(domain.KindSkill),
+					"skill":        outcome.SkillName,
+					"destinations": outcome.Destinations,
+					"sourceRef":    outcome.SourceRef,
+				}
+				if req.PlanID != "" {
+					result["planId"] = req.PlanID
+				}
+				return result, nil
+			}
+			return nil, installRPCError(domain.ErrArtifactUnavailable(listingID,
+				fmt.Sprintf("the %q install path is not wired yet: the published catalog carries no artifact locator for it", listing.Kind)))
+		}
+
 		rec, err := installEngine.Execute(ctx, install.InstallOptions{
-			ListingID:  req.ListingID,
-			Version:    req.Version,
-			Scope:      domain.InstallScope(req.Scope),
+			ListingID:  listingID,
+			Version:    version,
+			Scope:      scope,
 			ApprovalID: approvalID,
 			PlanID:     req.PlanID,
 		})

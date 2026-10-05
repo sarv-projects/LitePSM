@@ -96,7 +96,7 @@ Two consequences worth stating precisely:
 | 1 | `search_catalog` | `catalog.search` (`:282`) | `WIRED` — real index search |
 | 2 | `get_extension` | `catalog.get_item` (`:305`) | `WIRED` |
 | 3 | `prepare_install` | `resolver.prepare_plan` (`:323`) | `WIRED` — plan persisted with `planHash` |
-| 4 | `request_install` | `install.execute` (`:341`) | `IMPLEMENTED` **(cannot complete)** — the handler supplies no artifact source ([STATUS.md](../STATUS.md) §3) |
+| 4 | `request_install` | `install.execute` (`:341`) | `WIRED` **for skills** (installs files through the skills ledger), `LPSM-ARTIFACT-UNAVAILABLE` for MCP/plugin ([STATUS.md](../STATUS.md) §3) |
 | 5 | `list_installed` | `tools.list` (`:359`) | `WIRED` — installs + read-only detected external tools |
 | 6 | `search_capabilities` | `capabilities.search` (`:370`) | **`-32601`** — handler returns `not implemented … use catalog.search` (`cmd/litespm/main.go:1628-1633`) |
 | 7 | `describe_capability` | `capabilities.describe` (`:388`) | **`-32601`** (`main.go:1637-1642`) |
