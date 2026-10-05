@@ -12,7 +12,7 @@ name: pr-review-assistant
 description: Automated GitHub PR code review and quality checks.
 license: MIT
 version: 1.2.0
-author: LitePSM Team
+author: LiteSPM Team
 triggers:
   - "/pr review"
   - "/pr audit"

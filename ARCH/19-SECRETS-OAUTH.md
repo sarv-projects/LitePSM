@@ -2,7 +2,7 @@
 
 ## 1. SecretStore Interface
 
-LitePSM enforces a strict separation between metadata stored in SQLite and sensitive credentials stored in native operating system vaults:
+LiteSPM enforces a strict separation between metadata stored in SQLite and sensitive credentials stored in native operating system vaults:
 
 ```go
 type SecretStore interface {
@@ -38,7 +38,7 @@ type SecretRef struct {
 └─────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-*   **No Plaintext Fallback:** If an operating system lacks a functional credential vault, LitePSM halts with `LPSM-AUTH-VAULT-UNAVAILABLE`. Storing credentials in unencrypted configuration files is strictly forbidden.
+*   **No Plaintext Fallback:** If an operating system lacks a functional credential vault, LiteSPM halts with `LPSM-AUTH-VAULT-UNAVAILABLE`. Storing credentials in unencrypted configuration files is strictly forbidden.
 
 ---
 

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 const (
@@ -128,7 +128,7 @@ func (ll *LoopbackListener) handleCallback(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprint(w, `<!DOCTYPE html>
 <html>
-<head><title>LitePSM Authentication</title><style>body{font-family:sans-serif;text-align:center;padding:50px;background:#f9f9fb;color:#222;}h2{color:#10b981;}</style></head>
+<head><title>LiteSPM Authentication</title><style>body{font-family:sans-serif;text-align:center;padding:50px;background:#f9f9fb;color:#222;}h2{color:#10b981;}</style></head>
 <body>
   <h2>Authentication Successful!</h2>
   <p>Your authorization has been securely recorded. You may close this window and return to your agent or terminal.</p>

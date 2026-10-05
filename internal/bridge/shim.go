@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/ipc"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/ipc"
 )
 
 // MCPTool defines a tool exposed to an MCP client.
@@ -40,6 +40,11 @@ const (
 	StatusReady     InstalledStatus = "ready"      // ● Green
 	StatusNeedsAuth InstalledStatus = "needs_auth" // 🟡 Yellow
 	StatusDisabled  InstalledStatus = "disabled"   // ○ Grey
+	// StatusUnknown is the absent/unobservable health state. It is deliberately
+	// distinct from StatusDisabled: the daemon's tools.list does not health-check
+	// installs, so it omits Status entirely, and a missing status must not be
+	// rendered as "Stopped".
+	StatusUnknown InstalledStatus = "unknown" // — Unknown
 )
 
 // CapabilityItem represents a capability summary across the 4 tabs.
@@ -56,7 +61,7 @@ type CapabilityItem struct {
 	Triggers   []string        `json:"triggers,omitempty"`
 }
 
-// Shim serves the 12 canonical LitePSM tools over standard input/output.
+// Shim serves the 12 canonical LiteSPM tools over standard input/output.
 type Shim struct {
 	client  *ipc.Client
 	hostID  string
@@ -185,7 +190,7 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 		result, _ := json.Marshal(map[string]any{
 			"protocolVersion": "2026-07-28",
 			"serverInfo": map[string]any{
-				"name":    "litepsm-bridge",
+				"name":    "litespm-bridge",
 				"version": "0.1.0",
 			},
 			"capabilities": map[string]any{
@@ -509,7 +514,7 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 func FormatInstalledPanel(items []CapabilityItem) string {
 	var sb strings.Builder
 	sb.WriteString("┌────────────────────────────────────────────────────────────────────────┐\n")
-	sb.WriteString("│                          LitePSM Capabilities                          │\n")
+	sb.WriteString("│                          LiteSPM Capabilities                          │\n")
 	sb.WriteString("├──────────────┬──────────────┬──────────────┬───────────────────────────┤\n")
 	sb.WriteString("│ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │")
 	installedHeader := fmt.Sprintf("     [INSTALLED (%d)] ●   ", len(items))
@@ -522,7 +527,7 @@ func FormatInstalledPanel(items []CapabilityItem) string {
 		return sb.String()
 	}
 
-	sb.WriteString("Status: ● Ready | 🟡 Needs Auth | ○ Stopped | [External / Detected] Read-Only\n\n")
+	sb.WriteString("Status: ● Ready | 🟡 Needs Auth | ○ Stopped | — Unknown | [External / Detected] Read-Only\n\n")
 	sb.WriteString("| Status | Kind | Name / ID | Notes / Action |\n")
 	sb.WriteString("|---|---|---|---|\n")
 
@@ -533,8 +538,14 @@ func FormatInstalledPanel(items []CapabilityItem) string {
 			statusDot = "● Ready"
 		case StatusNeedsAuth:
 			statusDot = "🟡 Needs Auth"
-		default:
+		case StatusDisabled:
 			statusDot = "○ Stopped"
+		default:
+			// The daemon omits Status when it has no observed health data
+			// (tools.list does not health-check installs). Rendering that
+			// zero/unknown value as "Stopped" would fabricate a state LiteSPM
+			// cannot observe, so it is reported as Unknown instead.
+			statusDot = "— Unknown"
 		}
 
 		note := "Managed"
@@ -568,7 +579,7 @@ func (s *Shim) knownTool(name string) bool {
 func standaloneError(tool string) MCPToolResult {
 	err := domain.NewError(
 		"LPSM-IPC-DAEMON-UNREACHABLE",
-		fmt.Sprintf("tool %s: not connected to daemon (standalone mode); no LitePSM daemon connection, so no capability data is available", tool),
+		fmt.Sprintf("tool %s: not connected to daemon (standalone mode); no LiteSPM daemon connection, so no capability data is available", tool),
 		map[string]any{"tool": tool, "mode": "standalone"},
 	)
 	err.Retryable = true

@@ -1,10 +1,12 @@
-# LitePSM Market & Client: Technical Architecture & System Specification
+# LiteSPM Market & Client: Technical Architecture & System Specification
 
-LitePSM is an open-source, provider-neutral package manager, federated catalog, and local control plane for AI agent capabilities: **Plugins, Skills, and MCP (Model Context Protocol) Servers**. 
+**The Lightweight Skill & Package Manager for AI Agents.**
 
-It eliminates the need to manually configure, update, and manage capabilities across fragmented AI developer tools (for Claude Code, Codex, OpenCode, and many more). By registering a lightweight, version-pinned LitePSM Bridge once per agent, users can discover, install, update, and supervise capabilities centrally from a single local control plane.
+LiteSPM is an open-source, provider-neutral package manager, federated catalog, and local control plane for AI agent capabilities: **Plugins, Skills, and MCP (Model Context Protocol) Servers**. 
 
-> **Foundational Security Invariant:** Credentials and execution remain strictly on the user's workstation or directly with the selected upstream provider. LitePSM's hosted public catalog does not store credentials, execute plugin scripts, or proxy tool calls. The client-side control plane operates entirely within the local user's operating system privileges and enforces local, fail-closed authorization policies.
+It eliminates the need to manually configure, update, and manage capabilities across fragmented AI developer tools (for Claude Code, Codex, OpenCode, and many more). By registering a lightweight, version-pinned LiteSPM Bridge once per agent, users can discover, install, update, and supervise capabilities centrally from a single local control plane.
+
+> **Foundational Security Invariant:** Credentials and execution remain strictly on the user's workstation or directly with the selected upstream provider. LiteSPM's hosted public catalog does not store credentials, execute plugin scripts, or proxy tool calls. The client-side control plane operates entirely within the local user's operating system privileges and enforces local, fail-closed authorization policies.
 
 ---
 
@@ -13,20 +15,20 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | Phase | Description | Focus Area | Status |
 |---|---|---|---|
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `ARCH/00`–`ARCH/25`, 6 JSON Schemas (Draft 2020-12), `AGENTS.md`, `TEST.md` | **COMPLETED** |
-| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/litepsm` | **COMPLETED** |
+| **Phase B** | **Foundations, Storage & Local IPC** | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL 22 tables), `internal/ipc` (Named Pipes/Sockets), `cmd/litespm` | **COMPLETED** |
 | **Phase C** | **Static Catalog & Discovery Plane** | `internal/source` (MCP Registry, Skills), `internal/catalogbuild` (Release builder), `internal/catalog` (Search) | **COMPLETED** |
 | **Phase D** | **Safe Extraction & Skill Store** | `internal/artifact` (Archive safety limits), `internal/resolver` (Constraint solver), `internal/install` (Atomic CAS), `internal/skills` | **COMPLETED** |
 | **Phase E** | **Process Supervision, Bridge & Host Adapters** | `internal/provider` (Job Objects/Watchdog), `internal/policy`, `internal/bridge`, 6 bespoke adapters (Codex, Claude, OpenCode, Cline, Pi Agent, Grok Build) + 44 generic BridgeTargets (50 total, `ARCH/30`), 77 skill targets | **COMPLETED** |
 | **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | Stateless MCP 2026-07-28 (Streamable HTTP), legacy 2025-11-25, WinCred/DPAPI/Keychain, OAuth PKCE Loopback | **COMPLETED** |
 | **Phase G** | **In-Agent `/marketplace` Panel & Web UI** | 4-Tab Panel, pre-existing tool detection, Next.js static web frontend (`mcpmarket.com` style) | **COMPLETED** |
-| **Phase H** | **Release Engineering & Packaging** | Cross-platform Go builds, npm wrapper (`litepsm`), conformance test suites | **COMPLETED** |
+| **Phase H** | **Release Engineering & Packaging** | Cross-platform Go builds, npm wrapper (`litespm`), conformance test suites | **COMPLETED** |
 | **Phase I** | **Golden Fixtures, Self-Update & Migrations** | Host fixtures corpus, `self-update` binary replacement, database migration engine | **COMPLETED** |
 
 ---
 
 ## 2. System Architecture: "What Is What"
 
-LitePSM bifurcates system responsibilities between an untrusted public discovery layer and a privileged local control plane:
+LiteSPM bifurcates system responsibilities between an untrusted public discovery layer and a privileged local control plane:
 
 ```text
                                  PUBLIC DISCOVERY PLANE
@@ -59,7 +61,7 @@ LitePSM bifurcates system responsibilities between an untrusted public discovery
                              │ (Windows: Named Pipe with DACL / Unix: Domain Socket 0600)
                              ▼
     ┌─────────────────────────────────────────────────────────────────────────┐
-    │                           LitePSM Daemon                                │
+    │                           LiteSPM Daemon                                │
     │ ┌─────────────────────────────────────────────────────────────────────┐ │
     │ │ IPC Session Manager & Dispatcher                                    │ │
     │ └──────────────┬──────────────────┬───────────────────┬───────────────┘ │
@@ -85,11 +87,11 @@ LitePSM bifurcates system responsibilities between an untrusted public discovery
 ```
 
 ### 2.1 The Bridge Shim (Stateless Stdio Facade)
-*   **What it is:** A thin binary invoked directly by host agents as an MCP server (`litepsm bridge stdio --host <agent-id>`).
+*   **What it is:** A thin binary invoked directly by host agents as an MCP server (`litespm bridge stdio --host <agent-id>`).
 *   **Responsibilities:** Speaks standard MCP JSON-RPC over `stdin`/`stdout`, packages agent requests, and forwards them across local IPC to the Daemon. It terminates cleanly when the agent terminates stdio.
 *   **What it does NOT do:** It never touches SQLite directly, never modifies configuration files, and never spawns downstream provider processes.
 
-### 2.2 The LitePSM Daemon (Single-Writer Control Plane)
+### 2.2 The LiteSPM Daemon (Single-Writer Control Plane)
 *   **What it is:** A background service running per OS user account.
 *   **Responsibilities:**
     *   **Sole SQLite Writer:** Exclusively holds SQLite write locks in WAL mode, serializing all mutations (installs, updates, approvals, config edits).
@@ -106,28 +108,28 @@ LitePSM bifurcates system responsibilities between an untrusted public discovery
 
 ## 3. End-to-End Workflows
 
-### 3.1 Global Installation & Interactive Setup (`litepsm`)
-1.  **Installation:** Installed globally via npm (`npm install -g litepsm`) or downloaded as a standalone native Go binary.
-2.  **Interactive TUI Wizard:** Running `litepsm` launches an interactive terminal interface:
+### 3.1 Global Installation & Interactive Setup (`litespm`)
+1.  **Installation:** Installed globally via npm (`npm install -g litespm`) or downloaded as a standalone native Go binary.
+2.  **Interactive TUI Wizard:** Running `litespm` launches an interactive terminal interface:
     *   **Dynamic Adapter Fetching:** The CLI contacts `/v1/current.json` to verify the latest verified adapter list.
     *   **Agent Selector Dropdown:** Select your agent (Cline, Pi Agent, Grok Build, Claude Code, Codex, OpenCode).
-    *   **Automated Config Discovery:** LitePSM scans platform-standard paths across Windows, macOS, and Linux.
+    *   **Automated Config Discovery:** LiteSPM scans platform-standard paths across Windows, macOS, and Linux.
     *   **Graceful Fallback:** If the file is not found, prompts the user to:
         *   *Enter path manually*
         *   *Print copy-paste snippet*
         *   *Retry detection*
-    *   **Safe Atomic Merge:** LitePSM creates a timestamped backup in `DATA_ROOT/backups/`, preserves all existing comments/keys, injects the version-pinned Bridge entry, and installs the `/marketplace` command hook.
+    *   **Safe Atomic Merge:** LiteSPM creates a timestamped backup in `DATA_ROOT/backups/`, preserves all existing comments/keys, injects the version-pinned Bridge entry, and installs the `/marketplace` command hook.
 
-### 3.4 Skill Installer (`litepsm skills add`)
+### 3.4 Skill Installer (`litespm skills add`)
 
 Portable `SKILL.md` skills are installed per agent host, in the host's own skill
 directory, at a chosen scope.
 
 ```bash
-litepsm skills add anthropics/skills                  # interactive
-litepsm skills add anthropics/skills --list           # what is in the repo
-litepsm skills add anthropics/skills --skill frontend-design --agent claude-code --agent codex --yes
-litepsm skills add ./my-skills --scope global -y --json
+litespm skills add anthropics/skills                  # interactive
+litespm skills add anthropics/skills --list           # what is in the repo
+litespm skills add anthropics/skills --skill frontend-design --agent claude-code --agent codex --yes
+litespm skills add ./my-skills --scope global -y --json
 ```
 
 | Step | Behaviour |
@@ -141,7 +143,7 @@ litepsm skills add ./my-skills --scope global -y --json
 
 Host skill directories are transcribed from `vercel-labs/skills` `src/agents.ts`
 (MIT) — the ecosystem's de-facto map of where each agent reads `SKILL.md` from.
-LitePSM tracks **77 agents**. Selected examples:
+LiteSPM tracks **77 agents**. Selected examples:
 
 | Agent | This repo only | Global |
 |---|---|---|
@@ -162,7 +164,7 @@ Non-interactive runs require `--agent` and `--yes`; they never prompt, never
 imply a consent that was not given, and emit `--json` output on stdout.
 
 ### 3.2 Non-Destructive Update Checking
-*   Whenever a user runs `litepsm` in terminal or invokes `/marketplace` in an agent, LitePSM performs a passive read of `/v1/current.json`.
+*   Whenever a user runs `litespm` in terminal or invokes `/marketplace` in an agent, LiteSPM performs a passive read of `/v1/current.json`.
 *   It compares installed versions against catalog release digests.
 *   **Zero Silent Mutation:** If updates are available, it alerts the user with a clean delta diff, but **never mutates local files** without explicit user approval.
 
@@ -171,7 +173,7 @@ Typing `/marketplace` in any configured agent opens the **Capability Panel** wit
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          LitePSM Capabilities                          │
+│                          LiteSPM Capabilities                          │
 ├──────────────┬──────────────┬──────────────┬───────────────────────────┤
 │ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │     [INSTALLED (5)] ●     │
 └──────────────┴──────────────┴──────────────┴───────────────────────────┘
@@ -185,11 +187,11 @@ Typing `/marketplace` in any configured agent opens the **Capability Panel** wit
     *   **Detected External Capabilities (Read-Only by Default):** Scans the agent's primary on-disk configuration for pre-existing native tools. To prevent accidental config mutation, external tools are strictly read-only by default until the user explicitly triggers an **Adopt** action.
 
 ### 3.4 Capability Schema-Drift & Identity Protection
-*   Upon tool discovery, LitePSM generates a SHA-256 fingerprint of the tool's input JSON Schema (`schemaFingerprint`).
+*   Upon tool discovery, LiteSPM generates a SHA-256 fingerprint of the tool's input JSON Schema (`schemaFingerprint`).
 *   User approvals bind cryptographically to strong identity tuples:
     *   **Local Stdio:** `(capability_id, schemaFingerprint, casTreeDigest)`
     *   **Remote HTTP:** `(capability_id, schemaFingerprint, endpointOrigin, serverVersionDigest)`
-*   If an upstream provider modifies its schema upon reconnection, or if local code or remote endpoints change, LitePSM automatically invalidates the grant (`status: "changed"`), blocking unapproved execution until re-reviewed.
+*   If an upstream provider modifies its schema upon reconnection, or if local code or remote endpoints change, LiteSPM automatically invalidates the grant (`status: "changed"`), blocking unapproved execution until re-reviewed.
 
 ---
 
@@ -204,7 +206,7 @@ Typing `/marketplace` in any configured agent opens the **Capability Panel** wit
 | **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | Unix: `~/.codex/config.toml`<br>Windows: `%USERPROFILE%\.codex\config.toml`<br>Project: `.codex/config.toml`<br>Legacy fallback: `%APPDATA%\Codex\config.toml`; `$CODEX_HOME` overrides the directory |
 | **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.json` - v1 `mcp` / v2 `mcp.servers`) | Unix: `~/.config/opencode/opencode.json`<br>Windows: `%USERPROFILE%\.config\opencode\opencode.json`<br>Project: `opencode.json` or `.opencode/`<br>Legacy fallback: `%APPDATA%\OpenCode\opencode.json` |
 
-LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge stdio --host <agent-id>`); individual capabilities are resolved by the daemon at runtime, and OpenCode local entries require `"type": "local"` with a combined string-array `"command"`.
+LiteSPM registers exactly one `litespm` bridge entry per host (`litespm bridge stdio --host <agent-id>`); individual capabilities are resolved by the daemon at runtime, and OpenCode local entries require `"type": "local"` with a combined string-array `"command"`.
 
 ---
 
@@ -218,13 +220,13 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
   ├── TEST.md                                           # Test scenarios for Cline, Pi Agent, Grok Build
   │
   ├── cmd/
-  │   └── litepsm/                                      # Root CLI entrypoint (daemon serve, bridge, host, skills, doctor, agent)
+  │   └── litespm/                                      # Root CLI entrypoint (daemon serve, bridge, host, skills, doctor, agent)
   │       ├── main.go                                   # Command dispatch + daemon/IPC handlers
   │       ├── wizard.go                                 # Interactive agent setup wizard
   │       ├── skills_add.go                             # `skills add` installer (clone, select, copy)
   │       └── skills_remove.go                          # `skills remove/list` ledger-backed removal
   │
-  ├── internal/ (22 packages)
+  ├── internal/ (21 packages)
   │   ├── domain/                                       # Pure domain models, canonical IDs, RFC 8785 JCS, errors
   │   ├── config/                                       # Platform paths (%LOCALAPPDATA%, XDG, runtimes) & config
   │   ├── state/                                        # SQLite WAL engine (22 tables), safe CAS rollback journal
@@ -237,7 +239,6 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
   │   ├── install/                                      # Atomic CAS staging + SQLite commit
   │   ├── skills/                                       # Skill loader, 77-agent installer, ledger
   │   ├── agent/                                        # ACP registry + launch-spec resolution + overrides
-  │   ├── connector/                                    # Connector manifest + local proxy executor + egress policy
   │   ├── bridge/                                       # Stdio Bridge shim (12 tools)
   │   ├── provider/                                     # Supervisor (Job Objects/watchdog) + isolation
   │   ├── policy/                                       # 17-action effect taxonomy + 5-tier engine
@@ -281,7 +282,7 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
       ├── 21-TESTING-CONFORMANCE.md                     # Test pyramid, crash injection & canary scans
       ├── 22-PLATFORM-RELEASE-MIGRATIONS.md             # Cross-compilation & DB migrations
       ├── 23-SCHEMAS-EXAMPLES.md                        # Schema fixtures & examples
-      ├── 24-FUNCTION-INVENTORY.md                      # Public Go function inventory (22 packages)
+      ├── 24-FUNCTION-INVENTORY.md                      # Public Go function inventory (21 packages)
       ├── 25-WEB-FRONTEND-UI.md                         # Web marketplace frontend inspired by mcpmarket.com
       ├── 26-ECOSYSTEM-IA-PACKAGE-MODEL.md              # Neutral Package/Capability model, 8-type taxonomy, honesty rule
       ├── 27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md        # Status snapshot per type/source with code evidence
@@ -298,3 +299,42 @@ LitePSM registers exactly one `litepsm` bridge entry per host (`litepsm bridge s
 *   **Database:** SQLite 3 with Write-Ahead Logging (`WAL`), utilizing pure-Go drivers (`modernc.org/sqlite`) for zero-CGO cross-compilation.
 *   **Web Marketplace:** Static export using Next.js 15 / React 19 + Tailwind CSS + Radix UI, deployed to Cloudflare Pages.
 *   **Testing:** Multi-tier testing pyramid featuring property-based tests, hostile archive fuzzing, crash injection, and synthetic secret canary scans.
+
+---
+
+## 7. Environment, Origins & Release Order
+
+### Environment variables
+
+| Variable | Default | Effect |
+|---|---|---|
+| `LITESPM_DATA_ROOT` | Linux `$XDG_DATA_HOME/litespm` (`~/.local/share/litespm`), macOS `~/Library/Application Support/LiteSPM`, Windows `%LOCALAPPDATA%\LiteSPM` | Cache, state database, installed providers, backups |
+| `LITESPM_CONFIG_ROOT` | Linux `$XDG_CONFIG_HOME/litespm`, macOS Application Support, Windows `%APPDATA%\LiteSPM` | User `config.toml` |
+| `LITESPM_RUNTIME_ROOT` | Linux `$XDG_RUNTIME_DIR/litespm` (else `/tmp/litespm-$UID`), macOS `~/Library/Caches/LiteSPM/run` | Socket, daemon lock, PID files |
+| `LITESPM_REGISTRY_URL` | `config.DefaultRegistryURL` | Catalog and release-pointer origin (`/v1/current.json`) |
+| `LITESPM_LOG_LEVEL` | `info` | Daemon log verbosity |
+| `LITESPM_POLICY_DEFAULT_LEVEL` | `ask_once` | Default install policy gate |
+| `LITESPM_POLICY_ENFORCE_SIGNATURES` | `true` | Fail closed on unverified artifacts |
+| `LITESPM_NETWORK_TIMEOUT_SEC` | `30` | Timeout for registry and artifact fetches |
+| `LITESPM_RELEASE_REPO` | `sarv-projects/LiteSPM` | npm `postinstall`: repository hosting the release assets |
+| `NEXT_PUBLIC_SITE_URL` | live deployment origin (`web/lib/site.ts`) | Web build: canonical, Open Graph and JSON-LD origin |
+
+### Compiled origins must resolve
+
+Two origins ship as compiled defaults, so each must name a host that answers:
+
+*   **`config.DefaultRegistryURL`** is where the client fetches `/v1/current.json` and the release manifests it points at. It names the live deployment origin because `registry.litespm.dev` is not registered yet; a default that fails at DNS turns every catalog fetch into an opaque network error instead of a reportable one. Repoint it per install with `LITESPM_REGISTRY_URL` or `catalog.registryUrl` in `config.toml`.
+*   **`SITE_URL`** (`web/lib/site.ts`) drives `metadataBase`, Open Graph cards, and the JSON-LD emitted on package pages. Canonical URLs must name the origin that actually serves the site, so any build can override it:
+
+```bash
+NEXT_PUBLIC_SITE_URL=https://litespm.market npm run build   # or ./scripts/deploy-pages.sh
+```
+
+### Release order: GitHub assets before npm
+
+`npm/scripts/install-binary.js` downloads `litespm-<os>-<arch>` from the `v<version>` GitHub release during `postinstall`. Publishing the package before those assets exist ships a wrapper whose binary download 404s, so `release.yml` fixes the order: it builds the six-platform matrix plus `SHA256SUMS.txt`, creates the GitHub release, verifies that `npm/package.json` matches the tag, and only then publishes to npm with `--provenance` (skipped unless the `NPM_TOKEN` repository secret is set).
+
+```bash
+git tag v0.3.0 && git push --tags           # 1. tag -> workflow builds assets and creates the release
+npm deprecate litepsm "Renamed to LiteSPM"   # 2. retire the previous package name afterwards
+```

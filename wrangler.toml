@@ -1,3 +1,10 @@
+# A Cloudflare Worker's `name` sets its `<name>.<account>.workers.dev` hostname.
+# The live origin is https://litepsm.sarveshbh-2022.workers.dev, and the client,
+# site and npm docs all target it (internal/config/config.go, web/lib/site.ts,
+# npm/README.md). The product is branded LiteSPM, but the deployment is still
+# `litepsm`: renaming it would move the hostname and break every configured
+# origin. Renaming the deployment is a separate, coordinated migration that
+# must change this name and all three origin references together.
 name = "litepsm"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "pages-dist"

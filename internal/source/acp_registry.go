@@ -8,8 +8,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/agent"
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/agent"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // ACPAgentAdapter ingests the Agent Client Protocol registry into normalized
@@ -68,7 +68,7 @@ func (a *ACPAgentAdapter) Ingest(ctx context.Context, snapshotID string) (*Inges
 			Kind:               domain.ComponentAgent,
 			Name:               ag.Name,
 			DeclaredEffects:    []domain.EffectDeclaration{},
-			SupportedByLitePSM: domain.SupportYes,
+			SupportedByLiteSPM: domain.SupportYes,
 		}}
 
 		versionRecord := &domain.VersionRecord{

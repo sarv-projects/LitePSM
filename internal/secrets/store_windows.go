@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"unsafe"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 	"golang.org/x/sys/windows"
 )
 
@@ -46,7 +46,7 @@ func getOrGenerateWindowsMasterKey(vaultPath string) ([]byte, error) {
 	inBlob.Size = uint32(len(key))
 	inBlob.Data = &key[0]
 
-	desc, _ := windows.UTF16PtrFromString("LitePSM Vault Master Key")
+	desc, _ := windows.UTF16PtrFromString("LiteSPM Vault Master Key")
 	var outBlob windows.DataBlob
 	err := windows.CryptProtectData(&inBlob, desc, nil, 0, nil, 0, &outBlob)
 	if err != nil {

@@ -594,8 +594,8 @@ def build_full_catalog():
         "plugin": "publisher-declared",
     }
     v1_data["createdAt"] = created.strftime("%Y-%m-%dT%H:%M:%SZ")
-    if os.environ.get("LITEPSM_RELEASE_ID"):
-        v1_data["releaseId"] = os.environ["LITEPSM_RELEASE_ID"]
+    if os.environ.get("LITESPM_RELEASE_ID"):
+        v1_data["releaseId"] = os.environ["LITESPM_RELEASE_ID"]
 
     with open(v1_path, "w", encoding="utf-8") as f:
         json.dump(v1_data, f, indent=2)

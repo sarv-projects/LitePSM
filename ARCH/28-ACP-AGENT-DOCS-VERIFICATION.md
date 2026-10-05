@@ -122,7 +122,7 @@ and attaches notes otherwise.
 
 `agoragentic-acp`, `antigravity-acp`, `autohand`, `claude-acp`, `corust-agent`,
 `cortex-code`, `crow-cli`, `cursor`, `deepagents`, `factory-droid`, `gemini`,
-`goose`, `harn`. These are surfaced by `litepsm agent resolve` as `Note:` lines.
+`goose`, `harn`. These are surfaced by `litespm agent resolve` as `Note:` lines.
 
 ---
 
@@ -158,7 +158,7 @@ no digest. This is a known gap, not an acceptance result.
 
 1.  `Resolve` now applies `launchOverrides` after distribution resolution and
     returns `Notes` and `Deprecated` on the `LaunchSpec`.
-2.  `litepsm agent list` marks deprecated agents; `litepsm agent resolve` prints
+2.  `litespm agent list` marks deprecated agents; `litespm agent resolve` prints
     warnings and notes.
 3.  Catalog ingestion maps deprecated agents to `domain.ListingStatusDeprecated`.
 4.  Tests in `internal/agent/agent_test.go` (`TestOverridesAgainstRegistry`)

@@ -35,7 +35,7 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
   const digest = shortDigest(data.manifestDigest);
 
   const onCopy = async () => {
-    const ok = await copyText("npm install -g litepsm && litepsm", "Quickstart command copied");
+    const ok = await copyText("npm install -g litespm && litespm", "Quickstart command copied");
     if (!ok) return;
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
@@ -48,7 +48,7 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
           {formatCount(items.length)} capabilities, one bridge per agent
         </h1>
         <p className="mt-3 max-w-prose text-[14px] leading-relaxed text-ink-2 sm:text-[15px]">
-          An index of MCP servers, portable agent skills, and plugins. LitePSM injects a single
+          An index of MCP servers, portable agent skills, and plugins. LiteSPM injects a single
           version-pinned bridge entry into each agent host and resolves the rest locally at runtime.
         </p>
 
@@ -83,7 +83,7 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
             $
           </span>
           <code className="t-mono min-w-0 flex-1 truncate text-[12px] text-dark-ink select-all">
-            npm install -g litepsm &amp;&amp; litepsm
+            npm install -g litespm &amp;&amp; litespm
           </code>
           <button type="button" onClick={onCopy} aria-label="Copy quickstart command" className="btn !h-6 shrink-0 !px-2">
             {copied ? (

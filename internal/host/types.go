@@ -3,7 +3,7 @@ package host
 import (
 	"context"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // HostDescriptor encapsulates metadata about a supported agent host.
@@ -46,7 +46,7 @@ type HostApplyResult struct {
 	Success    bool   `json:"success"`
 }
 
-// HostVerification describes whether LitePSM is properly registered with the host.
+// HostVerification describes whether LiteSPM is properly registered with the host.
 type HostVerification struct {
 	HostID     string `json:"hostId"`
 	ConfigPath string `json:"configPath"`

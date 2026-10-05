@@ -71,7 +71,7 @@ func TestMergeJSONEntrySurgicalPreservesForeignContent(t *testing.T) {
   "buffer_font_size": 14
 }
 `
-	entry := map[string]any{"command": "/usr/bin/litepsm", "args": []string{"bridge", "stdio", "--host", "zed"}}
+	entry := map[string]any{"command": "/usr/bin/litespm", "args": []string{"bridge", "stdio", "--host", "zed"}}
 	out, err := mergeJSONEntrySurgical(orig, []string{"context_servers"}, entry)
 	if err != nil {
 		t.Fatalf("merge failed: %v", err)
@@ -82,7 +82,7 @@ func TestMergeJSONEntrySurgicalPreservesForeignContent(t *testing.T) {
 		"\"theme\": \"One Dark\"",
 		"\"buffer_font_size\": 14",
 		"\"my-server\"",
-		"\"litepsm\"",
+		"\"litespm\"",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("merged output lost %q:\n%s", want, out)
@@ -98,7 +98,7 @@ func TestMergeJSONEntrySurgicalPreservesForeignContent(t *testing.T) {
 
 func TestMergeJSONEntrySurgicalCreatesMissingKeyPath(t *testing.T) {
 	orig := "{\n  \"theme\": \"dark\"\n}\n"
-	entry := map[string]any{"command": "/bin/litepsm", "args": []string{"bridge"}}
+	entry := map[string]any{"command": "/bin/litespm", "args": []string{"bridge"}}
 	out, err := mergeJSONEntrySurgical(orig, []string{"amp", "mcpServers"}, entry)
 	if err != nil {
 		t.Fatalf("merge failed: %v", err)
@@ -106,7 +106,7 @@ func TestMergeJSONEntrySurgicalCreatesMissingKeyPath(t *testing.T) {
 	parsed := mustParse(t, out)
 	amp := parsed["amp"].(map[string]any)
 	servers := amp["mcpServers"].(map[string]any)
-	if _, ok := servers["litepsm"]; !ok {
+	if _, ok := servers["litespm"]; !ok {
 		t.Fatalf("entry not created: %s", out)
 	}
 	if parsed["theme"] != "dark" {
@@ -116,14 +116,14 @@ func TestMergeJSONEntrySurgicalCreatesMissingKeyPath(t *testing.T) {
 
 func TestMergeJSONEntrySurgicalCreatesDeepMissingPath(t *testing.T) {
 	orig := `{}`
-	entry := map[string]any{"command": "/bin/litepsm"}
+	entry := map[string]any{"command": "/bin/litespm"}
 	out, err := mergeJSONEntrySurgical(orig, []string{"a", "b", "c"}, entry)
 	if err != nil {
 		t.Fatalf("merge failed: %v", err)
 	}
 	parsed := mustParse(t, out)
 	leaf := parsed["a"].(map[string]any)["b"].(map[string]any)["c"].(map[string]any)
-	if _, ok := leaf["litepsm"]; !ok {
+	if _, ok := leaf["litespm"]; !ok {
 		t.Fatalf("deep entry not created: %s", out)
 	}
 }
@@ -131,20 +131,20 @@ func TestMergeJSONEntrySurgicalCreatesDeepMissingPath(t *testing.T) {
 func TestMergeJSONEntrySurgicalReplacesExistingEntry(t *testing.T) {
 	orig := `{
   "mcpServers": {
-    "litepsm": {
-      "command": "/old/path/litepsm",
+    "litespm": {
+      "command": "/old/path/litespm",
       "args": ["bridge", "stdio", "--host", "cursor"]
     },
     "other": {"command": "x"}
   }
 }
 `
-	entry := map[string]any{"command": "/new/path/litepsm", "args": []string{"bridge"}}
+	entry := map[string]any{"command": "/new/path/litespm", "args": []string{"bridge"}}
 	out, err := mergeJSONEntrySurgical(orig, []string{"mcpServers"}, entry)
 	if err != nil {
 		t.Fatalf("merge failed: %v", err)
 	}
-	if strings.Contains(out, "/old/path/litepsm") {
+	if strings.Contains(out, "/old/path/litespm") {
 		t.Fatalf("stale binary path survived:\n%s", out)
 	}
 	parsed := mustParse(t, out)
@@ -155,14 +155,14 @@ func TestMergeJSONEntrySurgicalReplacesExistingEntry(t *testing.T) {
 	if servers["other"].(map[string]any)["command"] != "x" {
 		t.Fatalf("foreign server damaged: %v", servers["other"])
 	}
-	if servers["litepsm"].(map[string]any)["command"] != "/new/path/litepsm" {
-		t.Fatalf("replacement not applied: %v", servers["litepsm"])
+	if servers["litespm"].(map[string]any)["command"] != "/new/path/litespm" {
+		t.Fatalf("replacement not applied: %v", servers["litespm"])
 	}
 }
 
 func TestMergeJSONEntrySurgicalIsIdempotent(t *testing.T) {
 	orig := "{\n  \"mcpServers\": {\n    \"other\": {\"command\": \"x\"}\n  }\n}\n"
-	entry := map[string]any{"command": "/bin/litepsm", "args": []string{"bridge", "stdio", "--host", "kode"}}
+	entry := map[string]any{"command": "/bin/litespm", "args": []string{"bridge", "stdio", "--host", "kode"}}
 	once, err := mergeJSONEntrySurgical(orig, []string{"mcpServers"}, entry)
 	if err != nil {
 		t.Fatalf("first merge failed: %v", err)
@@ -177,13 +177,13 @@ func TestMergeJSONEntrySurgicalIsIdempotent(t *testing.T) {
 }
 
 func TestMergeJSONEntrySurgicalOnEmptyFile(t *testing.T) {
-	entry := map[string]any{"command": "/bin/litepsm", "args": []string{"bridge"}}
+	entry := map[string]any{"command": "/bin/litespm", "args": []string{"bridge"}}
 	out, err := mergeJSONEntrySurgical("", []string{"mcpServers"}, entry)
 	if err != nil {
 		t.Fatalf("merge failed: %v", err)
 	}
 	parsed := mustParse(t, out)
-	if _, ok := parsed["mcpServers"].(map[string]any)["litepsm"]; !ok {
+	if _, ok := parsed["mcpServers"].(map[string]any)["litespm"]; !ok {
 		t.Fatalf("entry missing from empty-file merge: %s", out)
 	}
 }
@@ -203,7 +203,7 @@ func TestMergeJSONEntrySurgicalAgreesWithRemarshal(t *testing.T) {
 }
 `
 	keyPath := []string{"mcpServers"}
-	entry := map[string]any{"command": "/bin/litepsm", "args": []string{"bridge", "stdio", "--host", "fx"}}
+	entry := map[string]any{"command": "/bin/litespm", "args": []string{"bridge", "stdio", "--host", "fx"}}
 
 	surgical, err := mergeJSONEntrySurgical(orig, keyPath, entry)
 	if err != nil {
@@ -237,21 +237,21 @@ func jsonEqual(a, b any) bool {
 
 func TestMergeTOMLEntryAppendsWhenAbsent(t *testing.T) {
 	orig := "# my toml\n[other]\nkey = 1\n"
-	out, err := mergeTOMLEntry(orig, "[mcp_servers.litepsm]", "[mcp_servers.litepsm]\ncommand = \"/bin/litepsm\"\n")
+	out, err := mergeTOMLEntry(orig, "[mcp_servers.litespm]", "[mcp_servers.litespm]\ncommand = \"/bin/litespm\"\n")
 	if err != nil {
 		t.Fatalf("merge failed: %v", err)
 	}
 	if !strings.Contains(out, "# my toml") || !strings.Contains(out, "[other]") {
 		t.Fatalf("existing content lost:\n%s", out)
 	}
-	if !strings.Contains(out, "[mcp_servers.litepsm]") {
+	if !strings.Contains(out, "[mcp_servers.litespm]") {
 		t.Fatalf("table not appended:\n%s", out)
 	}
 }
 
 func TestMergeTOMLEntryReplacesExistingTable(t *testing.T) {
-	orig := "[mcp_servers.litepsm]\ncommand = \"/old\"\nargs = [\"a\"]\n\n[mcp_servers.other]\ncommand = \"keep\"\n"
-	out, err := mergeTOMLEntry(orig, "[mcp_servers.litepsm]", "[mcp_servers.litepsm]\ncommand = \"/new\"\n")
+	orig := "[mcp_servers.litespm]\ncommand = \"/old\"\nargs = [\"a\"]\n\n[mcp_servers.other]\ncommand = \"keep\"\n"
+	out, err := mergeTOMLEntry(orig, "[mcp_servers.litespm]", "[mcp_servers.litespm]\ncommand = \"/new\"\n")
 	if err != nil {
 		t.Fatalf("merge failed: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestMergeTOMLEntryReplacesExistingTable(t *testing.T) {
 	if !strings.Contains(out, "[mcp_servers.other]") || !strings.Contains(out, "keep") {
 		t.Fatalf("sibling table damaged:\n%s", out)
 	}
-	if strings.Count(out, "[mcp_servers.litepsm]") != 1 {
+	if strings.Count(out, "[mcp_servers.litespm]") != 1 {
 		t.Fatalf("duplicate table emitted:\n%s", out)
 	}
 }
@@ -271,7 +271,7 @@ func TestRenderConfigRefusesInvalidJSON(t *testing.T) {
 		ID: "x", Name: "X", Format: FormatJSON,
 		UserKey: []string{"mcpServers"}, Shape: ShapeObject,
 	}}
-	if _, err := a.renderConfig("{ this is not json", "/bin/litepsm", false); err == nil {
+	if _, err := a.renderConfig("{ this is not json", "/bin/litespm", false); err == nil {
 		t.Fatal("expected an error for invalid input rather than a corrupt write")
 	}
 }
@@ -285,7 +285,7 @@ func TestRenderConfigRefusesToClobberScalar(t *testing.T) {
 		UserKey: []string{"mcpServers"}, Shape: ShapeObject,
 	}}
 	orig := `{"mcpServers": "this should be an object but is a string"}`
-	if _, err := a.renderConfig(orig, "/bin/litepsm", false); err == nil {
+	if _, err := a.renderConfig(orig, "/bin/litespm", false); err == nil {
 		t.Fatal("expected refusal to overwrite a non-object value")
 	}
 }
@@ -342,7 +342,7 @@ func TestRenderConfigWritesCommandStringShape(t *testing.T) {
 		t.Fatalf("mux should use the command-string shape, got %q", tgt.Shape)
 	}
 	a := &GenericAdapter{Target: tgt}
-	out, err := a.renderConfig("{\n  \"servers\": {\n    \"mine\": \"run-me\"\n  }\n}\n", "/opt/my apps/litepsm", false)
+	out, err := a.renderConfig("{\n  \"servers\": {\n    \"mine\": \"run-me\"\n  }\n}\n", "/opt/my apps/litespm", false)
 	if err != nil {
 		t.Fatalf("render failed: %v", err)
 	}
@@ -351,11 +351,11 @@ func TestRenderConfigWritesCommandStringShape(t *testing.T) {
 	if len(servers) != 2 {
 		t.Fatalf("expected 2 servers, got %v", servers)
 	}
-	cmd, ok := servers["litepsm"].(string)
+	cmd, ok := servers["litespm"].(string)
 	if !ok {
-		t.Fatalf("expected a string command, got %T", servers["litepsm"])
+		t.Fatalf("expected a string command, got %T", servers["litespm"])
 	}
-	if !strings.Contains(cmd, `"/opt/my apps/litepsm"`) {
+	if !strings.Contains(cmd, `"/opt/my apps/litespm"`) {
 		t.Fatalf("binary path with a space was not quoted: %s", cmd)
 	}
 	if !strings.Contains(cmd, "bridge stdio --host mux") {
@@ -366,17 +366,17 @@ func TestRenderConfigWritesCommandStringShape(t *testing.T) {
 func TestRenderConfigHandlesLocalArrayShape(t *testing.T) {
 	tgt, _ := LookupBridgeTarget("kilo")
 	a := &GenericAdapter{Target: tgt}
-	out, err := a.renderConfig("{\n  \"mcp\": {\n    \"keep\": {\"type\": \"remote\", \"url\": \"https://x\"}\n  }\n}\n", "/bin/litepsm", false)
+	out, err := a.renderConfig("{\n  \"mcp\": {\n    \"keep\": {\"type\": \"remote\", \"url\": \"https://x\"}\n  }\n}\n", "/bin/litespm", false)
 	if err != nil {
 		t.Fatalf("render failed: %v", err)
 	}
 	parsed := mustParse(t, out)
-	entry := parsed["mcp"].(map[string]any)["litepsm"].(map[string]any)
+	entry := parsed["mcp"].(map[string]any)["litespm"].(map[string]any)
 	if entry["type"] != "local" {
 		t.Fatalf("expected type=local, got %v", entry)
 	}
 	cmd := entry["command"].([]any)
-	if len(cmd) != 5 || cmd[0] != "/bin/litepsm" || cmd[1] != "bridge" {
+	if len(cmd) != 5 || cmd[0] != "/bin/litespm" || cmd[1] != "bridge" {
 		t.Fatalf("unexpected argv array: %v", cmd)
 	}
 }

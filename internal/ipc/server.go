@@ -23,6 +23,7 @@ type Server struct {
 	mu              sync.RWMutex
 	quit            chan struct{}
 	stopOnce        sync.Once
+	stopped         bool
 	ctx             context.Context
 	cancelCtx       context.CancelFunc
 	wg              sync.WaitGroup
@@ -72,11 +73,26 @@ func (s *Server) RegisterHandler(method string, handler HandlerFunc) {
 	s.handlers[method] = handler
 }
 
-// Serve starts accepting connections on the provided listener.
+// Serve starts accepting connections on the provided listener. It returns when
+// the listener is closed by Stop or fails. The accept loop itself is tracked in
+// the server WaitGroup so Stop's Wait can never race a late wg.Add from an
+// accepted connection, and a Serve that starts after Stop returns immediately
+// instead of registering work Stop has already finished waiting for.
 func (s *Server) Serve(l net.Listener) error {
 	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		_ = l.Close()
+		return net.ErrClosed
+	}
 	s.listener = l
+	// Register the accept loop before releasing the mutex. Stop sets stopped
+	// and then Waits while holding the same mutex ordering, so a Serve that
+	// wins the lock has its Add observed by Wait, and a Stop that wins the
+	// lock prevents this Add entirely.
+	s.wg.Add(1)
 	s.mu.Unlock()
+	defer s.wg.Done()
 
 	for {
 		conn, err := l.Accept()
@@ -93,6 +109,9 @@ func (s *Server) Serve(l net.Listener) error {
 		s.activeConns[conn] = struct{}{}
 		s.mu.Unlock()
 
+		// The accept loop's own count is still held here, so the WaitGroup
+		// counter is never zero while this Add runs; it cannot race a
+		// concurrent Stop's Wait.
 		s.wg.Add(1)
 		go func(c net.Conn) {
 			defer s.wg.Done()
@@ -241,14 +260,20 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 }
 
-// Stop gracefully shuts down the server.
+// Stop gracefully shuts down the server. It is idempotent: only the first call
+// closes the listener and connections, and every caller blocks until the accept
+// loop and all in-flight handlers have returned.
 func (s *Server) Stop() error {
 	var err error
 	s.stopOnce.Do(func() {
+		s.mu.Lock()
+		// Mark stopped under the same lock Serve uses to register work. A
+		// Serve that runs after this point sees stopped and registers nothing,
+		// so the Wait below cannot miss a late Add.
+		s.stopped = true
 		s.cancelCtx()
 		close(s.quit)
 
-		s.mu.Lock()
 		if s.listener != nil {
 			err = s.listener.Close()
 		}
@@ -258,6 +283,9 @@ func (s *Server) Stop() error {
 		}
 		s.mu.Unlock()
 
+		// Wait after releasing the mutex: handleConnection takes the lock to
+		// unregister a connection, so holding it here would deadlock, and the
+		// closed listener/connections above are what unblock the accept loop.
 		s.wg.Wait()
 	})
 

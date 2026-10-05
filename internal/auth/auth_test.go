@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 func TestPKCE_GenerationAndVerification(t *testing.T) {

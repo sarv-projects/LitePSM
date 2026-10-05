@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 func repairPaths(t *testing.T) *config.PlatformPaths {

@@ -20,7 +20,7 @@ type Client struct {
 	done    chan struct{}
 }
 
-// Dial connects to a LitePSM daemon IPC endpoint.
+// Dial connects to a LiteSPM daemon IPC endpoint.
 func Dial(endpoint string) (*Client, error) {
 	conn, err := DialIPC(endpoint)
 	if err != nil {

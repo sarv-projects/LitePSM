@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func fixture(t *testing.T, rel string) []byte {

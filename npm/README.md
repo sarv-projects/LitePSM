@@ -1,15 +1,15 @@
 <div align="center">
 
-# litepsm
+# litespm
 
 **One control plane for every AI coding agent capability.**
 
 Discover · install · verify · supervise — MCP servers, Agent Skills, and plugins,
 across Claude Code, OpenAI Codex, OpenCode, Cline, and many more.
 
-[![npm version](https://img.shields.io/npm/v/litepsm.svg?color=10b981)](https://www.npmjs.com/package/marketplace)
-[![npm downloads](https://img.shields.io/npm/dm/litepsm.svg?color=10b981)](https://www.npmjs.com/package/marketplace)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/sarv-projects/LitePSM/blob/main/LICENSE)
+[![npm version](https://img.shields.io/npm/v/litespm.svg?color=10b981)](https://www.npmjs.com/package/marketplace)
+[![npm downloads](https://img.shields.io/npm/dm/litespm.svg?color=10b981)](https://www.npmjs.com/package/marketplace)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/sarv-projects/LiteSPM/blob/main/LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
 </div>
@@ -17,7 +17,7 @@ across Claude Code, OpenAI Codex, OpenCode, Cline, and many more.
 ---
 
 ```console
-$ litepsm
+$ litespm
   ✓ 5,185 capabilities indexed · 6 hosts detected
   ? Select your AI agent  › Claude Code
   ✓ Bridge registered in ~/.claude.json (backup saved)
@@ -31,23 +31,23 @@ place.
 ## Install
 
 ```bash
-npm install -g litepsm
+npm install -g litespm
 ```
 
 Prefer a standalone binary? Grab the release for your platform from
-[GitHub Releases](https://github.com/sarv-projects/LitePSM/releases). The npm
+[GitHub Releases](https://github.com/sarv-projects/LiteSPM/releases). The npm
 package is a thin launcher: it resolves the native binary for your OS, verifies
 its published SHA-256 checksum, then runs it.
 
 ## Quickstart
 
 ```bash
-litepsm                    # interactive setup wizard
-litepsm search postgres    # search the federated catalog
-litepsm install <id>       # resolve, verify, and install
-litepsm host list          # show supported agents
-litepsm doctor             # run local health checks
-litepsm self-update        # update the binary
+litespm                    # interactive setup wizard
+litespm search postgres    # search the federated catalog
+litespm install <id>       # resolve, verify, and install
+litespm host list          # show supported agents
+litespm doctor             # run local health checks
+litespm self-update        # update the binary
 ```
 
 Inside a configured agent, just type:
@@ -56,10 +56,10 @@ Inside a configured agent, just type:
 /marketplace
 ```
 
-## Why litepsm
+## Why litespm
 
 - **One bridge, zero config drift.** Each agent gets a single version-pinned
-  `litepsm` entry. Add, update, or remove capabilities without touching host
+  `litespm` entry. Add, update, or remove capabilities without touching host
   files again.
 - **Secrets never leave your machine.** Downstream API keys and OAuth tokens
   live in your OS vault (Windows Credential Manager / DPAPI, macOS Keychain,
@@ -88,15 +88,15 @@ Inside a configured agent, just type:
 
 | Command | What it does |
 |---|---|
-| `litepsm` | Interactive agent selection and setup |
-| `litepsm setup <agent>` | Configure a specific host non-interactively |
-| `litepsm search <query>` | Search MCP servers, skills, and plugins |
-| `litepsm install <id>` | Resolve and install a capability |
-| `litepsm bridge stdio --host <id>` | MCP stdio bridge used by hosts |
-| `litepsm host [list\|detect\|setup]` | Inspect and configure host adapters |
-| `litepsm doctor [--repair]` | Health checks and repairs |
-| `litepsm catalog sync` | Refresh the local catalog cache |
-| `litepsm self-update` | Update the native binary |
+| `litespm` | Interactive agent selection and setup |
+| `litespm setup <agent>` | Configure a specific host non-interactively |
+| `litespm search <query>` | Search MCP servers, skills, and plugins |
+| `litespm install <id>` | Resolve and install a capability |
+| `litespm bridge stdio --host <id>` | MCP stdio bridge used by hosts |
+| `litespm host [list\|detect\|setup]` | Inspect and configure host adapters |
+| `litespm doctor [--repair]` | Health checks and repairs |
+| `litespm catalog sync` | Refresh the local catalog cache |
+| `litespm self-update` | Update the native binary |
 
 ## How it works
 
@@ -104,10 +104,10 @@ Inside a configured agent, just type:
   Claude · Codex · OpenCode · Cline · Pi · Grok
                      │  stdio (MCP)
                      ▼
-             litepsm bridge shim
+             litespm bridge shim
                      │  local authenticated IPC
                      ▼
-              litepsm daemon  ──  SQLite (WAL) · policy · secret vault
+              litespm daemon  ──  SQLite (WAL) · policy · secret vault
                      │
                      ▼
         MCP servers · skills · plugins
@@ -133,10 +133,10 @@ and injects credentials at launch — in memory only.
 
 ## Links
 
-- **Repository:** https://github.com/sarv-projects/LitePSM
-- **Issues:** https://github.com/sarv-projects/LitePSM/issues
-- **Catalog API:** https://litepsm.dev/v1/current.json
+- **Repository:** https://github.com/sarv-projects/LiteSPM
+- **Issues:** https://github.com/sarv-projects/LiteSPM/issues
+- **Catalog API:** https://litepsm.sarveshbh-2022.workers.dev/v1/current.json
 
 ## License
 
-[Apache-2.0](https://github.com/sarv-projects/LitePSM/blob/main/LICENSE)
+[Apache-2.0](https://github.com/sarv-projects/LiteSPM/blob/main/LICENSE)

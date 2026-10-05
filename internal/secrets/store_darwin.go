@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func getOrGenerateDarwinMasterKey() ([]byte, error) {
@@ -17,7 +17,7 @@ func getOrGenerateDarwinMasterKey() ([]byte, error) {
 		return nil, domain.ErrAuthVaultUnavailable("macOS security CLI not found")
 	}
 
-	cmdLookup := exec.Command("/usr/bin/security", "find-generic-password", "-s", "litepsm", "-a", "master-key", "-w")
+	cmdLookup := exec.Command("/usr/bin/security", "find-generic-password", "-s", "litespm", "-a", "master-key", "-w")
 	out, err := cmdLookup.Output()
 	lookupStr := strings.TrimSpace(string(out))
 	if err == nil && len(lookupStr) > 0 {
@@ -34,7 +34,7 @@ func getOrGenerateDarwinMasterKey() ([]byte, error) {
 	}
 
 	hexKey := hex.EncodeToString(key)
-	cmdStore := exec.Command("/usr/bin/security", "add-generic-password", "-U", "-s", "litepsm", "-a", "master-key", "-w", hexKey)
+	cmdStore := exec.Command("/usr/bin/security", "add-generic-password", "-U", "-s", "litespm", "-a", "master-key", "-w", hexKey)
 	if err := cmdStore.Run(); err != nil {
 		return nil, domain.ErrAuthVaultUnavailable(fmt.Sprintf("failed to store vault master key in macOS Keychain: %v", err))
 	}

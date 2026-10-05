@@ -61,7 +61,7 @@ dist/
 The manifest ensures that clients download authentic, uncorrupted files:
 ```json
 {
-  "$schema": "https://litepsm.dev/schemas/v1/release-manifest.schema.json",
+  "$schema": "https://litespm.dev/schemas/v1/release-manifest.schema.json",
   "releaseId": "rel_01J9X8K2M4N5P6Q7R8S9T0U1V2",
   "files": {
     "index.json": {

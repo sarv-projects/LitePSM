@@ -1,10 +1,10 @@
-# Web Frontend & UI Architecture (LitePSM Market)
+# Web Frontend & UI Architecture (LiteSPM Market)
 
-Inspired by the design of `mcpmarket.com`, LitePSM Market is a static web application that serves as the visual discovery interface for AI agent plugins, MCP servers, and skills.
+Inspired by the design of `mcpmarket.com`, LiteSPM Market is a static web application that serves as the visual discovery interface for AI agent plugins, MCP servers, and skills.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                   LitePSM Market Web Architecture                      │
+│                   LiteSPM Market Web Architecture                      │
 │                                                                        │
 │   Next.js 15 / React 19 Static Export (Tailwind CSS + Radix UI)       │
 │                               │                                        │
@@ -17,7 +17,7 @@ Inspired by the design of `mcpmarket.com`, LitePSM Market is a static web applic
 
 ## 1. Design Vision & Aesthetic Standards
 
-LitePSM Market adheres to an engineering-focused, high-performance aesthetic:
+LiteSPM Market adheres to an engineering-focused, high-performance aesthetic:
 *   **Typography:** IBM Plex Sans for UI, Plex Condensed for dense table names, Plex Mono for machine-readable content (commands, counts, slugs). No dark mode: single paper/surface theme.
 *   **Header:** Opaque sticky bar (no blur layer — blur over ruled tables costs paint on scroll). Skip link for keyboard users.
 *   **Instant Responsiveness:** Client-side filtering with deferred query values; MiniSearch index owned by a Web Worker (`web/lib/search.worker.ts`) with in-thread fallback (`web/lib/useCatalogSearch.ts`).
@@ -65,7 +65,7 @@ web/
 ## 3. Key UI Elements
 
 ### 3.1 Header & Dynamic Telemetry Badge
-*   **Sticky Header:** Displays the LitePSM logo, primary navigation links (**Explore**, **Agents**, **Categories**, **Coverage** → `/trending/`), kind tabs (All/MCP servers/Agent skills/Plugins with live counts), and a GitHub link.
+*   **Sticky Header:** Displays the LiteSPM logo, primary navigation links (**Explore**, **Agents**, **Categories**, **Coverage** → `/trending/`), kind tabs (All/MCP servers/Agent skills/Plugins with live counts), and a GitHub link.
 *   **Dynamic Telemetry Eyebrow Badge:** An animated status pill dynamically bound to `/v1/current.json` (never hard-coded):
     *   **Live Capability Count:** Dynamically formatted from `current.json.itemCount` (e.g., `itemCount.toLocaleString() + " Capabilities"`).
     *   **Relative Recency:** Dynamically calculated from `current.json.createdAt` against the client clock (e.g., `formatDistanceToNow(new Date(createdAt)) + " ago"`).
@@ -86,12 +86,12 @@ Each capability is rendered as a clean card:
     *   Exactly two tags: type + category.
     *   Host-compatibility chips derived from registries (MCP → all 50 bridge adapters; skill → all 77 skill targets; plugin → publisher-declared).
     *   No stars: the catalog publishes no popularity figures. `publisher.verified` is a registry flag with a not-a-security-audit disclaimer (`PublisherMark.tsx`, `SiteFooter.tsx`).
-*   **One-Click Copy Command:** Button that copies `litepsm install <id>` to clipboard with toast feedback. Package names and commands render in monospace.
+*   **One-Click Copy Command:** Button that copies `litespm install <id>` to clipboard with toast feedback. Package names and commands render in monospace.
 
 ### 3.4 Package Detail Page (`/package/?slug=<key>`)
 Clicking any card opens the canonical detail page (query route; `slug` when globally unique, else full `id` — see `listingHref()` in `web/lib/catalog.ts`). Sections (single scrolling page, not a modal):
 1.  **Identity block:** Icon, canonical name (monospace), publisher, type + category tags, summary, `Available from` source, version.
-2.  **Install with LitePSM + Install with your agent:** The correct `litepsm install <id>` command plus the one host bridge snippet for the selected host/OS (never a per-package native config as the primary path).
+2.  **Install with LiteSPM + Install with your agent:** The correct `litespm install <id>` command plus the one host bridge snippet for the selected host/OS (never a per-package native config as the primary path).
 3.  **Agent compatibility:** Matrix with per-host status and the disclaimer that compatibility is publisher-declared or technically derivable — not a test result.
 4.  **Specification:** Declared configuration surface only when known; otherwise explicit `Not published`/`Unknown` empty states (never fabricated).
 5.  **Also in category:** Related entries by shared category.

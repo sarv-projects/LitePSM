@@ -2,7 +2,7 @@
 
 ## 1. Extensible HostAdapter Architecture
 
-LitePSM connects to AI agent hosts through a strongly typed, compiled-in `HostAdapter` interface (`internal/host`).
+LiteSPM connects to AI agent hosts through a strongly typed, compiled-in `HostAdapter` interface (`internal/host`).
 
 ```go
 type HostAdapter interface {
@@ -31,10 +31,10 @@ type HostDescriptor struct {
 
 ## 2. Dynamic Runtime Adapter Advisory & Metadata Discovery
 
-When a user runs `litepsm`, the client reads the remote catalog release pointer (`/v1/current.json`), which carries an `advisories` array (hostId, status, minVersion) — there is no separate `adapters.json` endpoint. The interactive wizard (`cmd/litepsm/wizard.go:verifyRuntimeAdvisories`) currently reports compiled-in protocol/adapters without a network fetch:
+When a user runs `litespm`, the client reads the remote catalog release pointer (`/v1/current.json`), which carries an `advisories` array (hostId, status, minVersion) — there is no separate `adapters.json` endpoint. The interactive wizard (`cmd/litespm/wizard.go:verifyRuntimeAdvisories`) currently reports compiled-in protocol/adapters without a network fetch:
 *   **Advisory Compatibility Metadata:** `current.json.advisories` contains per-host status and minimum versions. It does **not** deliver dynamic executable Go code; config file parsing and mutation are strictly performed by the compiled-in binary. Adding new config parsers requires a client binary release.
 *   **Zero Local Mutation:** Reading advisory metadata is a passive read. It allows the CLI to inform the user if an updated client binary is required for a newer agent release without altering existing host configurations.
-*   **Offline Fallback:** If internet access is unavailable, LitePSM uses the compiled-in adapter registry (`internal/host/registry.go`).
+*   **Offline Fallback:** If internet access is unavailable, LiteSPM uses the compiled-in adapter registry (`internal/host/registry.go`).
 
 ---
 
@@ -47,8 +47,8 @@ When a user runs `litepsm`, the client reads the remote catalog release pointer 
     *   **macOS:** `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
     *   **Linux:** `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
 *   **Format:** JSON.
-*   **Managed Injection:** Injects under `mcpServers.litepsm`.
-*   **Cline CLI:** The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LitePSM does not currently manage.
+*   **Managed Injection:** Injects under `mcpServers.litespm`.
+*   **Cline CLI:** The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LiteSPM does not currently manage.
 *   **Detected External Capabilities:** Scans sibling keys in `mcpServers` (e.g., `filesystem`, `postgres`, `github`) as read-only detected entries.
 
 ### 3.2 Pi Agent (`pi-coding-agent`) (`internal/host/piagent.go`)
@@ -58,7 +58,7 @@ When a user runs `litepsm`, the client reads the remote catalog release pointer 
     *   Project scope: `.pi/mcp.json` (trust-gated)
     *   Legacy fallback: `~/.pi/config.json` / `~/.pi/mcp.json`
 *   **Format:** JSON.
-*   **Managed Injection:** Registers LitePSM under the `mcpServers` key in Pi's MCP config and writes a companion command extension (`~/.pi/agent/extensions/litepsm.ts`).
+*   **Managed Injection:** Registers LiteSPM under the `mcpServers` key in Pi's MCP config and writes a companion command extension (`~/.pi/agent/extensions/litespm.ts`).
 *   **Detected External Capabilities:** Detects external tools from the discovered config file in read-only mode.
 
 ### 3.3 Grok Build (`internal/host/grokbuild.go`)
@@ -67,14 +67,14 @@ When a user runs `litepsm`, the client reads the remote catalog release pointer 
     *   **Unix / macOS:** `~/.grok/config.toml` (global) or `.grok/config.toml` (project)
     *   **Windows:** `%USERPROFILE%\.grok\config.toml` (`%APPDATA%\Grok\config.toml` is a legacy fallback)
 *   **Format:** TOML.
-*   **Managed Injection:** Injects under `[mcp_servers.litepsm]`.
+*   **Managed Injection:** Injects under `[mcp_servers.litespm]`.
 *   **Detected External Capabilities:** Parses declared external `[mcp_servers.*]` sections in read-only mode.
 
 ### 3.4 Claude Code (`internal/host/claudecode.go`)
 *   **Host ID:** `claude-code`
 *   **Target Configuration:** User scope `~/.claude.json` (Windows `%USERPROFILE%\.claude.json`), project scope `.mcp.json` in the project root, and a per-project local entry inside `~/.claude.json`. `CLAUDE_CONFIG_DIR` overrides the config directory.
 *   **Format:** JSON.
-*   **Managed Injection:** Injects under `mcpServers.litepsm`.
+*   **Managed Injection:** Injects under `mcpServers.litespm`.
 *   **Detected External Capabilities:** Scans existing `mcpServers` and `.claude/skills/` in read-only mode.
 
 ### 3.5 OpenAI Codex (`internal/host/codex.go`)
@@ -83,17 +83,17 @@ When a user runs `litepsm`, the client reads the remote catalog release pointer 
     *   **Unix / macOS:** `~/.codex/config.toml` (project `.codex/config.toml`)
     *   **Windows:** `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback; `$CODEX_HOME` overrides the directory)
 *   **Format:** TOML.
-*   **Managed Injection:** Injects under `[mcp_servers.litepsm]`.
+*   **Managed Injection:** Injects under `[mcp_servers.litespm]`.
 *   **Detected External Capabilities:** Parses declared external `[mcp_servers.*]` sections in read-only mode.
 
 ### 3.6 OpenCode (`internal/host/opencode.go`)
 *   **Host ID:** `opencode`
 *   **Target Configuration:** `~/.config/opencode/opencode.json` (Unix/macOS) or `%USERPROFILE%\.config\opencode\opencode.json` (native Windows; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback). Project scope supports `opencode.json` in the project root or `.opencode/`.
 *   **Format:** JSON.
-*   **Local Entry Shape:** Local MCP entries require `"type": "local"` and a combined string array `"command"`, e.g. `{"mcp":{"servers":{"litepsm":{"type":"local","command":["litepsm","bridge","stdio","--host","opencode"]}}}}`.
+*   **Local Entry Shape:** Local MCP entries require `"type": "local"` and a combined string array `"command"`, e.g. `{"mcp":{"servers":{"litespm":{"type":"local","command":["litespm","bridge","stdio","--host","opencode"]}}}}`.
 *   **Version Mapping Profile:**
-    *   `v1.x`: Uses root `mcp` dictionary (`mcp.litepsm`).
-    *   `v2.x`: Uses nested `mcp.servers` object (`mcp.servers.litepsm`).
+    *   `v1.x`: Uses root `mcp` dictionary (`mcp.litespm`).
+    *   `v2.x`: Uses nested `mcp.servers` object (`mcp.servers.litespm`).
     The adapter inspects the existing document structure or schema version to write the correct layout.
 *   **Detected External Capabilities:** Scans existing configured servers in read-only mode.
 
@@ -110,7 +110,7 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        LitePSM Abstract UX Model                       │
+│                        LiteSPM Abstract UX Model                       │
 │    (Stateful Capability Navigation: Search, Inspect, Install, Status)  │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
@@ -129,7 +129,7 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          LitePSM Capabilities                          │
+│                          LiteSPM Capabilities                          │
 ├──────────────┬──────────────┬──────────────┬───────────────────────────┤
 │ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │     [INSTALLED (4)] ●     │
 └──────────────┴──────────────┴──────────────┴───────────────────────────┘
@@ -152,25 +152,25 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 The final tab provides complete situational visibility across the host environment:
 *   **Green Light Indicator (●):** Visual indicator showing whether the server/skill is currently active, connected, and responding (`● Active / Ready`), degraded (`🟡 Needs Auth`), or off (`○ Disabled / Stopped`).
 *   **Detected External Capabilities (Read-Only by Default):**
-    *   LitePSM scans the host's primary documented configuration file for pre-existing native tools (e.g., servers previously added manually to `cline_mcp_settings.json`, `~/.claude.json`, or `.codex/config.toml`).
+    *   LiteSPM scans the host's primary documented configuration file for pre-existing native tools (e.g., servers previously added manually to `cline_mcp_settings.json`, `~/.claude.json`, or `.codex/config.toml`).
     *   **Scope Limitation:** Detection is strictly limited to documented on-disk config files known to the adapter; in-memory sessions, proprietary cloud-managed extensions, or undocumented registries are not scanned.
-    *   **Read-Only Observation:** To prevent data loss or config corruption, external tools are strictly **read-only** in the status view. LitePSM never toggles or edits external tools without explicit permission.
-    *   **Explicit Adopt Action:** To bring an external tool under LitePSM lifecycle supervision, the user must explicitly choose **"Import / Adopt into LitePSM"**, which generates an atomic backup and creates a managed `InstallRecord`.
+    *   **Read-Only Observation:** To prevent data loss or config corruption, external tools are strictly **read-only** in the status view. LiteSPM never toggles or edits external tools without explicit permission.
+    *   **Explicit Adopt Action:** To bring an external tool under LiteSPM lifecycle supervision, the user must explicitly choose **"Import / Adopt into LiteSPM"**, which generates an atomic backup and creates a managed `InstallRecord`.
 
 ```text
 INSTALLED & DETECTED CAPABILITIES:
 
 [MCP SERVERS]
-  ● postgres-prod        [LitePSM]   v1.4.0   Status: Ready (3 tools)
+  ● postgres-prod        [LiteSPM]   v1.4.0   Status: Ready (3 tools)
   ● github-native        [Detected]  external Status: Ready (Read-Only) [Adopt]
-  ○ memory-store         [LitePSM]   v1.0.0   Status: Stopped
+  ○ memory-store         [LiteSPM]   v1.0.0   Status: Stopped
 
 [AGENT SKILLS]
-  ● pr-reviewer          [LitePSM]   v1.2.0   Active (SKILL.md)
+  ● pr-reviewer          [LiteSPM]   v1.2.0   Active (SKILL.md)
   ● release-drafter      [Detected]  external Active (.claude/skills/)
 
 [PLUGINS]
-  ● web-navigator        [LitePSM]   v2.0.1   Active
+  ● web-navigator        [LiteSPM]   v2.0.1   Active
 ```
 
 ---
@@ -178,7 +178,7 @@ INSTALLED & DETECTED CAPABILITIES:
 ## 5. Automated Slash Command (`/marketplace`) Registration
 
 To guarantee that `/marketplace` is immediately accessible the next time the agent opens:
-1.  **Cline:** Registers a custom prompt/workflow or workspace command triggering the LitePSM MCP bridge.
-2.  **Pi Agent:** Writes a TypeScript command extension to `~/.pi/agent/extensions/litepsm.ts` (or `~/.pi/extensions/litepsm.ts`) registering `/marketplace`.
-3.  **Claude Code & Codex:** Installs a companion bootstrap skill `litepsm.skill.md` with trigger keyword `/marketplace`.
+1.  **Cline:** Registers a custom prompt/workflow or workspace command triggering the LiteSPM MCP bridge.
+2.  **Pi Agent:** Writes a TypeScript command extension to `~/.pi/agent/extensions/litespm.ts` (or `~/.pi/extensions/litespm.ts`) registering `/marketplace`.
+3.  **Claude Code & Codex:** Installs a companion bootstrap skill `litespm.skill.md` with trigger keyword `/marketplace`.
 4.  **Grok Build:** Registers a custom command hook in `.grok/config.toml` (project scope).

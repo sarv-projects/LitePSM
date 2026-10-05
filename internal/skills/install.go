@@ -4,19 +4,20 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
 
-// install.go — `litepsm skills add` engine.
+// install.go — `litespm skills add` engine.
 //
 // Installs portable SKILL.md skill directories from a GitHub repository (or a
 // local directory) into the universal `.agents/skills` tree plus any mapped
 // host skill directories. This file holds the pure, testable layer: source
 // parsing, skill discovery, install planning, and safe directory copy. All
-// prompting lives in cmd/litepsm/skills_add.go.
+// prompting lives in cmd/litespm/skills_add.go.
 
 // MaxSkillBytes bounds a single installed skill tree (skills are
 // instructions plus small assets; anything larger is almost certainly not a
@@ -27,20 +28,43 @@ var validSkillName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // SkillSource is a parsed `--skill` installer source.
 type SkillSource struct {
-	// Kind is "repo" (owner/name), "url" (https git remote), or "local".
+	// Kind is "repo" (owner/name), "url" (https), or "local".
 	Kind string
 	// Display is the human-readable source label shown in the UI.
 	Display string
-	// CloneURL is set for repo/url kinds.
+	// CloneURL is the fetch target for repo/url kinds.
 	CloneURL string
 	// LocalDir is set for the local kind.
 	LocalDir string
 	// RepoPath is "owner/name" for repo/url kinds, "" otherwise.
 	RepoPath string
+	// Git is true when CloneURL is a git remote (a `.git` URL or a recognized
+	// git host). False means the URL was left exactly as given.
+	Git bool
+	// Pin is the optional revision to install: `owner/repo@ref`,
+	// `https://host/repo@ref`, or a `?ref=` query parameter. Empty means the
+	// source default branch.
+	Pin string
 }
 
-// ParseSkillSource parses an installer source: "owner/repo", an https GitHub
-// (or any https git remote) URL, or a local directory path.
+// knownGitHosts are hosts where a bare `owner/name` path is a git remote and a
+// missing `.git` suffix is safely inferred. Other HTTPS URLs are left verbatim:
+// appending `.git` blindly corrupts normal URLs such as archive or landing
+// pages.
+var knownGitHosts = map[string]bool{
+	"github.com":     true,
+	"www.github.com": true,
+	"gitlab.com":     true,
+	"bitbucket.org":  true,
+	"codeberg.org":   true,
+	"git.sr.ht":      true,
+	"gitea.com":      true,
+}
+
+// ParseSkillSource parses an installer source: "owner/repo", an https URL, or a
+// local directory path. An optional `@<ref>` suffix (or `ref`/`pin`/`commit`
+// query parameter) pins the source to a revision; the pin is recorded in the
+// ledger but not resolved here (resolution needs the fetcher).
 func ParseSkillSource(raw string) (SkillSource, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -56,38 +80,102 @@ func ParseSkillSource(raw string) (SkillSource, error) {
 		return SkillSource{Kind: "local", Display: abs, LocalDir: abs}, nil
 	}
 
-	// owner/repo shorthand.
+	// owner/repo shorthand, with an optional @ref pin.
 	if !strings.Contains(s, "://") {
-		parts := strings.Split(s, "/")
+		base, pin := splitAtRef(s)
+		parts := strings.Split(base, "/")
 		if len(parts) == 2 && validOwnerRepo(parts[0]) && validOwnerRepo(parts[1]) {
+			clone := fmt.Sprintf("https://github.com/%s/%s.git", parts[0], parts[1])
 			return SkillSource{
 				Kind:     "repo",
-				Display:  fmt.Sprintf("https://github.com/%s/%s.git", parts[0], parts[1]),
-				CloneURL: fmt.Sprintf("https://github.com/%s/%s.git", parts[0], parts[1]),
+				Display:  clone,
+				CloneURL: clone,
 				RepoPath: parts[0] + "/" + parts[1],
+				Git:      true,
+				Pin:      pin,
 			}, nil
 		}
 		return SkillSource{}, fmt.Errorf("invalid skill source %q: expected owner/repo, an https git URL, or a local directory", s)
 	}
 
 	// https URL only (never http, ssh, or file: the installer clones over TLS).
-	if strings.HasPrefix(s, "https://") {
-		clone := s
-		if !strings.HasSuffix(clone, ".git") {
-			clone += ".git"
-		}
-		return SkillSource{Kind: "url", Display: strings.TrimSuffix(s, ".git"), CloneURL: clone, RepoPath: guessRepoPath(s)}, nil
+	if !strings.HasPrefix(s, "https://") {
+		return SkillSource{}, fmt.Errorf("invalid skill source %q: only https git URLs are accepted", s)
 	}
-	return SkillSource{}, fmt.Errorf("invalid skill source %q: only https git URLs are accepted", s)
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return SkillSource{}, fmt.Errorf("invalid skill source %q: not a valid https URL", s)
+	}
+
+	// Pin from a query parameter, then from a path @ref. The path form is
+	// stripped so the ref is not treated as part of the repository path.
+	pin := ""
+	q := u.Query()
+	for _, key := range []string{"ref", "pin", "commit", "version"} {
+		if v := strings.TrimSpace(q.Get(key)); v != "" {
+			pin = v
+			q.Del(key)
+			break
+		}
+	}
+	if pin == "" {
+		if idx := strings.LastIndex(u.Path, "@"); idx > 0 {
+			pin = u.Path[idx+1:]
+			u.Path = u.Path[:idx]
+			u.RawPath = ""
+		}
+	}
+	u.RawQuery = q.Encode()
+	u.Path = strings.TrimRight(u.Path, "/")
+	u.RawPath = ""
+
+	// Only infer a git clone URL on a recognized git host; otherwise leave the
+	// URL exactly as the user wrote it.
+	if knownGitHosts[u.Host] && !strings.HasSuffix(u.Path, ".git") {
+		u.Path += ".git"
+		u.RawPath = ""
+	}
+	clone := u.String()
+	git := strings.HasSuffix(u.Path, ".git")
+	return SkillSource{
+		Kind:     "url",
+		Display:  strings.TrimSuffix(clone, ".git"),
+		CloneURL: clone,
+		RepoPath: guessRepoPath(u),
+		Git:      git,
+		Pin:      pin,
+	}, nil
+}
+
+// splitAtRef splits "base@ref" on the last '@'. A leading '@' (or none) leaves
+// the whole string as base and returns an empty ref.
+func splitAtRef(s string) (string, string) {
+	idx := strings.LastIndex(s, "@")
+	if idx <= 0 || idx == len(s)-1 {
+		return s, ""
+	}
+	return s[:idx], s[idx+1:]
+}
+
+// RecordedRef returns the ref to persist for this source: an explicit pin wins,
+// otherwise the commit SHA the caller observed for the checkout (for example
+// from `git rev-parse HEAD`). Empty means the source is unpinned.
+func (s SkillSource) RecordedRef(observedCommit string) string {
+	if s.Pin != "" {
+		return s.Pin
+	}
+	return observedCommit
 }
 
 var validOwnerRepo = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`).MatchString
 
 // guessRepoPath extracts "owner/name" from a github.com URL for display and
 // skills.sh detail links. Returns "" when the URL is not a GitHub repo URL.
-func guessRepoPath(rawURL string) string {
-	rest := strings.TrimPrefix(rawURL, "https://github.com/")
-	rest = strings.TrimSuffix(rest, ".git")
+func guessRepoPath(u *url.URL) string {
+	if u == nil || u.Host != "github.com" {
+		return ""
+	}
+	rest := strings.TrimSuffix(u.Path, ".git")
 	rest = strings.Trim(rest, "/")
 	parts := strings.Split(rest, "/")
 	if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
@@ -168,13 +256,11 @@ func HostSkillDir(agentID, scope, projectRoot, home string) (string, bool) {
 	return AgentSkillDir(agentID, scope, projectRoot, home)
 }
 
-// UniversalSkillDir is the always-installed canonical skill tree.
-func UniversalSkillDir(scope, projectRoot, home string) string {
-	if scope == "global" {
-		return filepath.Join(home, ".agents", "skills")
-	}
-	return filepath.Join(projectRoot, ".agents", "skills")
-}
+// Note (D1): there is deliberately no separate UniversalSkillDir helper. The
+// universal `.agents/skills` tree is just the ProjectDir of every agent whose
+// AgentTarget has Universal=true, and AgentSkillDir resolves it -- including
+// the env-override precedence those agents follow. A second resolver would be
+// dead code that could silently drift from the agent table.
 
 // InstallOp is one planned skill copy.
 type InstallOp struct {

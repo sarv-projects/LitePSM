@@ -47,7 +47,7 @@ jobs:
 
       - name: Check Node.js Entry Points
         run: |
-          node --check npm/bin/litepsm.js
+          node --check npm/bin/litespm.js
           node --check npm/scripts/install-binary.js
 
   test-go:

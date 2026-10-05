@@ -2,7 +2,7 @@
 
 ## 1. Daemon Process Lifecycle
 
-The LitePSM Daemon is a single-instance background worker per operating system user account. It manages all state mutations, provider processes, and security policies.
+The LiteSPM Daemon is a single-instance background worker per operating system user account. It manages all state mutations, provider processes, and security policies.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -31,8 +31,8 @@ To prevent split-brain scenarios where two daemon processes run concurrently:
 *   If another process holds the lock, the new invocation connects to the existing daemon rather than starting a duplicate listener.
 
 ### 1.2 Autostart Behavior
-When a host agent boots a Bridge Shim (e.g., `litepsm bridge stdio --host claude-code`), the shim attempts to connect to the IPC endpoint. If connection fails (`ECONNREFUSED` or `ENOENT`):
-1.  The shim spawns `litepsm daemon serve --background` detached.
+When a host agent boots a Bridge Shim (e.g., `litespm bridge stdio --host claude-code`), the shim attempts to connect to the IPC endpoint. If connection fails (`ECONNREFUSED` or `ENOENT`):
+1.  The shim spawns `litespm daemon serve --background` detached.
 2.  Polls the IPC endpoint with exponential backoff (initial: 20ms, max: 200ms, timeout: 5s).
 3.  Once connected, completes the handshake and proceeds.
 
@@ -41,7 +41,7 @@ When a host agent boots a Bridge Shim (e.g., `litepsm bridge stdio --host claude
 ## 2. Platform IPC Transports
 
 ### 2.1 Windows Named Pipes
-*   **Pipe Path:** `\\.\pipe\litepsm-daemon-<SHA256(Username+UserSID)[:16]>`
+*   **Pipe Path:** `\\.\pipe\litespm-daemon-<SHA256(Username+UserSID)[:16]>`
 *   **Security Descriptor:** Created with a custom Security Descriptor Definition Language (SDDL) string that grants Full Control (`GA`) exclusively to the Creator/Owner (`OW`) and denies all other users:
     ```text
     SDDL: D:(A;;GA;;;OW)
@@ -49,7 +49,7 @@ When a host agent boots a Bridge Shim (e.g., `litepsm bridge stdio --host claude
 *   **Buffer Sizes:** In/out buffers initialized to 64 KiB with message-mode or byte-stream framing.
 
 ### 2.2 Linux & macOS Domain Sockets
-*   **Socket Path:** `$XDG_RUNTIME_DIR/litepsm/daemon.sock` (fallback: `~/.local/state/litepsm/daemon.sock`).
+*   **Socket Path:** `$XDG_RUNTIME_DIR/litespm/daemon.sock` (fallback: `~/.local/state/litespm/daemon.sock`).
 *   **Permissions:** The containing directory is initialized with `0700` (`rwx------`). The socket file itself is restricted to `0600` (`rw-------`).
 
 ---

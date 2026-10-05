@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/catalogbuild"
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/catalogbuild"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // SyncResult details the outcome of a catalog synchronization check.

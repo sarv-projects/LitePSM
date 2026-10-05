@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 const (

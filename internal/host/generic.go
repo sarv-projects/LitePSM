@@ -3,7 +3,7 @@ package host
 // generic.go — a HostAdapter implemented from a BridgeTarget.
 //
 // One implementation serves every data-driven target: it resolves the config
-// path for a scope, backs it up, merges the single `litepsm` bridge entry in
+// path for a scope, backs it up, merges the single `litespm` bridge entry in
 // the host's own format, and verifies the result. The per-agent knowledge lives
 // entirely in the BridgeTarget row.
 
@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // GenericAdapter serves any BridgeTarget through the HostAdapter contract.
@@ -117,10 +117,24 @@ func (a *GenericAdapter) PlanSetup(ctx context.Context, binaryPath, backupDir st
 func (a *GenericAdapter) renderConfig(orig, binaryPath string, projectScope bool) (string, error) {
 	keyPath := a.Target.keyPathFor(projectScope)
 	if a.Target.Format == FormatTOML {
-		return mergeTOMLEntry(orig, a.Target.tomlTable(), a.Target.tomlEntryBlock(binaryPath))
+		// Adopt a pre-rename `[prefix.litepsm]` table before writing the current
+		// `[prefix.litespm]` one, so a host that predates the rename ends up with
+		// exactly one bridge table rather than a duplicate.
+		cleaned, _, err := stripTOMLEntryNamed(orig, a.Target.keyPathFor(false), legacyServerName)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", a.Target.Name, err)
+		}
+		return mergeTOMLEntry(cleaned, a.Target.tomlTable(), a.Target.tomlEntryBlock(binaryPath))
+	}
+	// Same adoption for JSON/JSONC: drop the legacy member, then splice in the
+	// current one. The legacy member is removed surgically so comments and key
+	// order elsewhere survive.
+	cleaned, _, err := stripJSONEntryNamed(orig, keyPath, legacyServerName)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", a.Target.Name, err)
 	}
 	entry := a.Target.jsonEntryValue(binaryPath)
-	merged, err := mergeJSONEntrySurgical(orig, keyPath, entry)
+	merged, err := mergeJSONEntrySurgical(cleaned, keyPath, entry)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", a.Target.Name, err)
 	}
@@ -134,10 +148,10 @@ func (a *GenericAdapter) renderConfig(orig, binaryPath string, projectScope bool
 	return merged, nil
 }
 
-// tomlTable renders the table path as `[mcp_servers.litepsm]`.
+// tomlTable renders the table path as `[mcp_servers.litespm]`.
 func (t BridgeTarget) tomlTable() string {
 	parts := append([]string{}, t.keyPathFor(false)...)
-	parts = append(parts, litepsmServerName)
+	parts = append(parts, litespmServerName)
 	return "[" + strings.Join(parts, ".") + "]"
 }
 
@@ -265,11 +279,11 @@ func parseTOMLComponents(content, path string) []PreExistingComponent {
 	var out []PreExistingComponent
 	for _, line := range strings.Split(content, "\n") {
 		t := strings.TrimSpace(line)
-		if !strings.HasPrefix(t, "[mcp_servers.") || t == "[mcp_servers."+litepsmServerName+"]" {
+		if !strings.HasPrefix(t, "[mcp_servers.") {
 			continue
 		}
 		name := strings.TrimSuffix(strings.TrimPrefix(t, "[mcp_servers."), "]")
-		if name == "" {
+		if name == "" || name == litespmServerName || name == legacyServerName {
 			continue
 		}
 		out = append(out, PreExistingComponent{

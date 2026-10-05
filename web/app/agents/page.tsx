@@ -30,9 +30,9 @@ export default function AgentsPage() {
         </div>
 
         <p className="mt-2 max-w-prose text-[13px] leading-relaxed text-ink-2">
-          An entry&rsquo;s compatibility list is what its publisher declared. LitePSM adds a bridge entry to
+          An entry&rsquo;s compatibility list is what its publisher declared. LiteSPM adds a bridge entry to
           the hosts it has compiled-in adapters for; the remaining hosts are indexed because publishers list
-          them, not because LitePSM can edit their configuration.
+          them, not because LiteSPM can edit their configuration.
         </p>
 
         <div className="mt-7 border-b border-ink pb-2">
@@ -74,7 +74,7 @@ export default function AgentsPage() {
                     {host ? (
                       <span
                         className="inline-flex items-center gap-1 text-[11px] text-ink"
-                        title="LitePSM has a compiled-in adapter that can write this host's config file"
+                        title="LiteSPM has a compiled-in adapter that can write this host's config file"
                       >
                         <Check className="h-3 w-3" aria-hidden="true" />
                         managed
@@ -90,7 +90,7 @@ export default function AgentsPage() {
                     className="t-mono hidden truncate text-[11px] text-ink-3 md:order-4 md:block"
                     title={host ? host.userPath : undefined}
                   >
-                    {host ? host.userPath : "not managed by LitePSM"}
+                    {host ? host.userPath : "not managed by LiteSPM"}
                   </code>
                 </Link>
               </li>

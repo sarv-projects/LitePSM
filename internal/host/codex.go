@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // CodexAdapter manages integration with OpenAI Codex CLI.
@@ -72,16 +72,23 @@ func (a *CodexAdapter) PlanSetup(ctx context.Context, binaryPath string, backupD
 	}
 
 	cleanBin := filepath.ToSlash(binaryPath)
-	entry := fmt.Sprintf("\n[mcp_servers.litepsm]\ncommand = %q\nargs = [\"bridge\", \"stdio\", \"--host\", \"codex\"]\n", cleanBin)
+	entry := fmt.Sprintf("\n[mcp_servers.litespm]\ncommand = %q\nargs = [\"bridge\", \"stdio\", \"--host\", \"codex\"]\n", cleanBin)
 
-	proposed := origContent
-	if strings.Contains(origContent, "[mcp_servers.litepsm]") {
+	// Adopt a pre-rename `[mcp_servers.litepsm]` table before writing the
+	// current one, so an upgraded host keeps exactly one bridge table.
+	base := origContent
+	if cleaned, removed, err := stripTOMLEntryNamed(base, []string{"mcp_servers"}, legacyServerName); err == nil && removed {
+		base = cleaned
+	}
+
+	proposed := base
+	if strings.Contains(base, "[mcp_servers.litespm]") {
 		// Update existing section
-		lines := strings.Split(origContent, "\n")
+		lines := strings.Split(base, "\n")
 		var newLines []string
 		skip := false
 		for _, l := range lines {
-			if strings.TrimSpace(l) == "[mcp_servers.litepsm]" {
+			if strings.TrimSpace(l) == "[mcp_servers.litespm]" {
 				skip = true
 				newLines = append(newLines, strings.TrimRight(entry, "\n"))
 				continue
@@ -95,7 +102,7 @@ func (a *CodexAdapter) PlanSetup(ctx context.Context, binaryPath string, backupD
 		}
 		proposed = strings.Join(newLines, "\n")
 	} else {
-		proposed = strings.TrimRight(origContent, "\n") + entry
+		proposed = strings.TrimRight(base, "\n") + entry
 	}
 
 	return &HostChangePlan{
@@ -132,7 +139,7 @@ func (a *CodexAdapter) VerifySetup(ctx context.Context) (*HostVerification, erro
 	}
 
 	content := string(data)
-	registered := strings.Contains(content, "[mcp_servers.litepsm]") && strings.Contains(content, "bridge")
+	registered := strings.Contains(content, "[mcp_servers.litespm]") && strings.Contains(content, "bridge")
 	status := "missing"
 	if registered {
 		status = "ready"
@@ -166,7 +173,7 @@ func parseTomlMcpComponents(content string, configPath string) []PreExistingComp
 	var currentComp *PreExistingComponent
 
 	flush := func() {
-		if currentComp != nil && currentComp.Name != "" && currentComp.Name != "litepsm" {
+		if currentComp != nil && currentComp.Name != "" && currentComp.Name != litespmServerName && currentComp.Name != legacyServerName {
 			results = append(results, *currentComp)
 		}
 		currentComp = nil
@@ -181,7 +188,7 @@ func parseTomlMcpComponents(content string, configPath string) []PreExistingComp
 			flush()
 			if strings.HasPrefix(trimmed, "[mcp_servers.") {
 				name := strings.TrimSuffix(strings.TrimPrefix(trimmed, "[mcp_servers."), "]")
-				if name != "litepsm" {
+				if name != litespmServerName && name != legacyServerName {
 					currentComp = &PreExistingComponent{
 						Name:       name,
 						Kind:       "mcp",
@@ -223,7 +230,7 @@ func parseTomlMcpComponents(content string, configPath string) []PreExistingComp
 func (a *CodexAdapter) RenderManualSetup(binaryPath string) string {
 	cleanBin := filepath.ToSlash(binaryPath)
 	return fmt.Sprintf(`# Add to ~/.codex/config.toml
-[mcp_servers.litepsm]
+[mcp_servers.litespm]
 command = %q
 args = ["bridge", "stdio", "--host", "codex"]
 `, cleanBin)

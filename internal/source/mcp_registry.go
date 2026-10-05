@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // MCPRegistryServerSchema represents the upstream server.json schema from the MCP Registry.
@@ -50,7 +50,7 @@ type MCPRegistryRemote struct {
 	AuthType  string `json:"authType,omitempty"` // oauth2 | api_key | none
 }
 
-// MCPRegistryAdapter normalizes the Official MCP Registry feed into LitePSM domain entities.
+// MCPRegistryAdapter normalizes the Official MCP Registry feed into LiteSPM domain entities.
 type MCPRegistryAdapter struct {
 	sourceID domain.SourceID
 	rawFeed  []byte
@@ -174,7 +174,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 					Args:    pkg.Args,
 					Env:     pkg.Env,
 				},
-				SupportedByLitePSM: domain.SupportYes,
+				SupportedByLiteSPM: domain.SupportYes,
 			}
 
 			var reqs []domain.Requirement
@@ -213,7 +213,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 					Type:     rem.Transport,
 					Endpoint: rem.URL,
 				},
-				SupportedByLitePSM: domain.SupportYes,
+				SupportedByLiteSPM: domain.SupportYes,
 			}
 
 			verRecord := &domain.VersionRecord{

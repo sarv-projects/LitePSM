@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# LitePSM Multi-Platform Build Script
+# LiteSPM Multi-Platform Build Script
 # Targets: Windows (amd64, arm64), Linux (amd64, arm64), macOS (amd64, arm64)
 
 VERSION="${VERSION:-0.3.0}"
@@ -9,16 +9,16 @@ DIST_DIR="dist"
 mkdir -p "${DIST_DIR}"
 
 echo "================================================="
-echo "Building LitePSM v${VERSION} Multi-Platform Matrix"
+echo "Building LiteSPM v${VERSION} Multi-Platform Matrix"
 echo "================================================="
 
 TARGETS=(
-    "windows/amd64/litepsm-windows-amd64.exe"
-    "windows/arm64/litepsm-windows-arm64.exe"
-    "linux/amd64/litepsm-linux-amd64"
-    "linux/arm64/litepsm-linux-arm64"
-    "darwin/amd64/litepsm-darwin-amd64"
-    "darwin/arm64/litepsm-darwin-arm64"
+    "windows/amd64/litespm-windows-amd64.exe"
+    "windows/arm64/litespm-windows-arm64.exe"
+    "linux/amd64/litespm-linux-amd64"
+    "linux/arm64/litespm-linux-arm64"
+    "darwin/amd64/litespm-darwin-amd64"
+    "darwin/arm64/litespm-darwin-arm64"
 )
 
 for target in "${TARGETS[@]}"; do
@@ -30,7 +30,7 @@ for target in "${TARGETS[@]}"; do
         -trimpath \
         -ldflags="-s -w -X main.Version=${VERSION}" \
         -o "${out_path}" \
-        ./cmd/litepsm
+        ./cmd/litespm
 done
 
 echo ""
@@ -38,9 +38,9 @@ echo "● Generating SHA-256 Checksums..."
 (
     cd "${DIST_DIR}"
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum litepsm-* > SHA256SUMS.txt
+        sha256sum litespm-* > SHA256SUMS.txt
     elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 litepsm-* > SHA256SUMS.txt
+        shasum -a 256 litespm-* > SHA256SUMS.txt
     fi
 )
 

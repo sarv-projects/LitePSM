@@ -1,6 +1,6 @@
 # Binaries and executables
-/litepsm
-/litepsm.exe
+/litespm
+/litespm.exe
 dist/
 *.exe
 *.dll

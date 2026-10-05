@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 func TestDoctor_RunChecksAndRepair(t *testing.T) {
@@ -78,5 +78,37 @@ func TestDoctor_RunChecksAndRepair(t *testing.T) {
 	}
 	if _, err := os.Stat(danglingFile); !os.IsNotExist(err) {
 		t.Errorf("dangling file was not purged by repair plan")
+	}
+}
+
+// TestDoctor_EveryCheckIsClassified pins that every built-in check carries a
+// failure category, so a failing run maps to the documented ARCH/20 §2 exit
+// code instead of collapsing into STATE_ERROR.
+func TestDoctor_EveryCheckIsClassified(t *testing.T) {
+	engine, _, _ := newTestEngine(t)
+	report := engine.RunChecks(context.Background())
+
+	if len(report.Checks) == 0 {
+		t.Fatal("no diagnostic checks ran")
+	}
+	for _, c := range report.Checks {
+		if c.Category == "" {
+			t.Errorf("check %q has no failure category", c.ID)
+		}
+	}
+
+	// Spot-check the categories the CLI contract depends on.
+	want := map[string]Category{
+		"check_db":      CategoryState,
+		"check_hosts":   CategoryHost,
+		"check_backups": CategoryHost,
+		"check_staging": CategoryInstall,
+		"check_cas":     CategoryInstall,
+		"check_secrets": CategoryProvider,
+	}
+	for _, c := range report.Checks {
+		if expected, ok := want[c.ID]; ok && c.Category != expected {
+			t.Errorf("check %q category = %q, want %q", c.ID, c.Category, expected)
+		}
 	}
 }

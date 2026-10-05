@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // SkillDocument represents a parsed SKILL.md file with frontmatter and body.
@@ -27,7 +27,7 @@ type SkillDocument struct {
 	BodyContent string
 }
 
-// AgentSkillsAdapter ingests portable SKILL.md workflows into LitePSM domain listings.
+// AgentSkillsAdapter ingests portable SKILL.md workflows into LiteSPM domain listings.
 type AgentSkillsAdapter struct {
 	sourceID  domain.SourceID
 	documents map[string][]byte // filename -> content
@@ -81,7 +81,7 @@ func (a *AgentSkillsAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 			ID:                 compID,
 			Kind:               domain.ComponentSkill,
 			Name:               doc.Name,
-			SupportedByLitePSM: domain.SupportYes,
+			SupportedByLiteSPM: domain.SupportYes,
 		}
 
 		artDigest := domain.ComputeBytesDigest(content)

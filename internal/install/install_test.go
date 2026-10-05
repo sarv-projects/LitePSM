@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/policy"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/policy"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 func createTestZip(t *testing.T, files map[string][]byte) []byte {

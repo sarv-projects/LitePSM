@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // ClaudeCodeAdapter manages integration with Claude Code CLI.
@@ -63,7 +63,10 @@ func (a *ClaudeCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, ba
 		mcpServers = make(map[string]any)
 	}
 
-	mcpServers["litepsm"] = map[string]any{
+	// Adopt a pre-rename `litepsm` entry: drop it before writing the current
+	// `litespm` entry so the config keeps exactly one bridge server.
+	delete(mcpServers, legacyServerName)
+	mcpServers["litespm"] = map[string]any{
 		"command": filepath.ToSlash(binaryPath),
 		"args":    []string{"bridge", "stdio", "--host", "claude-code"},
 	}
@@ -117,7 +120,7 @@ func (a *ClaudeCodeAdapter) VerifySetup(ctx context.Context) (*HostVerification,
 		return &HostVerification{HostID: "claude-code", ConfigPath: configPath, Status: "missing"}, nil
 	}
 
-	_, registered := mcpServers["litepsm"]
+	_, registered := mcpServers["litespm"]
 	status := "missing"
 	if registered {
 		status = "ready"
@@ -154,7 +157,7 @@ func (a *ClaudeCodeAdapter) DetectPreExistingComponents(ctx context.Context) ([]
 
 	var results []PreExistingComponent
 	for name, details := range mcpServers {
-		if name == "litepsm" {
+		if name == litespmServerName || name == legacyServerName {
 			continue
 		}
 		comp := PreExistingComponent{
@@ -185,7 +188,7 @@ func (a *ClaudeCodeAdapter) RenderManualSetup(binaryPath string) string {
 	cleanBin := filepath.ToSlash(binaryPath)
 	return fmt.Sprintf(`// Add to ~/.claude.json under "mcpServers":
 "mcpServers": {
-  "litepsm": {
+  "litespm": {
     "command": %q,
     "args": ["bridge", "stdio", "--host", "claude-code"]
   }

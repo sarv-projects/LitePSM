@@ -71,7 +71,7 @@ const (
 	ComponentAsset           ComponentKind = "asset"
 )
 
-// SupportLevel defines LitePSM support guarantee for a component.
+// SupportLevel defines LiteSPM support guarantee for a component.
 type SupportLevel string
 
 const (
@@ -179,7 +179,7 @@ type ProvenanceRecord struct {
 	CatalogReleaseID string    `json:"catalogReleaseId,omitempty"`
 }
 
-// Listing represents a normalized discovery entry in the LitePSM catalog.
+// Listing represents a normalized discovery entry in the LiteSPM catalog.
 type Listing struct {
 	SchemaVersion        int                 `json:"schemaVersion"`
 	ID                   string              `json:"id"` // ListingId
@@ -278,7 +278,7 @@ type Component struct {
 	HostExtensions     map[string]any      `json:"hostExtensions,omitempty"`
 	Runtime            *RuntimeDescriptor  `json:"runtime,omitempty"`
 	DeclaredEffects    []EffectDeclaration `json:"declaredEffects"`
-	SupportedByLitePSM SupportLevel        `json:"supportedByLitePSM"`
+	SupportedByLiteSPM SupportLevel        `json:"supportedByLiteSPM"`
 }
 
 // VersionRecord represents a specific release of a listing with resolved artifact pointers.

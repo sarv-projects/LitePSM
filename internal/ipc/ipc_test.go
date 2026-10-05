@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -11,6 +12,7 @@ import (
 type mockListener struct {
 	conns  chan net.Conn
 	closed chan struct{}
+	once   sync.Once
 }
 
 func newMockListener() *mockListener {
@@ -30,11 +32,9 @@ func (m *mockListener) Accept() (net.Conn, error) {
 }
 
 func (m *mockListener) Close() error {
-	select {
-	case <-m.closed:
-	default:
-		close(m.closed)
-	}
+	// Idempotent and safe for concurrent callers: Serve may close the
+	// listener it was given while Stop/test cleanup also closes it.
+	m.once.Do(func() { close(m.closed) })
 	return nil
 }
 
@@ -85,12 +85,12 @@ func TestIPCHandshakeAndEcho(t *testing.T) {
 
 	// 2. Echo Call
 	var echoResult map[string]string
-	err = client.Call(ctx, "test.echo", map[string]string{"message": "hello litepsm"}, &echoResult)
+	err = client.Call(ctx, "test.echo", map[string]string{"message": "hello litespm"}, &echoResult)
 	if err != nil {
 		t.Fatalf("echo call failed: %v", err)
 	}
-	if echoResult["reply"] != "hello litepsm" {
-		t.Fatalf("expected reply 'hello litepsm', got %q", echoResult["reply"])
+	if echoResult["reply"] != "hello litespm" {
+		t.Fatalf("expected reply 'hello litespm', got %q", echoResult["reply"])
 	}
 
 	// 3. Method Not Found
@@ -228,6 +228,36 @@ func TestServerStopIdempotentAndCancelsHandlers(t *testing.T) {
 		// Stop completed cleanly
 	case <-time.After(2 * time.Second):
 		t.Fatal("server.Stop() timed out or deadlocked")
+	}
+}
+
+// TestServerStopDoesNotRaceServeStartup pins the server lifecycle invariant
+// that Stop may run concurrently with, or before, Serve without racing the
+// server WaitGroup. A positive WaitGroup delta must never start from zero
+// concurrently with Wait; Serve registers its accept loop under the same mutex
+// Stop uses to mark the server stopped, so either the Add is observed by Wait or
+// it never happens. Before this invariant held, Stop's Wait and a late Serve
+// Add raced (the internal/bridge -race flake).
+func TestServerStopDoesNotRaceServeStartup(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		server := NewServer("0.1.0", "2026-07-28")
+		listener := newMockListener()
+
+		serveDone := make(chan error, 1)
+		go func() { serveDone <- server.Serve(listener) }()
+
+		// Stop immediately, racing Serve startup: Stop must not deadlock when
+		// Serve has not yet registered, and Serve must still terminate.
+		if err := server.Stop(); err != nil {
+			t.Fatalf("iteration %d: Stop returned %v", i, err)
+		}
+		_ = listener.Close()
+
+		select {
+		case <-serveDone:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("iteration %d: Serve did not return after Stop", i)
+		}
 	}
 }
 

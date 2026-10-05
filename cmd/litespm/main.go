@@ -19,25 +19,25 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/agent"
-	"github.com/sarv-projects/litepsm/internal/bridge"
-	"github.com/sarv-projects/litepsm/internal/catalog"
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/doctor"
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/host"
-	"github.com/sarv-projects/litepsm/internal/install"
-	"github.com/sarv-projects/litepsm/internal/ipc"
-	"github.com/sarv-projects/litepsm/internal/policy"
-	"github.com/sarv-projects/litepsm/internal/provider"
-	"github.com/sarv-projects/litepsm/internal/resolver"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/skills"
-	"github.com/sarv-projects/litepsm/internal/state"
-	"github.com/sarv-projects/litepsm/internal/update"
+	"github.com/sarv-projects/litespm/internal/agent"
+	"github.com/sarv-projects/litespm/internal/bridge"
+	"github.com/sarv-projects/litespm/internal/catalog"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/doctor"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/host"
+	"github.com/sarv-projects/litespm/internal/install"
+	"github.com/sarv-projects/litespm/internal/ipc"
+	"github.com/sarv-projects/litespm/internal/policy"
+	"github.com/sarv-projects/litespm/internal/provider"
+	"github.com/sarv-projects/litespm/internal/resolver"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/skills"
+	"github.com/sarv-projects/litespm/internal/state"
+	"github.com/sarv-projects/litespm/internal/update"
 )
 
-// Version is the canonical LitePSM version. Release builds override it via
+// Version is the canonical LiteSPM version. Release builds override it via
 // -ldflags "-X main.Version=<v>" (see scripts/build-release.sh). Keep this
 // value in sync with npm/package.json — the npm postinstall downloads the
 // release asset named after the npm package version.
@@ -57,7 +57,7 @@ func main() {
 
 	switch command {
 	case "version", "--version", "-v":
-		fmt.Printf("LitePSM v%s (Protocol %s, %s/%s, %s)\n", Version, ProtocolVersion, runtime.GOOS, runtime.GOARCH, runtime.Version())
+		fmt.Printf("LiteSPM v%s (Protocol %s, %s/%s, %s)\n", Version, ProtocolVersion, runtime.GOOS, runtime.GOARCH, runtime.Version())
 
 	case "setup", "init":
 		runInteractiveWizard()
@@ -66,7 +66,9 @@ func main() {
 		runSelfUpdate(os.Args[2:])
 
 	case "doctor":
-		runDoctor(os.Args[2:])
+		if code := runDoctor(os.Args[2:]); code != 0 {
+			os.Exit(code)
+		}
 
 	case "search":
 		query := ""
@@ -82,13 +84,13 @@ func main() {
 		if len(os.Args) >= 3 && os.Args[2] == "sync" {
 			runCatalogSync()
 		} else {
-			fmt.Println("Usage: litepsm catalog sync")
+			fmt.Println("Usage: litespm catalog sync")
 			os.Exit(1)
 		}
 
 	case "daemon":
 		if len(os.Args) < 3 || os.Args[2] != "serve" {
-			fmt.Println("Usage: litepsm daemon serve")
+			fmt.Println("Usage: litespm daemon serve")
 			os.Exit(1)
 		}
 		runDaemonServe()
@@ -98,7 +100,7 @@ func main() {
 
 	case "host":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: litepsm host [list|detect|setup <host-id>|remove <host-id>|remove --all]")
+			fmt.Println("Usage: litespm host [list|detect|setup <host-id>|remove <host-id>|remove --all]")
 			os.Exit(1)
 		}
 		runHostCommand(os.Args[2:])
@@ -111,7 +113,7 @@ func main() {
 
 	case "skills":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: litepsm skills [add <source> | list | remove <name>|--all]")
+			fmt.Println("Usage: litespm skills [add <source> | list | update <name>... --source <src> | remove <name>|--all]")
 			os.Exit(1)
 		}
 		switch os.Args[2] {
@@ -119,11 +121,13 @@ func main() {
 			runSkillsAdd(os.Args[3:])
 		case "list":
 			runSkillsList(os.Args[3:])
+		case "update":
+			runSkillsUpdate(os.Args[3:])
 		case "remove":
 			runSkillsRemove(os.Args[3:])
 		default:
 			fmt.Printf("Unknown skills subcommand: %s\n", os.Args[2])
-			fmt.Println("Usage: litepsm skills [add <source> | list | remove <name>|--all]")
+			fmt.Println("Usage: litespm skills [add <source> | list | update <name>... --source <src> | remove <name>|--all]")
 			os.Exit(1)
 		}
 
@@ -138,11 +142,11 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Printf(`LitePSM - Universal Package & Capability Manager for AI Coding Agents
+	fmt.Printf(`LiteSPM - The Lightweight Skill & Package Manager for AI Agents
 
 Usage:
-  litepsm                     Run interactive agent setup wizard
-  litepsm <command> [args]    Execute specific subcommand
+  litespm                     Run interactive agent setup wizard
+  litespm <command> [args]    Execute specific subcommand
 
 Available Commands:
   setup                       Interactive setup wizard for AI agent hosts
@@ -154,18 +158,44 @@ Available Commands:
   agent list [--json]         List installable ACP agents from the registry
   agent resolve <id>          Resolve an ACP agent launch spec for this host
   skills add <source>         Install SKILL.md skills (owner/repo, git URL, local dir)
+  skills update <name>...     Update installed skills from a source (--source, --ref, --dry-run)
+  skills remove <name>|--all  Remove installed skills recorded in the install ledger
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
-  self-update                 Check for and apply binary updates
-  daemon serve                Start the LitePSM background supervisor and IPC engine
+  self-update [--force]       Check for and apply binary updates
+  daemon serve                Start the LiteSPM background supervisor and IPC engine
   version                     Print version and build details
   help                        Show this help text
 
 Documentation & Architecture:
-  https://github.com/sarv-projects/litepsm
+  https://github.com/sarv-projects/litespm
 `)
 }
 
+// defaultUpdateDownloadLimit bounds the binary download when the configuration
+// does not supply a smaller limit. It mirrors the 64 MiB order of magnitude the
+// updater uses for its own manifest reads and is intentionally generous enough
+// for any supported platform binary.
+const defaultUpdateDownloadLimit = 64 << 20
+
+func selfUpdateUsage() {
+	fmt.Println(`Usage: litespm self-update [--force]
+
+Check the published release manifest for a newer binary. When one is available
+it is downloaded from the release asset URL (never the release HTML page), its
+SHA-256 checksum is verified, and the running executable is replaced atomically.
+
+Flags:
+  --force     reinstall or downgrade even when the manifest version is not newer
+  --help, -h  show this help text`)
+}
+
 func runSelfUpdate(args []string) {
+	if hasFlag(args, "--help") || hasFlag(args, "-h") {
+		selfUpdateUsage()
+		return
+	}
+	force := hasFlag(args, "--force")
+
 	ctx := context.Background()
 	paths, err := config.ResolvePlatformPaths()
 	if err != nil {
@@ -173,33 +203,50 @@ func runSelfUpdate(args []string) {
 		os.Exit(1)
 	}
 
-	cfg, _ := config.LoadConfig("")
-	regURL := "https://registry.litepsm.dev"
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		regURL = cfg.Catalog.RegistryURL
+	// The release manifest is the GitHub Releases API document published by the
+	// release workflow. The catalog registry origin is a different service
+	// (catalog metadata) and is never consulted for binaries. Configuration may
+	// still bound the download size.
+	maxDownload := int64(defaultUpdateDownloadLimit)
+	if cfg, cfgErr := config.LoadConfig(""); cfgErr == nil && cfg != nil && cfg.Network.MaxDownloadSizeBytes > 0 {
+		maxDownload = cfg.Network.MaxDownloadSizeBytes
 	}
 
-	u := update.NewUpdater(regURL)
-	fmt.Printf("Checking for LitePSM updates (current: v%s)...\n", Version)
-	status, info, err := u.CheckForUpdate(ctx, Version)
+	u := update.NewUpdater(update.DefaultReleaseManifestURL)
+	fmt.Printf("Checking for LiteSPM updates (current: v%s)...\n", Version)
+	status, info, err := u.CheckForUpdateWithOptions(ctx, Version, force)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	if !status.UpdateAvailable {
-		fmt.Printf("✓ LitePSM is already up to date (v%s is latest).\n", Version)
+		fmt.Printf("LiteSPM is already up to date (v%s is latest).\n", Version)
 		return
+	}
+
+	// ReleaseURL is the human-facing release page; the binary and its checksum
+	// live on the per-asset download URLs. Fail closed when either is missing
+	// rather than downloading HTML bytes as if they were a binary.
+	binName := update.TargetBinaryName()
+	downloadURL, expectedChecksum, err := releaseDownloadTarget(info, binName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Update aborted: %v\n", err)
+		os.Exit(1)
 	}
 
 	fmt.Printf("New version available: v%s (current: v%s)\n", status.LatestVersion, Version)
 	fmt.Printf("Release URL: %s\n", info.ReleaseURL)
-	execPath, _ := os.Executable()
+	execPath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to locate the running executable: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Printf("Target binary: %s\n", execPath)
 
 	stagingDir := paths.StagingPath()
-	fmt.Printf("Downloading binary update from %s...\n", info.ReleaseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.ReleaseURL, nil)
+	fmt.Printf("Downloading %s...\n", downloadURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create update request: %v\n", err)
 		os.Exit(1)
@@ -216,25 +263,52 @@ func runSelfUpdate(args []string) {
 		os.Exit(1)
 	}
 
-	payload, err := io.ReadAll(resp.Body)
+	payload, err := readBounded(resp.Body, maxDownload)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read update payload: %v\n", err)
 		os.Exit(1)
 	}
 
-	binName := fmt.Sprintf("litepsm-%s-%s", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
-	}
-	expectedChecksum := info.ChecksumsSHA256[binName]
-
 	fmt.Println("Verifying SHA-256 checksum and applying atomic update...")
-	err = u.ApplyUpdate(ctx, payload, expectedChecksum, execPath, stagingDir)
-	if err != nil {
+	if err := u.ApplyUpdate(ctx, payload, expectedChecksum, execPath, stagingDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Self-update failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ Successfully updated LitePSM to v%s!\n", status.LatestVersion)
+	fmt.Printf("LiteSPM updated to v%s.\n", status.LatestVersion)
+}
+
+// releaseDownloadTarget selects the platform binary URL and its mandatory
+// checksum from a release document. Both are required: an update with no
+// checksum must never be applied.
+func releaseDownloadTarget(info *update.ReleaseInfo, binName string) (downloadURL, checksum string, err error) {
+	if info == nil {
+		return "", "", fmt.Errorf("release manifest returned no release information")
+	}
+	downloadURL = strings.TrimSpace(info.DownloadURLs[binName])
+	if downloadURL == "" {
+		return "", "", fmt.Errorf("release %s publishes no binary asset for %s", info.Version, binName)
+	}
+	checksum = strings.TrimSpace(info.ChecksumsSHA256[binName])
+	if checksum == "" {
+		return "", "", fmt.Errorf("release %s publishes no SHA-256 checksum for %s", info.Version, binName)
+	}
+	return downloadURL, checksum, nil
+}
+
+// readBounded reads at most limit bytes and refuses an oversized payload rather
+// than truncating it into a corrupt binary.
+func readBounded(r io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("invalid download limit %d", limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("download exceeds the %d byte limit", limit)
+	}
+	return data, nil
 }
 
 func runInteractiveWizard() {
@@ -265,11 +339,11 @@ func runBridge(args []string) {
 	if err != nil {
 		// Standalone mode has no capability data; say so instead of letting a
 		// silent path failure masquerade as a working bridge.
-		fmt.Fprintf(os.Stderr, "litepsm bridge: platform path resolution failed: %v; running standalone with no capabilities\n", err)
+		fmt.Fprintf(os.Stderr, "litespm bridge: platform path resolution failed: %v; running standalone with no capabilities\n", err)
 	} else {
 		c, dialErr := ipc.Dial(paths.IPCEndpoint())
 		if dialErr != nil {
-			fmt.Fprintf(os.Stderr, "litepsm bridge: daemon dial failed: %v; running standalone with no capabilities (start the daemon with 'litepsm daemon serve')\n", dialErr)
+			fmt.Fprintf(os.Stderr, "litespm bridge: daemon dial failed: %v; running standalone with no capabilities (start the daemon with 'litespm daemon serve')\n", dialErr)
 		} else {
 			client = c
 			defer client.Close()
@@ -317,7 +391,7 @@ func runHostCommand(args []string) {
 
 	case "setup":
 		if len(args) < 2 {
-			fmt.Println("Usage: litepsm host setup <host-id>")
+			fmt.Println("Usage: litespm host setup <host-id>")
 			os.Exit(1)
 		}
 		hostID := args[1]
@@ -361,7 +435,7 @@ func runHostCommand(args []string) {
 // equally easy.
 func runHostRemove(ctx context.Context, args []string) {
 	if len(args) == 0 {
-		fmt.Println("Usage: litepsm host remove <host-id> | --all")
+		fmt.Println("Usage: litespm host remove <host-id> | --all")
 		os.Exit(1)
 	}
 
@@ -406,14 +480,14 @@ func runHostRemove(ctx context.Context, args []string) {
 		fmt.Printf("○ %s was not modified: %s\n", adapter.Descriptor().DisplayName, reason)
 		return
 	}
-	fmt.Printf("✓ Removed the LitePSM bridge entry from %s\n", adapter.Descriptor().DisplayName)
+	fmt.Printf("✓ Removed the LiteSPM bridge entry from %s\n", adapter.Descriptor().DisplayName)
 	fmt.Printf("  • Config File: %s\n", result.ConfigPath)
 	if result.BackupPath != "" {
 		fmt.Printf("  • Backup:      %s\n", result.BackupPath)
 	}
 }
 
-// runUninstall reverses everything LitePSM wrote: the bridge entry in every
+// runUninstall reverses everything LiteSPM wrote: the bridge entry in every
 // host config it touched. Skill directories are reported rather than deleted,
 // because a skills directory may contain files the user added alongside ours.
 func runUninstall(ctx context.Context, args []string) {
@@ -430,7 +504,7 @@ func runUninstall(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Println("Removing the LitePSM bridge entry from every agent host config…")
+	fmt.Println("Removing the LiteSPM bridge entry from every agent host config…")
 	fmt.Println()
 
 	// A dry run must not touch anything, so it plans without applying.
@@ -476,11 +550,11 @@ func runUninstall(ctx context.Context, args []string) {
 
 	fmt.Println()
 	fmt.Println("Still on disk:")
-	fmt.Println("  • Skill directories copied by `litepsm skills add`. They live inside each")
+	fmt.Println("  • Skill directories copied by `litespm skills add`. They live inside each")
 	fmt.Println("    agent's own skills tree and may hold files you added yourself, so this")
 	fmt.Println("    command does not delete them. See what is tracked, then remove it:")
-	fmt.Println("        litepsm skills list")
-	fmt.Println("        litepsm skills remove --all")
+	fmt.Println("        litespm skills list")
+	fmt.Println("        litespm skills remove --all")
 	fmt.Println("  • Backups written next to each config. They are your restore points;")
 	fmt.Println("    delete them yourself once you are satisfied.")
 }
@@ -489,7 +563,7 @@ func runAgentCommand(args []string) {
 	ctx := context.Background()
 
 	if len(args) == 0 {
-		fmt.Println("Usage: litepsm agent [list|resolve <id>] [--registry <url>] [--file <path>] [--json]")
+		fmt.Println("Usage: litespm agent [list|resolve <id>] [--registry <url>] [--file <path>] [--json]")
 		os.Exit(1)
 	}
 
@@ -566,7 +640,7 @@ func runAgentCommand(args []string) {
 
 	case "resolve":
 		if id == "" {
-			fmt.Println("Usage: litepsm agent resolve <id>")
+			fmt.Println("Usage: litespm agent resolve <id>")
 			os.Exit(1)
 		}
 		a, ok := reg.FindAgent(id)
@@ -637,7 +711,7 @@ func runSearch(query string) {
 	}
 
 	cfg, _ := config.LoadConfig("")
-	regURL := "https://registry.litepsm.dev"
+	regURL := config.DefaultRegistryURL
 	if cfg != nil && cfg.Catalog.RegistryURL != "" {
 		regURL = cfg.Catalog.RegistryURL
 	}
@@ -648,7 +722,7 @@ func runSearch(query string) {
 	if len(results) == 0 {
 		if catClient.Count() == 0 {
 			fmt.Printf("No capabilities found: the local catalog index is empty.\n")
-			fmt.Println("Run 'litepsm catalog sync' to populate it from the registry.")
+			fmt.Println("Run 'litespm catalog sync' to populate it from the registry.")
 			return
 		}
 		fmt.Printf("No capabilities found matching %q.\n", query)
@@ -671,7 +745,7 @@ func runSearch(query string) {
 	}
 }
 
-// installFlags holds the parsed command line for `litepsm install`.
+// installFlags holds the parsed command line for `litespm install`.
 type installFlags struct {
 	listingID   string
 	version     string
@@ -680,9 +754,9 @@ type installFlags struct {
 	showHelp    bool
 }
 
-const installUsage = "Usage: litepsm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]"
+const installUsage = "Usage: litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]"
 
-// parseInstallFlags parses `litepsm install` arguments strictly: unknown
+// parseInstallFlags parses `litespm install` arguments strictly: unknown
 // flags, missing flag values, an out-of-range --scope, extra positional
 // arguments, and a missing listing id are all errors (the caller exits 2).
 // `--help`/`-h` is reported separately so it can exit 0.
@@ -812,7 +886,7 @@ func runCatalogSync() {
 	}
 
 	cfg, _ := config.LoadConfig("")
-	regURL := "https://registry.litepsm.dev"
+	regURL := config.DefaultRegistryURL
 	if cfg != nil && cfg.Catalog.RegistryURL != "" {
 		regURL = cfg.Catalog.RegistryURL
 	}
@@ -845,7 +919,69 @@ func createSyntheticPackageArtifact(listingID string) []byte {
 	return buf.Bytes()
 }
 
-func runDoctor(args []string) {
+// ARCH/20 §2 CLI exit-code contract. Only the doctor-producible codes are
+// defined here; the table also reserves 2 (USAGE_ERROR) and 1 (INTERNAL_FAILURE)
+// for other command paths.
+const (
+	exitCatalogError   = 10
+	exitResolveError   = 20
+	exitApprovalDenied = 30
+	exitInstallError   = 40
+	exitProviderError  = 50
+	exitHostError      = 60
+	exitStateError     = 70
+)
+
+// doctorCategoryExitCode maps a failing check's category to the documented
+// ARCH/20 §2 exit code. An uncategorized failure falls back to STATE_ERROR so
+// older check producers keep the historical "a doctor FAIL is a recovery
+// condition" behavior.
+func doctorCategoryExitCode(category doctor.Category) int {
+	switch category {
+	case doctor.CategoryCatalog:
+		return exitCatalogError
+	case doctor.CategoryResolve:
+		return exitResolveError
+	case doctor.CategoryApproval:
+		return exitApprovalDenied
+	case doctor.CategoryInstall:
+		return exitInstallError
+	case doctor.CategoryProvider:
+		return exitProviderError
+	case doctor.CategoryHost:
+		return exitHostError
+	case doctor.CategoryState:
+		return exitStateError
+	default:
+		return exitStateError
+	}
+}
+
+// doctorExitCode maps a diagnostic report to the process exit code. Each FAIL
+// returns its category's documented code; when several categories fail, the
+// highest (most severe) code wins. Warnings alone never fail the command. A
+// report with a nonzero FailCount but no inspectable failing check still exits
+// STATE_ERROR rather than 0.
+func doctorExitCode(report *doctor.DoctorReport) int {
+	if report == nil {
+		return 0
+	}
+	worst := 0
+	for _, c := range report.Checks {
+		if c.Status != doctor.StatusFail {
+			continue
+		}
+		if code := doctorCategoryExitCode(c.Category); code > worst {
+			worst = code
+		}
+	}
+	if worst == 0 && report.FailCount > 0 {
+		return exitStateError
+	}
+	return worst
+}
+
+func runDoctor(args []string) int {
 	repairMode := false
 	yesMode := false
 	for _, a := range args {
@@ -886,8 +1022,9 @@ func runDoctor(args []string) {
 			ID:             "check_secrets_open",
 			Name:           "Secret Vault Availability",
 			Status:         doctor.StatusFail,
+			Category:       doctor.CategoryProvider,
 			Message:        fmt.Sprintf("the secure credential vault could not be opened: %v", storeErr),
-			Recommendation: "Provide a functional OS credential vault; LitePSM refuses to store credentials in plaintext (ARCH/19).",
+			Recommendation: "Provide a functional OS credential vault; LiteSPM refuses to store credentials in plaintext (ARCH/19).",
 		})
 		// Re-aggregate so the printed summary matches the checks actually listed.
 		report.PassedCount, report.WarnCount, report.FailCount = 0, 0, 0
@@ -909,7 +1046,7 @@ func runDoctor(args []string) {
 		}
 	}
 
-	fmt.Println("\nLitePSM Diagnostic Health Report")
+	fmt.Println("\nLiteSPM Diagnostic Health Report")
 	fmt.Println(strings.Repeat("=", 60))
 	for _, c := range report.Checks {
 		var statusIcon string
@@ -934,7 +1071,7 @@ func runDoctor(args []string) {
 		plan := doctor.BuildRepairPlan(report, paths)
 		if len(plan.Actions) == 0 {
 			fmt.Println("\nNo automated repair actions necessary.")
-			return
+			return doctorExitCode(report)
 		}
 		fmt.Println("\nProposed Automated Repair Plan:")
 		for i, act := range plan.Actions {
@@ -948,25 +1085,37 @@ func runDoctor(args []string) {
 			response = strings.TrimSpace(strings.ToLower(response))
 			if response != "y" && response != "yes" {
 				fmt.Println("Repair aborted by user.")
-				return
+				// The report was computed before repair; failures still stand.
+				return doctorExitCode(report)
 			}
 		}
 
 		fmt.Println("\nExecuting Automated Repair Plan...")
+		// The exit code reflects the PRE-repair diagnosis: doctor does not
+		// re-run its checks after repair, so a run that found failures still
+		// reports them even if every action applied. Re-run `litespm doctor`
+		// to confirm a clean state. A failed action or a failed repair plan is
+		// a recovery condition and forces STATE_ERROR regardless of the
+		// pre-repair category.
+		code := doctorExitCode(report)
 		if err := doctor.ApplyRepairPlan(ctx, plan, paths, db); err != nil {
 			fmt.Fprintf(os.Stderr, "Repair error: %v\n", err)
+			code = exitStateError
 		}
 		for _, act := range plan.Actions {
 			if act.Applied {
 				fmt.Printf("✓ Applied: %s\n", act.Description)
 			} else if act.Error != "" {
 				fmt.Printf("✗ Failed:  %s (%s)\n", act.Description, act.Error)
+				code = exitStateError
 			}
 		}
 		fmt.Println("Repair cycle completed.")
+		return code
 	} else if report.FailCount > 0 || report.WarnCount > 0 {
-		fmt.Println("\nTip: Run 'litepsm doctor --repair' to preview and apply automated corrective actions.")
+		fmt.Println("\nTip: Run 'litespm doctor --repair' to preview and apply automated corrective actions.")
 	}
+	return doctorExitCode(report)
 }
 
 func runDaemonServe() {
@@ -981,7 +1130,7 @@ func runDaemonServe() {
 		os.Exit(1)
 	}
 
-	// ARCH/19: without a functional credential vault LitePSM halts rather than
+	// ARCH/19: without a functional credential vault LiteSPM halts rather than
 	// storing credentials anywhere unprotected.
 	secretStore, err := secrets.OpenSecretStore()
 	if err != nil {
@@ -1025,7 +1174,7 @@ func runDaemonServe() {
 		os.Exit(1)
 	}
 
-	regURL := "https://registry.litepsm.dev"
+	regURL := config.DefaultRegistryURL
 	if cfg != nil && cfg.Catalog.RegistryURL != "" {
 		regURL = cfg.Catalog.RegistryURL
 	}
@@ -1052,7 +1201,7 @@ func runDaemonServe() {
 	}
 	defer listener.Close()
 
-	fmt.Printf("[daemon] LitePSM Daemon v%s listening on %s (PID %d)\n", Version, endpoint, os.Getpid())
+	fmt.Printf("[daemon] LiteSPM Daemon v%s listening on %s (PID %d)\n", Version, endpoint, os.Getpid())
 
 	server := ipc.NewServer(Version, ProtocolVersion)
 
@@ -1087,7 +1236,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 	installEngine.SetPolicy(policyEngine)
 
 	// 1. tools.list returns installed capabilities & external detected tools.
-	// Truthfulness: LitePSM does not health-check or verify installed
+	// Truthfulness: LiteSPM does not health-check or verify installed
 	// capabilities at runtime, so Verified stays false and Status/Transport are
 	// omitted (unknown) unless derivable from real data. Kind is parsed from
 	// the canonical listing ID; external entries carry the kind detected in the
@@ -1607,15 +1756,16 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 
 // runStartupRecovery sweeps the operation journal before the daemon starts
 // serving and reports exactly what it did. Any failure to read or reconcile
-// the journal is returned so startup can halt instead of serving unreconciled
-// state.
+// the journal — including a per-operation recovery failure — is returned so
+// startup halts instead of proceeding on unreconciled state. The summary is
+// always printed first for observability.
 func runStartupRecovery(ctx context.Context, db *state.DB, stagingRoot string, treePath func(string) string) (state.RecoverySummary, error) {
 	summary, err := db.RecoverIncompleteOperations(ctx, stagingRoot, treePath)
+	fmt.Printf("[daemon] startup recovery: examined=%d rolledBack=%d committed=%d failed=%d\n",
+		summary.Examined, summary.RolledBack, summary.Committed, summary.Failed)
 	if err != nil {
 		return summary, fmt.Errorf("journal recovery could not complete: %w", err)
 	}
-	fmt.Printf("[daemon] startup recovery: examined=%d rolledBack=%d committed=%d failed=%d\n",
-		summary.Examined, summary.RolledBack, summary.Committed, summary.Failed)
 	return summary, nil
 }
 

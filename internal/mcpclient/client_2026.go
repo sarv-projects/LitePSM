@@ -31,7 +31,7 @@ func ConnectStreamableHTTP(ctx context.Context, endpoint string, headers map[str
 		headers:    headers,
 		httpClient: httpClient,
 		clientInfo: ClientInfo{
-			Name:    "litepsm-control-plane",
+			Name:    "litespm-control-plane",
 			Version: "0.1.0",
 		},
 	}

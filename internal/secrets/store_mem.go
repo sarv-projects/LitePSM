@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 type memoryEntry struct {

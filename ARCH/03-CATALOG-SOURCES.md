@@ -2,7 +2,7 @@
 
 ## 1. Upstream Federation Model
 
-LitePSM is an **aggregator and compatibility layer**, not a monolithic proprietary repository. It ingests public metadata from established registries, directories, and Git repositories, normalizes this metadata into unified search schemas, and links directly back to upstream sources.
+LiteSPM is an **aggregator and compatibility layer**, not a monolithic proprietary repository. It ingests public metadata from established registries, directories, and Git repositories, normalizes this metadata into unified search schemas, and links directly back to upstream sources.
 
 ```text
  Upstream Source Adapters ──► SourceSnapshot ──► Schema Normalization ──► Immutable Catalog Release
@@ -21,7 +21,7 @@ LitePSM is an **aggregator and compatibility layer**, not a monolithic proprieta
 
 ## 2. Decoupling the Adapter Roles
 
-Previous designs conflated metadata scraping, artifact downloading, and runtime execution into a single generic "adapter". LitePSM strictly decouples these into three distinct subsystem interfaces:
+Previous designs conflated metadata scraping, artifact downloading, and runtime execution into a single generic "adapter". LiteSPM strictly decouples these into three distinct subsystem interfaces:
 
 ```text
 ┌─────────────────────────┐     ┌─────────────────────────┐     ┌─────────────────────────┐
@@ -52,7 +52,7 @@ Previous designs conflated metadata scraping, artifact downloading, and runtime 
 | **OpenAI Codex Marketplaces** | Git repository / `.agents/plugins/marketplace.json` | `local`, `url`, `git-subdir` | Registered upstream: `git:openai-plugins` (both `marketplace.json` and `api_marketplace.json`). Entries carry a declared `policy.authentication` requirement recorded verbatim in `RequirementsSummary`. |
 | **Cursor Marketplaces** | Git repository / `.cursor-plugin/marketplace.json` | same-repo subpath strings | Registered upstream: `git:cursor-plugins`. Per-plugin detail lives in each plugin's own `plugin.json` and is not fetched at discovery. |
 | **Grok Build Marketplaces** | `.grok-plugin/marketplace.json` | Remote Git sources pinned to full commit SHAs | Supports distinct component kinds (commands, agents, hooks, MCP, LSP). Pinned SHA-1/SHA-256 commits are required for reproducibility. Registered upstream: `git:xai-plugin-marketplace`. |
-| **Generic Git / Local** | Local directories or authenticated Git repos | Any supported LitePSM manifest format | Uses the user's native Git credential helper or SSH agent. Credentials are never sent to LitePSM services. |
+| **Generic Git / Local** | Local directories or authenticated Git repos | Any supported LiteSPM manifest format | Uses the user's native Git credential helper or SSH agent. Credentials are never sent to LiteSPM services. |
 
 ---
 
@@ -62,7 +62,7 @@ Every ingestion cycle of an upstream source produces a durable, immutable `Sourc
 
 ```json
 {
-  "$schema": "https://litepsm.dev/schemas/v1/source-snapshot.schema.json",
+  "$schema": "https://litespm.dev/schemas/v1/source-snapshot.schema.json",
   "snapshotId": "snap_01J9X8K2M4N5P6Q7R8S9T0U1V2",
   "sourceId": "builtin:mcp-registry",
   "adapterVersion": "1.0.0",

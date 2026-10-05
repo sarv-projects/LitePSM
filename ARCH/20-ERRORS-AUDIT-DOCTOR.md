@@ -2,7 +2,7 @@
 
 ## 1. Stable Machine Error Taxonomy
 
-Every error returned by LitePSM across CLI, IPC, and Bridge MCP interfaces conforms to a structured taxonomy:
+Every error returned by LiteSPM across CLI, IPC, and Bridge MCP interfaces conforms to a structured taxonomy:
 
 ```text
 ┌─────────────────────┬──────────────────────────────────────────────────────────────────┐
@@ -31,13 +31,13 @@ Every error returned by LitePSM across CLI, IPC, and Bridge MCP interfaces confo
 *   `LPSM-APPROVAL-UNAVAILABLE`: Operation requires user consent, but host lacks an elicitation channel.
 *   `LPSM-ARTIFACT-UNSAFE-PATH`: Archive contains directory traversal (`../`) or absolute paths.
 *   `LPSM-PROVIDER-SCHEMA-DRIFT`: Downstream tool schema changed; existing grant invalidated.
-*   `LPSM-HOST-NAME-COLLISION`: Target agent configuration already has an unmanaged `litepsm` entry.
+*   `LPSM-HOST-NAME-COLLISION`: Target agent configuration already has an unmanaged `litespm` entry.
 
 ---
 
 ## 2. CLI Exit Code Contract (target — current CLI exits 0/1 only)
 
-CLI exit codes follow stable numerical ranges to allow robust shell scripting. Implementation note: `cmd/litepsm/*.go` currently calls `os.Exit(1)` for every failure mode, so distinct codes are not yet observable; the table below is the contract to implement:
+CLI exit codes follow stable numerical ranges to allow robust shell scripting. Implementation note: `cmd/litespm/*.go` currently calls `os.Exit(1)` for every failure mode, so distinct codes are not yet observable; the table below is the contract to implement:
 
 | Exit Code | Classification | Meaning |
 |---|---|---|
@@ -64,10 +64,10 @@ Security-relevant actions are recorded in the `audit_events` table in SQLite:
 
 ## 4. The `doctor` Diagnostic Framework
 
-Running `litepsm doctor` executes 10 non-mutating system health checks:
+Running `litespm doctor` executes 10 non-mutating system health checks:
 
 ```text
-$ litepsm doctor
+$ litespm doctor
 [✓] SQLite state database integrity verified (WAL mode active).
 [✓] Incomplete operation journal: clean (no orphaned operations).
 [✓] Content-Addressed Store: 14 trees verified; 0 missing digests.
@@ -76,7 +76,7 @@ $ litepsm doctor
     └── OpenAI Codex: connected (/Users/username/.codex/config.json)
 [✓] OS Secret Vault: functional (macOS Keychain accessible).
 [✓] Provider runtimes: Node.js (v20.10.0), Python (v3.11.4) detected.
-[!] Cached catalog release: 7 days old. Run 'litepsm refresh' to update.
+[!] Cached catalog release: 7 days old. Run 'litespm refresh' to update.
 [✓] Local disk space: 42.5 GiB available in DATA_ROOT.
 [✓] Host configuration backups: 3 backups stored safely.
 
@@ -84,4 +84,4 @@ Status: HEALTHY (1 informational recommendation)
 ```
 
 ### The `--repair` Flag
-If inconsistencies exist (e.g., orphaned staging files or dangling CAS entries), `litepsm doctor --repair` generates an explicit repair plan, displays it for user confirmation, and cleans up the anomalies.
+If inconsistencies exist (e.g., orphaned staging files or dangling CAS entries), `litespm doctor --repair` generates an explicit repair plan, displays it for user confirmation, and cleans up the anomalies.

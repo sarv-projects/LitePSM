@@ -1,4 +1,4 @@
-// Package agent implements LitePSM's agent-layer adapters: resolving and
+// Package agent implements LiteSPM's agent-layer adapters: resolving and
 // launching installable agents (starting with the Agent Client Protocol, ACP)
 // as distinct from internal/host, which injects bridge entries into an already
 // installed agent's configuration.

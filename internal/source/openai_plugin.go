@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // OpenAIPluginManifest models the portable OpenAI plugin.json format.
@@ -65,7 +65,7 @@ func (a *OpenAIPluginAdapter) Ingest(ctx context.Context, snapshotID string, raw
 		ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentSkill, cleanName)),
 		Kind:               domain.ComponentSkill,
 		Name:               cleanName,
-		SupportedByLitePSM: domain.SupportYes,
+		SupportedByLiteSPM: domain.SupportYes,
 	}
 	components = append(components, mainComp)
 	compSummaries = append(compSummaries, domain.ComponentSummary{
@@ -78,7 +78,7 @@ func (a *OpenAIPluginAdapter) Ingest(ctx context.Context, snapshotID string, raw
 			ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentSkill, skill)),
 			Kind:               domain.ComponentSkill,
 			Name:               skill,
-			SupportedByLitePSM: domain.SupportYes,
+			SupportedByLiteSPM: domain.SupportYes,
 		}
 		components = append(components, comp)
 		compSummaries = append(compSummaries, domain.ComponentSummary{
@@ -92,7 +92,7 @@ func (a *OpenAIPluginAdapter) Ingest(ctx context.Context, snapshotID string, raw
 			ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentMCPProvider, mcp)),
 			Kind:               domain.ComponentMCPProvider,
 			Name:               mcp,
-			SupportedByLitePSM: domain.SupportYes,
+			SupportedByLiteSPM: domain.SupportYes,
 		}
 		components = append(components, comp)
 		compSummaries = append(compSummaries, domain.ComponentSummary{

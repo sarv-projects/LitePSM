@@ -13,12 +13,12 @@ import { hostUniverse, kindLabel, listingHref, sortListings } from "../../lib/ca
 import { hostsFor } from "../../lib/hosts";
 import { VerifiedMark } from "../../components/catalog/PublisherMark";
 import catalogData from "../../data/catalog.json";
+import { SITE_URL } from "../../lib/site";
 
 const items = catalogData as unknown as Listing[];
-const SITE_URL = "https://litepsm.market";
 
 const HOST_TOTAL = hostUniverse(items).length;
-const INSTALL_COMMAND_PREFIX = "litepsm install ";
+const INSTALL_COMMAND_PREFIX = "litespm install ";
 
 /**
  * Lookup is built once at module scope, and only unambiguous slugs are
@@ -145,7 +145,7 @@ function NotFound() {
 /**
  * The slug is read from `window.location` after mount rather than through
  * `useSearchParams`, so this route still prerenders as static HTML instead of
- * bailing into a Suspense boundary. With 5,816 entries the detail pages stay on
+ * bailing into a Suspense boundary. With 5,814 entries the detail pages stay on
  * a single `?slug=` route - `generateStaticParams` would emit thousands of
  * files, which the static host cannot serve.
  */
@@ -181,7 +181,7 @@ function PackageContent() {
   const host = HOSTS.find((h) => h.id === activeHost) ?? HOSTS[0];
   const hostTotal = HOST_TOTAL;
 
-  const snippet = item ? bridgeSnippet(host, "litepsm", platformOs) : "";
+  const snippet = item ? bridgeSnippet(host, "litespm", platformOs) : "";
 
   const related = useMemo(() => {
     if (!item) return [];
@@ -317,7 +317,7 @@ function PackageContent() {
 
             {/* ---- install: the one dark surface, 8px ---- */}
             <section className="on-dark panel-dark mt-7">
-              <h2 className="t-mono text-[11px] font-medium text-dark-ink-2">Install with LitePSM</h2>
+              <h2 className="t-mono text-[11px] font-medium text-dark-ink-2">Install with LiteSPM</h2>
 
               <div className="mt-2.5 flex items-center gap-2 border border-dark-rule bg-dark-2 px-3 py-2.5">
                 <span className="t-mono shrink-0 text-[12px] text-dark-ink-2" aria-hidden="true">
@@ -336,7 +336,7 @@ function PackageContent() {
             </section>
 
             {/*
-              Only 441 of 5,816 entries publish a host-native command, and all
+              Only 441 of 5,814 entries publish a host-native command, and all
               of them are plugins. Rendering an empty "Install with your agent"
               heading on the other 92% would be a section that costs vertical
               space to say nothing, so it appears only when there is a command
@@ -433,7 +433,7 @@ function PackageContent() {
               <div className="mt-4">
                 <h3 className="text-[13px] font-semibold text-ink">
                   Snippet
-                  <span className="ml-2 font-normal text-ink-3">LitePSM bridge</span>
+                  <span className="ml-2 font-normal text-ink-3">LiteSPM bridge</span>
                 </h3>
 
                 <div className="on-dark mt-2 overflow-hidden rounded-panel bg-dark">
@@ -451,7 +451,7 @@ function PackageContent() {
                 <p className="mt-2.5 flex items-start gap-2 text-[12px] leading-relaxed text-ink-3">
                   <Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span>
-                    Running <code className="t-mono text-ink-2">litepsm</code> backs up the target file and
+                    Running <code className="t-mono text-ink-2">litespm</code> backs up the target file and
                     injects this single entry, preserving existing entries.
                   </span>
                 </p>
@@ -635,7 +635,7 @@ function PackageContent() {
                     <span className="text-ink-2">{h}</span>
                     <span
                       className="text-[11px] text-ink-3"
-                      title="Publisher-declared compatibility, not a LitePSM test result"
+                      title="Publisher-declared compatibility, not a LiteSPM test result"
                     >
                       declared
                     </span>

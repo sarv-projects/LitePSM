@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/artifact"
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/artifact"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 func newTestEngine(t *testing.T) (*Engine, *state.DB, *config.PlatformPaths) {

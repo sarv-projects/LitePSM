@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // --- Plans ---
@@ -523,7 +523,7 @@ func (db *DB) GetActiveGrant(ctx context.Context, capabilityID, schemaFingerprin
 func (db *DB) SaveHostRegistration(ctx context.Context, reg *domain.HostRegistrationRecord) error {
 	query := `
 	INSERT OR REPLACE INTO host_registrations (host_id, scope, workspace_id, config_path, managed_entry_key, entry_fingerprint, registered_at)
-	VALUES (?, ?, ?, ?, 'litepsm', 'fp_default', ?);`
+	VALUES (?, ?, ?, ?, 'litespm', 'fp_default', ?);`
 
 	_, err := db.raw.ExecContext(ctx, query,
 		reg.HostID,

@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func getOrGenerateLinuxMasterKey() ([]byte, error) {
@@ -19,7 +19,7 @@ func getOrGenerateLinuxMasterKey() ([]byte, error) {
 	}
 
 	// Try looking up existing master key
-	cmdLookup := exec.Command("secret-tool", "lookup", "service", "litepsm", "account", "master-key")
+	cmdLookup := exec.Command("secret-tool", "lookup", "service", "litespm", "account", "master-key")
 	out, err := cmdLookup.Output()
 	lookupStr := strings.TrimSpace(string(out))
 	if err == nil && len(lookupStr) > 0 {
@@ -36,7 +36,7 @@ func getOrGenerateLinuxMasterKey() ([]byte, error) {
 	}
 
 	hexKey := hex.EncodeToString(key)
-	cmdStore := exec.Command("secret-tool", "store", "--label=LitePSM Vault Key", "service", "litepsm", "account", "master-key")
+	cmdStore := exec.Command("secret-tool", "store", "--label=LiteSPM Vault Key", "service", "litespm", "account", "master-key")
 	cmdStore.Stdin = bytes.NewReader([]byte(hexKey))
 	if err := cmdStore.Run(); err != nil {
 		return nil, domain.ErrAuthVaultUnavailable(fmt.Sprintf("failed to store vault master key via secret-tool: %v", err))

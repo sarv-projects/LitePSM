@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/catalogbuild"
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/catalogbuild"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func sampleListings() []*domain.Listing {
@@ -144,7 +144,7 @@ func TestCatalogClientSyncAndIntegrity(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tmpCacheDir, err := os.MkdirTemp("", "litepsm-cache-test-*")
+	tmpCacheDir, err := os.MkdirTemp("", "litespm-cache-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp cache dir: %v", err)
 	}

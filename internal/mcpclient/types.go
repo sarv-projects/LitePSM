@@ -57,7 +57,7 @@ type RequestMeta struct {
 	ProgressToken   string     `json:"progressToken,omitempty"`
 }
 
-// ClientInfo describes LitePSM client identity to downstream providers.
+// ClientInfo describes LiteSPM client identity to downstream providers.
 type ClientInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`

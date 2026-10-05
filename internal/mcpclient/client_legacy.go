@@ -66,7 +66,7 @@ func (c *LegacyClient) performHandshake(ctx context.Context) error {
 		Params: json.RawMessage(`{
 			"protocolVersion": "2025-11-25",
 			"clientInfo": {
-				"name": "litepsm-legacy-client",
+				"name": "litespm-legacy-client",
 				"version": "0.1.0"
 			},
 			"capabilities": {}

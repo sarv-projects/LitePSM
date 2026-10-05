@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  # `npm publish --provenance` attests the tarball against this workflow run.
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +18,10 @@ jobs:
   build-and-release:
     name: Build & Publish Release
     runs-on: ubuntu-latest
+    env:
+      # Set the NPM_TOKEN repository secret to enable the npm publish step.
+      # Unset, the release is still built and published to GitHub.
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -49,7 +55,7 @@ jobs:
         run: |
           mkdir -p release-assets
           cp dist/* release-assets/
-          tar -czf release-assets/litepsm-web-static.tar.gz -C web/out .
+          tar -czf release-assets/litespm-web-static.tar.gz -C web/out .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -58,3 +64,24 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+
+      - name: Verify npm version matches the release tag
+        working-directory: ./npm
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::npm/package.json is v${VERSION} but this release is ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "npm package version v${VERSION} matches the tag"
+
+      # Deliberately after the GitHub release: the npm postinstall fetches the
+      # v<version> assets, so publishing before they exist would ship a package
+      # whose binary download 404s.
+      - name: Publish npm package
+        if: env.NODE_AUTH_TOKEN != ''
+        working-directory: ./npm
+        run: |
+          printf '//registry.npmjs.org/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" > .npmrc
+          npm publish --provenance --access public
+          rm -f .npmrc

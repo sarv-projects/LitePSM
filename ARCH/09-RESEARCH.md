@@ -1,7 +1,7 @@
 # Research Ledger & Ecosystem Ground Truth
 
 **Snapshot Date:** 2026-09-30  
-Upstream specifications, client interfaces, and protocol revisions evolve rapidly. This ledger documents verified facts from primary sources that govern LitePSM's architectural requirements.
+Upstream specifications, client interfaces, and protocol revisions evolve rapidly. This ledger documents verified facts from primary sources that govern LiteSPM's architectural requirements.
 
 ---
 
@@ -13,7 +13,7 @@ Upstream specifications, client interfaces, and protocol revisions evolve rapidl
 *   **Header Mirroring:** Key routing metadata (`Mcp-Method`, `Mcp-Name`) is mirrored into standard HTTP request headers, enabling reverse proxies and load balancers to route calls without deep packet payload inspection.
 *   **Centralized Subscriptions:** Replaced fragmented `resources/subscribe` with a unified `subscriptions/listen` RPC.
 *   **Server Discovery:** Optional `server/discover` RPC enabling clients to query supported protocol versions and capabilities upfront.
-*   **Architecture Consequence:** LitePSM must use an official MCP SDK and support a **dual-protocol matrix**: modern stateless 2026-07-28 and legacy 2025-11-25.
+*   **Architecture Consequence:** LiteSPM must use an official MCP SDK and support a **dual-protocol matrix**: modern stateless 2026-07-28 and legacy 2025-11-25.
 
 ### 1.2 Official MCP Registry & `server.json`
 *   **Source Reference:** `https://registry.modelcontextprotocol.io/docs`
@@ -31,7 +31,7 @@ Upstream specifications, client interfaces, and protocol revisions evolve rapidl
     2.  *Activation:* Full `SKILL.md` body.
     3.  *Execution:* Supporting files on demand.
 *   **`allowed-tools` Experimental Status:** The `allowed-tools` frontmatter field is an experimental proposal intended to declare pre-approved tools. In practice, many agent implementations do not enforce this restriction.
-*   **Architecture Consequence:** LitePSM treats `allowed-tools` strictly as informational metadata. It **never** treats this field as an automatic authorization grant.
+*   **Architecture Consequence:** LiteSPM treats `allowed-tools` strictly as informational metadata. It **never** treats this field as an automatic authorization grant.
 
 ---
 
@@ -41,7 +41,7 @@ Upstream specifications, client interfaces, and protocol revisions evolve rapidl
 *   **Format:** Git repositories containing `.claude-plugin/marketplace.json` defining a list of plugins.
 *   **Source Types:** Plugins can specify sources including `github`, `git-subdir`, `archive`, `npm`, and `command`.
 *   **Execution Hazard of `command` Sources:** The `command` source type executes an arbitrary local shell script to build or fetch the plugin.
-*   **Architecture Consequence:** During catalog ingestion, executing arbitrary publisher commands is a severe vulnerability. LitePSM strictly prohibits and rejects `command` sources in v1.
+*   **Architecture Consequence:** During catalog ingestion, executing arbitrary publisher commands is a severe vulnerability. LiteSPM strictly prohibits and rejects `command` sources in v1.
 
 ---
 
@@ -49,7 +49,7 @@ Upstream specifications, client interfaces, and protocol revisions evolve rapidl
 
 *   **Source Reference:** `https://developers.openai.com/plugins/build/plugins`
 *   **Format:** A root `plugin.json` manifest combining skills (`skills/`), MCP servers (`mcp.json`), hooks, and optional assets.
-*   **Architecture Consequence:** LitePSM decomposes portable plugins into their constituent components, normalizing portable skills and MCP servers while preserving proprietary OpenAI metadata under `extensions.com.openai`.
+*   **Architecture Consequence:** LiteSPM decomposes portable plugins into their constituent components, normalizing portable skills and MCP servers while preserving proprietary OpenAI metadata under `extensions.com.openai`.
 
 ---
 
@@ -66,14 +66,14 @@ Upstream specifications, client interfaces, and protocol revisions evolve rapidl
 
 *   **The Update Framework (TUF):** `https://theupdateframework.io/`
     *   Industry standard for secure software update systems, offering proven protection against key compromise, rollback attacks, and freeze attacks.
-    *   *Decision:* When signed catalog releases are introduced, LitePSM will adopt TUF rather than inventing a custom signature envelope.
+    *   *Decision:* When signed catalog releases are introduced, LiteSPM will adopt TUF rather than inventing a custom signature envelope.
 *   **Sigstore / Cosign:** `https://docs.sigstore.dev/cosign/`
     *   Standard for keyless and key-based artifact signing and verification.
-    *   *Decision:* LitePSM supports Cosign artifact digest verification where upstreams publish verification evidence.
+    *   *Decision:* LiteSPM supports Cosign artifact digest verification where upstreams publish verification evidence.
 
 ---
 
 ## 7. Static Hosting & Cloudflare Pages Limits
 
 *   **Limits:** Cloudflare Pages supports up to 20,000 files per project and up to 25 MiB per individual asset.
-*   **Implication for LitePSM:** For an initial catalog of 500–1,000 records, the partitioned shard structure (under 2,000 generated JSON files) is well within platform thresholds. Sharding by kind and category prevents single-file bloat.
+*   **Implication for LiteSPM:** For an initial catalog of 500–1,000 records, the partitioned shard structure (under 2,000 generated JSON files) is well within platform thresholds. Sharding by kind and category prevents single-file bloat.

@@ -1,4 +1,4 @@
-module github.com/sarv-projects/litepsm
+module github.com/sarv-projects/litespm
 
 go 1.26.0
 

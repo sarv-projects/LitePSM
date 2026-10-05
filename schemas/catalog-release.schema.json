@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://litepsm.dev/schemas/v1/catalog-release.schema.json",
+  "$id": "https://litespm.dev/schemas/v1/catalog-release.schema.json",
   "title": "CatalogRelease",
   "type": "object",
   "required": [

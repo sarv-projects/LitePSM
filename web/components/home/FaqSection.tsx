@@ -8,7 +8,7 @@ const HOST_NAMES = `${HOSTS.slice(0, -1).map((h) => h.name).join(", ")}, and ${H
 
 const FAQS: Array<{ q: string; a: React.ReactNode }> = [
   {
-    q: "What is LitePSM?",
+    q: "What is LiteSPM?",
     a: (
       <>
         A local package manager and federated catalog for agent capabilities. It connects to each agent host
@@ -21,9 +21,9 @@ const FAQS: Array<{ q: string; a: React.ReactNode }> = [
     q: "Which agents are supported?",
     a: (
       <>
-        {HOST_NAMES} have compiled-in config adapters that LitePSM can write directly. The catalog names more
+        {HOST_NAMES} have compiled-in config adapters that LiteSPM can write directly. The catalog names more
         hosts than that, because publishers declare compatibility themselves; those entries are indexed but
-        LitePSM will not edit that host's config for you.
+        LiteSPM will not edit that host's config for you.
       </>
     ),
   },

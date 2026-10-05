@@ -32,7 +32,7 @@ Display names and titles are mutable and non-unique. All internal operations, da
 ## 2. Core Domain Entities
 
 ### 2.1 Listing
-Represents a normalized discovery entry in the LitePSM catalog.
+Represents a normalized discovery entry in the LiteSPM catalog.
 ```go
 type Listing struct {
     SchemaVersion        int                   `json:"schemaVersion"`
@@ -108,7 +108,7 @@ type Component struct {
     HostExtensions    map[string]any       `json:"hostExtensions,omitempty"`
     Runtime           *RuntimeDescriptor   `json:"runtime,omitempty"`
     DeclaredEffects   []EffectDeclaration  `json:"declaredEffects"`
-    SupportedByLitePSM SupportLevel        `json:"supportedByLitePSM"` // yes | partial | no | unknown
+    SupportedByLiteSPM SupportLevel        `json:"supportedByLiteSPM"` // yes | partial | no | unknown
 }
 ```
 

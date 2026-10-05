@@ -97,7 +97,7 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
 ### Test Case 2: Missing Configuration Fallback Flow
 *   **Objective:** Verify the interactive CLI gracefully prompts when configuration is missing.
 *   **Procedure:**
-    1. Run `litepsm setup cline` in an environment without VS Code.
+    1. Run `litespm setup cline` in an environment without VS Code.
     2. Assert stdout displays: `[!] Unable to locate default configuration file`.
     3. Pass custom path via stdin (`fixtures/hosts/cline/existing_servers_cline_mcp_settings.json`).
     4. Assert configuration completes successfully.
@@ -108,23 +108,23 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
     1. Apply setup to `existing_servers_cline_mcp_settings.json`.
     2. Verify `DATA_ROOT/backups/cline/<timestamp>/config.bak` was created with identical pre-edit content.
     3. Assert `filesystem` and `github` entries remain intact in the modified file.
-    4. Assert `mcpServers.litepsm` is injected with the version-pinned executable path.
+    4. Assert `mcpServers.litespm` is injected with the version-pinned executable path.
 
 ### Test Case 4: Pre-Existing Tool Discovery & Read-Only Detection (Installed Tab)
-*   **Objective:** Verify that LitePSM scans and correctly detects pre-existing native tools in read-only mode.
+*   **Objective:** Verify that LiteSPM scans and correctly detects pre-existing native tools in read-only mode.
 *   **Procedure:**
     1. Boot Bridge Shim with `--host cline`.
     2. Call MCP tool `list_installed()`.
     3. Assert returned list includes:
        - `filesystem` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: true`, `readOnly: true`
        - `github` $\rightarrow$ `status: "disabled"`, `greenLight: false`, `isExternal: true`, `readOnly: true`
-       - `litepsm` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: false`
+       - `litespm` $\rightarrow$ `status: "ready"`, `greenLight: true`, `isExternal: false`
     4. Assert attempting to mutate/toggle external tools without `adopt_tool()` returns `LPSM-HOST-READONLY-EXTERNAL`.
 
 ### Test Case 5: Slash Command (`/marketplace`) Registration
 *   **Objective:** Confirm slash command trigger is registered for the agent.
 *   **Procedure:**
-    1. For **Pi Agent**: verify `~/.pi/agent/extensions/litepsm.ts` exists and registers `/marketplace`.
+    1. For **Pi Agent**: verify `~/.pi/agent/extensions/litespm.ts` exists and registers `/marketplace`.
     2. For **Cline**: verify custom instructions or prompt templates contain `/marketplace` trigger keyword.
     3. For **Grok Build**: verify `.grok/config.toml` command hook exists.
 
@@ -132,7 +132,7 @@ args = ["mcp-server-sqlite", "--db-path", "test.db"]
 *   **Objective:** Verify the client queries the remote manifest at runtime for compatibility advisories without executing remote code.
 *   **Procedure:**
     1. Start local mock HTTP server serving `/v1/current.json` (with its `advisories` array; there is no separate `/v1/adapters.json` endpoint).
-    2. Execute `litepsm` with `--catalog-url http://127.0.0.1:<mock-port>`.
+    2. Execute `litespm` with `--catalog-url http://127.0.0.1:<mock-port>`.
     3. Verify that advisory metadata and version warnings from `current.json` appear without executing remote code.
     4. Disconnect network and verify clean fallback to compiled-in adapters.
 

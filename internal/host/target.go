@@ -93,10 +93,18 @@ type BridgeTarget struct {
 	Note string
 }
 
-// litepsmServerName is the MCP server name injected into every host config.
-const litepsmServerName = "litepsm"
+// litespmServerName is the MCP server name injected into every host config.
+const litespmServerName = "litespm"
 
-// bridgeArgs is the argv LitePSM injects into every host.
+// legacyServerName is the MCP server name written by releases before the
+// legacy "LitePSM"/"litepsm" -> current "LiteSPM"/"litespm" rename.
+//
+// A pre-existing legacy entry is detected and adopted (removed and replaced by
+// the current name) during setup, and is deleted during removal, so a host that
+// predates the rename ends up with exactly one bridge entry instead of two.
+const legacyServerName = "litepsm"
+
+// bridgeArgs is the argv LiteSPM injects into every host.
 func bridgeArgs(hostID string) []string {
 	return []string{"bridge", "stdio", "--host", hostID}
 }
@@ -131,7 +139,7 @@ func (t BridgeTarget) tomlEntryBlock(binaryPath string) string {
 	for i, a := range bridgeArgs(t.ID) {
 		quoted[i] = fmt.Sprintf("%q", a)
 	}
-	return fmt.Sprintf("[mcp_servers.litepsm]\ncommand = %q\nargs = [%s]\n",
+	return fmt.Sprintf("[mcp_servers.litespm]\ncommand = %q\nargs = [%s]\n",
 		bin, strings.Join(quoted, ", "))
 }
 
@@ -152,7 +160,7 @@ func (t BridgeTarget) keyPathFor(projectScope bool) []string {
 	return t.ProjectKey
 }
 
-// lookupEntry returns the stored value for the litepsm server at a key path.
+// lookupEntry returns the stored value for the litespm server at a key path.
 func lookupEntry(root map[string]any, keyPath []string) (any, bool) {
 	if len(keyPath) == 0 {
 		return nil, false
@@ -171,7 +179,7 @@ func lookupEntry(root map[string]any, keyPath []string) (any, bool) {
 	return cur, true
 }
 
-// mergeJSONEntry writes the litepsm entry into the object at keyPath, creating
+// mergeJSONEntry writes the litespm entry into the object at keyPath, creating
 // intermediate objects. It refuses to overwrite an intermediate level that
 // holds a non-object value, so an unrelated scalar is never silently replaced.
 func mergeJSONEntry(root map[string]any, keyPath []string, value any) error {
@@ -193,12 +201,19 @@ func mergeJSONEntry(root map[string]any, keyPath []string, value any) error {
 		}
 		cur = m
 	}
-	cur[litepsmServerName] = value
+	cur[litespmServerName] = value
 	return nil
 }
 
-// inspectEntry reports whether a parsed config already registers litepsm.
+// inspectEntry reports whether a parsed config already registers litespm.
 func inspectEntry(root map[string]any, keyPath []string) bool {
+	return inspectNamedEntry(root, keyPath, litespmServerName)
+}
+
+// inspectNamedEntry reports whether the object at keyPath contains a member
+// named name. It is used to check for both the current and the legacy bridge
+// names.
+func inspectNamedEntry(root map[string]any, keyPath []string, name string) bool {
 	v, ok := lookupEntry(root, keyPath)
 	if !ok || v == nil {
 		return false
@@ -207,7 +222,7 @@ func inspectEntry(root map[string]any, keyPath []string) bool {
 	if !ok {
 		return false
 	}
-	_, present := m[litepsmServerName]
+	_, present := m[name]
 	return present
 }
 
@@ -223,7 +238,7 @@ func listEntryNames(root map[string]any, keyPath []string) []string {
 	}
 	names := make([]string, 0, len(m))
 	for k := range m {
-		if k == litepsmServerName {
+		if k == litespmServerName || k == legacyServerName {
 			continue
 		}
 		names = append(names, k)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/config"
+	"github.com/sarv-projects/litespm/internal/config"
 )
 
 func TestWizard_InteractiveAgentSelectionAndCancellation(t *testing.T) {
@@ -28,7 +28,7 @@ func TestWizard_InteractiveAgentSelectionAndCancellation(t *testing.T) {
 	}
 
 	outStr := outBuf.String()
-	if !strings.Contains(outStr, "LitePSM Agent Setup") {
+	if !strings.Contains(outStr, "LiteSPM Agent Setup") {
 		t.Errorf("expected banner in output, got: %s", outStr)
 	}
 	if !strings.Contains(outStr, "Setup cancelled") {

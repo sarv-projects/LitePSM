@@ -2,7 +2,7 @@
 
 ## 1. Core Security Invariant
 
-LitePSM's hosted catalog service is strictly a discovery index. It is **never** a secret store, execution environment, MCP proxy, or authentication authority. Downstream service credentials and runtime tool execution remain strictly on the user's local machine or with the user's chosen remote provider.
+LiteSPM's hosted catalog service is strictly a discovery index. It is **never** a secret store, execution environment, MCP proxy, or authentication authority. Downstream service credentials and runtime tool execution remain strictly on the user's local machine or with the user's chosen remote provider.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -17,7 +17,7 @@ LitePSM's hosted catalog service is strictly a discovery index. It is **never** 
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        LitePSM Local Control Plane                     │
+│                        LiteSPM Local Control Plane                     │
 │                                                                        │
 │   Daemon owns:                                                         │
 │     ├── Operating System Secret Store (DPAPI / Keychain / Libsecret)   │
@@ -70,9 +70,9 @@ Users may explicitly configure local filesystem paths or private network Git rep
 
 ## 4. Nested MCP Capability Clamping
 
-When the LitePSM Daemon acts as an MCP client connecting to downstream local or remote MCP servers, it deliberately **clamps** its advertised client capabilities to protect user privacy:
+When the LiteSPM Daemon acts as an MCP client connecting to downstream local or remote MCP servers, it deliberately **clamps** its advertised client capabilities to protect user privacy:
 1.  **Roots Forwarding Disabled:** The daemon **does not** advertise filesystem roots to downstream providers by default. A provider cannot query the user's workspace structure.
-2.  **Model Sampling Disabled:** Downstream providers are barred from requesting LLM sampling through LitePSM.
+2.  **Model Sampling Disabled:** Downstream providers are barred from requesting LLM sampling through LiteSPM.
 3.  **Elicitation Clamping:** Downstream providers cannot initiate arbitrary user prompts unless the host agent explicitly supports modern form elicitation and local policy allows it.
 4.  **Stderr Redaction:** Provider stderr streams are captured in a bounded (1 MiB), rotating memory buffer and stripped of sensitive patterns (e.g., tokens, authorization headers) before diagnostic logging.
 
@@ -82,8 +82,8 @@ When the LitePSM Daemon acts as an MCP client connecting to downstream local or 
 
 Downstream MCP providers may update their tool definitions dynamically between restarts. An attacker or modified server could alter an innocuous tool (`view_file`) into an effectful action (`overwrite_file`).
 
-LitePSM prevents this via cryptographic schema fingerprinting:
-1.  **Schema Fingerprint:** Upon tool discovery, LitePSM generates a canonical SHA-256 digest of the tool's input JSON Schema:
+LiteSPM prevents this via cryptographic schema fingerprinting:
+1.  **Schema Fingerprint:** Upon tool discovery, LiteSPM generates a canonical SHA-256 digest of the tool's input JSON Schema:
     $$\text{schemaFingerprint} = \text{SHA-256}(\text{CanonicalizeJSON}(\text{ToolInputSchema}))$$
 2.  **Cryptographic Grant Binding:** User capability approvals are bound to strong identity tuples:
     *   **Local Stdio Providers:** Stored as `(capability_id, schemaFingerprint, casTreeDigest)`. Both the tool input schema and the underlying unpacked disk tree are cryptographically bound.
@@ -97,35 +97,35 @@ LitePSM prevents this via cryptographic schema fingerprinting:
 ---
 
 ## 5.1 Effect Provenance & Unknown Tools
-LitePSM tags every declared effect with an explicit classification provenance:
+LiteSPM tags every declared effect with an explicit classification provenance:
 *   `publisher_declared`: Unverified claims from the package author's manifest.
 *   `curated`: Reviewed and certified by catalog maintainers.
 *   `runtime_observed`: Dynamically observed in automated sandbox test runs.
 *   `user_classified`: Explicitly configured by the user in local policy.
 
-**Unknown Tools:** LitePSM **never** infers side effects by guessing from tool parameter names. Any tool with undeclared or unknown effects is treated as an atomic capability invocation that fails closed and requires explicit interactive user authorization.
+**Unknown Tools:** LiteSPM **never** infers side effects by guessing from tool parameter names. Any tool with undeclared or unknown effects is treated as an atomic capability invocation that fails closed and requires explicit interactive user authorization.
 
 ---
 
 ## 6. Command Marketplace Source Prohibition
 
 Claude Code and Grok Build marketplace manifests permit sources that execute local shell commands to generate plugin files.
-*   **V1 Rule:** LitePSM strictly **rejects** marketplace sources of type `command`.
-*   **Rationale:** Ingesting a catalog listing must never execute arbitrary publisher-controlled code. Listings utilizing `command` sources are marked `supportedByLitePSM: "no"` with the explanation `UNSUPPORTED_COMMAND_SOURCE`.
+*   **V1 Rule:** LiteSPM strictly **rejects** marketplace sources of type `command`.
+*   **Rationale:** Ingesting a catalog listing must never execute arbitrary publisher-controlled code. Listings utilizing `command` sources are marked `supportedByLiteSPM: "no"` with the explanation `UNSUPPORTED_COMMAND_SOURCE`.
 
 ---
 
 ## 7. Local Daemon IPC Permissions
 
 Communication between Bridge Shims, the CLI, and the local Daemon is secured against unauthorized local processes:
-*   **Windows Security Descriptors:** The daemon's Named Pipe (`\\.\pipe\litepsm-daemon-<user-hash>`) is initialized with a Discretionary Access Control List (DACL) that grants access exclusively to the owning user's Security Identifier (`SDDL: D:(A;;GA;;;OW)`). Administrators and other users are denied access.
-*   **Unix / macOS Domain Sockets:** Sockets are created inside `$XDG_RUNTIME_DIR/litepsm/` with directory permissions `0700` and socket file permissions `0600`.
+*   **Windows Security Descriptors:** The daemon's Named Pipe (`\\.\pipe\litespm-daemon-<user-hash>`) is initialized with a Discretionary Access Control List (DACL) that grants access exclusively to the owning user's Security Identifier (`SDDL: D:(A;;GA;;;OW)`). Administrators and other users are denied access.
+*   **Unix / macOS Domain Sockets:** Sockets are created inside `$XDG_RUNTIME_DIR/litespm/` with directory permissions `0700` and socket file permissions `0600`.
 
 ---
 
 ## 8. Operating System Secret Storage
 
-LitePSM never stores plaintext credentials in SQLite, JSON files, environment variables, or log streams.
+LiteSPM never stores plaintext credentials in SQLite, JSON files, environment variables, or log streams.
 *   **Supported Platforms:**
     *   **Windows:** Windows Credential Manager (`wincred.dll`) or DPAPI encrypted local blobs.
     *   **macOS:** Apple Keychain Services API (`SecItemAdd`, `SecItemCopyMatching`).
@@ -136,6 +136,6 @@ LitePSM never stores plaintext credentials in SQLite, JSON files, environment va
 
 ## 9. Honest Security Claims
 
-1.  **Not an OS Sandbox:** LitePSM provides protocol mediation, schema validation, and authorization gating. Running a local stdio MCP provider executes real code on the host machine under the user's OS privileges.
-2.  **Credentials Stay Client-Side:** LitePSM hosted servers do not receive user credentials. However, when an agent invokes a downstream provider, that specific provider receives the authorized token necessary to fulfill the request.
+1.  **Not an OS Sandbox:** LiteSPM provides protocol mediation, schema validation, and authorization gating. Running a local stdio MCP provider executes real code on the host machine under the user's OS privileges.
+2.  **Credentials Stay Client-Side:** LiteSPM hosted servers do not receive user credentials. However, when an agent invokes a downstream provider, that specific provider receives the authorized token necessary to fulfill the request.
 3.  **Untrusted Skill Text:** Installing a skill does not run code, but skill Markdown instructions can influence model behavior (prompt injection). Skill text is presented to models as untrusted data with clear provenance metadata.

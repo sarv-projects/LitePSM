@@ -15,12 +15,12 @@ All public contracts and local plans are validated against strict JSON Schema (D
 
 ## 2. Specification: `install-plan.schema.json`
 
-> Implementation note (honest gap): the daemon's `resolver.prepare_plan` preview in `cmd/litepsm/main.go:registerCoreHandlers` currently emits `plan_<listing>_<version>` placeholder IDs, and `internal/install/engine.go:Execute` emits `inst_<listing>_<digest8>` install IDs. Both violate the strict patterns below (`^plan_[0-9A-Za-z]{26}$`, `^inst_[0-9A-Za-z_-]{20,36}$` with no colons). Until ULID issuance lands, treat handler-emitted IDs as placeholders: validate persisted `plans`/`installs` rows strictly, and do not present preview IDs as conforming.
+> Implementation note (honest gap): the daemon's `resolver.prepare_plan` preview in `cmd/litespm/main.go:registerCoreHandlers` currently emits `plan_<listing>_<version>` placeholder IDs, and `internal/install/engine.go:Execute` emits `inst_<listing>_<digest8>` install IDs. Both violate the strict patterns below (`^plan_[0-9A-Za-z]{26}$`, `^inst_[0-9A-Za-z_-]{20,36}$` with no colons). Until ULID issuance lands, treat handler-emitted IDs as placeholders: validate persisted `plans`/`installs` rows strictly, and do not present preview IDs as conforming.
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://litepsm.dev/schemas/v1/install-plan.schema.json",
+  "$id": "https://litespm.dev/schemas/v1/install-plan.schema.json",
   "title": "InstallPlan",
   "type": "object",
   "required": [
@@ -137,7 +137,7 @@ All public contracts and local plans are validated against strict JSON Schema (D
     }
   ],
   "componentsSummary": [
-    { "kind": "mcp-provider", "name": "server", "supportedByLitePSM": "yes" }
+    { "kind": "mcp-provider", "name": "server", "supportedByLiteSPM": "yes" }
   ],
   "requirementsSummary": ["executable:node >= 18.0.0"],
   "compatibilitySummary": [

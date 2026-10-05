@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://litepsm.dev/schemas/v1/version.schema.json",
+  "$id": "https://litespm.dev/schemas/v1/version.schema.json",
   "title": "VersionRecord",
   "type": "object",
   "required": [
@@ -56,7 +56,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "kind", "name", "declaredEffects", "supportedByLitePSM"],
+        "required": ["id", "kind", "name", "declaredEffects", "supportedByLiteSPM"],
         "properties": {
           "id": { "type": "string" },
           "kind": {
@@ -72,7 +72,7 @@
             "type": "array",
             "items": { "type": "string" }
           },
-          "supportedByLitePSM": {
+          "supportedByLiteSPM": {
             "type": "string",
             "enum": ["yes", "partial", "no", "unknown"]
           }

@@ -1,8 +1,8 @@
-// Shared formatting helpers for the LitePSM Market UI.
+// Shared formatting helpers for the LiteSPM Market UI.
 
 const NUMBER = new Intl.NumberFormat("en-US");
 
-/** Grouped integer: 5816 -> "5,816". Counts in this UI are always exact. */
+/** Grouped integer: 5814 -> "5,814". Counts in this UI are always exact. */
 export function formatCount(n: number): string {
   return NUMBER.format(Number.isFinite(n) ? n : 0);
 }

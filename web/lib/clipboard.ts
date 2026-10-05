@@ -9,7 +9,7 @@ export interface ToastEvent {
   kind: ToastKind;
 }
 
-const TOAST_EVENT = "litepsm-toast";
+const TOAST_EVENT = "litespm-toast";
 let toastSeq = 0;
 
 export function emitToast(message: string, kind: ToastKind = "success"): void {

@@ -23,7 +23,7 @@ function getBinaryName() {
   else throw new Error(`Unsupported CPU architecture: ${arch}`);
 
   const ext = platform === "win32" ? ".exe" : "";
-  return `litepsm-${osName}-${archName}${ext}`;
+  return `litespm-${osName}-${archName}${ext}`;
 }
 
 function resolveBinary() {
@@ -34,7 +34,7 @@ function resolveBinary() {
     path.join(__dirname, binName),
     path.join(__dirname, "..", "dist", binName),
     path.join(__dirname, "..", "..", "dist", binName),
-    path.join(os.homedir(), ".litepsm", "bin", binName),
+    path.join(os.homedir(), ".litespm", "bin", binName),
   ];
 
   for (const c of candidates) {
@@ -44,7 +44,7 @@ function resolveBinary() {
   }
 
   // 2. Fallback to pre-installed system binary
-  const fallback = spawnSync(process.platform === "win32" ? "where" : "which", ["litepsm"], { encoding: "utf8" });
+  const fallback = spawnSync(process.platform === "win32" ? "where" : "which", ["litespm"], { encoding: "utf8" });
   if (fallback.status === 0 && fallback.stdout.trim()) {
     const sysPath = fallback.stdout.split("\n")[0].trim();
     if (sysPath && sysPath !== __filename) {
@@ -72,8 +72,8 @@ function main() {
   }
 
   if (!binaryPath) {
-    console.error(`[litepsm] Error: Native binary not found for ${process.platform}/${process.arch}.`);
-    console.error(`[litepsm] Please download ${getBinaryName()} from https://github.com/sarv-projects/LitePSM/releases/tag/v${VERSION}`);
+    console.error(`[litespm] Error: Native binary not found for ${process.platform}/${process.arch}.`);
+    console.error(`[litespm] Please download ${getBinaryName()} from https://github.com/sarv-projects/LiteSPM/releases/tag/v${VERSION}`);
     process.exit(1);
   }
 
@@ -83,7 +83,7 @@ function main() {
   });
 
   child.on("error", (err) => {
-    console.error(`[litepsm] Failed to spawn native binary: ${err.message}`);
+    console.error(`[litespm] Failed to spawn native binary: ${err.message}`);
     process.exit(1);
   });
 

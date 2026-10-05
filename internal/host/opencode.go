@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // OpenCodeAdapter manages integration with OpenCode CLI.
@@ -107,7 +107,8 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 	if isV2 {
 		mcpMap := rootMap["mcp"].(map[string]any)
 		serversMap := mcpMap["servers"].(map[string]any)
-		serversMap["litepsm"] = bridgeEntry
+		delete(serversMap, legacyServerName)
+		serversMap["litespm"] = bridgeEntry
 		mcpMap["servers"] = serversMap
 		rootMap["mcp"] = mcpMap
 	} else if hasMcp {
@@ -116,13 +117,14 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 		if !ok {
 			mcpMap = make(map[string]any)
 		}
-		mcpMap["litepsm"] = bridgeEntry
+		delete(mcpMap, legacyServerName)
+		mcpMap["litespm"] = bridgeEntry
 		rootMap["mcp"] = mcpMap
 	} else {
 		// New config defaults to v2 nested layout
 		rootMap["mcp"] = map[string]any{
 			"servers": map[string]any{
-				"litepsm": bridgeEntry,
+				"litespm": bridgeEntry,
 			},
 		}
 	}
@@ -173,10 +175,10 @@ func (a *OpenCodeAdapter) VerifySetup(ctx context.Context) (*HostVerification, e
 	registered := false
 	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
 		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
-			if _, ok := serversVal["litepsm"]; ok {
+			if _, ok := serversVal["litespm"]; ok {
 				registered = true
 			}
-		} else if _, ok := mcpVal["litepsm"]; ok {
+		} else if _, ok := mcpVal["litespm"]; ok {
 			registered = true
 		}
 	}
@@ -219,7 +221,7 @@ func (a *OpenCodeAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pr
 	// Check if v2 nested
 	if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
 		for name, details := range serversVal {
-			if name == "litepsm" {
+			if name == litespmServerName || name == legacyServerName {
 				continue
 			}
 			comp := a.extractComponent(name, details, configPath)
@@ -228,7 +230,7 @@ func (a *OpenCodeAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pr
 	} else {
 		// v1 root mcp
 		for name, details := range mcpVal {
-			if name == "litepsm" || name == "servers" {
+			if name == litespmServerName || name == legacyServerName || name == "servers" {
 				continue
 			}
 			comp := a.extractComponent(name, details, configPath)
@@ -282,7 +284,7 @@ func (a *OpenCodeAdapter) RenderManualSetup(binaryPath string) string {
 	return fmt.Sprintf(`// Add to opencode.json (v2 layout):
 "mcp": {
   "servers": {
-    "litepsm": {
+    "litespm": {
       "type": "local",
       "command": [%q, "bridge", "stdio", "--host", "opencode"]
     }

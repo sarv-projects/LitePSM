@@ -44,12 +44,12 @@ export function Header({ activeTab = "all", setActiveTab, counts, onNavigate }: 
       {/* The header is opaque, not glassy. A blur layer over a ruled table
           costs paint on every scroll frame and buys nothing here. */}
       <div className="shell flex h-12 items-center gap-4">
-        <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="LitePSM Market home">
+        <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="LiteSPM Market home">
           <span className="flex h-6 w-6 items-center justify-center rounded-chip bg-ink">
             <SquareTerminal className="h-3.5 w-3.5 text-surface" strokeWidth={2.25} aria-hidden="true" />
           </span>
           <span className="t-cond hidden text-[15px] font-semibold tracking-tight text-ink sm:inline">
-            LitePSM Market
+            LiteSPM Market
           </span>
         </Link>
 

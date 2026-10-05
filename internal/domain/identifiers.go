@@ -58,7 +58,7 @@ func (s SourceID) Slug() string {
 	return ""
 }
 
-// ListingID represents a canonical listing identifier in the LitePSM catalog.
+// ListingID represents a canonical listing identifier in the LiteSPM catalog.
 // Format: <kind>:<source-id>:<percent-encoded-upstream-id>
 type ListingID string
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // bespokeAdapterIDs are the hand-written adapters that predate the data-driven
@@ -87,7 +87,7 @@ func TestBridgeTargetTableDoesNotShadowBespokeAdapters(t *testing.T) {
 // explicitly in SharedConfigWith on both sides, which forces a human to
 // acknowledge it.
 func TestBridgeTargetTableHasNoUndeclaredSharedConfigFiles(t *testing.T) {
-	home := filepath.Join("/tmp", "litepsm-integrity-home")
+	home := filepath.Join("/tmp", "litespm-integrity-home")
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
@@ -195,7 +195,7 @@ func TestGenericAdapterRoundTrip(t *testing.T) {
 	original := "{\n  \"mcpServers\": {\n    \"mine\": {\"command\": \"npx\"}\n  }\n}\n"
 	writeConfig(t, configPath, original)
 
-	plan, err := adapter.PlanSetup(ctx, "/opt/litepsm/bin/litepsm", filepath.Join(home, "backups"))
+	plan, err := adapter.PlanSetup(ctx, "/opt/litespm/bin/litespm", filepath.Join(home, "backups"))
 	if err != nil {
 		t.Fatalf("plan failed: %v", err)
 	}
@@ -230,11 +230,11 @@ func TestGenericAdapterRoundTrip(t *testing.T) {
 	if _, ok := servers["mine"]; !ok {
 		t.Error("pre-existing server was destroyed")
 	}
-	entry, ok := servers["litepsm"].(map[string]any)
+	entry, ok := servers["litespm"].(map[string]any)
 	if !ok {
 		t.Fatalf("bridge entry missing: %s", written)
 	}
-	if entry["command"] != "/opt/litepsm/bin/litepsm" {
+	if entry["command"] != "/opt/litespm/bin/litespm" {
 		t.Errorf("unexpected command: %v", entry["command"])
 	}
 	args := entry["args"].([]any)
@@ -262,7 +262,7 @@ func TestGenericAdapterPreservesUserCommentsEndToEnd(t *testing.T) {
 	original := "{\n  // my theme, do not clobber\n  \"theme\": \"One Dark\",\n  \"context_servers\": {\n    // my server\n    \"mine\": { \"command\": \"uvx\" }\n  }\n}\n"
 	writeConfig(t, path, original)
 
-	plan, err := adapter.PlanSetup(ctx, "/bin/litepsm", filepath.Join(home, "backups"))
+	plan, err := adapter.PlanSetup(ctx, "/bin/litespm", filepath.Join(home, "backups"))
 	if err != nil {
 		t.Fatalf("plan failed: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestGenericAdapterPreservesUserCommentsEndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatalf("context_servers missing:\n%s", out)
 	}
-	if _, ok := cs["litepsm"]; !ok {
+	if _, ok := cs["litespm"]; !ok {
 		t.Fatalf("bridge entry missing:\n%s", out)
 	}
 	verify, err := adapter.VerifySetup(ctx)
@@ -299,7 +299,7 @@ func TestGenericAdapterDetectsPreExistingComponentsReadOnly(t *testing.T) {
 	useTempHome(t)
 	adapter := adapterFor(t, "cursor")
 	writeConfig(t, configPathOf(t, adapter),
-		`{"mcpServers":{"a":{"command":"x"},"litepsm":{"command":"y"}}}`)
+		`{"mcpServers":{"a":{"command":"x"},"litespm":{"command":"y"}}}`)
 	comps, err := adapter.DetectPreExistingComponents(context.Background())
 	if err != nil {
 		t.Fatalf("detect failed: %v", err)
@@ -393,11 +393,11 @@ func TestRenderManualSetupNamesTheRealKey(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s target missing", id)
 		}
-		snippet := NewGenericAdapter(tgt).RenderManualSetup("/bin/litepsm")
+		snippet := NewGenericAdapter(tgt).RenderManualSetup("/bin/litespm")
 		if !strings.Contains(snippet, want) {
 			t.Errorf("%s: manual snippet does not mention %s:\n%s", id, want, snippet)
 		}
-		if !strings.Contains(snippet, "/bin/litepsm") {
+		if !strings.Contains(snippet, "/bin/litespm") {
 			t.Errorf("%s: manual snippet missing binary path:\n%s", id, snippet)
 		}
 	}
@@ -425,7 +425,7 @@ func TestEveryTableTargetAppliesToARealisticFile(t *testing.T) {
 				seed = "# user content\n[other]\nkey = 1\n"
 				wantUserContent = true
 			}
-			out, err := a.renderConfig(seed, "/bin/litepsm", false)
+			out, err := a.renderConfig(seed, "/bin/litespm", false)
 			if err != nil {
 				t.Fatalf("render failed: %v", err)
 			}
@@ -433,7 +433,7 @@ func TestEveryTableTargetAppliesToARealisticFile(t *testing.T) {
 				t.Errorf("user content dropped:\n%s", out)
 			}
 			if tgt.Format == FormatTOML {
-				if !strings.Contains(out, "[mcp_servers."+litepsmServerName+"]") {
+				if !strings.Contains(out, "[mcp_servers."+litespmServerName+"]") {
 					t.Errorf("bridge table missing:\n%s", out)
 				}
 				if !strings.Contains(out, "key = 1") {
@@ -463,14 +463,14 @@ func TestStrictJSONHostsRefuseCommentedFiles(t *testing.T) {
 	if !ok {
 		t.Fatal("cursor target missing")
 	}
-	if _, err := NewGenericAdapter(strict).renderConfig(commented, "/bin/litepsm", false); err == nil {
+	if _, err := NewGenericAdapter(strict).renderConfig(commented, "/bin/litespm", false); err == nil {
 		t.Error("expected a strict-JSON host to refuse a config containing comments")
 	}
 	tolerant, ok := LookupBridgeTarget("amp")
 	if !ok {
 		t.Fatal("amp target missing")
 	}
-	out, err := NewGenericAdapter(tolerant).renderConfig(commented, "/bin/litepsm", false)
+	out, err := NewGenericAdapter(tolerant).renderConfig(commented, "/bin/litespm", false)
 	if err != nil {
 		t.Fatalf("a comment-tolerant host should accept this file: %v", err)
 	}

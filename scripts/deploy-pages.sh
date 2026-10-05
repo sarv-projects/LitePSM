@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# LitePSM Cloudflare Pages Static Packaging & Security Audit Script
+# LiteSPM Cloudflare Pages Static Packaging & Security Audit Script
 # Conforms to ARCH/18 Section 4 (CDN Headers) & Section 5 (Strict Dist Allowlist)
 
 PAGES_DIR="pages-dist"
@@ -13,7 +13,10 @@ echo "● Building Next.js Static Export..."
     cd web
     echo "● Installing web dependencies..."
     npm ci || npm install
-    npm run build
+    # NEXT_PUBLIC_SITE_URL sets the canonical origin used for metadata, Open
+    # Graph and JSON-LD URLs; it must name the origin that serves the site.
+    # Empty keeps the built-in default from web/lib/site.ts.
+    NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-}" npm run build
 )
 
 echo "● Copying Web Static Assets to ${PAGES_DIR}..."

@@ -2,7 +2,7 @@
 
 ## 1. Document Status & Precedence
 
-This architecture defines the complete specification for **LitePSM**, comprising high-level system boundaries, protocol contracts, low-level component designs, database schemas, and verification suites.
+This architecture defines the complete specification for **LiteSPM**, comprising high-level system boundaries, protocol contracts, low-level component designs, database schemas, and verification suites.
 
 ### Document Hierarchy & Normative Authority
 *   **Normative Specifications:** The security requirements ([05-SECURITY](05-SECURITY.md)), domain models ([10-DOMAIN-MODEL](10-DOMAIN-MODEL.md)), IPC/daemon architecture ([11-LOCAL-RUNTIME-IPC](11-LOCAL-RUNTIME-IPC.md)), storage/recovery models ([12-STORAGE-TRANSACTIONS-RECOVERY](12-STORAGE-TRANSACTIONS-RECOVERY.md)), API/schema contracts ([06-API-CONTRACTS](06-API-CONTRACTS.md), [23-SCHEMAS-EXAMPLES](23-SCHEMAS-EXAMPLES.md)), and function inventories ([24-FUNCTION-INVENTORY](24-FUNCTION-INVENTORY.md)) are **normative**. Code implementation must strictly conform to these specifications.
@@ -42,11 +42,11 @@ This architecture defines the complete specification for **LitePSM**, comprising
 | [17 — Source, Artifact & Runtime Adapters](17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) | Decoupled SourceAdapter, ArtifactFetcher, and RuntimeAdapter interface contracts | Normative |
 | [18 — Catalog Builder, Releases & Search](18-CATALOG-BUILDER-RELEASE-SEARCH.md) | Deterministic CI builder, `/v1/releases/` immutable layout, manifest digests, search ranking | Normative |
 | [19 — Secrets & OAuth Broker](19-SECRETS-OAUTH.md) | OS SecretStore backends (WinCred/DPAPI, Keychain, Secret Service), loopback PKCE OAuth | Normative |
-| [20 — Errors, Audit & Doctor](20-ERRORS-AUDIT-DOCTOR.md) | `LPSM-*` error taxonomy, CLI exit codes (0–70), audit event logging, `litepsm doctor` | Normative |
+| [20 — Errors, Audit & Doctor](20-ERRORS-AUDIT-DOCTOR.md) | `LPSM-*` error taxonomy, CLI exit codes (0–70), audit event logging, `litespm doctor` | Normative |
 | [21 — Testing & Conformance](21-TESTING-CONFORMANCE.md) | Test pyramid, property testing, archive fuzzing, crash injection, fake MCP conformance | Normative |
 | [22 — Platform, Release & Migrations](22-PLATFORM-RELEASE-MIGRATIONS.md) | Multi-platform build matrix, transactional DB migrations, downgrade prevention, self-update | Normative |
 | [23 — Schemas & Examples](23-SCHEMAS-EXAMPLES.md) | Complete JSON Schema (Draft 2020-12) specifications and golden test fixtures | Normative |
-| [24 — Function Inventory](24-FUNCTION-INVENTORY.md) | Complete Go package and public function inventory across all 22 internal modules | Normative |
+| [24 — Function Inventory](24-FUNCTION-INVENTORY.md) | Complete Go package and public function inventory across all 21 internal modules | Normative |
 | [25 — Web Frontend UI](25-WEB-FRONTEND-UI.md) | Web marketplace UI inspired by mcpmarket.com, component hierarchy, detail drawer | Normative |
 | [26 — Ecosystem IA & Package Model](26-ECOSYSTEM-IA-PACKAGE-MODEL.md) | Neutral `Package`/`Capability` model, 8-type v1 taxonomy, website IA, honesty rule, phased roadmap | Normative for IA/vocabulary/matrix; informative for roadmap |
 | [27 — Capability & Source Support Matrix](27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md) | Research-backed status snapshot per capability type and source, with code evidence | Informative status snapshot (not a new contract) |
@@ -65,8 +65,8 @@ This architecture defines the complete specification for **LitePSM**, comprising
 
 ## 3. Glossary & Core Architectural Concepts
 
-*   **LitePSM Daemon:** The single-writer, persistent local background process running on the user's workstation. It holds exclusive write locks on SQLite (`state.db`), supervises provider child processes, evaluates policy, brokers OS secrets, and executes atomic journaled operations.
-*   **LitePSM Bridge (Shim):** A lightweight, stateless MCP stdio server registered with a host agent (e.g., Codex, Claude Code). It translates host MCP JSON-RPC requests into authenticated local IPC calls to the LitePSM Daemon and exits cleanly when the host closes stdio.
+*   **LiteSPM Daemon:** The single-writer, persistent local background process running on the user's workstation. It holds exclusive write locks on SQLite (`state.db`), supervises provider child processes, evaluates policy, brokers OS secrets, and executes atomic journaled operations.
+*   **LiteSPM Bridge (Shim):** A lightweight, stateless MCP stdio server registered with a host agent (e.g., Codex, Claude Code). It translates host MCP JSON-RPC requests into authenticated local IPC calls to the LiteSPM Daemon and exits cleanly when the host closes stdio.
 *   **Listing:** A normalized discovery record published in the static catalog representing an upstream plugin, skill, MCP server, or connector.
 *   **Artifact:** The physical software bundle (tarball, zip, git tree, or container image) retrieved from an upstream publisher.
 *   **Content-Addressed Storage (CAS):** Local immutable storage indexed strictly by SHA-256 content digest, preventing in-place corruption and enabling safe rollbacks.
@@ -76,10 +76,10 @@ This architecture defines the complete specification for **LitePSM**, comprising
 *   **Approval:** An authorization record binding a specific user confirmation (or explicit policy grant) to an immutable `subjectHash` (e.g., `planHash` or `schemaFingerprint`), with replay prevention for one-time approvals.
 *   **CapabilityGrant:** A durable permission record authorizing an agent to invoke a specific provider tool, bound cryptographically to `(capability_id, schemaFingerprint, casTreeDigest)` for local providers or `(capability_id, schemaFingerprint, endpointOrigin, serverVersionDigest)` for remote providers.
 *   **Schema Fingerprint:** The canonical SHA-256 digest of an MCP tool's JSON Schema. Any modification to tool parameters alters the fingerprint, triggering schema-drift invalidation.
-*   **SourceAdapter:** Build-time adapter in CI responsible for fetching upstream discovery feeds and normalizing them into LitePSM Listing schemas without downloading package bytes.
+*   **SourceAdapter:** Build-time adapter in CI responsible for fetching upstream discovery feeds and normalizing them into LiteSPM Listing schemas without downloading package bytes.
 *   **ArtifactFetcher:** Client-side component responsible for downloading raw bytes and verifying integrity digests without executing scripts.
 *   **RuntimeAdapter:** Client-side component responsible for materializing the execution environment (e.g., virtual environment, node_modules) and constructing launch specifications.
-*   **HostAdapter:** Integration module that discovers, backs up, and safely merges the LitePSM Bridge entry into an agent host's native configuration.
+*   **HostAdapter:** Integration module that discovers, backs up, and safely merges the LiteSPM Bridge entry into an agent host's native configuration.
 *   **Package / Capability:** The neutral top-level abstraction defined in [26](26-ECOSYSTEM-IA-PACKAGE-MODEL.md): `type` (what it is), `source` (where it came from), `compatibility` (which hosts/runtimes, with evidence level), plus an install adapter (how it is materialised). User-facing synonym: **Capability**.
 *   **BridgeTarget:** Data-driven per-agent MCP configuration description (`internal/host/target.go`) consumed by the single `GenericAdapter`; each row records the documentation URL it was verified against ([30](30-DATA-DRIVEN-BRIDGE-TARGETS.md)).
 *   **Connector (deferred):** Authenticated runtime state with a lifecycle (not a file format); local proxy execution design is recorded in [29](29-CONNECTOR-SYSTEM-DESIGN.md) and remains unimplemented.

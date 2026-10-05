@@ -235,6 +235,11 @@ type RecoverySummary struct {
 //     never touched.
 //
 // treePath maps a tree digest to its CAS directory; when nil no tree is removed.
+//
+// It returns a non-nil error when any operation could not be recovered, so a
+// caller such as the daemon's startup sweep can halt rather than proceed on a
+// journal whose recovery did not fully succeed. The summary is always
+// populated, including on error, so the caller can report per-bucket counts.
 func (db *DB) RecoverIncompleteOperations(ctx context.Context, stagingRoot string, treePath func(string) string) (RecoverySummary, error) {
 	var summary RecoverySummary
 
@@ -257,6 +262,12 @@ func (db *DB) RecoverIncompleteOperations(ctx context.Context, stagingRoot strin
 		case "rolled_back":
 			summary.RolledBack++
 		}
+	}
+
+	if summary.Failed > 0 {
+		return summary, fmt.Errorf(
+			"recovery failed for %d of %d incomplete operation(s); see operation_steps for detail",
+			summary.Failed, summary.Examined)
 	}
 	return summary, nil
 }

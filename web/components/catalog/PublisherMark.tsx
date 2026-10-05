@@ -16,14 +16,14 @@ export function PublisherTile({ name, kind }: { name?: string; kind: Listing["ki
 }
 
 /**
- * `publisher.verified` is a registry flag on the publisher, not a LitePSM
+ * `publisher.verified` is a registry flag on the publisher, not a LiteSPM
  * security audit. Rendered as a distinct verified badge.
  */
 export function VerifiedMark({ glyph = true }: { glyph?: boolean }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-[2px] bg-accent-wash px-1.5 py-0.5 text-[10px] font-medium text-accent border border-accent/20"
-      title="The upstream registry marks this publisher as verified. This is not a LitePSM security audit."
+      title="The upstream registry marks this publisher as verified. This is not a LiteSPM security audit."
     >
       {glyph && <Check className="h-2.5 w-2.5 stroke-[2.5]" aria-hidden="true" />}
       verified

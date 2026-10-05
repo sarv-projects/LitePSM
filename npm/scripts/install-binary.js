@@ -5,10 +5,14 @@ const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
 const https = require("https");
-const { getBinaryName } = require("../bin/litepsm.js");
+const { getBinaryName } = require("../bin/litespm.js");
 
 const VERSION = require("../package.json").version;
-const REPO = "sarv-projects/LitePSM";
+
+// Repository hosting the release assets. Overridable so a mirror, or an
+// install racing the repository rename, can be redirected without a code
+// change: LITESPM_RELEASE_REPO=owner/name node scripts/install-binary.js
+const REPO = process.env.LITESPM_RELEASE_REPO || "sarv-projects/LiteSPM";
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) {
@@ -135,7 +139,7 @@ function downloadFile(url, targetPath) {
 
 async function installBinary() {
   const binName = getBinaryName();
-  const targetDir = path.join(os.homedir(), ".litepsm", "bin");
+  const targetDir = path.join(os.homedir(), ".litespm", "bin");
   ensureDir(targetDir);
   const targetPath = path.join(targetDir, binName);
   const stampPath = `${targetPath}.version`;
@@ -154,7 +158,7 @@ async function installBinary() {
       return;
     }
     console.log(
-      `[litepsm] Updating ${binName} ${installed || "(unknown)"} -> ${VERSION}`
+      `[litespm] Updating ${binName} ${installed || "(unknown)"} -> ${VERSION}`
     );
   }
 
@@ -166,14 +170,14 @@ async function installBinary() {
       fs.chmodSync(targetPath, 0o755);
     }
     fs.writeFileSync(stampPath, "local\n");
-    console.log(`[litepsm] Installed ${binName} to ${targetPath}`);
+    console.log(`[litespm] Installed ${binName} to ${targetPath}`);
     return;
   }
 
   // 3. Fallback: Download pre-compiled release binary from GitHub Releases
   const releaseBase = `https://github.com/${REPO}/releases/download/v${VERSION}`;
   const releaseUrl = `${releaseBase}/${binName}`;
-  console.log(`[litepsm] Downloading native binary from GitHub Releases: ${releaseUrl}...`);
+  console.log(`[litespm] Downloading native binary from GitHub Releases: ${releaseUrl}...`);
   try {
     const tempTarget = `${targetPath}.tmp.${Date.now()}`;
     await downloadFile(releaseUrl, tempTarget);
@@ -187,15 +191,15 @@ async function installBinary() {
         const actual = computeFileSHA256(tempTarget);
         if (actual !== expected) {
           fs.unlinkSync(tempTarget);
-          console.warn(`[litepsm] Checksum mismatch for ${binName} (expected ${expected}, got ${actual}); aborting install.`);
+          console.warn(`[litespm] Checksum mismatch for ${binName} (expected ${expected}, got ${actual}); aborting install.`);
           return;
         }
-        console.log(`[litepsm] Verified SHA-256 checksum for ${binName}`);
+        console.log(`[litespm] Verified SHA-256 checksum for ${binName}`);
       } else {
-        console.warn(`[litepsm] Warning: no checksum entry for ${binName}; proceeding unverified.`);
+        console.warn(`[litespm] Warning: no checksum entry for ${binName}; proceeding unverified.`);
       }
     } catch (verifyErr) {
-      console.warn(`[litepsm] Warning: could not verify checksum (${verifyErr.message}).`);
+      console.warn(`[litespm] Warning: could not verify checksum (${verifyErr.message}).`);
     }
 
     fs.renameSync(tempTarget, targetPath);
@@ -203,10 +207,14 @@ async function installBinary() {
       fs.chmodSync(targetPath, 0o755);
     }
     fs.writeFileSync(stampPath, `${VERSION}\n`);
-    console.log(`[litepsm] Successfully downloaded and installed ${binName} to ${targetPath}`);
+    console.log(`[litespm] Successfully downloaded and installed ${binName} to ${targetPath}`);
   } catch (err) {
-    console.warn(`[litepsm] Notice: Could not download native binary (${err.message}).`);
-    console.warn(`[litepsm] LitePSM will resolve or re-attempt on first invocation.`);
+    console.warn(`[litespm] Notice: could not download the native binary (${err.message}).`);
+    console.warn(`[litespm] Expected release asset: ${releaseUrl}`);
+    console.warn(
+      `[litespm] If that release does not exist yet, push the v${VERSION} tag and let its GitHub release publish before installing from npm.`
+    );
+    console.warn(`[litespm] LiteSPM will resolve or re-attempt on first invocation.`);
   }
 }
 
@@ -219,7 +227,7 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((err) => {
-      console.warn(`[litepsm] Postinstall notice: ${err.message}`);
+      console.warn(`[litespm] Postinstall notice: ${err.message}`);
       agent.destroy();
       process.exit(0);
     });

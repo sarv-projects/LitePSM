@@ -10,7 +10,7 @@
 // generated file cannot drift, and `npm run type-check` plus the catalog build
 // both read the same source.
 //
-// LitePSM registers ONE `litepsm` bridge entry per host. Individual capabilities
+// LiteSPM registers ONE `litespm` bridge entry per host. Individual capabilities
 // are resolved by the daemon at runtime, so per-listing snippets are identical
 // regardless of the capability being viewed.
 
@@ -22,7 +22,7 @@ export type HostFormat = "json" | "toml";
 export type HostShape = "object" | "local-array" | "command-string" | "";
 
 export interface HostAdapter {
-  /** Registry id passed to `litepsm bridge stdio --host <id>`. */
+  /** Registry id passed to `litespm bridge stdio --host <id>`. */
   id: string;
   name: string;
   kind: HostFormat;
@@ -215,8 +215,8 @@ function nest(keyPath: string, leaf: unknown): Record<string, unknown> {
   return acc as Record<string, unknown>;
 }
 
-/** The single `litepsm` server entry, in this host's own shape. */
-export function bridgeEntry(host: HostAdapter, binary = "litepsm"): unknown {
+/** The single `litespm` server entry, in this host's own shape. */
+export function bridgeEntry(host: HostAdapter, binary = "litespm"): unknown {
   const args = ["bridge", "stdio", "--host", host.id];
   switch (host.shape) {
     case "local-array":
@@ -228,16 +228,16 @@ export function bridgeEntry(host: HostAdapter, binary = "litepsm"): unknown {
   }
 }
 
-/** Correct, host-accurate configuration for the single litepsm bridge entry. */
-export function bridgeSnippet(host: HostAdapter, binary = "litepsm", os: PlatformOS = "linux"): string {
+/** Correct, host-accurate configuration for the single litespm bridge entry. */
+export function bridgeSnippet(host: HostAdapter, binary = "litespm", os: PlatformOS = "linux"): string {
   const path = hostPath(host, os);
   const keyPath = host.keyPath || "mcpServers";
 
   if (host.kind === "toml") {
-    const table = keyPath === "mcp_servers" ? "mcp_servers.litepsm" : `${keyPath}.litepsm`;
+    const table = keyPath === "mcp_servers" ? "mcp_servers.litespm" : `${keyPath}.litespm`;
     return `# ${path}\n[${table}]\ncommand = "${binary}"\nargs = ["bridge", "stdio", "--host", "${host.id}"]\n`;
   }
 
-  const body = nest(keyPath, { litepsm: bridgeEntry(host, binary) });
+  const body = nest(keyPath, { litespm: bridgeEntry(host, binary) });
   return `# ${path}\n${JSON.stringify(body, null, 2)}`;
 }

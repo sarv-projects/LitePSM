@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // ClaudeMarketplaceManifest represents a .claude-plugin/marketplace.json file.
@@ -138,7 +138,7 @@ func (a *ClaudeMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string
 				Kind:               domain.ComponentSkill,
 				Name:               name,
 				Path:               sp,
-				SupportedByLitePSM: domain.SupportYes,
+				SupportedByLiteSPM: domain.SupportYes,
 			})
 			compSummaries = append(compSummaries, domain.ComponentSummary{
 				Kind: domain.ComponentSkill,
@@ -154,7 +154,7 @@ func (a *ClaudeMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string
 				ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentLSP, name)),
 				Kind:               domain.ComponentLSP,
 				Name:               name,
-				SupportedByLitePSM: domain.SupportUnknown,
+				SupportedByLiteSPM: domain.SupportUnknown,
 			})
 			compSummaries = append(compSummaries, domain.ComponentSummary{
 				Kind: domain.ComponentLSP,
@@ -166,7 +166,7 @@ func (a *ClaudeMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string
 				ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentAsset, cleanName)),
 				Kind:               domain.ComponentAsset,
 				Name:               p.Name,
-				SupportedByLitePSM: domain.SupportUnknown,
+				SupportedByLiteSPM: domain.SupportUnknown,
 			})
 			compSummaries = append(compSummaries, domain.ComponentSummary{
 				Kind: domain.ComponentAsset,

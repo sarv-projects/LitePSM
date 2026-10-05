@@ -2,19 +2,21 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/skills"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/policy"
+	"github.com/sarv-projects/litespm/internal/skills"
 )
 
-const litepsmBanner = `
+const litespmBanner = `
 ██╗     ██╗████████╗███████╗██████╗ ███████╗███╗   ███╗
 ██║     ██║╚══██╔══╝██╔════╝██╔══██╗██╔════╝████╗ ████║
 ██║     ██║   ██║   █████╗  ██████╔╝███████╗██╔████╔██║
@@ -23,7 +25,7 @@ const litepsmBanner = `
 ╚══════╝╚═╝   ╚═╝   ╚══════╝╚═╝     ╚══════╝╚═╝     ╚═╝`
 
 func skillsAddUsage() {
-	fmt.Println(`Usage: litepsm skills add <source> [flags]
+	fmt.Println(`Usage: litespm skills add <source> [flags]
 
 Install portable SKILL.md skills from a GitHub repository or local directory.
 
@@ -163,24 +165,23 @@ func runSkillsAdd(args []string) {
 	var cleanup func()
 	if src.Kind == "local" {
 		workRoot = src.LocalDir
+		cleanup = func() {}
 	} else {
-		if _, err := exec.LookPath("git"); err != nil {
-			fmt.Fprintln(os.Stderr, "Error: git is required to fetch remote skill sources")
+		var fetchErr error
+		workRoot, cleanup, fetchErr = fetchSkillSourceTree(src)
+		if fetchErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", fetchErr)
 			os.Exit(1)
 		}
-		tmp, err := os.MkdirTemp("", "litepsm-skills-*")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		cleanup = func() { os.RemoveAll(tmp) }
-		defer cleanup()
-		clone := exec.Command("git", "clone", "--depth", "1", src.CloneURL, tmp)
-		if out, err := clone.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to clone %s: %v\n%s\n", src.Display, err, strings.TrimSpace(string(out)))
-			os.Exit(1)
-		}
-		workRoot = tmp
+	}
+	defer cleanup()
+
+	// Record the exact commit the checkout resolved to when the source is a git
+	// tree; an explicit pin in the source (owner/repo@ref) still wins inside
+	// SkillSource.RecordedRef.
+	observedRef := ""
+	if src.Kind != "local" {
+		observedRef = gitHeadCommit(workRoot)
 	}
 
 	found, err := skills.DiscoverSkills(workRoot)
@@ -212,7 +213,7 @@ func runSkillsAdd(args []string) {
 	}
 
 	if !opts.jsonOut {
-		fmt.Fprintln(out, litepsmBanner)
+		fmt.Fprintln(out, litespmBanner)
 		fmt.Fprintln(out, "\n┌   skills")
 		fmt.Fprintf(out, "│\n◇  Source: %s\n│\n", src.Display)
 		if src.Kind == "local" {
@@ -419,35 +420,49 @@ func runSkillsAdd(args []string) {
 
 	// --- Install ---
 	//
-	// Every directory we create is recorded in the ledger. Without it the tool
-	// could write into a dozen agent trees and have no way to enumerate them
-	// again, which would make removal impossible.
+	// Every directory we create is recorded in the ledger, with a content digest
+	// and a file inventory so update/remove can reason about it later. Without
+	// the ledger the tool could write into a dozen agent trees and have no way
+	// to enumerate them again, which would make removal impossible.
 	ledger, ledgerErr := skills.OpenLedger(skills.LedgerPath(platformPaths.DataRoot))
 	if ledgerErr != nil {
 		fmt.Fprintf(os.Stderr, "Error opening the install ledger: %v\n", ledgerErr)
 		os.Exit(1)
 	}
 
+	// The policy engine gates every write. It is built without a state DB:
+	// skill directories are not provider capabilities, so no capability grant
+	// or schema identity applies. The engine always asks for an effectful
+	// install; that ask was already answered by this command's consent (the
+	// interactive proceed prompt, or --yes), so the resolver records that here
+	// rather than inventing an approval. A "deny" still stops the write.
+	askNoted := false
+	checker := enginePolicyChecker(policy.NewEngine(nil, nil), func(_ context.Context, _ skills.PolicyRequest, detail string) bool {
+		if !askNoted {
+			fmt.Fprintf(os.Stderr, "Policy: skill writes require approval (%s); authorized by this command's installation consent.\n", detail)
+			askNoted = true
+		}
+		return true
+	})
+	installer := skills.NewInstaller(ledger, checker)
+
 	var done []installedSkill
-	var recorded []skills.LedgerEntry
 	for _, op := range ops {
-		if err := skills.CopySkillDir(op.FromDir, op.ToDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Error installing %s to %s: %v\n", op.SkillName, op.ToDir, err)
+		if _, err := installer.Install(context.Background(), skills.InstallRequest{
+			Op:          op,
+			Source:      src,
+			Scope:       opts.scope,
+			ObservedRef: observedRef,
+		}); err != nil {
+			var denied *skills.PolicyDeniedError
+			if errors.As(err, &denied) {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error installing %s to %s: %v\n", op.SkillName, op.ToDir, err)
+			}
 			os.Exit(1)
 		}
 		done = append(done, installedSkill{Skill: op.SkillName, To: op.ToDir, Host: op.HostLabel})
-		recorded = append(recorded, skills.LedgerEntry{
-			SkillName: op.SkillName,
-			AgentID:   op.HostLabel,
-			HostLabel: op.HostLabel,
-			DestDir:   op.ToDir,
-			Source:    src.Display,
-			Scope:     opts.scope,
-		})
-	}
-	if err := ledger.Add(recorded); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: skills were installed but the ledger could not be written: %v\n", err)
-		fmt.Fprintln(os.Stderr, "         `litepsm skills remove` will not be able to find them.")
 	}
 
 	if opts.jsonOut {

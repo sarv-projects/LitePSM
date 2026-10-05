@@ -1,77 +1,64 @@
-# LitePSM Remediation Plan
+# LiteSPM Remediation Plan
 
 Source: full-repo audit (159 findings) re-verified at `510df41` → **10 FIXED, 42 PARTIAL, 107 NOT FIXED**.
-This file is the execution tracker. Status values: `TODO` / `IN_PROGRESS` / `DONE` / `VERIFIED`
-(`VERIFIED` = independent crosscheck agent confirmed with evidence + full toolchain green).
+This file is the execution tracker. Status: `TODO` / `IN_PROGRESS` / `DONE` / `VERIFIED`
+(`VERIFIED` = independent falsifier confirmed with evidence + mutation tests + toolchain green).
 
-> **Wave 1 status: VERIFIED.** Phases 0 + 2 implemented, crosschecked by 2 independent reviewers
-> (17/17 claims confirmed), 5 crosscheck defects X1–X5 fixed and re-verified by a third independent
-> agent (mutation tests in /tmp). Known non-regression: `GOOS=solaris|illumos go build ./internal/doctor/`
-> fails only via the pre-existing `modernc.org/sqlite` issue, byte-identical at HEAD (D3 exclusion).
-> Cosmetic nit logged: bridge_test daemon-backed `list_installed` assertions don't detect canned panel
-> text (conformance_test.go:304 does). Phase 3 agent: update the status cells you complete (TODO → DONE)
-> and add a DONE for each finding you close.
+## Where things stand (Oct 5, post-rebrand)
+
+- Product renamed **LiteSPM**; `litePSM` is now a symlink to `liteSPM`; module `github.com/sarv-projects/litespm`; CLI `cmd/litespm`; npm `litespm`.
+- Committed: `fe42c28` (Phases 0+2 + Phase 3 core), `4332f30` (web cleanup). **Uncommitted working tree**: the rename plus Phase 3 completion and review fixes (verified, awaiting commit).
+- Toolchain: `gofmt` clean · `go build ./...` · `go vet ./...` · `go test -count=1 ./...` all packages ok · web `tsc --noEmit` ok.
+- Open items: pre-existing `internal/bridge` `-race` flake (reproducible at HEAD); doctor exit-code classification; deferred Phase 4 wiring (source pipeline, provider lifecycle, artifact-source install).
 
 ## Decisions (locked)
 
-- **D1** — Wire `auth` + `mcpclient` + provider supervision; wire `source`/`connector` minimally;
-  delete rather than ship unreachable code.
-- **D2** — Fabricated success is replaced by explicit `not_implemented` RPC errors / non-zero CLI
-  exits (fail-closed). Tests asserting fabrication are rewritten in the same change.
-- **D3** — Supported platforms = windows/darwin/linux. Build tags become `unix`; plan9/js failures
-  outside `internal/provider` (e.g. modernc.org/sqlite) are out of scope.
-- **D4** — Go `catalogbuild` is the single builder; canonical listing-ID scheme = 4-seg.
+- **D1** — Wire `auth`+`mcpclient`+provider supervision; wire `source`/`connector` minimally **or delete** — delete rather than ship unreachable code.
+- **D2** — Fabricated success → explicit `not_implemented` RPC errors / non-zero CLI exits (fail-closed); tests asserting fabrication rewritten.
+- **D3** — Platforms windows/darwin/linux; `unix` build tags; plan9/js failures outside `internal/provider` out of scope.
+- **D4** — Go `catalogbuild` is the single builder; canonical listing-ID = 4-seg.
 
-## Wave 1 crosscheck defects (found by independent verifiers, must fix before VERIFIED)
+## Wave 1 — Phases 0 + 2 (+ crosscheck defects X1–X5) — VERIFIED
+
+Falsified then fixed and re-verified: **X1** diskspace build tags narrowed (netbsd/openbsd green; solaris/illumos fail only via pre-existing `modernc.org/sqlite`, D3); **X2** `skills.read_resource` fail-closed; **X3** bridge standalone fail-closed + tests inverted to the strict contract; **X4** `check_ci.py` workflow-scoped URL + guards + 0/1/2 exit contract; **X5** doctor canary Delete on all paths. Phase 0/2 findings (gofmt, 158, 124, 93, 40, 41, 42, 43, 45) DONE.
+
+## Wave 2 — Phase 3 completion — VERIFIED
+
+| Finding | Outcome |
+|---|---|
+| 106 / 105 | DONE — real resolver→plan (planHash persisted), install validates plan/expiry/digest, tx + `rolling_back` + per-op staging. **Caveat M3:** the daemon `install.execute` still has no `ArchiveSource`/`TreeSource`, so `request_install` cannot complete end-to-end — artifact-source wiring is **Phase 4**. |
+| 102 | DONE — daemon calls `RecoverIncompleteOperations` before serving; now **halts** (exit 70) when an operation fails to recover. |
+| 103 | DONE (partial) — provider start/stop wired, `provider.probe` real; `invoke`/`get`/`cancel` keep explicit `-32601` with concrete reasons. **Caveat m4:** `providers` table is never populated by non-test code → autostart is inert (Phase 4: persist provider rows on install). |
+| 99 | DONE — vault open fail-closed; AuthBroker wiring deferred (no consumers). |
+| 39 | DONE — real flag validation, honest synthetic-package label. |
+| 104 | DONE — all six orphan handlers covered by real-IPC tests (`host.apply_setup` added). |
+| 46 | DONE — repair skips in-flight staging; `Applied` truthful. |
+| 98/119 connector | DONE (D1 **delete**) — zero importers proven; package + seeds removed (9 files, 2072 lines); docs corrected (`ARCH/29`, `README` counts, `ARCH/24` tombstone, `SECURITY.md`, `ARCH/00` = 21 modules). |
+| 118 skills | DONE — `Installer`/`Update` (atomic swap + rollback + dry-run), ledger provenance (digest/ref/inventory), fixed `ParseSkillSource` pin parsing, policy hook, scope-checked `RemoveScoped`, removal guard; CLI wired (`skills update`, `--dry-run`, `--force`, scope). |
+| 47 updater | DONE — real HTTPS release-manifest fetch, SHA-256 fail-closed, downgrade guard, O_EXCL private-dir atomic replace + Windows backup/swap, `VerifySelfBoot` wired, rollback; CLI wired (bounded download of `DownloadURLs[binName]`). Self-update completes once a release publishes `litespm-*` assets (packaging P7). |
+| 97 source | **DEFERRED → Phase 4** — analysis: honest wiring needs an upstream fetcher + `catalog build` command + CI publish + one ID scheme/web projection. Do NOT delete (D4 tension). Source docs still to correct. |
+
+### Wave 2 review defects
 
 | ID | Defect | Status |
 |---|---|---|
-| X1 | `internal/doctor/diskspace_unix.go` tagged `unix` but `syscall.Statfs` undefined on netbsd/openbsd/solaris/illumos → regresses builds that worked at HEAD | TODO |
-| X2 | `cmd/litepsm/main.go` `skills.read_resource` fabricates `"Resource %s for skill %s."` on every failure path (D2 violation) | TODO |
-| X3 | D2 not fully executed: `internal/bridge/shim.go` standalone fallbacks still fabricate success (`Capability %s invoked successfully.` etc.) and `bridge_test.go`/`conformance_test.go` assert them | TODO |
-| X4 | `scripts/check_ci.py`: queries latest run of ANY workflow (not just CI) → false-green window; `jobs` non-dict elements raise unguarded AttributeError | TODO |
-| X5 | doctor canary: read-back/value-check failure paths never attempt Delete → leftover canary in keyring, message doesn't say so | TODO |
-| X6 | Tracker statuses stale; residual fabrications must be logged: `install.remove` returns `removed:true` on DB error (→ Phase 3), `repair.go` `Applied:true` on ReadDir error (finding 46, Phase 3), shim "○ Stopped" for unknown status (cosmetic, Phase 1/AGENTS UI) | PARTIAL — `install.remove` and `repair.go` now fail closed (Phase 3); shim "○ Stopped" cosmetic item still TODO |
-
-## Phase 0 — Gates  (status: DONE pending X1/X4)
-
-| Finding | Task | Status |
-|---|---|---|
-| gofmt | `gofmt -w` the 10 unformatted files; `gofmt -l .` must be empty | DONE |
-| 158 | `internal/provider` build tags → `unix` (+ no-op fallbacks); `GOOS=plan9`/`GOOS=js` build of that package green | DONE |
-| 124 | ci.yml: add gofmt, `go vet`, `tsc --noEmit`, `node --check`, `bash -n`, `py_compile`, `permissions:`, `concurrency:`; release.yml runs tests before build | DONE |
-| 93 | `scripts/check_ci.py`: auth from `GITHUB_TOKEN`, guard empty runs, nonzero exit on failure | DONE (X4 pending) |
-
-## Phase 2 — Honesty layer (status: DONE pending X2/X3/X5)
-
-| Finding | Task | Status |
-|---|---|---|
-| 40 | IPC handlers: truthful `tools.list` (no hardcoded Verified/StatusReady), exact `catalog.get_item` via `GetListing`, Kind filter honored, provider.probe/get/cancel/invoke → `not_implemented` RPC error, `_ = json.Unmarshal` → `-32602` | DONE |
-| 42 | `capabilities.search` / `capabilities.describe` → explicit `not_implemented` (no hard-coded canned lists) | DONE |
-| 43 | `skills.list` progressive disclosure (no rawContent/instructions); `skills.load_body` errors when not installed | DONE (X2 pending: read_resource) |
-| 41 | `catalog sync` failure = error; remove all hard-coded seed listings on failure paths | DONE |
-| 45 | doctor: journal/disk/ReadDir/backups/CAS checks real or truthful `skipped`/`warn`; no fabricated PASS messages; canary Delete error surfaced | DONE (X5 pending) |
-
-## Phase 3 — Wiring (status: IN_PROGRESS — 106, 105, 102, 103, 99, 39, 104 and finding 46 DONE; 97, 98/119, 118 and finding 47 still TODO)
-
-| Finding | Task | Status |
-|---|---|---|
-| 106 | `prepare_plan` → real `resolver.Resolve` → persisted `InstallPlan` (planHash); `GetListing` in path | DONE |
-| 105 | install: plan load + `planID` non-nil, state machine incl. `rolling_back`, tx around save+commit, per-op staging recovery | DONE |
-| 102 | daemon startup calls `RecoverIncompleteOperations` | DONE |
-| 103 | daemon `StartProvider`/`StopProvider` lifecycle; replace Phase-2 `not_implemented` provider handlers with real supervisor calls | DONE (probe real; invoke/get/cancel keep `-32601` with the concrete missing-subsystem reasons — no capability rows, no MCP dispatch, no invocation registry) |
-| 99 | daemon constructs `auth.AuthBroker`; no `secretStore, _ :=` | DONE (secret store now fail-closed in daemon/doctor; AuthBroker wiring deferred — grep shows zero consumers and no `auth.*` IPC method in ARCH/06) |
-| 97 | `catalog sync` → `source` adapters → `CompileRelease` → `Client.Sync` end-to-end (D1: wire minimally or delete) | TODO |
-| 98/119 | connector: wire one real path + persistence/grants/audit, **or delete package** (D1) | TODO |
-| 118 | skills: `update`, `--dry-run`, policy consult, source pin/digest in ledger, scope-checked `--all` | TODO |
-| 46/47 | doctor clean_staging skips in-flight ops + truthful `Applied`; updater real HTTP/checksums/`DownloadURLs[binName]`/O_EXCL/atomic replace | 46 DONE; 47 TODO |
-| 39 | install uses real path (106) or prints honest "synthetic preview" label; `--help`/unknown flags/`--scope` validation | DONE |
-| 104 | wire callers for the 6 orphan IPC handlers or remove registration; add handler tests | DONE |
+| M1 | `wrangler.toml` worker name vs live origin | FIXED — name stays `litepsm` (determines the `*.workers.dev` host) + explanatory comment; origins unchanged |
+| M2 | Rename dropped legacy state/config/env/host-key (upgrade data loss, duplicate bridge) | FIXED — legacy root adoption (non-destructive), `LITEPSM_*` env fallback, legacy project config, host bridge-key adoption/removal; 17 hermetic tests |
+| M3 | `install.execute` cannot complete (no artifact source) | OPEN → Phase 4 (marked PARTIAL) |
+| m1 | dead `/explore/?sort=newest` link | FIXED |
+| m2 | bridge rendered unknown status as "○ Stopped" | FIXED — `StatusUnknown` → "— Unknown" + test |
+| m3 | startup recovery swallowed per-op failures | FIXED — returns error; daemon halts (exit 70) + test |
+| m4 | provider lifecycle unreachable (`providers` never populated) | OPEN → Phase 4 |
+| m5 | tracker statuses stale | FIXED — this rewrite |
+| m6 | recovery can orphan a partial CAS tree (cross-device) | OPEN → Phase 4 (fail-closed today) |
+| m7 | `doctor` exited 0 on failures | FIXED — category-based exit codes (catalog 10 / resolve 20 / approval 30 / install 40 / provider 50 / host 60 / state 70, worst-wins, warnings 0) per ARCH/20 §2; tests bind |
+| m8 | module path casing vs git remote (`LitePSM`) | NOTE — non-breaking; align remote or casing at release |
+| new | pre-existing `internal/bridge` `-race` flake (`bridge_test.go:61` ↔ `ipc/server.go:96`) | FIXED — `Serve` registers the accept loop under `s.mu` with a `stopped` guard; `Stop` waits after unlocking; `-race -count=50` clean, mutation reproduced the original race. Guard gap: `TestServerStopDoesNotRaceServeStartup` alone doesn't catch it (only the bridge integration test does) → strengthen in P1 (finding 10) |
 
 ## Later phases (not started)
 
 - **P1** Security fail-open: 12, 11, 8, 100/16/15, 17-21, 120, 60-63, 78, 50, 49, 2, 7, 10, 13
-- **P4** Data/state: 25, 68-74, 107-109, 138-139, 52-57, 59, 75, 129, 130, 147
+- **P4** Data/state + deferred wiring: 25, 68-74, 107-109, 138-139, 52-57, 59, 75, 129, 130, 147; plus 97 source pipeline, artifact-source install (M3), provider persistence (m4), partial-CAS recovery (m6)
 - **P5** Host/config: 32-38, 64-67, 116, 117, 141, 148
 - **P6** CLI: 79-81, 44, 121, 153, 76, 77
 - **P7** Packaging/CI/web: 51, 91, 92, 94, 95, 125, 127, 82-90, 145, 146, 156, 87, 90
@@ -80,8 +67,7 @@ This file is the execution tracker. Status values: `TODO` / `IN_PROGRESS` / `DON
 
 ## Verification protocol (every wave)
 
-1. Implementer runs: `gofmt -l`, `go build ./...`, `go vet ./...`, `go test ./...`, package-scoped `-race`.
-2. Independent verifier (did NOT implement) attempts to **falsify** each claim: greps for
-   residual fabrication strings, re-reads cited lines, re-runs toolchain.
+1. Implementer runs `gofmt -l`, `go build ./...`, `go vet ./...`, `go test -count=1 ./...`, package-scoped `-race`.
+2. Independent verifier (did NOT implement) attempts to **falsify** each claim, with mutation tests in `/tmp`.
 3. Diff review for regressions/security.
-4. Status flipped to `VERIFIED` only by the verifier.
+4. Status flips to `VERIFIED` only via the verifier.

@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // ClineAdapter manages integration with Cline VS Code Extension.
@@ -90,7 +90,10 @@ func (a *ClineAdapter) PlanSetup(ctx context.Context, binaryPath string, backupD
 		mcpServers = make(map[string]any)
 	}
 
-	mcpServers["litepsm"] = map[string]any{
+	// Adopt a pre-rename `litepsm` entry: drop it before writing the current
+	// `litespm` entry so the config keeps exactly one bridge server.
+	delete(mcpServers, legacyServerName)
+	mcpServers["litespm"] = map[string]any{
 		"command": filepath.ToSlash(binaryPath),
 		"args":    []string{"bridge", "stdio", "--host", "cline"},
 	}
@@ -144,7 +147,7 @@ func (a *ClineAdapter) VerifySetup(ctx context.Context) (*HostVerification, erro
 		return &HostVerification{HostID: "cline", ConfigPath: configPath, Status: "missing"}, nil
 	}
 
-	_, registered := mcpServers["litepsm"]
+	_, registered := mcpServers["litespm"]
 	status := "missing"
 	if registered {
 		status = "ready"
@@ -181,7 +184,7 @@ func (a *ClineAdapter) DetectPreExistingComponents(ctx context.Context) ([]PreEx
 
 	var results []PreExistingComponent
 	for name, details := range mcpServers {
-		if name == "litepsm" {
+		if name == litespmServerName || name == legacyServerName {
 			continue
 		}
 		comp := PreExistingComponent{
@@ -212,7 +215,7 @@ func (a *ClineAdapter) RenderManualSetup(binaryPath string) string {
 	cleanBin := filepath.ToSlash(binaryPath)
 	return fmt.Sprintf(`// Add to cline_mcp_settings.json:
 "mcpServers": {
-  "litepsm": {
+  "litespm": {
     "command": %q,
     "args": ["bridge", "stdio", "--host", "cline"]
   }

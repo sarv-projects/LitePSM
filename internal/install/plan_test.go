@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 const testPlanID = "plan_ABCDEFGHIJKMNPQRSTVWXYZ01"

@@ -2,7 +2,7 @@
 
 ## 1. Bridge Shim Architecture
 
-The LitePSM Bridge Shim (`cmd/litepsm bridge stdio --host <host-id>`) is a stateless, host-facing MCP stdio server. It acts as an adapter between the host agent's MCP interface and the local LitePSM Daemon.
+The LiteSPM Bridge Shim (`cmd/litespm bridge stdio --host <host-id>`) is a stateless, host-facing MCP stdio server. It acts as an adapter between the host agent's MCP interface and the local LiteSPM Daemon.
 
 ```text
 ┌─────────────────┐       MCP JSON-RPC (stdio)      ┌──────────────────┐
@@ -12,7 +12,7 @@ The LitePSM Bridge Shim (`cmd/litepsm bridge stdio --host <host-id>`) is a state
                                                               │ Local IPC (JSON-RPC)
                                                               ▼
                                                     ┌──────────────────┐
-                                                    │ LitePSM Daemon   │
+                                                    │ LiteSPM Daemon   │
                                                     │ (State & Superv) │
                                                     └──────────────────┘
 ```
@@ -42,7 +42,7 @@ func (b *BridgeShim) HandleToolCall(ctx context.Context, req mcp.ToolCallRequest
         return formatToolResult(res, err)
 
     default:
-        return mcp.ToolResult{}, fmt.Errorf("unknown LitePSM tool: %s", req.Name)
+        return mcp.ToolResult{}, fmt.Errorf("unknown LiteSPM tool: %s", req.Name)
     }
 }
 ```
@@ -51,7 +51,7 @@ func (b *BridgeShim) HandleToolCall(ctx context.Context, req mcp.ToolCallRequest
 
 ## 2. Provider Supervisor & Process Isolation
 
-The LitePSM Daemon acts as a supervisor for all local stdio MCP servers. It ensures that crashes, hangs, or unexpected shutdowns do not leave orphaned processes running on the user's workstation.
+The LiteSPM Daemon acts as a supervisor for all local stdio MCP servers. It ensures that crashes, hangs, or unexpected shutdowns do not leave orphaned processes running on the user's workstation.
 
 ### 2.1 Process Cleanup Guarantees
 *   **Windows (Job Objects):**
@@ -79,7 +79,7 @@ type LaunchSpec struct {
 
 ## 3. Dual MCP Protocol Support
 
-LitePSM supports both the modern and legacy specifications of the Model Context Protocol:
+LiteSPM supports both the modern and legacy specifications of the Model Context Protocol:
 
 ### 3.1 Modern Profile (2026-07-28)
 *   **Stateless Request Architecture:** Requests include version, client identity, and capability negotiation within a top-level `_meta` field.
@@ -95,7 +95,7 @@ LitePSM supports both the modern and legacy specifications of the Model Context 
 
 ## 4. Routed vs. Projected Capability Execution
 
-LitePSM supports two modes for exposing installed capabilities to an agent host:
+LiteSPM supports two modes for exposing installed capabilities to an agent host:
 
 ```text
 ┌──────────────────────────────────────────────┬──────────────────────────────────────────────┐

@@ -32,7 +32,7 @@ func TestResolvePlatformPaths(t *testing.T) {
 }
 
 func TestEnsureDirectories(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "litepsm-config-test-*")
+	tmpDir, err := os.MkdirTemp("", "litespm-config-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -66,24 +66,24 @@ func TestEnsureDirectories(t *testing.T) {
 }
 
 func TestConfigLoadingAndOverrides(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "litepsm-test-conf-*")
+	tmpDir, err := os.MkdirTemp("", "litespm-test-conf-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	// Set env overrides
-	os.Setenv("LITEPSM_DATA_ROOT", filepath.Join(tmpDir, "data"))
-	os.Setenv("LITEPSM_CONFIG_ROOT", filepath.Join(tmpDir, "config"))
-	os.Setenv("LITEPSM_REGISTRY_URL", "https://custom.registry.io")
-	os.Setenv("LITEPSM_LOG_LEVEL", "debug")
-	os.Setenv("LITEPSM_NETWORK_TIMEOUT_SEC", "45")
+	os.Setenv("LITESPM_DATA_ROOT", filepath.Join(tmpDir, "data"))
+	os.Setenv("LITESPM_CONFIG_ROOT", filepath.Join(tmpDir, "config"))
+	os.Setenv("LITESPM_REGISTRY_URL", "https://custom.registry.io")
+	os.Setenv("LITESPM_LOG_LEVEL", "debug")
+	os.Setenv("LITESPM_NETWORK_TIMEOUT_SEC", "45")
 	defer func() {
-		os.Unsetenv("LITEPSM_DATA_ROOT")
-		os.Unsetenv("LITEPSM_CONFIG_ROOT")
-		os.Unsetenv("LITEPSM_REGISTRY_URL")
-		os.Unsetenv("LITEPSM_LOG_LEVEL")
-		os.Unsetenv("LITEPSM_NETWORK_TIMEOUT_SEC")
+		os.Unsetenv("LITESPM_DATA_ROOT")
+		os.Unsetenv("LITESPM_CONFIG_ROOT")
+		os.Unsetenv("LITESPM_REGISTRY_URL")
+		os.Unsetenv("LITESPM_LOG_LEVEL")
+		os.Unsetenv("LITESPM_NETWORK_TIMEOUT_SEC")
 	}()
 
 	cfg, err := LoadConfig(tmpDir)

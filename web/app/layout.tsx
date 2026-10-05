@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Sans_Condensed, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastViewport } from "../components/ui/Toast";
+import { SITE_URL } from "../lib/site";
 
 /**
  * IBM Plex: an engineered grotesque with squared terminals, which reads as
@@ -30,24 +31,22 @@ const mono = IBM_Plex_Mono({
   display: "swap",
 });
 
-const SITE_URL = "https://litepsm.market";
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "LitePSM Market — a capability index for coding agents",
-    template: "%s · LitePSM Market",
+    default: "LiteSPM Market — The Lightweight Skill & Package Manager for AI Agents",
+    template: "%s · LiteSPM Market",
   },
   description:
-    "A static index of MCP servers, portable agent skills, and plugins. Browse 5,000+ capabilities by kind, category, publisher, runtime and agent host, and install them through a single LitePSM bridge entry.",
-  applicationName: "LitePSM Market",
+    "The Lightweight Skill & Package Manager for AI Agents — a static index of MCP servers, portable agent skills, and plugins. Browse 5,000+ capabilities by kind, category, publisher, runtime and agent host, and install them through a single LiteSPM bridge entry.",
+  applicationName: "LiteSPM Market",
   keywords: [
     "MCP",
     "Model Context Protocol",
     "agent skills",
     "SKILL.md",
     "plugins",
-    "LitePSM",
+    "LiteSPM",
     "capability registry",
     "Claude Code",
     "Codex",
@@ -55,15 +54,15 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: "website",
-    siteName: "LitePSM Market",
-    title: "LitePSM Market — a capability index for coding agents",
+    siteName: "LiteSPM Market",
+    title: "LiteSPM Market — The Lightweight Skill & Package Manager for AI Agents",
     description:
       "Browse MCP servers, agent skills, and plugins by kind, category, publisher, runtime and agent host.",
     url: SITE_URL,
   },
   twitter: {
     card: "summary",
-    title: "LitePSM Market",
+    title: "LiteSPM Market",
     description: "A static capability index for coding agents.",
   },
   robots: { index: true, follow: true },
@@ -84,7 +83,7 @@ export const viewport = {
 const SITE_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  name: "LitePSM Market",
+  name: "LiteSPM Market",
   url: SITE_URL,
   description:
     "A static index of MCP servers, portable agent skills, and plugins for AI coding agents.",

@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 // AuthBroker coordinates OAuth 2.0 PKCE authentication, secure secret storage, and persistent profile state.

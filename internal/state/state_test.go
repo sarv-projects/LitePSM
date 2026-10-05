@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func openTestDB(t *testing.T) (*DB, string) {
-	tmpDir, err := os.MkdirTemp("", "litepsm-state-test-*")
+	tmpDir, err := os.MkdirTemp("", "litespm-state-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}

@@ -39,7 +39,7 @@ The v1 taxonomy is a closed enum of eight members — `mcp | skill | plugin | ag
 **(d) Repository status — Working (metadata + bridge); Partial end-to-end.**
 *   `internal/source/mcp_registry.go` — `MCPRegistryAdapter.Ingest` parses `server.json` as an array or a single object, maps `registryType` to `domain.ArtifactType` (`npm→ArtifactNPM`, `pypi→ArtifactPyPI`, `cargo→ArtifactCargo`, `oci→ArtifactOCI`, `mcpb→ArtifactMCPB`), emits `KindMCP` listings with `ComponentMCPProvider` components and a `RuntimeDescriptor`; remotes become `remote-server` components with an endpoint. Tested by `TestMCPRegistryAdapterIngest` in `internal/source/source_test.go`.
 *   `internal/bridge/shim.go` — the stdio shim exposes the 12 canonical tools over JSON-RPC (`initialize` advertises `protocolVersion: "2026-07-28"`).
-*   `internal/host/*.go` — each adapter injects a single `litepsm` bridge entry into the host's MCP config (`claudecode.go`, `cline.go`, `codex.go`, `grokbuild.go`, `opencode.go`, `piagent.go`).
+*   `internal/host/*.go` — each adapter injects a single `litespm` bridge entry into the host's MCP config (`claudecode.go`, `cline.go`, `codex.go`, `grokbuild.go`, `opencode.go`, `piagent.go`).
 *   `internal/mcpclient`, `internal/provider` provide the client and supervisor layers.
 
 **Honest gaps.** The source adapter consumes caller-supplied `rawFeed` bytes; it performs no HTTP fetch of the registry (that lives elsewhere or not yet). `CompatibilitySummary` is always empty and `VerificationSummary.Level` is hard-coded `"unverified"`. There is no signature/attestation check and no runtime acceptance record.
@@ -204,7 +204,7 @@ Milestone labels reuse the vocabulary in [ARCH/26 §11](26-ECOSYSTEM-IA-PACKAGE-
 
 ## 4. Verification Status
 
-### 4.1 Commands used and observed results (2026-10-02, repo `/home/sarvesh/business_Dev/litePSM`)
+### 4.1 Commands used and observed results (2026-10-02, repo `/home/sarvesh/business_Dev/liteSPM`)
 
 | Command | Observed result |
 |---|---|

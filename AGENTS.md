@@ -1,6 +1,6 @@
 # Supported AI Agents & Integration Guide
 
-LitePSM connects once to your AI agent host, enabling you to discover, install, update, and monitor MCP servers, skills, and plugins through a single unified interface.
+**LiteSPM** — *The Lightweight Skill & Package Manager for AI Agents*. It connects once to your AI agent host, enabling you to discover, install, update, and monitor MCP servers, skills, and plugins through a single unified interface.
 
 ```text
 ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
@@ -12,7 +12,7 @@ LitePSM connects once to your AI agent host, enabling you to discover, install, 
                                    │ Stdio MCP Bridge
                                    ▼
                       ┌─────────────────────────┐
-                      │   LitePSM Local Core    │
+                      │   LiteSPM Local Core    │
                       │  (Daemon & CAS Store)   │
                       └─────────────────────────┘
 ```
@@ -30,30 +30,30 @@ LitePSM connects once to your AI agent host, enabling you to discover, install, 
 | **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | Unix: `~/.codex/config.toml`<br>Windows: `%USERPROFILE%\.codex\config.toml`<br>Project: `.codex/config.toml`<br>Legacy fallback: `%APPDATA%\Codex\config.toml`; `$CODEX_HOME` overrides the directory |
 | **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.json` - v1 `mcp` / v2 `mcp.servers`) | Unix: `~/.config/opencode/opencode.json`<br>Windows: `%USERPROFILE%\.config\opencode\opencode.json`<br>Project: `opencode.json` or `.opencode/`<br>Legacy fallback: `%APPDATA%\OpenCode\opencode.json` |
 
-> Six bespoke adapters above. The full registry is 50 bridge targets (6 bespoke + 44 generic `BridgeTarget` rows) plus 77 skill targets — see `ARCH/30-DATA-DRIVEN-BRIDGE-TARGETS.md` and `litepsm host list`.
+> Six bespoke adapters above. The full registry is 50 bridge targets (6 bespoke + 44 generic `BridgeTarget` rows) plus 77 skill targets — see `ARCH/30-DATA-DRIVEN-BRIDGE-TARGETS.md` and `litespm host list`.
 
 ---
 
 ## 2. Setup Workflow
 
-### Step 1: Install LitePSM Globally
+### Step 1: Install LiteSPM Globally
 Install via npm or download the pre-compiled binary:
 ```bash
-npm install -g litepsm
+npm install -g litespm
 ```
 
 ### Step 2: Run the Interactive Setup
 ```bash
-litepsm
+litespm
 ```
-1.  **Dynamic Runtime Fetching:** LitePSM contacts `/v1/current.json` to verify the latest verified adapter advisory metadata (supported versions and warnings; actual parsers are compiled in).
+1.  **Dynamic Runtime Fetching:** LiteSPM contacts `/v1/current.json` to verify the latest verified adapter advisory metadata (supported versions and warnings; actual parsers are compiled in).
 2.  **Select Your Agent:** Choose your agent from the interactive dropdown (for Claude Code, Codex, OpenCode, and many more).
-3.  **Auto-Detection:** LitePSM scans your filesystem for the agent's configuration file.
-4.  **Fallback Options:** If the configuration file is not found (e.g., custom installation directory), LitePSM prompts:
+3.  **Auto-Detection:** LiteSPM scans your filesystem for the agent's configuration file.
+4.  **Fallback Options:** If the configuration file is not found (e.g., custom installation directory), LiteSPM prompts:
     *   *Enter path manually*
     *   *Print copy-paste snippet*
     *   *Retry detection*
-5.  **Safe Atomic Merge:** LitePSM creates a backup in `DATA_ROOT/backups/`, preserves all existing entries and comments, injects a **single** version-pinned LitePSM Bridge entry (`litepsm bridge stdio --host <agent-id>`), and writes the `/marketplace` command hook. Individual capabilities are resolved by the daemon at runtime, so no per-capability host snippets are generated.
+5.  **Safe Atomic Merge:** LiteSPM creates a backup in `DATA_ROOT/backups/`, preserves all existing entries and comments, injects a **single** version-pinned LiteSPM Bridge entry (`litespm bridge stdio --host <agent-id>`), and writes the `/marketplace` command hook. Individual capabilities are resolved by the daemon at runtime, so no per-capability host snippets are generated.
 
 ---
 
@@ -66,11 +66,11 @@ Once configured, simply launch your agent and type:
 
 ### UX Architecture: Portable Contract vs. Rich Host UI
 *   **Portable Text / MCP Contract:** For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` prints structured markdown tables, action shortcuts, and standard MCP discovery tools (`search_catalog`, `describe_capability`, `invoke_capability`, `list_installed`).
-*   **Rich Host Renderer:** In hosts supporting rich extension panels or terminal TUIs (e.g. Cline in VS Code or Pi Agent TUI), `/marketplace` opens the **LitePSM Capability Panel** with 4 dedicated tabs:
+*   **Rich Host Renderer:** In hosts supporting rich extension panels or terminal TUIs (e.g. Cline in VS Code or Pi Agent TUI), `/marketplace` opens the **LiteSPM Capability Panel** with 4 dedicated tabs:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          LitePSM Capabilities                          │
+│                          LiteSPM Capabilities                          │
 ├──────────────┬──────────────┬──────────────┬───────────────────────────┤
 │ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │     [INSTALLED (5)] ●     │
 └──────────────┴──────────────┴──────────────┴───────────────────────────┘
@@ -95,45 +95,45 @@ The **Installed** tab provides complete situational awareness of your tool ecosy
     *   `🟡 Yellow (Needs Auth)`: OAuth or API key token required.
     *   `○ Grey (Stopped / Disabled)`: The server is configured but inactive.
 2.  **Detected External Capabilities (Read-Only by Default):**
-    *   LitePSM scans your agent's primary configuration file for **pre-existing native tools** (e.g., servers you previously added to `cline_mcp_settings.json` or `config.toml` manually).
+    *   LiteSPM scans your agent's primary configuration file for **pre-existing native tools** (e.g., servers you previously added to `cline_mcp_settings.json` or `config.toml` manually).
     *   Detection is limited to documented on-disk config files known to the adapter.
     *   Pre-existing items are displayed with an `[External / Detected]` badge in **read-only mode** (no toggle controls) to prevent accidental config corruption.
-    *   To bring an external tool under LitePSM lifecycle management, select the explicit **"Adopt"** action.
+    *   To bring an external tool under LiteSPM lifecycle management, select the explicit **"Adopt"** action.
 
 ---
 
 ## 4. Agent-Specific Integration Guides
 
 ### 4.1 Cline (VS Code Extension)
-*   **How it works:** LitePSM adds itself to `cline_mcp_settings.json` under `mcpServers.litepsm`. This path is correct for the VS Code extension. The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LitePSM does not currently manage.
+*   **How it works:** LiteSPM adds itself to `cline_mcp_settings.json` under `mcpServers.litespm`. This path is correct for the VS Code extension. The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LiteSPM does not currently manage.
 *   **Accessing in Cline:**
     1.  Open VS Code and launch the Cline panel.
     2.  Click the MCP icon or type `/marketplace` in the prompt.
     3.  Browse available tools or view existing tools. Cline displays the green status dot in its MCP settings view.
 
 ### 4.2 Pi Agent (`pi-coding-agent`)
-*   **How it works:** Minimalist terminal agent by Mario Zechner. LitePSM registers under the `mcpServers` key in `~/.pi/agent/mcp.json` (project scope `.pi/mcp.json` is trust-gated; the legacy `~/.pi/config.json` and `~/.pi/mcp.json` are fallbacks) and creates `~/.pi/agent/extensions/litepsm.ts`.
+*   **How it works:** Minimalist terminal agent by Mario Zechner. LiteSPM registers under the `mcpServers` key in `~/.pi/agent/mcp.json` (project scope `.pi/mcp.json` is trust-gated; the legacy `~/.pi/config.json` and `~/.pi/mcp.json` are fallbacks) and creates `~/.pi/agent/extensions/litespm.ts`.
 *   **Accessing in Pi:**
     1.  Launch `pi` in terminal.
     2.  Type `/marketplace search <term>` or run `/marketplace` to trigger the interactive capability selector.
-    3.  Pi uses its minimal token footprint to query LitePSM only on demand.
+    3.  Pi uses its minimal token footprint to query LiteSPM only on demand.
 
 ### 4.3 Grok Build
-*   **How it works:** Host id is `grok-build`. LitePSM injects the stdio bridge under `[mcp_servers.litepsm]` in `~/.grok/config.toml` (project scope `.grok/config.toml`). On native Windows the config is `%USERPROFILE%\.grok\config.toml`; `%APPDATA%\Grok\config.toml` is only a legacy fallback.
+*   **How it works:** Host id is `grok-build`. LiteSPM injects the stdio bridge under `[mcp_servers.litespm]` in `~/.grok/config.toml` (project scope `.grok/config.toml`). On native Windows the config is `%USERPROFILE%\.grok\config.toml`; `%APPDATA%\Grok\config.toml` is only a legacy fallback.
 *   **Accessing in Grok Build:**
     1.  Launch `grok` in terminal.
     2.  Type `/marketplace` to open the capability browser.
     3.  Grok detects the companion command hook and loads selected tools directly into its execution loop.
 
 ### 4.4 OpenAI Codex
-*   **How it works:** LitePSM injects the stdio bridge into `~/.codex/config.toml` under `[mcp_servers.litepsm]`. Project scope is `.codex/config.toml`; native Windows user scope is `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback). The `$CODEX_HOME` environment variable overrides the config directory.
+*   **How it works:** LiteSPM injects the stdio bridge into `~/.codex/config.toml` under `[mcp_servers.litespm]`. Project scope is `.codex/config.toml`; native Windows user scope is `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback). The `$CODEX_HOME` environment variable overrides the config directory.
 *   **Accessing in Codex:** Launch `codex` and type `/marketplace` or use the registered companion skill.
 
 ### 4.5 OpenCode
-*   **How it works:** LitePSM injects into `~/.config/opencode/opencode.json` (native Windows `%USERPROFILE%\.config\opencode\opencode.json`; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback), supporting both v1 flat `mcp` and v2 nested `mcp.servers` layouts. Project scope also supports `opencode.json` in the project root or `.opencode/`.
+*   **How it works:** LiteSPM injects into `~/.config/opencode/opencode.json` (native Windows `%USERPROFILE%\.config\opencode\opencode.json`; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback), supporting both v1 flat `mcp` and v2 nested `mcp.servers` layouts. Project scope also supports `opencode.json` in the project root or `.opencode/`.
 *   **Local entry shape:** OpenCode local MCP entries require `"type": "local"` and a combined string array `"command"`:
     ```json
-    {"mcp":{"servers":{"litepsm":{"type":"local","command":["litepsm","bridge","stdio","--host","opencode"]}}}}
+    {"mcp":{"servers":{"litespm":{"type":"local","command":["litespm","bridge","stdio","--host","opencode"]}}}}
     ```
 *   **Accessing in OpenCode:** Type `/marketplace` in the OpenCode CLI.
 

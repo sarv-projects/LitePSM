@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/artifact"
+	"github.com/sarv-projects/litespm/internal/artifact"
 )
 
 func TestHostileArchive_ZipSlipPathTraversal(t *testing.T) {

@@ -6,7 +6,7 @@ import { HOSTS } from "../../lib/hosts";
 import bundledRelease from "../../data/release.json";
 import { CountUp } from "../ui/CountUp";
 
-const REPO = "https://github.com/sarv-projects/LitePSM";
+const REPO = "https://github.com/sarv-projects/LiteSPM";
 
 const COUNTS = {
   total: Number(bundledRelease.totalCapabilities ?? bundledRelease.itemCount ?? 0),
@@ -25,10 +25,10 @@ export function SiteFooter() {
     <footer className="mt-auto border-t border-rule bg-surface">
       <div className="shell grid gap-8 py-10 md:grid-cols-[1.4fr_1fr_1fr]">
         <div>
-          <p className="t-cond text-[15px] font-semibold text-ink">LitePSM Market</p>
+          <p className="t-cond text-[15px] font-semibold text-ink">LiteSPM Market</p>
           <p className="mt-1.5 max-w-prose text-[13px] leading-relaxed text-ink-2">
             One bridge entry per agent, installed once. The catalog is a snapshot of named upstream
-            sources, and everything here is resolved locally by the LitePSM daemon.
+            sources, and everything here is resolved locally by the LiteSPM daemon.
           </p>
         </div>
 

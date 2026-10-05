@@ -32,7 +32,7 @@ export default function Home() {
   const hostCount = useMemo(() => hostUniverse(items).length, [items]);
 
   // Kind tabs count what is actually browsable in this build, not what the
-  // manifest claims. A tab reading "5,185" above a list of 5,816 rows would be
+  // manifest claims. A tab reading "5,185" above a list of 5,814 rows would be
   // a contradiction the reader has to resolve.
   const kindCounts = useMemo(
     () => ({
@@ -138,7 +138,7 @@ export default function Home() {
               note="The last entries in this catalog snapshot. The dataset carries no publish timestamps, so no recency claim is made."
               items={sections.tail}
               hostCount={hostCount}
-              viewAllHref="/explore/?sort=newest"
+              viewAllHref="/explore/"
               viewAllLabel="browse the full index"
             />
             <ClientGrid />

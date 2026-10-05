@@ -13,7 +13,7 @@ func TestStripJSONEntryRemovesOnlyTheBridgeEntry(t *testing.T) {
   // my own servers
   "mcpServers": {
     "mine": { "command": "npx", "args": ["a"] },
-    "litepsm": { "command": "/bin/litepsm", "args": ["bridge", "stdio", "--host", "cursor"] },
+    "litespm": { "command": "/bin/litespm", "args": ["bridge", "stdio", "--host", "cursor"] },
     "theirs": { "command": "uvx" }
   },
   "theme": "dark"
@@ -26,7 +26,7 @@ func TestStripJSONEntryRemovesOnlyTheBridgeEntry(t *testing.T) {
 	if !removed {
 		t.Fatal("entry was not removed")
 	}
-	if strings.Contains(out, "litepsm") {
+	if strings.Contains(out, "litespm") {
 		t.Fatalf("bridge entry survived:\n%s", out)
 	}
 	if !strings.Contains(out, "// my own servers") {
@@ -48,7 +48,7 @@ func TestStripJSONEntryWhenLastMember(t *testing.T) {
 	content := `{
   "mcpServers": {
     "mine": { "command": "npx" },
-    "litepsm": { "command": "/bin/litepsm" }
+    "litespm": { "command": "/bin/litespm" }
   }
 }
 `
@@ -70,7 +70,7 @@ func TestStripJSONEntryWhenLastMember(t *testing.T) {
 }
 
 func TestStripJSONEntryWhenOnlyMember(t *testing.T) {
-	content := `{"mcpServers": {"litepsm": {"command": "/bin/litepsm"}}}`
+	content := `{"mcpServers": {"litespm": {"command": "/bin/litespm"}}}`
 	out, removed, err := stripJSONEntry(content, []string{"mcpServers"})
 	if err != nil || !removed {
 		t.Fatalf("strip failed: removed=%v err=%v", removed, err)
@@ -103,7 +103,7 @@ func TestStripJSONEntryNestedKeyPath(t *testing.T) {
 	content := `{
   "mcp": {
     "servers": {
-      "litepsm": { "type": "local", "command": ["litepsm", "bridge"] },
+      "litespm": { "type": "local", "command": ["litespm", "bridge"] },
       "keep": { "type": "local", "command": ["x"] }
     }
   }
@@ -113,7 +113,7 @@ func TestStripJSONEntryNestedKeyPath(t *testing.T) {
 	if err != nil || !removed {
 		t.Fatalf("strip failed: removed=%v err=%v", removed, err)
 	}
-	if strings.Contains(out, "litepsm") {
+	if strings.Contains(out, "litespm") {
 		t.Fatalf("entry survived:\n%s", out)
 	}
 	parsed, err := parseConfigJSON(BridgeTarget{}, []byte(out))
@@ -127,7 +127,7 @@ func TestStripJSONEntryNestedKeyPath(t *testing.T) {
 }
 
 func TestStripJSONEntryIsIdempotent(t *testing.T) {
-	content := `{"mcpServers": {"a": {}, "litepsm": {}, "b": {}}}`
+	content := `{"mcpServers": {"a": {}, "litespm": {}, "b": {}}}`
 	once, _, err := stripJSONEntry(content, []string{"mcpServers"})
 	if err != nil {
 		t.Fatal(err)
@@ -145,12 +145,12 @@ func TestStripJSONEntryIsIdempotent(t *testing.T) {
 }
 
 func TestStripTOMLEntryRemovesOnlyOurTable(t *testing.T) {
-	content := "# my config\n[other]\nkey = 1\n\n[mcp_servers.litepsm]\ncommand = \"/bin/litepsm\"\nargs = [\"bridge\"]\n\n[mcp_servers.mine]\ncommand = \"npx\"\n"
+	content := "# my config\n[other]\nkey = 1\n\n[mcp_servers.litespm]\ncommand = \"/bin/litespm\"\nargs = [\"bridge\"]\n\n[mcp_servers.mine]\ncommand = \"npx\"\n"
 	out, removed, err := stripTOMLEntry(content, []string{"mcp_servers"})
 	if err != nil || !removed {
 		t.Fatalf("strip failed: removed=%v err=%v", removed, err)
 	}
-	if strings.Contains(out, "[mcp_servers.litepsm]") || strings.Contains(out, "/bin/litepsm") {
+	if strings.Contains(out, "[mcp_servers.litespm]") || strings.Contains(out, "/bin/litespm") {
 		t.Fatalf("our table survived:\n%s", out)
 	}
 	for _, want := range []string{"# my config", "[other]", "key = 1", "[mcp_servers.mine]", `command = "npx"`} {
@@ -196,7 +196,7 @@ func TestRemoveSetupRoundTrip(t *testing.T) {
 			}
 			writeConfig(t, path, original)
 
-			plan, err := adapter.PlanSetup(ctx, "/bin/litepsm", backups)
+			plan, err := adapter.PlanSetup(ctx, "/bin/litespm", backups)
 			if err != nil {
 				t.Fatalf("plan install: %v", err)
 			}
@@ -220,7 +220,7 @@ func TestRemoveSetupRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(after), "litepsm") {
+			if strings.Contains(string(after), "litespm") {
 				t.Fatalf("bridge entry survived removal:\n%s", after)
 			}
 			if !strings.Contains(string(after), "mine") {
@@ -279,7 +279,7 @@ func TestRemoveFromAllReportsPerHostOutcomes(t *testing.T) {
 	for _, id := range []string{"cursor", "zed"} {
 		tgt, _ := LookupBridgeTarget(id)
 		a := NewGenericAdapter(tgt)
-		plan, err := a.PlanSetup(ctx, "/bin/litepsm", backups)
+		plan, err := a.PlanSetup(ctx, "/bin/litespm", backups)
 		if err != nil {
 			t.Fatal(err)
 		}

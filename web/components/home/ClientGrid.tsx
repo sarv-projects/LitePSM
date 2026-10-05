@@ -7,7 +7,7 @@ import { HOSTS } from "../../lib/hosts";
 
 /**
  * Not a logo wall. This is the host-adapter table: which config file each
- * agent uses, which format, and the exact bridge command LitePSM writes. That
+ * agent uses, which format, and the exact bridge command LiteSPM writes. That
  * is the information a reader needs before choosing an agent.
  */
 export function ClientGrid() {
@@ -17,7 +17,7 @@ export function ClientGrid() {
         <div>
           <h2>Host adapters</h2>
           <p className="section-note mt-0.5">
-            One <code className="t-mono">litepsm</code> bridge entry per host. Capabilities resolve centrally.
+            One <code className="t-mono">litespm</code> bridge entry per host. Capabilities resolve centrally.
           </p>
         </div>
         <Link href="/agents/" className="t-mono shrink-0 text-[12px] text-ink-2 hover:text-ink hover:underline">
@@ -49,7 +49,7 @@ export function ClientGrid() {
                 to go look up, so it belongs on the row. */}
             <span className="row-side">
               <code className="t-mono hidden text-[11px] text-ink-3 xl:inline">
-                litepsm bridge stdio --host {host.id}
+                litespm bridge stdio --host {host.id}
               </code>
             </span>
           </li>

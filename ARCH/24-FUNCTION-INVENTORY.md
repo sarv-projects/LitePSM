@@ -1,6 +1,6 @@
 # Function Inventory & Module Signatures
 
-This document lists the public Go function signatures, inputs, outputs, error conditions, and designated test files for all 22 internal packages.
+This document lists the public Go function signatures, inputs, outputs, error conditions, and designated test files for all 21 internal packages.
 
 > Note: there is no `internal/approval` or `internal/audit` package. Approval consumption lives in `internal/state` (`ConsumeApproval`) and is evaluated by `internal/policy`; audit events live in `state.audit_events` via `RecordAuditEvent`. Section 10 below is retained as a pointer so old references do not 404.
 
@@ -400,23 +400,9 @@ func IsDeprecated(id string) bool
 
 ---
 
-## 22. Package: `internal/connector`
-*Test file:* `internal/connector/connector_test.go`
+## 22. Package: `internal/connector` — removed (not implemented)
 
-```go
-func ParseManifest(data []byte) (*ConnectorManifest, error)
-func (m *ConnectorManifest) Validate() error
-func (e *Executor) Execute(ctx context.Context, integ *Integration, conn *Connection, req CallRequest) (*CallResult, error)
-func SanitizeHeaders(in http.Header) http.Header
-func (p EgressPolicy) CheckTarget(ctx context.Context, rawURL string) (*url.URL, error)
-func (p EgressPolicy) CheckRedirect(ctx context.Context, location string) (*url.URL, error)
-func NewGrantStore() *GrantStore
-func (g *GrantStore) Approve(grant FieldGrant) error
-func (g *GrantStore) Lookup(connectionID, componentID, field string) (FieldGrant, bool)
-func VaultResolver(store secrets.SecretStore, grants *GrantStore, refFor func(connectionID, field string) (string, error)) SecretResolver
-func (c *Connection) DeriveStatus(now time.Time, exhaustedAfter int) ConnectionStatus
-func (i *Integration) ScopesCover(required []string) bool
-```
+No such package exists in the tree. The earlier local execution core was deleted as unreachable code (no production importer, no wiring path); local proxy execution remains a design record only ([29](29-CONNECTOR-SYSTEM-DESIGN.md)). No live functions to list.
 
 ---
 

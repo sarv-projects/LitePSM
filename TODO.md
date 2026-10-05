@@ -1,4 +1,4 @@
-# LitePSM Delivery Ledger & Implementation Roadmap
+# LiteSPM Delivery Ledger & Implementation Roadmap
 
 All work is **proposed** until verified code and observable automated test evidence exist. Each stage must satisfy its acceptance gates before subsequent phases begin.
 
@@ -91,8 +91,8 @@ Before implementing application code, all normative specifications, data contrac
 | ID | Task | Owner | Acceptance Evidence | Status |
 |---|---|---|---|---|
 | **LPSM-G001** | Implement source adapters for Claude, Codex, Grok plugin marketplace formats (strictly rejecting command sources). | [ARCH/03](ARCH/03-CATALOG-SOURCES.md), [ARCH/17](ARCH/17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) | Valid public manifests parsed; unsupported/command components cleanly reported as non-executable. | Completed |
-| **LPSM-G002** | Implement interactive CLI TUI wizard (`litepsm` interactive runner, dropdown agent selector, update check). | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/16](ARCH/16-HOST-ADAPTERS.md) | User can run `litepsm`, select agent from dropdown, view diff of available updates, and approve. | Completed |
-| **LPSM-G003** | Implement in-agent `/marketplace` command with 4-tab panel (MCP Servers, Agent Skills, Plugins, Installed with green lights & external tool scan). | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/16](ARCH/16-HOST-ADAPTERS.md), [AGENTS.md](AGENTS.md) | Agent triggers `/marketplace`; displays tabs; Installed tab shows all native & LitePSM tools with status indicators. | Completed |
+| **LPSM-G002** | Implement interactive CLI TUI wizard (`litespm` interactive runner, dropdown agent selector, update check). | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/16](ARCH/16-HOST-ADAPTERS.md) | User can run `litespm`, select agent from dropdown, view diff of available updates, and approve. | Completed |
+| **LPSM-G003** | Implement in-agent `/marketplace` command with 4-tab panel (MCP Servers, Agent Skills, Plugins, Installed with green lights & external tool scan). | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/16](ARCH/16-HOST-ADAPTERS.md), [AGENTS.md](AGENTS.md) | Agent triggers `/marketplace`; displays tabs; Installed tab shows all native & LiteSPM tools with status indicators. | Completed |
 | **LPSM-G004** | Build static Web Marketplace frontend inspired by mcpmarket.com. | [ARCH/25](ARCH/25-WEB-FRONTEND-UI.md) | Next.js/React static export deployed to Cloudflare Pages; omni-search, category rail, cards, and detail drawer functional. | Completed |
 | **LPSM-G005** | Implement `internal/doctor` diagnostic engine and `--repair` plan generator. | [ARCH/20](ARCH/20-ERRORS-AUDIT-DOCTOR.md), [ARCH/24](ARCH/24-FUNCTION-INVENTORY.md) | Detects DB corruption, dangling files, host config drift, missing secrets, and outputs corrective plan. | Completed |
 
@@ -103,9 +103,9 @@ Before implementing application code, all normative specifications, data contrac
 | ID | Task | Owner | Acceptance Evidence | Status |
 |---|---|---|---|---|
 | **LPSM-H001** | Setup cross-platform Go build matrix (`windows/amd64`, `windows/arm64`, `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`). | [ARCH/22](ARCH/22-PLATFORM-RELEASE-MIGRATIONS.md) | Binaries compile cleanly with CGO-free or cross-compiled SQLite support. | Completed |
-| **LPSM-H002** | Create npm wrapper package (`litepsm` / `@litepsm/cli`) with platform-specific native binary downloaders. | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/22](ARCH/22-PLATFORM-RELEASE-MIGRATIONS.md) | `npm install -g litepsm` or `npx litepsm` downloads and verifies binary checksum before launch. | Completed |
+| **LPSM-H002** | Create npm wrapper package (`litespm` / `@litespm/cli`) with platform-specific native binary downloaders. | [ARCH/04](ARCH/04-CLIENT-INSTALL.md), [ARCH/22](ARCH/22-PLATFORM-RELEASE-MIGRATIONS.md) | `npm install -g litespm` or `npx litespm` downloads and verifies binary checksum before launch. | Completed |
 | **LPSM-H003** | Complete end-to-end conformance, secret leak canary, and crash-recovery test suite. | [ARCH/21](ARCH/21-TESTING-CONFORMANCE.md) | Full CI pipeline green across Windows, Ubuntu, and macOS runners. | Completed |
 
 ---
 
-**All Phases (A through I) Complete:** LitePSM architecture, core storage engine, static catalog builder, CAS resolver, process supervisor, policy engine, 50 agent host adapters, dual-profile MCP client, OAuth PKCE vault, in-agent 4-tab capability experience, Next.js 15 static web frontend, npm global distribution wrapper, and 100% automated end-to-end conformance test suites are fully implemented, verified, and pushed.
+**All Phases (A through I) Complete:** LiteSPM architecture, core storage engine, static catalog builder, CAS resolver, process supervisor, policy engine, 50 agent host adapters, dual-profile MCP client, OAuth PKCE vault, in-agent 4-tab capability experience, Next.js 15 static web frontend, npm global distribution wrapper, and 100% automated end-to-end conformance test suites are fully implemented, verified, and pushed.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func TestAtomicBackup(t *testing.T) {
@@ -60,7 +60,7 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 		HostID:          "codex",
 		ConfigPath:      configFile,
 		OriginalContent: initialContent,
-		ProposedContent: initialContent + "\n[mcp_servers.litepsm]\ncommand = \"/usr/local/bin/litepsm\"\nargs = [\"bridge\", \"stdio\", \"--host\", \"codex\"]\n",
+		ProposedContent: initialContent + "\n[mcp_servers.litespm]\ncommand = \"/usr/local/bin/litespm\"\nargs = [\"bridge\", \"stdio\", \"--host\", \"codex\"]\n",
 		BackupPath:      filepath.Join(backupDir, "backup.toml"),
 	}
 
@@ -79,15 +79,15 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 		t.Fatalf("read failed: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "[mcp_servers.litepsm]") {
-		t.Errorf("missing litepsm section")
+	if !strings.Contains(content, "[mcp_servers.litespm]") {
+		t.Errorf("missing litespm section")
 	}
 	if !strings.Contains(content, "[mcp_servers.github]") {
 		t.Errorf("github section was lost")
 	}
 
-	manual := adapter.RenderManualSetup("/opt/litepsm/bin/litepsm")
-	if !strings.Contains(manual, "[mcp_servers.litepsm]") {
+	manual := adapter.RenderManualSetup("/opt/litespm/bin/litespm")
+	if !strings.Contains(manual, "[mcp_servers.litespm]") {
 		t.Errorf("manual setup missing section")
 	}
 }
@@ -111,7 +111,7 @@ func TestClaudeCodeAdapter(t *testing.T) {
 	}
 
 	adapter := &ClaudeCodeAdapter{}
-	plan, err := adapter.PlanSetup(ctx, "/usr/bin/litepsm", backupDir)
+	plan, err := adapter.PlanSetup(ctx, "/usr/bin/litespm", backupDir)
 	if err != nil {
 		t.Fatalf("PlanSetup failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestClaudeCodeAdapter(t *testing.T) {
 		t.Fatalf("expected success")
 	}
 
-	manual := adapter.RenderManualSetup("/usr/bin/litepsm")
+	manual := adapter.RenderManualSetup("/usr/bin/litespm")
 	if !strings.Contains(manual, "claude-code") {
 		t.Errorf("manual setup missing host id")
 	}
@@ -162,9 +162,9 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
       "command": "uvx",
       "args": ["mcp-server-fetch"]
     },
-    "litepsm": {
+    "litespm": {
       "type": "local",
-      "command": ["litepsm", "bridge", "stdio", "--host", "opencode"]
+      "command": ["litespm", "bridge", "stdio", "--host", "opencode"]
     }
   }
 }`,
@@ -198,9 +198,9 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
       "git": {
         "command": "mcp-git"
       },
-      "litepsm": {
+      "litespm": {
         "type": "local",
-        "command": ["litepsm", "bridge", "stdio", "--host", "opencode"]
+        "command": ["litespm", "bridge", "stdio", "--host", "opencode"]
       }
     }
   }
@@ -212,7 +212,7 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
 		t.Fatalf("ApplySetup V2 failed: %v", err)
 	}
 
-	manual := adapter.RenderManualSetup("litepsm")
+	manual := adapter.RenderManualSetup("litespm")
 	if !strings.Contains(manual, "servers") {
 		t.Errorf("v2 manual render expected servers key")
 	}
@@ -256,12 +256,12 @@ func TestOpenCodePlanSetup_EmitsLocalTypeAndArrayCommand(t *testing.T) {
 		} else if nested {
 			t.Fatalf("expected a nested v2 layout with mcp.servers:\n%s", content)
 		}
-		entry, ok := container["litepsm"].(map[string]any)
+		entry, ok := container["litespm"].(map[string]any)
 		if !ok {
-			t.Fatalf("proposed content missing litepsm entry:\n%s", content)
+			t.Fatalf("proposed content missing litespm entry:\n%s", content)
 		}
 		if entry["type"] != "local" {
-			t.Errorf("expected litepsm type %q, got %v", "local", entry["type"])
+			t.Errorf("expected litespm type %q, got %v", "local", entry["type"])
 		}
 		command, ok := entry["command"].([]any)
 		if !ok {
@@ -286,7 +286,7 @@ func TestOpenCodePlanSetup_EmitsLocalTypeAndArrayCommand(t *testing.T) {
 	t.Run("v2_default", func(t *testing.T) {
 		newHermeticHome(t)
 		adapter := &OpenCodeAdapter{}
-		plan, err := adapter.PlanSetup(ctx, "/opt/litepsm/litepsm", t.TempDir())
+		plan, err := adapter.PlanSetup(ctx, "/opt/litespm/litespm", t.TempDir())
 		if err != nil {
 			t.Fatalf("PlanSetup failed: %v", err)
 		}
@@ -308,7 +308,7 @@ func TestOpenCodePlanSetup_EmitsLocalTypeAndArrayCommand(t *testing.T) {
 		}
 
 		adapter := &OpenCodeAdapter{}
-		plan, err := adapter.PlanSetup(ctx, "/opt/litepsm/litepsm", t.TempDir())
+		plan, err := adapter.PlanSetup(ctx, "/opt/litespm/litespm", t.TempDir())
 		if err != nil {
 			t.Fatalf("PlanSetup failed: %v", err)
 		}
@@ -331,8 +331,8 @@ func TestPiAgentAdapter(t *testing.T) {
 		ConfigPath: configFile,
 		ProposedContent: `{
   "mcpServers": {
-    "litepsm": {
-      "command": "litepsm",
+    "litespm": {
+      "command": "litespm",
       "args": ["bridge", "stdio", "--host", "pi-agent"]
     }
   }
@@ -362,8 +362,8 @@ func TestGrokBuildAdapter(t *testing.T) {
 	plan := &HostChangePlan{
 		HostID:     "grok-build",
 		ConfigPath: configFile,
-		ProposedContent: `[mcp_servers.litepsm]
-command = "litepsm"
+		ProposedContent: `[mcp_servers.litespm]
+command = "litespm"
 args = ["bridge", "stdio", "--host", "grok-build"]
 `,
 	}
@@ -458,7 +458,7 @@ func TestGoldenFixturesCompliance(t *testing.T) {
 			HostID:          "cline",
 			ConfigPath:      tempFile,
 			OriginalContent: string(data),
-			ProposedContent: `{"mcpServers":{"filesystem":{"command":"npx"},"github":{"command":"npx"},"litepsm":{"command":"litepsm","args":["bridge","stdio","--host","cline"]}}}`,
+			ProposedContent: `{"mcpServers":{"filesystem":{"command":"npx"},"github":{"command":"npx"},"litespm":{"command":"litespm","args":["bridge","stdio","--host","cline"]}}}`,
 		}
 		res, err := adapter.ApplySetup(ctx, plan)
 		if err != nil || !res.Success {

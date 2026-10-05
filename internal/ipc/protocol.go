@@ -16,7 +16,7 @@ const (
 	CodeInvalidParams  = -32602
 	CodeInternalError  = -32603
 
-	// LitePSM Specific RPC Error Codes
+	// LiteSPM Specific RPC Error Codes
 	CodeUnauthorized = -32001
 	CodePlanStale    = -32002
 	CodeSchemaDrift  = -32003

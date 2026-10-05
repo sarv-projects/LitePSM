@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // ListingVersionMetadata holds version information and transitive dependencies of a listing.

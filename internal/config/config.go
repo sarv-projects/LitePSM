@@ -10,6 +10,16 @@ import (
 	"time"
 )
 
+// DefaultRegistryURL is the origin the client falls back to when neither the
+// config file nor LITESPM_REGISTRY_URL supplies one.
+//
+// It has to be an origin that actually answers: a name that does not resolve
+// turns every catalog fetch into a DNS failure instead of a reportable error.
+// registry.litespm.dev is the intended home once that domain is registered and
+// the catalog release tree is published there; until then this is the
+// deployment origin serving /v1/current.json.
+const DefaultRegistryURL = "https://litepsm.sarveshbh-2022.workers.dev"
+
 // CatalogConfig governs remote catalog synchronization.
 type CatalogConfig struct {
 	RegistryURL string        `json:"registryUrl"`
@@ -35,7 +45,7 @@ type NetworkConfig struct {
 	MaxDownloadSizeBytes int64         `json:"maxDownloadSizeBytes"`
 }
 
-// Config represents the unified runtime configuration for LitePSM.
+// Config represents the unified runtime configuration for LiteSPM.
 type Config struct {
 	Paths   *PlatformPaths `json:"paths"`
 	Catalog CatalogConfig  `json:"catalog"`
@@ -49,7 +59,7 @@ func DefaultConfig(paths *PlatformPaths) *Config {
 	return &Config{
 		Paths: paths,
 		Catalog: CatalogConfig{
-			RegistryURL: "https://registry.litepsm.dev",
+			RegistryURL: DefaultRegistryURL,
 			CacheTTL:    1 * time.Hour,
 		},
 		Daemon: DaemonConfig{
@@ -69,10 +79,11 @@ func DefaultConfig(paths *PlatformPaths) *Config {
 }
 
 // LoadConfig loads configuration in order of precedence:
-// 1. Defaults
-// 2. User config file (~/.config/litepsm/config.toml or AppData)
-// 3. Project config file (.litepsm/config.toml)
-// 4. Environment variable overrides
+//  1. Defaults
+//  2. User config file (~/.config/litespm/config.toml or AppData)
+//  3. Project config file (.litespm/config.toml, falling back to the pre-rename
+//     .litepsm/config.toml when the new path is absent)
+//  4. Environment variable overrides
 func LoadConfig(projectDir string) (*Config, error) {
 	paths, err := ResolvePlatformPaths()
 	if err != nil {
@@ -81,13 +92,20 @@ func LoadConfig(projectDir string) (*Config, error) {
 
 	cfg := DefaultConfig(paths)
 
-	// Load user config if exists
+	// Load user config if exists. ConfigRoot may itself have been adopted from
+	// the legacy root, so the legacy config.toml is found without extra work.
 	userConfigFile := filepath.Join(paths.ConfigRoot, "config.toml")
 	_ = parseSimpleTOML(userConfigFile, cfg)
 
-	// Load project config if exists
+	// Load project config if exists. The old name is only read when the new one
+	// is absent, so a migrated project cannot be shadowed by a stale directory.
 	if projectDir != "" {
-		projectConfigFile := filepath.Join(projectDir, ".litepsm", "config.toml")
+		projectConfigFile := filepath.Join(projectDir, ".litespm", "config.toml")
+		if pathMissing(projectConfigFile) {
+			if legacy := filepath.Join(projectDir, ".litepsm", "config.toml"); !pathMissing(legacy) {
+				projectConfigFile = legacy
+			}
+		}
 		_ = parseSimpleTOML(projectConfigFile, cfg)
 	}
 
@@ -97,22 +115,35 @@ func LoadConfig(projectDir string) (*Config, error) {
 	return cfg, nil
 }
 
+// envOverride returns the value of the current-name environment variable, or
+// the legacy-name variable when the current one is unset.
+//
+// The LitePSM -> LiteSPM rename changed the variable names but not their
+// meaning; an upgraded installation that still exports LITEPSM_* must keep its
+// settings. The current name always takes precedence.
+func envOverride(current, legacy string) string {
+	if v := os.Getenv(current); v != "" {
+		return v
+	}
+	return os.Getenv(legacy)
+}
+
 func applyEnvOverrides(cfg *Config) {
-	if v := os.Getenv("LITEPSM_REGISTRY_URL"); v != "" {
+	if v := envOverride("LITESPM_REGISTRY_URL", "LITEPSM_REGISTRY_URL"); v != "" {
 		cfg.Catalog.RegistryURL = v
 	}
-	if v := os.Getenv("LITEPSM_LOG_LEVEL"); v != "" {
+	if v := envOverride("LITESPM_LOG_LEVEL", "LITEPSM_LOG_LEVEL"); v != "" {
 		cfg.Daemon.LogLevel = v
 	}
-	if v := os.Getenv("LITEPSM_POLICY_DEFAULT_LEVEL"); v != "" {
+	if v := envOverride("LITESPM_POLICY_DEFAULT_LEVEL", "LITEPSM_POLICY_DEFAULT_LEVEL"); v != "" {
 		cfg.Policy.DefaultLevel = v
 	}
-	if v := os.Getenv("LITEPSM_POLICY_ENFORCE_SIGNATURES"); v != "" {
+	if v := envOverride("LITESPM_POLICY_ENFORCE_SIGNATURES", "LITEPSM_POLICY_ENFORCE_SIGNATURES"); v != "" {
 		if parsed, err := strconv.ParseBool(v); err == nil {
 			cfg.Policy.EnforceSignatures = parsed
 		}
 	}
-	if v := os.Getenv("LITEPSM_NETWORK_TIMEOUT_SEC"); v != "" {
+	if v := envOverride("LITESPM_NETWORK_TIMEOUT_SEC", "LITEPSM_NETWORK_TIMEOUT_SEC"); v != "" {
 		if secs, err := strconv.Atoi(v); err == nil {
 			cfg.Network.Timeout = time.Duration(secs) * time.Second
 		}

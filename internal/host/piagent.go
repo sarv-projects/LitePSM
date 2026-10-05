@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // PiAgentAdapter manages integration with Pi Agent (pi-coding-agent).
@@ -55,7 +55,7 @@ func (a *PiAgentAdapter) DetectConfig(ctx context.Context, scope domain.InstallS
 }
 
 func (a *PiAgentAdapter) ExtensionPath() string {
-	return filepath.Join(resolveHomeDir(), ".pi", "agent", "extensions", "litepsm.ts")
+	return filepath.Join(resolveHomeDir(), ".pi", "agent", "extensions", "litespm.ts")
 }
 
 func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error) {
@@ -89,23 +89,28 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 		"args":    []string{"bridge", "stdio", "--host", "pi-agent"},
 	}
 
-	// Check if "mcp.servers" or "mcp" exists vs "mcpServers"
+	// Check if "mcp.servers" or "mcp" exists vs "mcpServers". A pre-rename
+	// `litepsm` entry is adopted (deleted) from whichever container is used, so
+	// only one bridge server remains.
 	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
 		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
-			serversVal["litepsm"] = bridgeEntry
+			delete(serversVal, legacyServerName)
+			serversVal["litespm"] = bridgeEntry
 			mcpVal["servers"] = serversVal
 			rootMap["mcp"] = mcpVal
 		} else {
-			mcpVal["litepsm"] = bridgeEntry
+			delete(mcpVal, legacyServerName)
+			mcpVal["litespm"] = bridgeEntry
 			rootMap["mcp"] = mcpVal
 		}
 	} else if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
-		mcpServers["litepsm"] = bridgeEntry
+		delete(mcpServers, legacyServerName)
+		mcpServers["litespm"] = bridgeEntry
 		rootMap["mcpServers"] = mcpServers
 	} else {
 		// Default to mcpServers
 		rootMap["mcpServers"] = map[string]any{
-			"litepsm": bridgeEntry,
+			"litespm": bridgeEntry,
 		}
 	}
 
@@ -133,12 +138,12 @@ func (a *PiAgentAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan) (
 	extDir := filepath.Dir(extPath)
 	if err := os.MkdirAll(extDir, 0700); err == nil {
 		if _, err := os.Stat(extPath); os.IsNotExist(err) {
-			extensionCode := `// LitePSM companion extension for Pi Agent
+			extensionCode := `// LiteSPM companion extension for Pi Agent
 export default function (pi: any) {
-  pi.registerCommand("litepsm", {
-    description: "Launch LitePSM capability manager",
+  pi.registerCommand("litespm", {
+    description: "Launch LiteSPM capability manager",
     async execute(args: string[]) {
-      return pi.mcp.callTool("litepsm", "list_installed", {});
+      return pi.mcp.callTool("litespm", "list_installed", {});
     }
   });
 }
@@ -174,14 +179,14 @@ func (a *PiAgentAdapter) VerifySetup(ctx context.Context) (*HostVerification, er
 	registered := false
 	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
 		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
-			_, registered = serversVal["litepsm"]
+			_, registered = serversVal["litespm"]
 		} else {
-			_, registered = mcpVal["litepsm"]
+			_, registered = mcpVal["litespm"]
 		}
 	}
 	if !registered {
 		if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
-			_, registered = mcpServers["litepsm"]
+			_, registered = mcpServers["litespm"]
 		}
 	}
 
@@ -216,7 +221,7 @@ func (a *PiAgentAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pre
 
 	var results []PreExistingComponent
 	extractComp := func(name string, details any) {
-		if name == "litepsm" {
+		if name == litespmServerName || name == legacyServerName {
 			return
 		}
 		comp := PreExistingComponent{
@@ -264,7 +269,7 @@ func (a *PiAgentAdapter) RenderManualSetup(binaryPath string) string {
 	cleanBin := filepath.ToSlash(binaryPath)
 	return fmt.Sprintf(`// Add to ~/.pi/agent/mcp.json:
 "mcpServers": {
-  "litepsm": {
+  "litespm": {
     "command": %q,
     "args": ["bridge", "stdio", "--host", "pi-agent"]
   }

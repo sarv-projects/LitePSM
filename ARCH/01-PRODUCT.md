@@ -2,9 +2,9 @@
 
 ## 1. Product Identity
 
-*   **LitePSM Market:** The public, federated discovery surface for AI agent plugins, skills, and MCP servers. Available as a fast, static web application and a read-only HTTP catalog.
-*   **LitePSM Client:** The local manager and control plane running on the user's workstation. It resolves, verifies, installs, updates, and supervises capabilities across supported agents (Codex, Claude Code, Grok Build, OpenCode, Cline, etc.).
-*   **Expansion & Acronym:** **PSM** stands for **Plugins, Skills, and MCP**. Connectors represent user-facing integration listings that resolve to MCP servers or plugin packages.
+*   **LiteSPM Market:** The public, federated discovery surface for AI agent plugins, skills, and MCP servers. Available as a fast, static web application and a read-only HTTP catalog.
+*   **LiteSPM Client:** The local manager and control plane running on the user's workstation. It resolves, verifies, installs, updates, and supervises capabilities across supported agents (Codex, Claude Code, Grok Build, OpenCode, Cline, etc.).
+*   **Expansion & Acronym:** **LiteSPM** — *The Lightweight Skill & Package Manager for AI Agents*. **SPM** expands to **Skill & Package Manager**; the catalog spans Plugins, Skills, and MCP servers. Connectors represent user-facing integration listings that resolve to MCP servers or plugin packages.
 
 ---
 
@@ -16,7 +16,7 @@ Users face two unacceptable trade-offs today:
 1.  **Manual Configuration Burden:** Manually maintaining JSON configuration files across multiple agents leads to configuration drift, duplicate processes, and broken environments.
 2.  **Centralized SaaS Tool Proxies:** Commercial tool marketplaces often require routing downstream credentials and real-time execution traffic through third-party cloud gateways, creating severe data-privacy and supply-chain risks.
 
-LitePSM solves this by providing **centralized federated discovery** combined with **strictly local execution and client-side credential custody**.
+LiteSPM solves this by providing **centralized federated discovery** combined with **strictly local execution and client-side credential custody**.
 
 ---
 
@@ -24,25 +24,25 @@ LitePSM solves this by providing **centralized federated discovery** combined wi
 
 ### Goals
 1.  **Zero-Account Public Discovery:** Search and inspect public listings via website, CLI, or Discovery MCP without requiring registration or an API key.
-2.  **One-Time Agent Setup:** Connect an agent host once to LitePSM. Subsequent additions, updates, or removals of skills and MCP servers are managed centrally without editing host configuration files again.
+2.  **One-Time Agent Setup:** Connect an agent host once to LiteSPM. Subsequent additions, updates, or removals of skills and MCP servers are managed centrally without editing host configuration files again.
 3.  **Client-Side Secret & Execution Custody:** Downstream API keys and OAuth tokens remain exclusively on the user's device in native operating system vaults (Windows Credential Manager / DPAPI, macOS Keychain, Linux Secret Service). Tool calls flow directly from the user's machine to the provider.
 4.  **Preservation of Upstream Semantics:** Retain original package formats, upstream identifiers, and version digests. Normalization is a discovery projection, not an erasure of provenance.
 5.  **Multi-Stage Capability Verification:** Clearly report the independent operational status of every item (`listed`, `resolvable`, `installable`, `runnable`, `tested`).
 6.  **Fail-Closed User Approval:** Agents cannot self-authorize capabilities. Effectful actions (filesystem writes, command execution, network requests) require explicit user approval.
-7.  **Passive Freshness & Non-Destructive Invocations:** Invocations of `litepsm` or in-agent `/marketplace` check for available catalog updates without mutating local installations or configuration unless explicitly confirmed.
+7.  **Passive Freshness & Non-Destructive Invocations:** Invocations of `litespm` or in-agent `/marketplace` check for available catalog updates without mutating local installations or configuration unless explicitly confirmed.
 
 ### Non-Goals
-1.  **Cloud Tool Proxying:** LitePSM hosted services will never proxy tool requests, execute plugin code in the cloud, or store downstream service credentials.
-2.  **Universal OS Sandbox:** The local LitePSM daemon enforces capability routing, schema validation, and policy checks, but it is **not an OS-level sandbox**. Executing a local stdio MCP provider runs under the user's operating system privileges.
-3.  **Automatic Capability Grants:** LitePSM will never automatically grant permissions or install packages simply because an LLM requested them.
+1.  **Cloud Tool Proxying:** LiteSPM hosted services will never proxy tool requests, execute plugin code in the cloud, or store downstream service credentials.
+2.  **Universal OS Sandbox:** The local LiteSPM daemon enforces capability routing, schema validation, and policy checks, but it is **not an OS-level sandbox**. Executing a local stdio MCP provider runs under the user's operating system privileges.
+3.  **Automatic Capability Grants:** LiteSPM will never automatically grant permissions or install packages simply because an LLM requested them.
 4.  **Proprietary Adapter Scripting:** Third-party execution code is not downloaded dynamically during ingestion or resolution.
-5.  **Universal Direct Tool Projection:** LitePSM does not project thousands of catalog tools into an agent's context window simultaneously. Tool discovery is progressively routed on-demand.
+5.  **Universal Direct Tool Projection:** LiteSPM does not project thousands of catalog tools into an agent's context window simultaneously. Tool discovery is progressively routed on-demand.
 
 ---
 
 ## 4. Multi-Stage Capability Lifecycle
 
-To prevent misleading claims of compatibility, LitePSM categorizes every item across five explicit, independent stages:
+To prevent misleading claims of compatibility, LiteSPM categorizes every item across five explicit, independent stages:
 
 ```text
 [Listed] ──> [Resolvable] ──> [Installable] ──> [Runnable] ──> [Tested]
@@ -50,21 +50,21 @@ To prevent misleading claims of compatibility, LitePSM categorizes every item ac
 
 > Vocabulary note: these five stages are the product contract for user-facing status. They are not operation states — daemon operations track `created → resolving → awaiting_approval → … → committed / rolled_back` (`internal/state/operations.go`). No automated `runnable`/`tested` prober populates stages 4–5 yet; report them as `Unknown` until evidence exists (honesty rule, ARCH/26 §12.4).
 
-1.  **Listed:** The item's metadata has been ingested from an upstream source and normalized into a valid LitePSM Listing record.
+1.  **Listed:** The item's metadata has been ingested from an upstream source and normalized into a valid LiteSPM Listing record.
 2.  **Resolvable:** All package artifacts, external references, and dependencies can be resolved to immutable hashes (Git commit SHA, archive SHA-256 digest).
 3.  **Installable:** The artifact has been verified to unpack safely into the local Content-Addressed Store (CAS) without exceeding security limits or triggering path-traversal errors.
-4.  **Runnable:** The user's workstation satisfies the necessary runtime prerequisites (e.g., Node.js, Python, or native executable) and a compatible LitePSM `RuntimeAdapter` exists.
+4.  **Runnable:** The user's workstation satisfies the necessary runtime prerequisites (e.g., Node.js, Python, or native executable) and a compatible LiteSPM `RuntimeAdapter` exists.
 5.  **Tested:** Automated integration tests have executed the provider or skill against a specific host agent and verified successful initialization, schema discovery, and safe cleanup.
 
 ---
 
 ## 5. User Journeys & Interaction Models
 
-### 5.1 Interactive CLI Setup (`litepsm`)
-When a user installs LitePSM (via `npm install -g litepsm`, `curl`, or direct binary download) and runs `litepsm`:
+### 5.1 Interactive CLI Setup (`litespm`)
+When a user installs LiteSPM (via `npm install -g litespm`, `curl`, or direct binary download) and runs `litespm`:
 
 ```text
-$ litepsm
+$ litespm
 Select your primary AI Agent Host:
   [1] Cline          (VS Code Extension - cline_mcp_settings.json)
   [2] Pi Agent       (Terminal Coding Agent (pi) - mcp.json / config.json + TS Extension)
@@ -75,11 +75,11 @@ Select your primary AI Agent Host:
   [q] Quit
 ```
 
-> Implementation note: the wizard lists only the 6 bespoke adapters (`cmd/litepsm/wizard.go:supportedAgents`). The remaining 44 generic `BridgeTarget` rows are managed via `litepsm host setup <id>` / `litepsm host list` (50 total — see ARCH/30). There is no separate `Generic MCP Configuration (JSON export)` wizard entry.
+> Implementation note: the wizard lists only the 6 bespoke adapters (`cmd/litespm/wizard.go:supportedAgents`). The remaining 44 generic `BridgeTarget` rows are managed via `litespm host setup <id>` / `litespm host list` (50 total — see ARCH/30). There is no separate `Generic MCP Configuration (JSON export)` wizard entry.
 
 1.  **Agent Selection:** User selects their agent from the interactive terminal dropdown.
-2.  **Automated Path Discovery:** LitePSM scans documented default paths across Windows, macOS, and Linux (e.g., `~/.claude.json`, `%APPDATA%\Codex\config.json`).
-3.  **Graceful Fallback:** If the configuration file is not found, LitePSM provides clear feedback:
+2.  **Automated Path Discovery:** LiteSPM scans documented default paths across Windows, macOS, and Linux (e.g., `~/.claude.json`, `%APPDATA%\Codex\config.json`).
+3.  **Graceful Fallback:** If the configuration file is not found, LiteSPM provides clear feedback:
     ```text
     [!] Unable to locate default configuration for Claude Code.
     ? How would you like to proceed?
@@ -88,29 +88,29 @@ Select your primary AI Agent Host:
       > Retry auto-detection
       > Exit
     ```
-4.  **Atomic Registration:** Upon locating or receiving the path, LitePSM creates a timestamped pre-edit backup, safely parses the file, injects the pinned LitePSM Bridge entry, and atomically replaces the file.
-5.  **Passive Advisory Notice (target — currently compiled-in only):** The intended flow queries the static catalog pointer (`/v1/current.json`) for capability updates without touching local state. Current `verifyRuntimeAdvisories` (`cmd/litepsm/wizard.go`) prints only the compiled-in protocol version and adapter count with no network fetch; `litepsm update` / `self-update` updates the LitePSM binary itself (`internal/update`), not installed capabilities. Capability refresh is `litepsm catalog sync` followed by reinstall until an update-notice lands:
+4.  **Atomic Registration:** Upon locating or receiving the path, LiteSPM creates a timestamped pre-edit backup, safely parses the file, injects the pinned LiteSPM Bridge entry, and atomically replaces the file.
+5.  **Passive Advisory Notice (target — currently compiled-in only):** The intended flow queries the static catalog pointer (`/v1/current.json`) for capability updates without touching local state. Current `verifyRuntimeAdvisories` (`cmd/litespm/wizard.go`) prints only the compiled-in protocol version and adapter count with no network fetch; `litespm update` / `self-update` updates the LiteSPM binary itself (`internal/update`), not installed capabilities. Capability refresh is `litespm catalog sync` followed by reinstall until an update-notice lands:
     ```text
-    [*] 2 installed capabilities have updates available. Run 'litepsm catalog sync' to refresh, then reinstall to inspect changes.
+    [*] 2 installed capabilities have updates available. Run 'litespm catalog sync' to refresh, then reinstall to inspect changes.
     ```
-    (`litepsm update` is reserved for binary self-update — see `runSelfUpdate` in `cmd/litepsm/main.go`.)
+    (`litespm update` is reserved for binary self-update — see `runSelfUpdate` in `cmd/litespm/main.go`.)
 
 ### 5.2 In-Agent Interaction (`/marketplace`)
-Inside any configured agent (e.g., Claude Code, Codex, OpenCode), the agent or user can invoke LitePSM:
+Inside any configured agent (e.g., Claude Code, Codex, OpenCode), the agent or user can invoke LiteSPM:
 
 ```text
 User / Agent: /marketplace search postgres
 ```
 
-1.  **Bounded MCP Surface:** The agent queries the local LitePSM Bridge shim using `search_catalog`, `describe_capability`, `list_installed`, `get_extension`, `load_skill`, and related tools (`internal/bridge/shim.go:initTools`).
+1.  **Bounded MCP Surface:** The agent queries the local LiteSPM Bridge shim using `search_catalog`, `describe_capability`, `list_installed`, `get_extension`, `load_skill`, and related tools (`internal/bridge/shim.go:initTools`).
 2.  **Progressive Disclosure:** Search results return compact summaries (name, kind, publisher, verified status). Detailed tool schemas and skill contents are retrieved only when specifically requested.
 3.  **Install Plan Display:** When an agent proposes installing a capability, it calls `prepare_install`, which previews an immutable `InstallPlan` detailing affected paths, runtime commands, and declared permissions. Execution goes through `request_install` (`planId` + human approval token), not CLI flags.
-4.  **User Confirmation Boundary:** The Bridge enforces that installation cannot proceed without out-of-band user approval. If the agent's host UI does not support reliable interactive form elicitation, the Bridge returns the exact CLI command for the user to execute (current CLI takes no `--plan-id` flag — see `litepsm install --help`):
+4.  **User Confirmation Boundary:** The Bridge enforces that installation cannot proceed without out-of-band user approval. If the agent's host UI does not support reliable interactive form elicitation, the Bridge returns the exact CLI command for the user to execute (current CLI takes no `--plan-id` flag — see `litespm install --help`):
     ```text
     To approve this installation, run in your terminal:
-    litepsm install <listing-id> --version <ver> --scope user|project
+    litespm install <listing-id> --version <ver> --scope user|project
     ```
-    (`litepsm install` usage: `litepsm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]` — `cmd/litepsm/main.go`.)
+    (`litespm install` usage: `litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]` — `cmd/litespm/main.go`.)
 
 ---
 

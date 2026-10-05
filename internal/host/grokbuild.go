@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // GrokBuildAdapter manages integration with Grok Build (xAI Dev Tool).
@@ -71,15 +71,22 @@ func (a *GrokBuildAdapter) PlanSetup(ctx context.Context, binaryPath string, bac
 	}
 
 	cleanBin := filepath.ToSlash(binaryPath)
-	entry := fmt.Sprintf("\n[mcp_servers.litepsm]\ncommand = %q\nargs = [\"bridge\", \"stdio\", \"--host\", \"grok-build\"]\n", cleanBin)
+	entry := fmt.Sprintf("\n[mcp_servers.litespm]\ncommand = %q\nargs = [\"bridge\", \"stdio\", \"--host\", \"grok-build\"]\n", cleanBin)
 
-	proposed := origContent
-	if strings.Contains(origContent, "[mcp_servers.litepsm]") {
-		lines := strings.Split(origContent, "\n")
+	// Adopt a pre-rename `[mcp_servers.litepsm]` table before writing the
+	// current one, so an upgraded host keeps exactly one bridge table.
+	base := origContent
+	if cleaned, removed, err := stripTOMLEntryNamed(base, []string{"mcp_servers"}, legacyServerName); err == nil && removed {
+		base = cleaned
+	}
+
+	proposed := base
+	if strings.Contains(base, "[mcp_servers.litespm]") {
+		lines := strings.Split(base, "\n")
 		var newLines []string
 		skip := false
 		for _, l := range lines {
-			if strings.TrimSpace(l) == "[mcp_servers.litepsm]" {
+			if strings.TrimSpace(l) == "[mcp_servers.litespm]" {
 				skip = true
 				newLines = append(newLines, strings.TrimRight(entry, "\n"))
 				continue
@@ -93,7 +100,7 @@ func (a *GrokBuildAdapter) PlanSetup(ctx context.Context, binaryPath string, bac
 		}
 		proposed = strings.Join(newLines, "\n")
 	} else {
-		proposed = strings.TrimRight(origContent, "\n") + entry
+		proposed = strings.TrimRight(base, "\n") + entry
 	}
 
 	return &HostChangePlan{
@@ -130,7 +137,7 @@ func (a *GrokBuildAdapter) VerifySetup(ctx context.Context) (*HostVerification, 
 	}
 
 	content := string(data)
-	registered := strings.Contains(content, "[mcp_servers.litepsm]") && strings.Contains(content, "bridge")
+	registered := strings.Contains(content, "[mcp_servers.litespm]") && strings.Contains(content, "bridge")
 	status := "missing"
 	if registered {
 		status = "ready"
@@ -161,7 +168,7 @@ func (a *GrokBuildAdapter) DetectPreExistingComponents(ctx context.Context) ([]P
 func (a *GrokBuildAdapter) RenderManualSetup(binaryPath string) string {
 	cleanBin := filepath.ToSlash(binaryPath)
 	return fmt.Sprintf(`# Add to ~/.grok/config.toml
-[mcp_servers.litepsm]
+[mcp_servers.litespm]
 command = %q
 args = ["bridge", "stdio", "--host", "grok-build"]
 `, cleanBin)

@@ -1,6 +1,6 @@
 # Ecosystem IA & Package Model
 
-A normative decision record for reshaping the public LitePSM Market website and the catalog package model against the 2026 agent-extension ecosystem. This document is grounded in what the repository implements today; target-state contracts are labelled as targets and must not be presented as shipped behavior.
+A normative decision record for reshaping the public LiteSPM Market website and the catalog package model against the 2026 agent-extension ecosystem. This document is grounded in what the repository implements today; target-state contracts are labelled as targets and must not be presented as shipped behavior.
 
 ---
 
@@ -323,7 +323,7 @@ Explore · Agents · Categories · Collections · Trending · Docs
 | `/trending` | Time-windowed ranking (only when a real signal exists; otherwise an empty-state) |
 | `/security` | Provenance/trust model explained in plain language |
 | `/docs` | Authoring, publishing, compatibility, and CLI documentation |
-| `/download` | LitePSM binary/CLI download and install instructions |
+| `/download` | LiteSPM binary/CLI download and install instructions |
 
 ### 6.3 Detail-page serving model
 
@@ -382,7 +382,7 @@ Identity block (npm-style): icon/avatar, canonical name (monospace), publisher, 
 
 Compatibility matrix: rows = consumer hosts, columns = status (`verified` / `compatible` / `unknown`) and evidence (`declared` / `tested` / `none`). This is the primary differentiator and must be visible without scrolling past the fold on desktop.
 
-Install block: the correct install command (`litepsm install <id>`), plus the **one** host bridge snippet selected by host + OS (never a per-package native config; see §10).
+Install block: the correct install command (`litespm install <id>`), plus the **one** host bridge snippet selected by host + OS (never a per-package native config; see §10).
 
 Tabs:
 `Overview · Setup · Compatibility · Configuration · Files · Versions · Security · Reviews`
@@ -396,7 +396,7 @@ Tabs:
 *   `Security` — separate provenance signals (§7.4).
 *   `Reviews` — user reviews; **empty state** until a backend exists (the site is static-only today, so this tab is a deliberate, clearly-labelled placeholder or is omitted entirely until storage/API exists).
 
-LitePSM compatibility checklist: an explicit list of what LitePSM can and cannot do for this package (e.g. `install`, `launch provider`, `manage secrets`, `unsupported component types`), derived from `SupportedByLitePSM` and install-adapter support.
+LiteSPM compatibility checklist: an explicit list of what LiteSPM can and cannot do for this package (e.g. `install`, `launch provider`, `manage secrets`, `unsupported component types`), derived from `SupportedByLiteSPM` and install-adapter support.
 
 ### 7.4 Trust & provenance UX
 
@@ -439,9 +439,9 @@ Rules:
 
 ---
 
-## 9. LitePSM Differentiator: Compatibility-First
+## 9. LiteSPM Differentiator: Compatibility-First
 
-The category has no shortage of package lists. LitePSM's defensible difference is answering **"which of my agents can actually use this?"**.
+The category has no shortage of package lists. LiteSPM's defensible difference is answering **"which of my agents can actually use this?"**.
 
 *   Cards surface host-compatibility chips as a first-class element (not buried metadata).
 *   The detail page leads with the compatibility matrix.
@@ -454,7 +454,7 @@ The category has no shortage of package lists. LitePSM's defensible difference i
 
 Two different product surfaces with different jobs. Neither is collapsed into the other.
 
-| | Public website (LitePSM Market) | `/marketplace` CLI/TUI |
+| | Public website (LiteSPM Market) | `/marketplace` CLI/TUI |
 |---|---|---|
 | Audience | Anonymous discovery, evaluation, sharing | Installed user on their workstation |
 | Job | Discover · browse · compare · trust · publish | Search · install · configure · update · remove |
@@ -533,7 +533,7 @@ Organised by change class. Each row: **item · why · target milestone** (M1 web
 | Any "Runs executable" green state without evidence | Honesty rule | M3 |
 | `Reviews` tab or any feature requiring a backend | Site is static-only; don't fake it | M1 |
 
-*If no per-capability install snippet remains after inspection, the removal row is satisfied and should be recorded as such rather than re-applied.* The row is now satisfied: `nativeSnippet` and the "Direct Native" toggle were removed from `web/lib/hosts.ts` and `web/app/package/page.tsx`, and the detail route renders only the single per-host `litepsm` bridge entry.
+*If no per-capability install snippet remains after inspection, the removal row is satisfied and should be recorded as such rather than re-applied.* The row is now satisfied: `nativeSnippet` and the "Direct Native" toggle were removed from `web/lib/hosts.ts` and `web/app/package/page.tsx`, and the detail route renders only the single per-host `litespm` bridge entry.
 
 ---
 

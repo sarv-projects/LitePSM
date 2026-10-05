@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/ipc"
+	"github.com/sarv-projects/litespm/internal/ipc"
 )
 
 // pipeListener is an in-memory net.Listener that hands a single pre-connected
@@ -241,7 +241,7 @@ func TestBridge_ToolDispatchAndErrorFormatting(t *testing.T) {
 	if listToolRes.IsError {
 		t.Fatalf("daemon-backed list_installed returned an error: %s", listToolRes.Content[0].Text)
 	}
-	if !strings.Contains(listToolRes.Content[0].Text, "LitePSM Capabilities") {
+	if !strings.Contains(listToolRes.Content[0].Text, "LiteSPM Capabilities") {
 		t.Errorf("expected 4-tab header, got: %s", listToolRes.Content[0].Text)
 	}
 	if !strings.Contains(listToolRes.Content[0].Text, "[External / Detected]") {
@@ -327,7 +327,7 @@ func TestBridge_All12ToolsDispatch(t *testing.T) {
 		"status: completed",
 		"executed (standalone mode)",
 		"Progressive instruction workflow",
-		"LitePSM Capabilities",
+		"LiteSPM Capabilities",
 		"Verified ✓",
 	}
 
@@ -403,5 +403,47 @@ func TestBridge_PingReportsConnectionState(t *testing.T) {
 	}
 	if c, ok := connectedResult["connected"].(bool); !ok || !c {
 		t.Fatalf("daemon-backed ping must report connected=true, got %v", connectedResult)
+	}
+}
+
+// TestFormatInstalledPanelStatusTruthfulness proves an omitted/unknown status is
+// not rendered as "Stopped", while Ready and Disabled keep their semantics.
+func TestFormatInstalledPanelStatusTruthfulness(t *testing.T) {
+	if StatusUnknown == StatusDisabled {
+		t.Fatal("StatusUnknown must be distinct from StatusDisabled")
+	}
+
+	out := FormatInstalledPanel([]CapabilityItem{
+		{ID: "mcp:a:b:unknown", Name: "unknown-tool", Kind: "mcp"}, // zero status: omitted by tools.list
+		{ID: "mcp:a:b:ready", Name: "ready-tool", Kind: "mcp", Status: StatusReady},
+		{ID: "mcp:a:b:stopped", Name: "stopped-tool", Kind: "mcp", Status: StatusDisabled},
+	})
+
+	var sawUnknown, sawReady, sawStopped bool
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.Contains(line, "unknown-tool"):
+			sawUnknown = true
+			if !strings.Contains(line, "Unknown") {
+				t.Errorf("omitted status must render as Unknown, got row: %q", line)
+			}
+			if strings.Contains(line, "Stopped") {
+				t.Errorf("omitted status must not render as Stopped, got row: %q", line)
+			}
+		case strings.Contains(line, "ready-tool"):
+			sawReady = true
+			if !strings.Contains(line, "● Ready") {
+				t.Errorf("Ready status must render green, got row: %q", line)
+			}
+		case strings.Contains(line, "stopped-tool"):
+			sawStopped = true
+			if !strings.Contains(line, "○ Stopped") {
+				t.Errorf("Disabled status must render as Stopped, got row: %q", line)
+			}
+		}
+	}
+	if !sawUnknown || !sawReady || !sawStopped {
+		t.Fatalf("panel did not render all three rows (unknown=%v ready=%v stopped=%v):\n%s",
+			sawUnknown, sawReady, sawStopped, out)
 	}
 }

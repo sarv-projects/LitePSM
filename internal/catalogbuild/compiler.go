@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // ReleaseManifestFile describes an immutable file entry within a release manifest.

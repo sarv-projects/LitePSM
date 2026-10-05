@@ -9,7 +9,7 @@ package host
 // whose whole job is to modify other people's config files safely.
 //
 // So for comment-tolerant hosts we locate the target object by byte offset and
-// splice only the `litepsm` member into it. Everything else in the file —
+// splice only the `litespm` member into it. Everything else in the file —
 // comments, key order, indentation, blank lines — survives untouched.
 //
 // stripJSONComments replaces comments with equivalent whitespace, so offsets
@@ -177,14 +177,14 @@ func isEmptyJSONObject(body string) bool {
 }
 
 // nestedValueLiteral renders the JSON object value that, placed under an
-// existing object, creates keyPath down to the `litepsm` member holding entry.
+// existing object, creates keyPath down to the `litespm` member holding entry.
 func nestedValueLiteral(keyPath []string, entry string, indent string) string {
 	if len(keyPath) == 0 {
 		return entry
 	}
 	inner := indent + "  "
 	if len(keyPath) == 1 {
-		return "{\n" + inner + fmt.Sprintf("%q: %s", litepsmServerName, entry) + "\n" + indent + "}"
+		return "{\n" + inner + fmt.Sprintf("%q: %s", litespmServerName, entry) + "\n" + indent + "}"
 	}
 	child := nestedValueLiteral(keyPath[1:], entry, inner)
 	return "{\n" + inner + fmt.Sprintf("%q: %s", keyPath[0], child) + "\n" + indent + "}"
@@ -250,7 +250,7 @@ func ensureKeyPath(raw string, keyPath []string, entry any) (string, int, int, e
 	return cur, s, e, nil
 }
 
-// mergeJSONEntrySurgical upserts the `litepsm` member into the object at
+// mergeJSONEntrySurgical upserts the `litespm` member into the object at
 // keyPath without reformatting the rest of the document. Comments, key order
 // and indentation outside the touched object are preserved byte-for-byte.
 func mergeJSONEntrySurgical(raw string, keyPath []string, value any) (string, error) {
@@ -262,7 +262,7 @@ func mergeJSONEntrySurgical(raw string, keyPath []string, value any) (string, er
 		return "", err
 	}
 	objText := cur[start:end]
-	updated, err := upsertObjectMember(objText, litepsmServerName, value)
+	updated, err := upsertObjectMember(objText, litespmServerName, value)
 	if err != nil {
 		return "", err
 	}

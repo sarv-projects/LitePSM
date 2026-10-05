@@ -16,7 +16,7 @@ Public discovery metadata is distributed via immutable HTTPS static JSON endpoin
 ### 1.1 Active Release Pointer (`/v1/current.json`)
 ```json
 {
-  "$schema": "https://litepsm.dev/schemas/v1/catalog-pointer.schema.json",
+  "$schema": "https://litespm.dev/schemas/v1/catalog-pointer.schema.json",
   "releaseId": "rel_01J9X8K2M4N5P6Q7R8S9T0U1V2",
   "sequence": 142,
   "manifestDigest": "sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
@@ -38,7 +38,7 @@ The `InstallPlan` represents an immutable, verifiable contract describing all pr
 
 ```json
 {
-  "$schema": "https://litepsm.dev/schemas/v1/install-plan.schema.json",
+  "$schema": "https://litespm.dev/schemas/v1/install-plan.schema.json",
   "schemaVersion": 2,
   "planId": "plan_01J9X9P3B1N4K8L7M6Q5R2T4W9",
   "planHash": "sha256:4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b",
@@ -148,13 +148,13 @@ Local Bridge Shims, CLI sessions, and the diagnostic doctor interact with the Da
 | `doctor.run_checks` | Runs 10 non-mutating system diagnostics |
 | `system.status` | Returns daemon version, protocol, PID, and readiness |
 
-> `install.update` is planned but has no handler in `cmd/litepsm/main.go:registerCoreHandlers` — update flows must go through a fresh `resolver.prepare_plan` + `install.execute` until it is implemented.
+> `install.update` is planned but has no handler in `cmd/litespm/main.go:registerCoreHandlers` — update flows must go through a fresh `resolver.prepare_plan` + `install.execute` until it is implemented.
 
 ---
 
 ## 4. Bridge MCP Tool Surface (In-Agent Access)
 
-When an agent host (e.g., Claude Code, Codex, OpenCode) boots the LitePSM Bridge via stdio, the shim advertises 12 bounded tools:
+When an agent host (e.g., Claude Code, Codex, OpenCode) boots the LiteSPM Bridge via stdio, the shim advertises 12 bounded tools:
 
 ```text
 ┌──────────────────────┬────────────────────────────────────────────────────────┐

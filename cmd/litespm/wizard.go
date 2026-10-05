@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/host"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/host"
 )
 
 // SupportedAgentOption describes an agent available for interactive setup.
@@ -79,7 +79,7 @@ type Wizard struct {
 func NewWizard(in io.Reader, out io.Writer, paths *config.PlatformPaths) *Wizard {
 	execPath, err := os.Executable()
 	if err != nil {
-		execPath = "litepsm"
+		execPath = "litespm"
 	}
 
 	return &Wizard{
@@ -129,7 +129,7 @@ func (w *Wizard) Run(ctx context.Context) error {
 func (w *Wizard) printBanner() {
 	fmt.Fprintln(w.out, "")
 	fmt.Fprintln(w.out, "┌────────────────────────────────────────────────────────────────────────┐")
-	fmt.Fprintln(w.out, "│                       LitePSM Agent Setup                              │")
+	fmt.Fprintln(w.out, "│                       LiteSPM Agent Setup                              │")
 	fmt.Fprintln(w.out, "│         Universal Capability & MCP Manager for AI Coding Agents        │")
 	fmt.Fprintln(w.out, "└────────────────────────────────────────────────────────────────────────┘")
 	fmt.Fprintln(w.out, "")
@@ -279,7 +279,7 @@ func (w *Wizard) applyAgentIntegration(ctx context.Context, adapter host.HostAda
 
 func (w *Wizard) printPostSetupInstructions(agent *SupportedAgentOption) {
 	fmt.Fprintln(w.out, "┌────────────────────────────────────────────────────────────────────────┐")
-	fmt.Fprintf(w.out, "│ Next Steps: Start using LitePSM in %-35s │\n", agent.DisplayName)
+	fmt.Fprintf(w.out, "│ Next Steps: Start using LiteSPM in %-35s │\n", agent.DisplayName)
 	fmt.Fprintln(w.out, "├────────────────────────────────────────────────────────────────────────┤")
 	switch agent.AdapterID {
 	case "cline":
@@ -289,7 +289,7 @@ func (w *Wizard) printPostSetupInstructions(agent *SupportedAgentOption) {
 	case "pi-agent", "pi":
 		fmt.Fprintln(w.out, "│ 1. Launch `pi` in your terminal.                                       │")
 		fmt.Fprintln(w.out, "│ 2. Type `/marketplace search <query>` to discover tools.               │")
-		fmt.Fprintln(w.out, "│ 3. Extension helper registered in ~/.pi/agent/extensions/litepsm.ts.   │")
+		fmt.Fprintln(w.out, "│ 3. Extension helper registered in ~/.pi/agent/extensions/litespm.ts.   │")
 	case "grok-build", "grok":
 		fmt.Fprintln(w.out, "│ 1. Launch `grok` in your terminal or project folder.                   │")
 		fmt.Fprintln(w.out, "│ 2. Type `/marketplace` to trigger capability discovery.                │")

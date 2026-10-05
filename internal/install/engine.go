@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/artifact"
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/policy"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/artifact"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/policy"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 // ArchiveSourceFunc retrieves an archive reader and format for a listing version.

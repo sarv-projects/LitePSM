@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/provider"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/provider"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 func TestSecurity_ZeroPlaintextSecretCanaryLeak(t *testing.T) {

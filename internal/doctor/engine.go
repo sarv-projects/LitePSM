@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/artifact"
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/host"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/artifact"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/host"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 // Engine executes system diagnostic verification.
@@ -33,40 +33,73 @@ func NewEngine(paths *config.PlatformPaths, db *state.DB, store secrets.SecretSt
 	}
 }
 
+// checkCategories maps each built-in diagnostic check ID to the functional
+// domain of its failure, which the CLI resolves to the ARCH/20 §2 exit code.
+// The mapping is by ID so every failure return path of a check carries the same
+// category without repeating it at each return site.
+//
+// Rationale per check:
+//   - directories, database, journal, disk: local state/storage conditions
+//     (STATE_ERROR, 70) — the repair path recreates storage or frees capacity.
+//   - CAS store, staging: install artifacts left behind/corrupted
+//     (INSTALL_ERROR, 40).
+//   - secret vault, runtimes: provider/runtime or credential-vault access
+//     (PROVIDER_ERROR, 50; the table's closest class names auth failure).
+//   - host registrations, host backups: agent configuration files
+//     (HOST_ERROR, 60).
+var checkCategories = map[string]Category{
+	"check_dirs":     CategoryState,
+	"check_db":       CategoryState,
+	"check_journal":  CategoryState,
+	"check_cas":      CategoryInstall,
+	"check_staging":  CategoryInstall,
+	"check_secrets":  CategoryProvider,
+	"check_hosts":    CategoryHost,
+	"check_backups":  CategoryHost,
+	"check_runtimes": CategoryProvider,
+	"check_disk":     CategoryState,
+}
+
+// classify tags a check result with the category of its check ID (if known).
+func classify(c CheckResult) CheckResult {
+	c.Category = checkCategories[c.ID]
+	return c
+}
+
 // RunChecks executes all 10 system diagnostics.
 func (e *Engine) RunChecks(ctx context.Context) *DoctorReport {
 	var checks []CheckResult
 	now := time.Now().UTC()
 
 	// 1. Check Platform Directories
-	checks = append(checks, e.checkDirectories())
+	checks = append(checks, classify(e.checkDirectories()))
 
 	// 2. Check SQLite State Database
-	checks = append(checks, e.checkDatabase(ctx))
+	checks = append(checks, classify(e.checkDatabase(ctx)))
 
 	// 3. Check Incomplete Operation Journal
-	checks = append(checks, e.checkOperationJournal(ctx))
+	checks = append(checks, classify(e.checkOperationJournal(ctx)))
 
 	// 4. Check CAS Store Integrity
-	checks = append(checks, e.checkCASStore())
+	checks = append(checks, classify(e.checkCASStore()))
 
 	// 5. Check Staging Directory Hygiene
-	checks = append(checks, e.checkStagingHygiene())
+	checks = append(checks, classify(e.checkStagingHygiene()))
 
 	// 6. Check OS Secret Store
-	checks = append(checks, e.checkSecretVault(ctx))
+	checks = append(checks, classify(e.checkSecretVault(ctx)))
 
 	// 7. Check Host Registrations
-	checks = append(checks, e.checkHostRegistrations(ctx))
+	checks = append(checks, classify(e.checkHostRegistrations(ctx)))
 
 	// 8. Check Host Backups
-	checks = append(checks, e.checkHostBackups())
+	checks = append(checks, classify(e.checkHostBackups()))
 
 	// 9. Check Provider Runtimes
-	checks = append(checks, e.checkRuntimes())
+	checks = append(checks, classify(e.checkRuntimes()))
 
 	// 10. Check Disk Availability
-	checks = append(checks, e.checkDiskSpace())
+	checks = append(checks, classify(e.checkDiskSpace()))
 
 	// Aggregate counts
 	passed, warns, fails := 0, 0, 0
@@ -147,7 +180,7 @@ func (e *Engine) checkDatabase(ctx context.Context) CheckResult {
 			Name:           "SQLite State Database Integrity",
 			Status:         StatusFail,
 			Message:        fmt.Sprintf("integrity check failed: %v", err),
-			Recommendation: "Run litepsm doctor --repair or restore state.db from backup.",
+			Recommendation: "Run litespm doctor --repair or restore state.db from backup.",
 		}
 	}
 
@@ -189,7 +222,7 @@ func (e *Engine) checkOperationJournal(ctx context.Context) CheckResult {
 			Name:           "Incomplete Operation Journal",
 			Status:         StatusFail,
 			Message:        fmt.Sprintf("failed to query operation journal: %v", err),
-			Recommendation: "Run litepsm doctor --repair or inspect state.db manually.",
+			Recommendation: "Run litespm doctor --repair or inspect state.db manually.",
 		}
 	}
 
@@ -383,7 +416,7 @@ func (e *Engine) checkStagingHygiene() CheckResult {
 			Name:           "Staging Scratch Hygiene",
 			Status:         StatusWarn,
 			Message:        fmt.Sprintf("%d leftover staging files found", len(entries)),
-			Recommendation: "Run 'litepsm doctor --repair' to clean up orphaned staging scratch files.",
+			Recommendation: "Run 'litespm doctor --repair' to clean up orphaned staging scratch files.",
 			Details: map[string]any{
 				"danglingFileCount": len(entries),
 			},
@@ -499,7 +532,7 @@ func (e *Engine) checkHostRegistrations(ctx context.Context) CheckResult {
 
 	msg := fmt.Sprintf("%d registered agent hosts detected", readyCount)
 	if readyCount == 0 {
-		msg = "no host configurations registered yet (run 'litepsm' to connect an agent)"
+		msg = "no host configurations registered yet (run 'litespm' to connect an agent)"
 	}
 
 	return CheckResult{

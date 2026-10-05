@@ -3,19 +3,19 @@
 ## 1. Foundational Architecture Decisions (D-001 – D-010)
 
 ### D-001: Provider-Neutral Shared Product & Local Execution
-LitePSM is designed to serve multiple agent hosts (Codex, Claude Code, Grok Build, OpenCode, Cline). The hosted service provides catalog discovery only. Package installation, process supervision, and tool execution occur strictly on the user's workstation.
+LiteSPM is designed to serve multiple agent hosts (Codex, Claude Code, Grok Build, OpenCode, Cline). The hosted service provides catalog discovery only. Package installation, process supervision, and tool execution occur strictly on the user's workstation.
 
 ### D-002: Product and Marketplace Naming
-The product and CLI binary are named **LitePSM** (`litepsm`). The public web catalog is **LitePSM Market**. `PSM` expands to Plugins, Skills, and MCP. Directory slug is `litePSM`.
+The product and CLI binary are named **LiteSPM** (`litespm`) — *The Lightweight Skill & Package Manager for AI Agents*. The public web catalog is **LiteSPM Market**. `SPM` expands to **Skill & Package Manager**. Directory slug is `liteSPM`.
 
 ### D-003: Client-Side Downstream Credentials
-Downstream credentials (API keys, OAuth tokens) reside in the operating system's native credential store and are never transmitted to LitePSM cloud services. Downstream providers receive tokens only at the time of user-authorized execution.
+Downstream credentials (API keys, OAuth tokens) reside in the operating system's native credential store and are never transmitted to LiteSPM cloud services. Downstream providers receive tokens only at the time of user-authorized execution.
 
 ### D-004: Static Catalog on Cloudflare Pages
 The public catalog is deployed as static, immutable JSON files via Cloudflare Pages from a private GitHub repository. No application server, database, or worker is required for public discovery.
 
 ### D-005: Source Federation over Monolithic Rewriting
-LitePSM aggregates documented upstream feeds and Git marketplace manifests. It preserves original source attribution and upstream identifiers rather than attempting to hand-curate or rewrite thousands of packages.
+LiteSPM aggregates documented upstream feeds and Git marketplace manifests. It preserves original source attribution and upstream identifiers rather than attempting to hand-curate or rewrite thousands of packages.
 
 ### D-006: Preservation of Package Format Semantics
 Upstream package formats (Agent Skills, MCP servers, portable plugins) are preserved in their native structures. Incompatible or host-specific components are flagged explicitly rather than silently rewritten or dropped.
@@ -27,10 +27,10 @@ Discovery is read-only. Installing, updating, or removing capabilities requires 
 Installed versions bind to immutable content digests. Updates are user-initiated, present delta diffs across code and permissions, and require explicit approval.
 
 ### D-009: Integration-Based Host Support
-LitePSM exposes standard MCP stdio, HTTPS APIs, and documented host adapters. It does not claim automatic integration with hosts that lack a documented MCP or configuration extension point.
+LiteSPM exposes standard MCP stdio, HTTPS APIs, and documented host adapters. It does not claim automatic integration with hosts that lack a documented MCP or configuration extension point.
 
 ### D-010: One-Time Host Bridge Registration
-For supported agents, LitePSM configures a single Bridge entry per host. Subsequent skills and MCP providers are managed within LitePSM's central local store, avoiding repeated edits to host configuration files.
+For supported agents, LiteSPM configures a single Bridge entry per host. Subsequent skills and MCP providers are managed within LiteSPM's central local store, avoiding repeated edits to host configuration files.
 
 ---
 
@@ -38,7 +38,7 @@ For supported agents, LitePSM configures a single Bridge entry per host. Subsequ
 
 ### D-011: Single-Writer Local Control Plane (Daemon)
 *   **Context:** Multiple agent hosts (Codex, Claude, OpenCode) can run simultaneously. If each Bridge shim directly modified files or started child processes, concurrency races and state corruption would occur.
-*   **Decision:** All mutable SQLite transactions, provider process supervision, OS secret access, and filesystem commits are owned exclusively by a single local LitePSM Daemon per user account.
+*   **Decision:** All mutable SQLite transactions, provider process supervision, OS secret access, and filesystem commits are owned exclusively by a single local LiteSPM Daemon per user account.
 *   **Status:** Accepted.
 
 ### D-012: SQLite (WAL) + Content-Addressed Storage (CAS)
@@ -53,7 +53,7 @@ For supported agents, LitePSM configures a single Bridge entry per host. Subsequ
 
 ### D-014: Statically Linked Native Adapters in v1
 *   **Context:** Allowing dynamic third-party adapter scripts introduces supply-chain code execution risks during ingestion and resolution.
-*   **Decision:** All source adapters, artifact fetchers, runtime adapters, and host adapters are compiled directly into the LitePSM Go binary. No dynamic adapter code is downloaded or executed.
+*   **Decision:** All source adapters, artifact fetchers, runtime adapters, and host adapters are compiled directly into the LiteSPM Go binary. No dynamic adapter code is downloaded or executed.
 *   **Status:** Accepted.
 
 ### D-015: Cryptographic Plan Binding (InstallPlan v2)
@@ -68,14 +68,14 @@ For supported agents, LitePSM configures a single Bridge entry per host. Subsequ
 
 ### D-017: Hand-Rolled MCP JSON-RPC & Named Protocol Profiles
 *   **Context:** Custom wire protocol implementations risk subtle incompatibilities.
-*   **Decision:** LitePSM hand-rolls MCP JSON-RPC 2.0 (`internal/ipc`, `internal/bridge`, `internal/mcpclient`; no external MCP SDK in `go.mod`) and explicitly tests two named protocol profiles:
+*   **Decision:** LiteSPM hand-rolls MCP JSON-RPC 2.0 (`internal/ipc`, `internal/bridge`, `internal/mcpclient`; no external MCP SDK in `go.mod`) and explicitly tests two named protocol profiles:
     1.  **Modern Profile:** 2026-07-28 stateless architecture with Streamable HTTP and header mirroring (`Mcp-Method`).
     2.  **Legacy Profile:** 2025-11-25 stateful initialization for backwards compatibility.
 *   **Status:** Accepted.
 
 ### D-018: TUF Metadata Framework for Future Signed Releases
 *   **Context:** Ad-hoc cryptographic signing schemes are vulnerable to rollback and freeze attacks.
-*   **Decision:** If cryptographic catalog signing is introduced, LitePSM will adopt The Update Framework (TUF) standard. V1 implements HTTPS origin verification and monotonic sequence verification.
+*   **Decision:** If cryptographic catalog signing is introduced, LiteSPM will adopt The Update Framework (TUF) standard. V1 implements HTTPS origin verification and monotonic sequence verification.
 *   **Status:** Accepted.
 
 ### D-019: Prohibition of Command Marketplace Sources

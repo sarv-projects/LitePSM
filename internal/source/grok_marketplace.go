@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // GrokMarketplaceManifest models .grok-plugin/marketplace.json.
@@ -105,7 +105,7 @@ func (a *GrokMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string, 
 			ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentAsset, cleanID)),
 			Kind:               domain.ComponentAsset,
 			Name:               name,
-			SupportedByLitePSM: domain.SupportUnknown,
+			SupportedByLiteSPM: domain.SupportUnknown,
 		}
 
 		verRecord := &domain.VersionRecord{

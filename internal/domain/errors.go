@@ -272,7 +272,7 @@ func ErrHostConfigNotFound(hostID, searchedPaths string) *LPSMError {
 func ErrDaemonUnreachable(pipeOrSocketPath string) *LPSMError {
 	return &LPSMError{
 		Code:      "LPSM-IPC-DAEMON-UNREACHABLE",
-		Message:   fmt.Sprintf("unable to connect to LitePSM daemon at %s", pipeOrSocketPath),
+		Message:   fmt.Sprintf("unable to connect to LiteSPM daemon at %s", pipeOrSocketPath),
 		Category:  "LPSM-IPC",
 		Retryable: true,
 		Details: map[string]any{

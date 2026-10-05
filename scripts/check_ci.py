@@ -25,7 +25,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 # accepts the workflow file name (or numeric id) as {workflow_id}; scoping here
 # is what guarantees the newest *CI* run, not the newest run of any workflow.
 RUNS_URL = (
-    'https://api.github.com/repos/sarv-projects/LitePSM'
+    'https://api.github.com/repos/sarv-projects/LiteSPM'
     '/actions/workflows/ci.yml/runs?per_page=1'
 )
 FAILED_CONCLUSIONS = {
@@ -63,7 +63,7 @@ def fetch_json(url, timeout=10):
 def print_failure_logs(job_id):
     """Print log excerpts around FAIL markers for a failed job, best effort."""
     log_url = (
-        'https://api.github.com/repos/sarv-projects/LitePSM'
+        'https://api.github.com/repos/sarv-projects/LiteSPM'
         f'/actions/jobs/{job_id}/logs'
     )
     try:

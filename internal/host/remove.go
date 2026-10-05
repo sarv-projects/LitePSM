@@ -2,16 +2,16 @@ package host
 
 // remove.go — reversing an install.
 //
-// Everything LitePSM writes into someone else's configuration must be
+// Everything LiteSPM writes into someone else's configuration must be
 // removable by the same tool. Before this file there was no removal path at
-// all: `litepsm` could inject a bridge entry into 50 different agent configs
+// all: `litespm` could inject a bridge entry into 50 different agent configs
 // and offered no way to take it back out. That is unacceptable for a tool whose
 // entire job is editing files it does not own.
 //
 // Removal is the inverse of merge, and it is held to the same standard:
 //
 //   - the file is backed up before it is touched;
-//   - only the `litepsm` entry is removed, never a sibling;
+//   - only the `litespm` entry is removed, never a sibling;
 //   - comments, key order and formatting elsewhere survive byte-for-byte;
 //   - if the entry is not present, the file is left alone and the caller is
 //     told so rather than being handed a no-op that looks like success;
@@ -25,10 +25,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
-// removalSpec describes how to find the litepsm entry in one host's config.
+// removalSpec describes how to find the litespm entry in one host's config.
 type removalSpec struct {
 	Format  ConfigFormat
 	KeyPath []string
@@ -131,7 +131,7 @@ func PlanRemoval(ctx context.Context, adapter HostAdapter, backupDir string) (*H
 			HostID:     adapter.Descriptor().HostID,
 			ConfigPath: configPath,
 			Removed:    false,
-			Reason:     "the litepsm entry is not present in this file",
+			Reason:     "the litespm entry is not present in this file",
 		}, nil
 	}
 
@@ -142,7 +142,7 @@ func PlanRemoval(ctx context.Context, adapter HostAdapter, backupDir string) (*H
 			return nil, nil, fmt.Errorf("%s: removal would produce invalid JSON, refusing to write: %w",
 				adapter.Descriptor().DisplayName, err)
 		}
-		if inspectEntry(verify, spec.KeyPath) {
+		if inspectNamedEntry(verify, spec.KeyPath, litespmServerName) || inspectNamedEntry(verify, spec.KeyPath, legacyServerName) {
 			return nil, nil, fmt.Errorf("%s: removal did not take effect, refusing to write",
 				adapter.Descriptor().DisplayName)
 		}
@@ -167,17 +167,39 @@ func PlanRemoval(ctx context.Context, adapter HostAdapter, backupDir string) (*H
 		}, nil
 }
 
-// stripBridgeEntry removes the litepsm server entry, reporting whether it was
-// present. Siblings and surrounding formatting are untouched.
+// stripBridgeEntry removes every LiteSPM bridge entry (the current server name
+// and the pre-rename legacy name), reporting whether anything was present.
+// Siblings and surrounding formatting are untouched.
 func stripBridgeEntry(content string, spec removalSpec) (string, bool, error) {
-	if spec.Format == FormatTOML {
-		return stripTOMLEntry(content, spec.KeyPath)
+	out := content
+	removedAny := false
+	for _, name := range []string{litespmServerName, legacyServerName} {
+		updated, removed, err := stripServerEntry(out, spec, name)
+		if err != nil {
+			return "", false, err
+		}
+		out = updated
+		removedAny = removedAny || removed
 	}
-	return stripJSONEntry(content, spec.KeyPath)
+	return out, removedAny, nil
 }
 
-// stripJSONEntry deletes `litepsm` from the object at keyPath.
+// stripServerEntry removes one named server entry in the format of spec.
+func stripServerEntry(content string, spec removalSpec, serverName string) (string, bool, error) {
+	if spec.Format == FormatTOML {
+		return stripTOMLEntryNamed(content, spec.KeyPath, serverName)
+	}
+	return stripJSONEntryNamed(content, spec.KeyPath, serverName)
+}
+
+// stripJSONEntry deletes `litespm` from the object at keyPath.
 func stripJSONEntry(content string, keyPath []string) (string, bool, error) {
+	return stripJSONEntryNamed(content, keyPath, litespmServerName)
+}
+
+// stripJSONEntryNamed deletes the member named serverName from the object at
+// keyPath.
+func stripJSONEntryNamed(content string, keyPath []string, serverName string) (string, bool, error) {
 	if strings.TrimSpace(content) == "" {
 		return content, false, nil
 	}
@@ -189,13 +211,13 @@ func stripJSONEntry(content string, keyPath []string) (string, bool, error) {
 	}
 
 	objText := content[objStart:objEnd]
-	valueStart, valueEnd, present, err := jsonValueSpan(stripJSONComments(objText), []string{litepsmServerName})
+	valueStart, valueEnd, present, err := jsonValueSpan(stripJSONComments(objText), []string{serverName})
 	if err != nil || !present {
 		return content, false, nil
 	}
 
 	// jsonValueSpan locates the VALUE. A member is `"key": value`, so the key
-	// and the colon have to be included or the result is `{"litepsm":}`.
+	// and the colon have to be included or the result is `{"litespm":}`.
 	memberStart := keyStartForValue(objText, valueStart)
 
 	updated, err := deleteObjectMember(objText, memberStart, valueEnd)
@@ -304,9 +326,14 @@ func deleteObjectMember(text string, memberStart, memberEnd int) (string, error)
 	return text[:j] + text[memberEnd:], nil
 }
 
-// stripTOMLEntry removes one `[prefix.litepsm]` table and its keys.
+// stripTOMLEntry removes one `[prefix.litespm]` table and its keys.
 func stripTOMLEntry(content string, keyPath []string) (string, bool, error) {
-	table := "[" + strings.Join(append(append([]string{}, keyPath...), litepsmServerName), ".") + "]"
+	return stripTOMLEntryNamed(content, keyPath, litespmServerName)
+}
+
+// stripTOMLEntryNamed removes one `[prefix.<serverName>]` table and its keys.
+func stripTOMLEntryNamed(content string, keyPath []string, serverName string) (string, bool, error) {
+	table := "[" + strings.Join(append(append([]string{}, keyPath...), serverName), ".") + "]"
 	lines := strings.Split(content, "\n")
 	var out []string
 	skipping := false

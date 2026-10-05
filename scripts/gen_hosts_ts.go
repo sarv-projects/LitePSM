@@ -23,12 +23,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/host"
-	"github.com/sarv-projects/litepsm/internal/skills"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/host"
+	"github.com/sarv-projects/litespm/internal/skills"
 )
 
-const fakeHome = "/tmp/__litepsm_home__"
+const fakeHome = "/tmp/__litespm_home__"
 
 type emittedHost struct {
 	ID        string `json:"id"`

@@ -41,7 +41,7 @@ func ConnectStdio(ctx context.Context, in io.Reader, out io.Writer) (*StdioClien
 		Params: json.RawMessage(`{
 			"protocolVersion": "2026-07-28",
 			"clientInfo": {
-				"name": "litepsm-stdio-client",
+				"name": "litespm-stdio-client",
 				"version": "0.1.0"
 			},
 			"capabilities": {}

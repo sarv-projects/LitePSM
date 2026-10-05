@@ -2,7 +2,7 @@
 
 ## 1. Staged Delivery Methodology
 
-To ensure stability and prevent architectural regressions, LitePSM follows a 9-phase delivery sequence (Phase A through Phase I). Each phase begins in a **Proposed** state and advances to **Verified** and **Accepted** only when automated quality gates and test suites pass.
+To ensure stability and prevent architectural regressions, LiteSPM follows a 9-phase delivery sequence (Phase A through Phase I). Each phase begins in a **Proposed** state and advances to **Verified** and **Accepted** only when automated quality gates and test suites pass.
 
 ```text
 [Phase A] Architecture Freeze & Schemas
@@ -86,17 +86,17 @@ To ensure stability and prevent architectural regressions, LitePSM follows a 9-p
 ### Phase G: Marketplace Federation, In-Agent `/marketplace` & CLI TUI
 *   **Deliverables:**
     *   Federated source adapters for Claude Code, Codex, and Grok Build marketplaces (rejecting command sources).
-    *   Interactive CLI TUI wizard (`litepsm` runner with dropdown agent selector and passive update notices).
+    *   Interactive CLI TUI wizard (`litespm` runner with dropdown agent selector and passive update notices).
     *   In-agent `/marketplace` command and progressive tool discovery workflow.
     *   `internal/doctor`: Diagnostic checks and `--repair` plan generator.
-*   **Acceptance Gate:** Running `litepsm` in terminal allows seamless agent selection and configuration; agents can invoke `/marketplace` to search and propose verified installations.
+*   **Acceptance Gate:** Running `litespm` in terminal allows seamless agent selection and configuration; agents can invoke `/marketplace` to search and propose verified installations.
 
 ### Phase H: Cross-Platform Build, Conformance & Packaging
 *   **Deliverables:**
     *   Go cross-compilation pipeline (`windows/amd64`, `windows/arm64`, `linux/amd64`, `darwin/arm64`).
-    *   npm distribution package (`litepsm` / `@litepsm/cli`) with native binary bootstrapping.
+    *   npm distribution package (`litespm` / `@litespm/cli`) with native binary bootstrapping.
     *   Comprehensive end-to-end integration and crash-injection test suite.
-*   **Acceptance Gate:** Full CI test matrix green across Windows, Ubuntu, and macOS runners; npm package boots correctly via `npx litepsm`.
+*   **Acceptance Gate:** Full CI test matrix green across Windows, Ubuntu, and macOS runners; npm package boots correctly via `npx litespm`.
 
 ### Phase I: Golden Fixtures, Self-Update & Migrations
 *   **Deliverables:**

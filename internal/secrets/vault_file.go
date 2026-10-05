@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 type vaultDiskEntry struct {
@@ -79,26 +79,26 @@ func NewFileEncryptedSecretStore(vaultPath string) (*FileEncryptedSecretStore, e
 func DefaultVaultPath() string {
 	if runtime.GOOS == "windows" {
 		if appData := os.Getenv("LOCALAPPDATA"); appData != "" {
-			return filepath.Join(appData, "LitePSM", "secrets", "vault.enc")
+			return filepath.Join(appData, "LiteSPM", "secrets", "vault.enc")
 		}
 	} else if runtime.GOOS == "darwin" {
 		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, "Library", "Application Support", "LitePSM", "secrets", "vault.enc")
+			return filepath.Join(home, "Library", "Application Support", "LiteSPM", "secrets", "vault.enc")
 		}
 	}
 
 	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-		return filepath.Join(xdg, "litepsm", "secrets", "vault.enc")
+		return filepath.Join(xdg, "litespm", "secrets", "vault.enc")
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "share", "litepsm", "secrets", "vault.enc")
+		return filepath.Join(home, ".local", "share", "litespm", "secrets", "vault.enc")
 	}
 	return filepath.Join(".", "secrets", "vault.enc")
 }
 
 func deriveVaultKey(path string) []byte {
 	h := sha256.New()
-	h.Write([]byte("litepsm-vault-key-salt-v1:"))
+	h.Write([]byte("litespm-vault-key-salt-v1:"))
 	h.Write([]byte(path))
 	if u, err := user.Current(); err == nil && u != nil {
 		h.Write([]byte(u.Uid + ":" + u.Username))

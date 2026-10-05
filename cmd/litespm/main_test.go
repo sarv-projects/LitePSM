@@ -13,14 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/catalog"
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/install"
-	"github.com/sarv-projects/litepsm/internal/ipc"
-	"github.com/sarv-projects/litepsm/internal/provider"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/catalog"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/doctor"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/install"
+	"github.com/sarv-projects/litespm/internal/ipc"
+	"github.com/sarv-projects/litespm/internal/provider"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/state"
+	"github.com/sarv-projects/litespm/internal/update"
 )
 
 const testListingID = "mcp:builtin:mcp-registry:demo-tool"
@@ -581,5 +583,259 @@ func TestRunStartupRecovery_ReportsTruthfully(t *testing.T) {
 	}
 	if summary.Examined != 0 {
 		t.Errorf("second sweep must be a no-op, got %+v", summary)
+	}
+}
+
+// TestReleaseDownloadTarget pins the update-command wiring: the updater must
+// download the per-asset binary URL (not the release HTML page) and must fail
+// closed when the binary or its checksum is missing.
+func TestReleaseDownloadTarget(t *testing.T) {
+	const bin = "litespm-linux-amd64"
+
+	t.Run("selects asset url and checksum", func(t *testing.T) {
+		info := &update.ReleaseInfo{
+			Version:         "1.2.3",
+			DownloadURLs:    map[string]string{bin: "https://example.test/" + bin},
+			ChecksumsSHA256: map[string]string{bin: "abc123"},
+		}
+		url, sum, err := releaseDownloadTarget(info, bin)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if url != "https://example.test/"+bin || sum != "abc123" {
+			t.Fatalf("wrong target: url=%q sum=%q", url, sum)
+		}
+	})
+
+	t.Run("missing binary fails closed", func(t *testing.T) {
+		info := &update.ReleaseInfo{
+			Version:         "1.2.3",
+			DownloadURLs:    map[string]string{},
+			ChecksumsSHA256: map[string]string{bin: "abc123"},
+		}
+		if _, _, err := releaseDownloadTarget(info, bin); err == nil {
+			t.Fatal("expected an error for a missing binary asset")
+		}
+	})
+
+	t.Run("missing checksum fails closed", func(t *testing.T) {
+		info := &update.ReleaseInfo{
+			Version:         "1.2.3",
+			DownloadURLs:    map[string]string{bin: "https://example.test/" + bin},
+			ChecksumsSHA256: map[string]string{},
+		}
+		if _, _, err := releaseDownloadTarget(info, bin); err == nil {
+			t.Fatal("expected an error for a missing checksum")
+		}
+	})
+
+	t.Run("nil release info fails closed", func(t *testing.T) {
+		if _, _, err := releaseDownloadTarget(nil, bin); err == nil {
+			t.Fatal("expected an error for nil release info")
+		}
+	})
+}
+
+func TestReadBounded(t *testing.T) {
+	t.Run("within limit", func(t *testing.T) {
+		data, err := readBounded(strings.NewReader("hello"), 16)
+		if err != nil || string(data) != "hello" {
+			t.Fatalf("data=%q err=%v", data, err)
+		}
+	})
+	t.Run("over limit refused", func(t *testing.T) {
+		if _, err := readBounded(strings.NewReader("0123456789"), 4); err == nil {
+			t.Fatal("expected an oversize error")
+		}
+	})
+	t.Run("invalid limit", func(t *testing.T) {
+		if _, err := readBounded(strings.NewReader("x"), 0); err == nil {
+			t.Fatal("expected an invalid-limit error")
+		}
+	})
+}
+
+// TestHostApplySetup_RealBehavior drives the host.apply_setup handler through
+// the real IPC server. Error paths must report accurately; the success path is
+// exercised against a sandboxed HOME so no real host config is touched.
+func TestHostApplySetup_RealBehavior(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	t.Run("unknown host is invalid params", func(t *testing.T) {
+		var raw json.RawMessage
+		err := h.client.Call(ctx, "host.apply_setup", map[string]any{"hostId": "no-such-host"}, &raw)
+		if code := rpcCode(t, err); code != ipc.CodeInvalidParams {
+			t.Errorf("code=%d, want %d (err=%v)", code, ipc.CodeInvalidParams, err)
+		}
+		if !strings.Contains(err.Error(), "unknown host adapter") {
+			t.Errorf("error %q must name the unknown host", err)
+		}
+	})
+
+	t.Run("missing hostId is invalid params", func(t *testing.T) {
+		var raw json.RawMessage
+		err := h.client.Call(ctx, "host.apply_setup", map[string]any{}, &raw)
+		if code := rpcCode(t, err); code != ipc.CodeInvalidParams {
+			t.Errorf("code=%d, want %d (err=%v)", code, ipc.CodeInvalidParams, err)
+		}
+	})
+
+	t.Run("non-object params are invalid params", func(t *testing.T) {
+		var raw json.RawMessage
+		err := h.client.Call(ctx, "host.apply_setup", "not-an-object", &raw)
+		if code := rpcCode(t, err); code != ipc.CodeInvalidParams {
+			t.Errorf("code=%d, want %d (err=%v)", code, ipc.CodeInvalidParams, err)
+		}
+	})
+
+	t.Run("applies to a sandboxed home", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+
+		var resp struct {
+			HostID     string `json:"hostId"`
+			ConfigPath string `json:"configPath"`
+			Success    bool   `json:"success"`
+		}
+		if err := h.client.Call(ctx, "host.apply_setup", map[string]any{
+			"hostId":     "opencode",
+			"binaryPath": "/opt/litespm",
+		}, &resp); err != nil {
+			t.Fatalf("host.apply_setup failed: %v", err)
+		}
+		if !resp.Success || resp.HostID != "opencode" {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+		want := filepath.Join(home, ".config", "opencode", "opencode.json")
+		if resp.ConfigPath != want {
+			t.Errorf("config path = %q, want %q", resp.ConfigPath, want)
+		}
+		data, err := os.ReadFile(want)
+		if err != nil {
+			t.Fatalf("config was not written: %v", err)
+		}
+		if !strings.Contains(string(data), `"litespm"`) {
+			t.Errorf("written config does not contain the litespm entry: %s", data)
+		}
+	})
+}
+
+// TestStartupRecoveryHaltsOnFailedOperation proves the daemon's startup sweep
+// does not silently swallow a per-operation recovery failure. When an
+// interrupted operation cannot be reconciled the sweep must return an error so
+// runDaemonServe halts instead of serving a journal that still contains
+// non-terminal entries.
+func TestStartupRecoveryHaltsOnFailedOperation(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	paths := &config.PlatformPaths{
+		ConfigRoot:  filepath.Join(tempDir, "config"),
+		DataRoot:    filepath.Join(tempDir, "data"),
+		RuntimeRoot: filepath.Join(tempDir, "run"),
+	}
+	if err := paths.EnsureDirectories(); err != nil {
+		t.Fatalf("EnsureDirectories failed: %v", err)
+	}
+	db, err := state.Open(paths.StateDBPath())
+	if err != nil {
+		t.Fatalf("state.Open failed: %v", err)
+	}
+	defer db.Close()
+
+	const opID = "op_recovery_fail"
+	if err := db.CreateOperation(ctx, opID, nil, "install", ""); err != nil {
+		t.Fatalf("CreateOperation failed: %v", err)
+	}
+	if err := db.AdvanceOperationState(ctx, opID, "staging"); err != nil {
+		t.Fatalf("AdvanceOperationState failed: %v", err)
+	}
+
+	// Point the staging root at a regular file so os.RemoveAll of the
+	// per-operation staging directory fails with ENOTDIR. This is a hermetic,
+	// permission-independent way to force recoverOperation to fail.
+	notADir := filepath.Join(tempDir, "staging-is-a-file")
+	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
+		t.Fatalf("failed to create staging blocker file: %v", err)
+	}
+
+	summary, err := runStartupRecovery(ctx, db, notADir, nil)
+	if err == nil {
+		t.Fatalf("startup recovery swallowed a failed operation (summary %+v)", summary)
+	}
+	if !strings.Contains(err.Error(), "journal recovery could not complete") {
+		t.Errorf("error must name the recovery failure: %v", err)
+	}
+	if summary.Failed != 1 {
+		t.Fatalf("expected exactly 1 failed operation, got %+v", summary)
+	}
+
+	// The failed operation must remain non-terminal; the daemon halts rather
+	// than pretending it was reconciled.
+	open, err := db.GetNonTerminalOperations(ctx)
+	if err != nil {
+		t.Fatalf("GetNonTerminalOperations failed: %v", err)
+	}
+	if len(open) != 1 || open[0].OperationID != opID {
+		t.Fatalf("expected the failed operation to remain non-terminal, got %+v", open)
+	}
+}
+
+// TestDoctorExitCode pins the doctor exit-code contract from ARCH/20 §2: a
+// clean or warn-only report exits 0; a FAIL in a classified category returns
+// that category's documented code (catalog 10, resolve 20, approval 30, install
+// 40, provider 50, host 60, state 70); when several categories fail the most
+// severe (highest) code wins; and an uncategorized FAIL keeps the historical
+// STATE_ERROR fallback.
+func TestDoctorExitCode(t *testing.T) {
+	report := func(checks ...doctor.CheckResult) *doctor.DoctorReport {
+		r := &doctor.DoctorReport{}
+		for _, c := range checks {
+			switch c.Status {
+			case doctor.StatusFail:
+				r.FailCount++
+			case doctor.StatusWarn:
+				r.WarnCount++
+			default:
+				r.PassedCount++
+			}
+			r.Checks = append(r.Checks, c)
+		}
+		return r
+	}
+	fail := func(category doctor.Category) doctor.CheckResult {
+		return doctor.CheckResult{Status: doctor.StatusFail, Category: category}
+	}
+
+	cases := []struct {
+		name string
+		rep  *doctor.DoctorReport
+		want int
+	}{
+		{"nil report", nil, 0},
+		{"clean", report(doctor.CheckResult{Status: doctor.StatusPass}), 0},
+		{"warning only", report(doctor.CheckResult{Status: doctor.StatusWarn, Category: doctor.CategoryState}), 0},
+		{"state failure", report(fail(doctor.CategoryState)), 70},
+		{"catalog failure", report(fail(doctor.CategoryCatalog)), 10},
+		{"resolve failure", report(fail(doctor.CategoryResolve)), 20},
+		{"approval failure", report(fail(doctor.CategoryApproval)), 30},
+		{"install failure", report(fail(doctor.CategoryInstall)), 40},
+		{"provider failure", report(fail(doctor.CategoryProvider)), 50},
+		{"host failure", report(fail(doctor.CategoryHost)), 60},
+		{"uncategorized failure", report(fail("")), 70},
+		{"worst failure wins", report(fail(doctor.CategoryCatalog), fail(doctor.CategoryHost)), 60},
+		{"warn does not mask fail", report(
+			doctor.CheckResult{Status: doctor.StatusWarn, Category: doctor.CategoryState},
+			fail(doctor.CategoryInstall),
+		), 40},
+		{"fail count without inspectable checks", &doctor.DoctorReport{FailCount: 2}, 70},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := doctorExitCode(tc.rep); got != tc.want {
+				t.Fatalf("doctorExitCode(%s) = %d, want %d", tc.name, got, tc.want)
+			}
+		})
 	}
 }

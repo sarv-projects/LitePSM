@@ -137,7 +137,7 @@ export default function CoveragePage() {
 
         <p className="mt-2 max-w-prose text-[13px] leading-relaxed text-ink-2">
           These boards describe the shape of the snapshot: how many entries each source, publisher,
-          category and agent host accounts for. Nothing here is ranked by popularity. LitePSM
+          category and agent host accounts for. Nothing here is ranked by popularity. LiteSPM
           publishes no star, download or install figures, because the upstream sources do not expose
           them — an earlier build of this site estimated them, and that was wrong.
         </p>

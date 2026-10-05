@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // AuthType represents the type of authentication mechanism.

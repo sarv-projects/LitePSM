@@ -14,18 +14,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/bridge"
-	"github.com/sarv-projects/litepsm/internal/catalog"
-	"github.com/sarv-projects/litepsm/internal/config"
-	"github.com/sarv-projects/litepsm/internal/doctor"
-	"github.com/sarv-projects/litepsm/internal/domain"
-	"github.com/sarv-projects/litepsm/internal/install"
-	"github.com/sarv-projects/litepsm/internal/ipc"
-	"github.com/sarv-projects/litepsm/internal/provider"
-	"github.com/sarv-projects/litepsm/internal/resolver"
-	"github.com/sarv-projects/litepsm/internal/secrets"
-	"github.com/sarv-projects/litepsm/internal/skills"
-	"github.com/sarv-projects/litepsm/internal/state"
+	"github.com/sarv-projects/litespm/internal/bridge"
+	"github.com/sarv-projects/litespm/internal/catalog"
+	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/doctor"
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/install"
+	"github.com/sarv-projects/litespm/internal/ipc"
+	"github.com/sarv-projects/litespm/internal/provider"
+	"github.com/sarv-projects/litespm/internal/resolver"
+	"github.com/sarv-projects/litespm/internal/secrets"
+	"github.com/sarv-projects/litespm/internal/skills"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 // pipeListener hands a single pre-connected pipe to the accepting server so
@@ -133,7 +133,7 @@ func TestE2E_FullLifecycleConformance(t *testing.T) {
 	defer db.Close()
 
 	// 3. Catalog Sync & Indexing
-	catClient := catalog.NewClient("https://registry.litepsm.dev", paths.DataRoot, nil)
+	catClient := catalog.NewClient(config.DefaultRegistryURL, paths.DataRoot, nil)
 	listings := []*domain.Listing{
 		{
 			SchemaVersion:  1,
@@ -295,7 +295,7 @@ func TestE2E_FullLifecycleConformance(t *testing.T) {
 	if toolResult.IsError {
 		t.Fatalf("daemon-backed list_installed returned an error: %s", toolResult.Content[0].Text)
 	}
-	if len(toolResult.Content) == 0 || !strings.Contains(toolResult.Content[0].Text, "LitePSM Capabilities") {
+	if len(toolResult.Content) == 0 || !strings.Contains(toolResult.Content[0].Text, "LiteSPM Capabilities") {
 		t.Errorf("unexpected bridge tool result: %+v", toolResult)
 	}
 	// The panel must carry the capability installed in step 5 — real data from
@@ -330,7 +330,7 @@ func TestE2E_FullLifecycleConformance(t *testing.T) {
 	if !strings.Contains(standaloneResult.Content[0].Text, "not connected to daemon") {
 		t.Errorf("standalone error must name the missing daemon connection: %s", standaloneResult.Content[0].Text)
 	}
-	if strings.Contains(standaloneResult.Content[0].Text, "LitePSM Capabilities") {
+	if strings.Contains(standaloneResult.Content[0].Text, "LiteSPM Capabilities") {
 		t.Errorf("standalone shim fabricated an inventory: %s", standaloneResult.Content[0].Text)
 	}
 

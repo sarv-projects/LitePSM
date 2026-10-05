@@ -1,5 +1,5 @@
 const assert = require("assert");
-const { getBinaryName, resolveBinary } = require("./bin/litepsm.js");
+const { getBinaryName, resolveBinary } = require("./bin/litespm.js");
 const { checksumFor, computeFileSHA256 } = require("./scripts/install-binary.js");
 const fs = require("fs");
 const os = require("os");
@@ -9,7 +9,7 @@ console.log("Testing npm wrapper resolution...");
 
 // 1. Check getBinaryName returns valid string
 const binName = getBinaryName();
-assert(typeof binName === "string" && binName.startsWith("litepsm-"), "binary name must start with litepsm-");
+assert(typeof binName === "string" && binName.startsWith("litespm-"), "binary name must start with litespm-");
 console.log(`✓ Detected binary name: ${binName}`);
 
 // 2. Check resolveBinary finds pre-compiled binary from dist/
@@ -25,9 +25,9 @@ assert.strictEqual(checksumFor(`deadbeef  other-file\n`, binName), null, "should
 console.log("✓ Checksum manifest parsing verified");
 
 // 4. computeFileSHA256 matches a known digest
-const tmp = path.join(os.tmpdir(), `litepsm-hash-${process.pid}.tmp`);
-fs.writeFileSync(tmp, "litepsm");
-const expected = "sha256:" + require("crypto").createHash("sha256").update("litepsm").digest("hex");
+const tmp = path.join(os.tmpdir(), `litespm-hash-${process.pid}.tmp`);
+fs.writeFileSync(tmp, "litespm");
+const expected = "sha256:" + require("crypto").createHash("sha256").update("litespm").digest("hex");
 assert.strictEqual("sha256:" + computeFileSHA256(tmp), expected, "file hash should match");
 fs.unlinkSync(tmp);
 console.log("✓ File hashing verified");

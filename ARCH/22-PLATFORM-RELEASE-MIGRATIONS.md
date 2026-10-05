@@ -2,7 +2,7 @@
 
 ## 1. Cross-Platform Compilation Matrix
 
-LitePSM is compiled as a single native static Go binary (`cmd/litepsm`):
+LiteSPM is compiled as a single native static Go binary (`cmd/litespm`):
 
 ```text
 ┌─────────────────┬──────────────────────┬───────────────────────────────────────────┐
@@ -44,22 +44,22 @@ type Migration struct {
 
 ## 3. Binary Self-Update Architecture
 
-LitePSM binary updates are isolated from extension package updates:
+LiteSPM binary updates are isolated from extension package updates:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        Binary Self-Update Flow                         │
 │                                                                        │
-│   $ litepsm self-update                                                │
+│   $ litespm self-update                                                │
 │         │                                                              │
 │         ▼                                                              │
 │   1. Check Active Transactions (Abort if operation in-flight)          │
 │   2. Fetch Latest Release Manifest & SHA-256 Checksums                 │
-│   3. Download Target Platform Binary to staging/litepsm.new            │
+│   3. Download Target Platform Binary to staging/litespm.new            │
 │   4. Verify Cryptographic Signature & Checksum                         │
-│   5. On Windows: Rename running binary to litepsm.old (File in use)    │
-│      On Unix: Atomic rename staging/litepsm.new -> current binary      │
-│   6. Verify New Binary Boots ('litepsm --version')                     │
-│   7. Clean up backup binary (litepsm.old)                              │
+│   5. On Windows: Rename running binary to litespm.old (File in use)    │
+│      On Unix: Atomic rename staging/litespm.new -> current binary      │
+│   6. Verify New Binary Boots ('litespm --version')                     │
+│   7. Clean up backup binary (litespm.old)                              │
 └────────────────────────────────────────────────────────────────────────┘
 ```

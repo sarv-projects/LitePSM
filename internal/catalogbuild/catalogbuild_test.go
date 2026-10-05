@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func sampleData() ([]*domain.Listing, []*domain.VersionRecord) {
@@ -123,7 +123,7 @@ func TestManifestIntegrity(t *testing.T) {
 }
 
 func TestWriteToDirectory(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "litepsm-catalogbuild-test-*")
+	tmpDir, err := os.MkdirTemp("", "litespm-catalogbuild-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}

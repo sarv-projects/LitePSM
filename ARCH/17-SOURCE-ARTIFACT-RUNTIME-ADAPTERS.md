@@ -2,7 +2,7 @@
 
 ## 1. Architectural Decoupling
 
-To prevent security vulnerabilities and architectural confusion, LitePSM strictly isolates the interfaces for **metadata ingestion**, **binary retrieval**, and **process execution**:
+To prevent security vulnerabilities and architectural confusion, LiteSPM strictly isolates the interfaces for **metadata ingestion**, **binary retrieval**, and **process execution**:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐

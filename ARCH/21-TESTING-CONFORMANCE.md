@@ -2,7 +2,7 @@
 
 ## 1. Testing Pyramid
 
-LitePSM's reliability is enforced through a multi-tier testing strategy:
+LiteSPM's reliability is enforced through a multi-tier testing strategy:
 
 ```text
                ┌───────────────────────────────┐
@@ -23,7 +23,7 @@ LitePSM's reliability is enforced through a multi-tier testing strategy:
 Using automated property-testing generators:
 1.  **Path Traversal Invariant:** For any arbitrary string generated as an archive entry name, `ExtractArchiveSafely` must either reject the path or ensure the resulting destination starts with the normalized staging root prefix.
 2.  **Canonical Hashing Invariant:** Serializing an `InstallPlan` or `ToolInputSchema` must yield identical `planHash` and `schemaFingerprint` bytes regardless of map key iteration order or Go struct memory layout.
-3.  **Host Config Preservation:** Round-tripping any third-party JSON/TOML configuration file through `PlanSetup` and `ApplySetup` must leave 100% of non-LitePSM keys, values, and comments intact.
+3.  **Host Config Preservation:** Round-tripping any third-party JSON/TOML configuration file through `PlanSetup` and `ApplySetup` must leave 100% of non-LiteSPM keys, values, and comments intact.
 
 ---
 
@@ -60,11 +60,11 @@ Crash recovery logic exists (`DB.RecoverIncompleteOperations` in `internal/state
 
 ## 5. MCP Conformance Test Matrix
 
-LitePSM's Bridge shim and provider supervisor are validated against both real hosts and automated mock MCP servers:
+LiteSPM's Bridge shim and provider supervisor are validated against both real hosts and automated mock MCP servers:
 *   **Version Negotiation:** Tests client behavior when server advertises modern `2026-07-28` vs. legacy `2025-11-25`.
 *   **Header Mirroring:** Verifies that HTTP POST requests mirror `Mcp-Method` headers.
 *   **Cancellation:** Verifies that sending `$/cancelRequest` cleanly terminates child process computation.
-*   **Elicitation Fallback:** Verifies that when an MCP server requests form elicitation on an unsupported host, LitePSM cleanly falls back to the CLI command prompt.
+*   **Elicitation Fallback:** Verifies that when an MCP server requests form elicitation on an unsupported host, LiteSPM cleanly falls back to the CLI command prompt.
 
 ---
 

@@ -7,7 +7,7 @@ Related: [16 — Host Adapters](16-HOST-ADAPTERS.md), [14 — Bridge & Provider 
 
 ## 1. Problem
 
-Six agent hosts were supported by six hand-written `HostAdapter` implementations (`internal/host/{claudecode,cline,codex,opencode,piagent,grokbuild}.go`). Each is roughly 170–290 lines, and the overwhelming majority is identical: resolve a path, back up the file, merge one `litepsm` entry, verify.
+Six agent hosts were supported by six hand-written `HostAdapter` implementations (`internal/host/{claudecode,cline,codex,opencode,piagent,grokbuild}.go`). Each is roughly 170–290 lines, and the overwhelming majority is identical: resolve a path, back up the file, merge one `litespm` entry, verify.
 
 Two problems with that shape:
 
@@ -48,7 +48,7 @@ Agents that could not be verified are **absent from the table**, with the reason
 
 Parsing a config into `map[string]any` and re-serializing it would delete every `//` comment in it. Several verified hosts keep user-authored comments in their config, and one (`tabnine-cli`) keeps `mcpServers` inside a large shared settings document used by unrelated features. Silent comment deletion is data loss in an installer.
 
-So `mergeJSONEntrySurgical` (`internal/host/jsonc_merge.go`) locates the target object **by byte offset** and splices only the `litepsm` member into it. Everything else survives byte-for-byte: comments, key order, indentation, blank lines.
+So `mergeJSONEntrySurgical` (`internal/host/jsonc_merge.go`) locates the target object **by byte offset** and splices only the `litespm` member into it. Everything else survives byte-for-byte: comments, key order, indentation, blank lines.
 
 The mechanism rests on one invariant, pinned by `TestStripJSONCommentsPreservesOffsets`: `stripJSONComments` replaces comments with equal-length whitespace, so offsets resolved against the stripped text are valid offsets into the original.
 
@@ -57,7 +57,7 @@ Two consequences, both deliberate:
 * **Strict-JSON hosts refuse a commented file** rather than guessing. `TestStrictJSONHostsRefuseCommentedFiles` pins both halves of this policy so they cannot drift into each other.
 * **Every merge is re-parsed and asserted** before anything is written. A writer bug returns an error; it never ships a corrupt config file.
 
-TOML targets use `mergeTOMLEntry`, which replaces or appends a single `[mcp_servers.litepsm]` table and leaves every other section — including comments — untouched.
+TOML targets use `mergeTOMLEntry`, which replaces or appends a single `[mcp_servers.litespm]` table and leaves every other section — including comments — untouched.
 
 ## 5. Supported shapes
 
@@ -112,7 +112,7 @@ Registered adapters after this change: **50** (6 hand-written + 44 verified targ
 
 Two different registries, deliberately not conflated:
 
-* **Bridge targets** (this document, 44 rows) — agents whose **config file LitePSM can edit** to register the MCP bridge.
-* **Skill install targets** (`internal/skills/agents.go`, 77 entries) — agents where LitePSM can **write a `SKILL.md`** into a skills directory.
+* **Bridge targets** (this document, 44 rows) — agents whose **config file LiteSPM can edit** to register the MCP bridge.
+* **Skill install targets** (`internal/skills/agents.go`, 77 entries) — agents where LiteSPM can **write a `SKILL.md`** into a skills directory.
 
-The sets overlap but are not equal. 67 agents were researched for bridge support (44 shipped, 23 excluded). Some skill targets are IDE extensions with no CLI config file; some bridge targets are cloud products with no skills directory. `litepsm host list` reports bridge adapters only — it does not claim skill coverage.
+The sets overlap but are not equal. 67 agents were researched for bridge support (44 shipped, 23 excluded). Some skill targets are IDE extensions with no CLI config file; some bridge targets are cloud products with no skills directory. `litespm host list` reports bridge adapters only — it does not claim skill coverage.

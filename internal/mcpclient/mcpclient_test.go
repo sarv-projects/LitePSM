@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 func TestModern2026_StreamableHTTP(t *testing.T) {

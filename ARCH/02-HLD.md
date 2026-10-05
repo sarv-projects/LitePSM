@@ -2,9 +2,9 @@
 
 ## 1. System Topology & Architecture
 
-LitePSM is bifurcated into two strictly isolated environments:
+LiteSPM is bifurcated into two strictly isolated environments:
 1.  **Public Discovery Plane (Cloud):** A static, read-only distribution architecture hosted on Cloudflare Pages, serving immutable catalog releases generated from a private source repository.
-2.  **Local Control Plane (Workstation):** A client-side system consisting of thin, host-specific **Bridge Shims** communicating via secure local IPC with a persistent, single-writer **LitePSM Daemon**.
+2.  **Local Control Plane (Workstation):** A client-side system consisting of thin, host-specific **Bridge Shims** communicating via secure local IPC with a persistent, single-writer **LiteSPM Daemon**.
 
 ```text
                                  PUBLIC DISCOVERY PLANE
@@ -38,7 +38,7 @@ LitePSM is bifurcated into two strictly isolated environments:
                              │ (Windows Named Pipe / Unix Domain Socket)
                              ▼
     ┌─────────────────────────────────────────────────────────────────────────┐
-    │                           LitePSM Daemon                                │
+    │                           LiteSPM Daemon                                │
     │ ┌─────────────────────────────────────────────────────────────────────┐ │
     │ │ Session Manager & IPC Dispatcher                                    │ │
     │ └──────────────┬──────────────────┬───────────────────┬───────────────┘ │
@@ -67,7 +67,7 @@ LitePSM is bifurcated into two strictly isolated environments:
 
 ## 2. Process Separation: Bridge Shim vs. Local Daemon
 
-To guarantee data integrity and prevent concurrency hazards across multiple simultaneous agent hosts, LitePSM strictly enforces a single-writer architecture:
+To guarantee data integrity and prevent concurrency hazards across multiple simultaneous agent hosts, LiteSPM strictly enforces a single-writer architecture:
 
 ### 2.1 The Bridge Shim (Thin Client)
 *   **Role:** Stateless MCP stdio protocol translator.
@@ -75,12 +75,12 @@ To guarantee data integrity and prevent concurrency hazards across multiple simu
 *   **Responsibilities:**
     1.  Speaks standard MCP JSON-RPC over `stdin`/`stdout`.
     2.  Identifies host identity (`--host claude-code`) and session attributes.
-    3.  Establishes or reuses a local IPC connection to the LitePSM Daemon (launching the daemon in the background if not running).
+    3.  Establishes or reuses a local IPC connection to the LiteSPM Daemon (launching the daemon in the background if not running).
     4.  Translates MCP tool calls (`search_catalog`, `invoke_capability`) to internal IPC RPCs.
     5.  Exits cleanly when the host agent terminates stdio.
 *   **Prohibitions:** The Bridge Shim **never** opens SQLite directly, never writes to configuration files, and never launches downstream provider child processes.
 
-### 2.2 The LitePSM Daemon (Single Writer & Supervisor)
+### 2.2 The LiteSPM Daemon (Single Writer & Supervisor)
 *   **Role:** Authoritative local control plane and state owner.
 *   **Execution:** Runs as a background service per operating system user account.
 *   **Responsibilities:**
@@ -110,7 +110,7 @@ sequenceDiagram
     actor User
     participant Host as Agent Host (e.g. Claude)
     participant Shim as Bridge Shim (stdio)
-    participant Daemon as LitePSM Daemon
+    participant Daemon as LiteSPM Daemon
     participant CDN as Cloudflare Pages (Catalog)
 
     User->>Host: "Search for postgres MCP"
@@ -145,7 +145,7 @@ sequenceDiagram
     actor User
     participant Host as Agent Host
     participant Shim as Bridge Shim
-    participant Daemon as LitePSM Daemon
+    participant Daemon as LiteSPM Daemon
     participant Store as Local CAS Store (trees/)
     participant DB as SQLite (state.db)
 
@@ -155,8 +155,8 @@ sequenceDiagram
         Host->>Shim: MCP tools/call: request_install(planId, approvalToken)
         Shim->>Daemon: IPC: Install.Execute(planId, approvalToken)
     else Host does not support elicitation (CLI fallback)
-        Shim-->>Host: Returns CLI command: "litepsm install --plan-id ..."
-        User->>Daemon: Terminal command: litepsm install --plan-id ...
+        Shim-->>Host: Returns CLI command: "litespm install --plan-id ..."
+        User->>Daemon: Terminal command: litespm install --plan-id ...
     end
 
     Daemon->>Daemon: Verify planHash matches approval & plan not expired
@@ -178,7 +178,7 @@ sequenceDiagram
     actor User
     participant Host as Agent Host
     participant Shim as Bridge Shim
-    participant Daemon as LitePSM Daemon
+    participant Daemon as LiteSPM Daemon
     participant Sup as Provider Supervisor
     participant Prov as MCP Provider Process
 
@@ -206,7 +206,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Daemon as LitePSM Daemon Startup
+    participant Daemon as LiteSPM Daemon Startup
     participant DB as SQLite (state.db)
     participant FS as Local Filesystem
 

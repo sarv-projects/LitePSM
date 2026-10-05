@@ -2,21 +2,21 @@
 
 ## 1. Entry Points and Interactive Workflows
 
-LitePSM provides both an interactive terminal interface for humans and a structured programmatic interface for agent hosts.
+LiteSPM provides both an interactive terminal interface for humans and a structured programmatic interface for agent hosts.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        User / Terminal Client                          │
 │                                                                        │
-│   $ litepsm (Interactive TUI Wizard)                                   │
+│   $ litespm (Interactive TUI Wizard)                                   │
 │     ├── Agent Selector Dropdown (Claude Code, Codex, Grok Build, OpenCode, Cline) │
 │     ├── Automated Host Configuration Path Detection                    │
 │     ├── Manual Path Prompt & Fallback Guidance                         │
 │     └── Passive Catalog Update Notice                                  │
 │                                                                        │
-│   $ litepsm setup <agent> (Scriptable Non-Interactive Setup)           │
-│   $ litepsm search / info / install / update / remove / doctor         │
-│   $ litepsm skills add <source> (Skill installer: clone, select, copy) │
+│   $ litespm setup <agent> (Scriptable Non-Interactive Setup)           │
+│   $ litespm search / info / install / update / remove / doctor         │
+│   $ litespm skills add <source> (Skill installer: clone, select, copy) │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -35,7 +35,7 @@ LitePSM provides both an interactive terminal interface for humans and a structu
 
 ## 2. Interactive Setup Wizard & Agent Auto-Detection
 
-Running `litepsm` without subcommands opens an interactive Terminal User Interface (TUI):
+Running `litespm` without subcommands opens an interactive Terminal User Interface (TUI):
 
 ### Step 1: Agent Selection Dropdown
 ```text
@@ -49,7 +49,7 @@ Running `litepsm` without subcommands opens an interactive Terminal User Interfa
 ```
 
 ### Step 2: Automated Path Discovery & Detection Matrix
-LitePSM probes known default configuration locations by platform:
+LiteSPM probes known default configuration locations by platform:
 
 | Target Agent | Linux / macOS Default Path | Windows Default Path |
 |---|---|---|
@@ -61,7 +61,7 @@ LitePSM probes known default configuration locations by platform:
 | **Cline** | `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/...` (Cline CLI: `~/.cline/data/settings/cline_mcp_settings.json`, not managed) | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\...` (Cline CLI: `~/.cline/data/settings/cline_mcp_settings.json`, not managed) |
 
 ### Step 3: Graceful Fallback Options
-If the configuration file is absent, LitePSM prompts the user:
+If the configuration file is absent, LiteSPM prompts the user:
 ```text
 [!] Unable to locate default configuration file for Claude Code.
 ? Choose an action:
@@ -73,28 +73,28 @@ If the configuration file is absent, LitePSM prompts the user:
 
 ### Step 4: Safe Atomic Configuration Injection
 1.  **Backup:** Copies target configuration to `DATA_ROOT/backups/<host-id>/<timestamp>-<digest>/config.bak`.
-2.  **Parse & Merge:** Parses JSON/TOML, preserving comments and formatting where possible. Injects a single version-pinned `litepsm` bridge entry for the selected host (below shown for `claude-code`):
+2.  **Parse & Merge:** Parses JSON/TOML, preserving comments and formatting where possible. Injects a single version-pinned `litespm` bridge entry for the selected host (below shown for `claude-code`):
     ```json
     {
       "mcpServers": {
-        "litepsm": {
-          "command": "/usr/local/bin/litepsm",
+        "litespm": {
+          "command": "/usr/local/bin/litespm",
           "args": ["bridge", "stdio", "--host", "claude-code"]
         }
       }
     }
     ```
-    Only this one `litepsm` entry is registered per host; the `--host <agent-id>` argument tells the daemon which host is calling, and individual capabilities are resolved by the daemon at runtime (no per-capability host snippets are generated).
+    Only this one `litespm` entry is registered per host; the `--host <agent-id>` argument tells the daemon which host is calling, and individual capabilities are resolved by the daemon at runtime (no per-capability host snippets are generated).
 3.  **Atomic Replacement:** Writes to a temporary file on the same filesystem, validates syntax, and renames atomically.
 
 ---
 
 ## 3. Local Storage Layout (`DATA_ROOT`)
 
-LitePSM maintains all user state, database files, and package trees within platform-standard data directories:
-*   **Windows:** `%LOCALAPPDATA%\LitePSM`
-*   **macOS:** `~/Library/Application Support/LitePSM`
-*   **Linux:** `$XDG_DATA_HOME/litepsm` (default: `~/.local/share/litepsm`)
+LiteSPM maintains all user state, database files, and package trees within platform-standard data directories:
+*   **Windows:** `%LOCALAPPDATA%\LiteSPM`
+*   **macOS:** `~/Library/Application Support/LiteSPM`
+*   **Linux:** `$XDG_DATA_HOME/litespm` (default: `~/.local/share/litespm`)
 
 ```text
 DATA_ROOT/
@@ -121,14 +121,14 @@ RUNTIME_ROOT/                      # Ephemeral IPC sockets and daemon locks
   ├── daemon.lock                  # Exclusive instance process lock
   ├── daemon.pid                   # Current daemon process ID
   └── daemon.sock                  # Unix domain socket (Linux/macOS)
-                                   # (Windows uses Named Pipe: \\.\pipe\litepsm-daemon-<hash>)
+                                   # (Windows uses Named Pipe: \\.\pipe\litespm-daemon-<hash>)
 ```
 
 ---
 
 ## 4. Pure Dependency Resolver Algorithm
 
-LitePSM's dependency resolver is pure and deterministic. It performs no disk I/O or network fetches during resolution:
+LiteSPM's dependency resolver is pure and deterministic. It performs no disk I/O or network fetches during resolution:
 1.  **Input:** Target `ListingId` and requested version constraint.
 2.  **Breadth-First / Depth-First Traversal:** Recursively evaluates dependency declarations against the catalog release snapshot.
 3.  **Cycle Detection:** Maintains a visited traversal stack; if a dependency node re-occurs, halts with `LPSM-RESOLVE-CYCLE`.
@@ -142,13 +142,13 @@ LitePSM's dependency resolver is pure and deterministic. It performs no disk I/O
 ## 5. Update and Upstream Repack Handling
 
 ### 5.1 Passive Update Checks
-Whenever a user runs `litepsm` or an agent invokes `/marketplace`, the client performs a passive read of `/v1/current.json`.
+Whenever a user runs `litespm` or an agent invokes `/marketplace`, the client performs a passive read of `/v1/current.json`.
 *   If the remote catalog release sequence exceeds the cached sequence, it downloads the release index.
 *   It compares installed versions against catalog versions.
 *   **Zero Local Mutation:** It displays update availability to the user or agent, but **never mutates local files** without an explicit update command.
 
 ### 5.2 Update Delta Evaluation
-When `litepsm update <listing-id>` is invoked, the engine generates an update plan detailing:
+When `litespm update <listing-id>` is invoked, the engine generates an update plan detailing:
 *   Version jump and artifact SHA-256 digest delta.
 *   Changes in declared effects (e.g., added filesystem or network access).
 *   Provider launch argument changes.
@@ -157,7 +157,7 @@ When `litepsm update <listing-id>` is invoked, the engine generates an update pl
 ### 5.3 Upstream Repack Detection
 If an upstream source re-publishes the same version string with a modified artifact digest:
 $$\text{Installed Digest } \neq \text{New Upstream Digest for identical version}$$
-1.  LitePSM flags the artifact as `status: "repacked/mutated-upstream"`.
+1.  LiteSPM flags the artifact as `status: "repacked/mutated-upstream"`.
 2.  Automatic installation is blocked.
 3.  The user is warned that upstream maintainers modified release artifacts in-place, requiring explicit confirmation to proceed.
 
@@ -169,4 +169,4 @@ $$\text{Installed Digest } \neq \text{New Upstream Digest for identical version}
 2.  **Active Session Check:** Queries `provider_sessions`; if a managed provider process is currently running, stops the process gracefully (`SIGTERM` / `WM_CLOSE`).
 3.  **Database Commit:** In a single SQLite transaction, removes `installs`, `install_components`, `capabilities`, and `capability_grants` records.
 4.  **Unreferenced CAS Pruning:** Scans `trees/` and `artifacts/`. Deletes directories only if no remaining active installation references their content digests.
-5.  **Host Config Cleanup:** When uninstalling the Bridge entry from an agent host, checks if the configuration entry still matches LitePSM's recorded fingerprint. If modified by the user, leaves the file intact and prints manual cleanup instructions.
+5.  **Host Config Cleanup:** When uninstalling the Bridge entry from an agent host, checks if the configuration entry still matches LiteSPM's recorded fingerprint. If modified by the user, leaves the file intact and prints manual cleanup instructions.

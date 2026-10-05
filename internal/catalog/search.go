@@ -6,7 +6,7 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // SearchOptions provides filtering and pagination for catalog queries.

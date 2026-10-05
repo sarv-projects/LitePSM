@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // CursorMarketplaceManifest models .cursor-plugin/marketplace.json as used by
@@ -93,7 +93,7 @@ func (a *CursorMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string
 			ID:                 string(domain.NewComponentID(listingID, ver, domain.ComponentAsset, cleanName)),
 			Kind:               domain.ComponentAsset,
 			Name:               p.Name,
-			SupportedByLitePSM: domain.SupportUnknown,
+			SupportedByLiteSPM: domain.SupportUnknown,
 		}
 
 		verRecord := &domain.VersionRecord{

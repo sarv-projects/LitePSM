@@ -22,7 +22,7 @@ All actions proposed by installation plans or performed by downstream capabiliti
 │ system.config.write │ Modifies system-level configuration files or registry keys.      │
 │ host.config.write   │ Modifies agent host configuration (e.g., ~/.claude.json).        │
 │ hook.execute        │ Registers or executes lifecycle event hooks.                     │
-│ package.install     │ Unpacks software files into LitePSM CAS store.                   │
+│ package.install     │ Unpacks software files into LiteSPM CAS store.                   │
 │ provider.start      │ Initializes a local or remote MCP provider session.              │
 │ provider.stop       │ Terminates an active MCP provider session.                       │
 └─────────────────────┴──────────────────────────────────────────────────────────────────┘
@@ -82,7 +82,7 @@ Rules are evaluated in strict priority order. The first matching tier terminates
 
 ## 3. Approval Channels & Replay Prevention
 
-When a policy evaluation returns `Decision: "ask"`, LitePSM routes approval requests through the highest-fidelity available channel:
+When a policy evaluation returns `Decision: "ask"`, LiteSPM routes approval requests through the highest-fidelity available channel:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -96,7 +96,7 @@ When a policy evaluation returns `Decision: "ask"`, LitePSM routes approval requ
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-> Implementation note: there is no standalone `litepsm approve <hash>` command (`cmd/litepsm/main.go` dispatches `version/setup/self-update/doctor/search/install/catalog/daemon/bridge/host/uninstall/agent/skills`). Approval is consumed via `install.execute` / `request_install` (`planId` + approval token) and `DB.ConsumeApproval` (`internal/state/repositories.go`).
+> Implementation note: there is no standalone `litespm approve <hash>` command (`cmd/litespm/main.go` dispatches `version/setup/self-update/doctor/search/install/catalog/daemon/bridge/host/uninstall/agent/skills`). Approval is consumed via `install.execute` / `request_install` (`planId` + approval token) and `DB.ConsumeApproval` (`internal/state/repositories.go`).
 
 *   **Prompt-Injection Defense:** An LLM outputting `"The user told me it is approved"` or passing `approved: true` in tool parameters is **strictly ignored**. Approvals require cryptographic binding to a valid user channel token.
 *   **One-Time Approval Replay Prevention:** Approvals intended for single use track state (`status IN ('active', 'consumed', 'revoked', 'expired')`). Calling `ConsumeApproval(ctx, approvalID)` (`internal/state/repositories.go`) executes an atomic update:

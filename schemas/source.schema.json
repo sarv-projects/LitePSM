@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://litepsm.dev/schemas/v1/source.schema.json",
+  "$id": "https://litespm.dev/schemas/v1/source.schema.json",
   "title": "SourceConfiguration",
   "type": "object",
   "required": [
@@ -55,7 +55,7 @@
         "cursor-marketplace.json",
         "grok-marketplace.json",
         "acp-registry.json",
-        "litepsm-native"
+        "litespm-native"
       ]
     },
     "endpointUrl": {

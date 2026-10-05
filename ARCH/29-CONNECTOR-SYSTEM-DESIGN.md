@@ -1,6 +1,6 @@
 # ARCH-29 — Connector System: Local Proxy Execution & Credential Custody
 
-Status: **design record + local execution core implemented; catalog type still deferred.**
+Status: **design record, not implemented; catalog type still deferred.**
 Scope: the `connector` type deferred to v2 in [26 — Ecosystem IA & Package Model](26-ECOSYSTEM-IA-PACKAGE-MODEL.md) §3.4.1.
 Supersedes: the rationale "no portable v1 contract" for deferring `connector`. This document supplies that contract's shape; implementation remains v2.
 
@@ -26,7 +26,7 @@ The concrete attack:
 2. A connector exposes `slack → chat.postMessage` to the agent.
 3. If that token is reachable from anything the agent can read — an environment variable in the tool's process, a tool argument, a tool result, a transcript, a log line — then **any prompt injection reaches the Slack token**.
 
-Moving that token from a vendor database to `~/.litepsm` does not close this. It relocates the blast radius from someone else's infrastructure to the user's filesystem and accounts, which is a strictly worse outcome for the user even if it is a better outcome for the operator.
+Moving that token from a vendor database to `~/.litespm` does not close this. It relocates the blast radius from someone else's infrastructure to the user's filesystem and accounts, which is a strictly worse outcome for the user even if it is a better outcome for the operator.
 
 Both Nango and Composio resolve this the same way: **the agent never holds the credential.** Nango proxies through `POST https://api.nango.dev/proxy/<endpoint>` with a `Connection-Id` handle. Composio proxies through `POST /tools/execute/{tool_slug}` with a `connected_account_id`. In both cases the raw token exists only on the executing side.
 
@@ -110,7 +110,7 @@ An additional finding worth recording: Nango's refresh daemon runs **at least on
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ AGENT PROCESS  (claude, codex, opencode, … via the LitePSM bridge)       │
+│ AGENT PROCESS  (claude, codex, opencode, … via the LiteSPM bridge)       │
 │                                                                          │
 │   tool call = (connected_account_id, operation, arguments)               │
 │   ✔ sees the account handle                                            │
@@ -121,7 +121,7 @@ An additional finding worth recording: Nango's refresh daemon runs **at least on
                                │  per-call capability (single-tool scope)
                                ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ LITEPSM DAEMON  — the only credential decryption authority               │
+│ LITESPM DAEMON  — the only credential decryption authority               │
 │                                                                          │
 │  1. authorize      plugin ∈ grant list? scope covers this operation?      │
 │  2. pin            URL derived from the toolkit's base URL, never args   │
@@ -255,7 +255,7 @@ Sources actually fetched during this research:
 
 ## 8. Status and next steps
 
-**Implemented since this design record:** `internal/connector` exists (manifest, executor, egress, lifecycle, grant store, redaction — see ARCH/24 §22) implementing local proxy execution with vault-backed grants. What remains deferred is catalog promotion: no portable `connector` rows ship in the catalog (5814 rows carry only `mcp`/`skill`/`plugin`), and no ingestion adapter produces them (ARCH/26 §3.4.1, §7 bar: portable format + ingestion adapter + real data).
+**Not implemented:** no `internal/connector` package exists. An earlier local execution core (manifest, executor, egress, lifecycle, grant store, redaction — see ARCH/24 §22) was removed as unreachable code: it had no production importer and no wiring path, so local proxy execution with vault-backed grants is unbuilt and this document remains a design record only. Catalog promotion is also deferred: no portable `connector` rows ship in the catalog (5814 rows carry only `mcp`/`skill`/`plugin`), and no ingestion adapter produces them (ARCH/26 §3.4.1, §7 bar: portable format + ingestion adapter + real data).
 
 **Before implementation, in order:**
 

@@ -1,12 +1,12 @@
 package source
 
 import (
-	"github.com/sarv-projects/litepsm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/domain"
 )
 
 // sources.go — the checked-in registry of upstream sources.
 //
-// This is the "add to registry" surface: every upstream marketplace LitePSM
+// This is the "add to registry" surface: every upstream marketplace LiteSPM
 // knows how to ingest is listed here with its canonical SourceID, publisher,
 // repository, manifest path(s), and manifest format. Adapters use it as a
 // fallback for publisher attribution when a manifest carries no owner.
