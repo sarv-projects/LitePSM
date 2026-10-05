@@ -1,7 +1,7 @@
 # Catalog Builder, Release Architecture & Search
 
 > **Honesty note (updated 2026-10-05).** Sections 1 and 2 describe a target output shape that the
-> builder only partially produces, and the live origin does not yet serve it.
+> builder only partially produces; the live origin serves the four-file tree they specify.
 >
 > *   `CompileRelease` emits exactly four files: `v1/current.json` and
 >     `v1/releases/<id>/{listings,versions,manifest}.json`
@@ -11,10 +11,9 @@
 >     release from the dataset, owns the pointer, and — via `-materialize`, invoked by
 >     `scripts/deploy-pages.sh` — reproduces a released tree byte for byte.
 >     `test/catalog_e2e_test.go` syncs it end to end (build → serve → sync → search → offline
->     reload). **The live origin has not been re-published yet:** it still serves the legacy
->     pointer (`rel-2026-09-30-01`, no `schemaVersion`, a `manifestDigest` computed over
->     `catalog.json`), which the client now rejects fail-closed — so `catalog sync` against the
->     live origin fails until `scripts/deploy-pages.sh` output is uploaded.
+>     reload). **The live origin was re-published on 2026-10-05**: it serves the Go-built pointer
+>     (`rel-2026-10-05-01`, sequence 143, `schemaVersion` 1) and the release tree it digests, and
+>     `catalog sync` against it was verified from a clean data root (5,814 indexed).
 > *   The `_headers` cache policy in §4 **is** implemented — `scripts/deploy-pages.sh` writes it
 >     into the staging directory at deploy time. It is a build artifact under the gitignored
 >     `pages-dist/`, so it is absent from the source tree. §4 needs no correction.

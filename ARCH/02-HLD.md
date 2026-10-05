@@ -18,7 +18,7 @@ LiteSPM is bifurcated into two strictly isolated environments:
     │ Static Origin (Cloudflare Pages / Workers)                              │
     │ /v1/current.json (Pointer — live, HTTP 200)                             │
     │ /v1/releases/<id>/{listings,versions,manifest}.json (compiler layout;   │
-    │   NOT published today — live origin answers 404 for the release tree)   │
+    │   published live 2026-10-05 — rel-2026-10-05-01)                       │
     └────────────────────────────────────┬────────────────────────────────────┘
                                          │ HTTPS (Read-only, cached)
 ═════════════════════════════════════════╪══════════════════════════════════════════
@@ -64,7 +64,7 @@ LiteSPM is bifurcated into two strictly isolated environments:
                       └───────────────────────┘                 └───────────────────────┘
 ```
 
-> **Discovery-plane status.** The compiler (`internal/catalogbuild/compiler.go:101,117,150,172`) and the client (`internal/catalog/client.go:73,124,160`) agree on the `/v1/current.json` + `/v1/releases/<id>/{listings,versions,manifest}.json` layout, pinned by `TestReleasePathContractPinsDocumentedLayout` (`internal/catalog/catalog_test.go:217`). The live origin still serves **only** `/v1/current.json` (HTTP 200); `GET /v1/releases/rel-2026-09-30-01/manifest.json` answers **404**, so `litespm catalog sync` is `WIRED` **but broken at origin** ([STATUS.md](../STATUS.md) §2). The compiler emits exactly four files — there are no shards.
+> **Discovery-plane status.** The compiler (`internal/catalogbuild/compiler.go:101,117,150,172`) and the client (`internal/catalog/client.go:73,124,160`) agree on the `/v1/current.json` + `/v1/releases/<id>/{listings,versions,manifest}.json` layout, pinned by `TestReleasePathContractPinsDocumentedLayout` (`internal/catalog/catalog_test.go:217`). The live origin serves the **whole tree** (probe 2026-10-05: `/v1/current.json` and `/v1/releases/rel-2026-10-05-01/{manifest,listings,versions}.json` all 200, byte-identical to the committed release), so `litespm catalog sync` is `SHIPPED` ([STATUS.md](../STATUS.md) §2). The compiler emits exactly four files — there are no shards.
 
 ---
 
@@ -128,7 +128,7 @@ sequenceDiagram
     Shim-->>Host: MCP ToolResult: [{ id: "mcp:builtin:mcp-registry:postgres", ... }]
     Host-->>User: Displays search results
 
-    Note over Daemon,Origin: The only network path is the separate `litespm catalog sync`: GET /v1/current.json<br/>(200 today) then GET /v1/releases/&lt;id&gt;/manifest.json + listings.json<br/>(404 at the live origin — sync currently fails; STATUS §2).
+    Note over Daemon,Origin: The only network path is the separate `litespm catalog sync`: GET /v1/current.json<br/>then GET /v1/releases/&lt;id&gt;/manifest.json + listings.json<br/>(both 200 at the live origin — verified 2026-10-05; STATUS §2).
 
     User->>Host: "Install postgres"
     Host->>Shim: MCP tools/call: prepare_install(id="mcp:builtin:mcp-registry:postgres")
@@ -140,7 +140,7 @@ sequenceDiagram
     Shim-->>Host: MCP ToolResult: InstallPlan summary + planId
 ```
 
-> **Status of §4.1.** `search_catalog` → `catalog.search` (local index) and `prepare_install` → `resolver.prepare_plan` (persisted plan + `planHash`) are `WIRED`. `litespm catalog sync` is `WIRED` **but broken at origin** (release tree 404). No shard/`index.json` path exists — shards are `DESIGNED` ([STATUS.md](../STATUS.md) §2; `ARCH/18`).
+> **Status of §4.1.** `search_catalog` → `catalog.search` (local index) and `prepare_install` → `resolver.prepare_plan` (persisted plan + `planHash`) are `WIRED`. `litespm catalog sync` is `SHIPPED` — it succeeds against the live origin (verified 2026-10-05). No shard/`index.json` path exists — shards are `DESIGNED` ([STATUS.md](../STATUS.md) §2; `ARCH/18`).
 
 ### 4.2 Plan Approval & Transactional Installation
 

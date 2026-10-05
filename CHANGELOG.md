@@ -21,9 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the release, validates `schemaVersion` and release-id path safety, caches
   served bytes verbatim (pointer last, as a commit marker), and re-verifies
   pointer/manifest/listings digests on every offline cache load.
+- **Published catalog release tree.** The live origin serves release
+  `rel-2026-10-05-01` (sequence 143, 5,814 capabilities) byte-identically to the
+  committed release, with the pointer digest matching the served manifest;
+  `litespm catalog sync` and `search` were verified against it from a clean data
+  root with no registry override.
 
 ### Changed
 
+- **Deployment renamed to `litespm`.** The live Cloudflare Worker moved from the
+  pre-rebrand `litepsm` hostname to
+  `https://litespm.sarveshbh-2022.workers.dev`; `DefaultRegistryURL`, the site
+  default, npm docs and `wrangler.toml` were updated together, and the stale
+  Pages-only `pages_build_output_dir` field was dropped (this is a Worker). The
+  legacy `litepsm` Worker still serves the same frozen release and should be
+  retired.
 - **Rebranded to LiteSPM.** The product, CLI (`cmd/litespm`), Go module
   (`github.com/sarv-projects/litespm`), npm package (`litespm`), and host bridge
   key were renamed from the former identifiers. Upgrades adopt the previous data
@@ -75,5 +87,5 @@ Verified remediation phases 0–3:
 - The install path cannot execute end-to-end until the daemon supplies an
   artifact source; `invoke_capability` and related tools return JSON-RPC
   `-32601`. See `STATUS.md` and `REMEDIATION-PLAN.md` (finding M3).
-- `catalog sync` returns 404 against the live origin until the catalog release
-  tree is published.
+- The catalog release tree and pointer are published, and `catalog sync`
+  succeeds against the live origin (2026-10-05); releases remain unsigned.

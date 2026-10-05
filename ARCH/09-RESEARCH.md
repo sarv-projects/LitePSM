@@ -77,7 +77,7 @@ Upstream specifications, client interfaces, and protocol revisions evolve rapidl
 *   **The Update Framework (TUF):** `https://theupdateframework.io/`
     *   Industry standard for secure software update systems, offering proven protection against key compromise, rollback attacks, and freeze attacks.
     *   *Decision:* When signed catalog releases are introduced, LiteSPM will adopt TUF rather than inventing a custom signature envelope.
-    *   **In-repo status:** `DESIGNED`. Nothing TUF-shaped exists; [ARCH/36 §4](36-ENTERPRISE-POLICY-AND-AUDIT.md) is the design record, and it is explicitly downstream of publishing a release tree ([ARCH/31 §12](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md)). The live origin currently 404s the release tree ([STATUS.md](../STATUS.md) §2), so no catalog trust root can be layered on yet.
+    *   **In-repo status:** `DESIGNED`. Nothing TUF-shaped exists; [ARCH/36 §4](36-ENTERPRISE-POLICY-AND-AUDIT.md) is the design record, and it is explicitly downstream of publishing a release tree ([ARCH/31 §12](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md)). The release tree **is** published and serves live (verified 2026-10-05, [STATUS.md](../STATUS.md) §2), but it is unsigned, so no catalog trust root can be layered on yet.
 *   **Sigstore / Cosign:** `https://docs.sigstore.dev/cosign/`
     *   Standard for keyless and key-based artifact signing and verification.
     *   *Decision:* LiteSPM supports Cosign artifact digest verification where upstreams publish verification evidence.

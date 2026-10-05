@@ -10,5 +10,5 @@
 //
 // Trailing slashes are stripped so callers can append paths directly.
 export const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL || "https://litepsm.sarveshbh-2022.workers.dev"
+  process.env.NEXT_PUBLIC_SITE_URL || "https://litespm.sarveshbh-2022.workers.dev"
 ).replace(/\/+$/, "");

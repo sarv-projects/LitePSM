@@ -17,8 +17,10 @@ import (
 // turns every catalog fetch into a DNS failure instead of a reportable error.
 // registry.litespm.dev is the intended home once that domain is registered and
 // the catalog release tree is published there; until then this is the
-// deployment origin serving /v1/current.json.
-const DefaultRegistryURL = "https://litepsm.sarveshbh-2022.workers.dev"
+// deployment origin serving /v1/current.json. Renamed from the pre-rebrand
+// `litepsm` Worker on 2026-10-05, once the new origin was live and verified
+// (release rel-2026-10-05-01, sequence 143).
+const DefaultRegistryURL = "https://litespm.sarveshbh-2022.workers.dev"
 
 // CatalogConfig governs remote catalog synchronization.
 type CatalogConfig struct {

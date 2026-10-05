@@ -6,12 +6,13 @@ coverage. It is a *read-only public site* — it never talks to the local daemon
 vault.
 
 Capability state: **`WIRED`** for the static marketplace, and the deployed catalog data is
-**`SHIPPED`** — see [STATUS.md](../STATUS.md) §1–§2. `litespm catalog sync` against the **live**
-origin is still rejected fail-closed (the live origin serves only the legacy pointer — no
-`schemaVersion`, no release tree), even though the release tree now builds and tests green in-repo
-(`litespm catalog build`); the site and the binary can therefore still show different catalog
-files until the origin is re-published via `scripts/deploy-pages.sh`:
-[ARCH/31 §4.2](../ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin).
+Capability state: **`SHIPPED`** for the static marketplace and the published catalog — see
+[STATUS.md](../STATUS.md) §1–§2. The site and the binary now read the same origin:
+`https://litespm.sarveshbh-2022.workers.dev` serves both, and `litespm catalog sync` was verified
+against it from a clean data root on 2026-10-05 (release `rel-2026-10-05-01`, sequence 143, 5,814
+indexed). The earlier "the sync path is dead at the origin" defect
+([ARCH/31 §4.2](../ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin))
+is closed.
 
 ---
 
@@ -87,7 +88,9 @@ adjudicated** ([STATUS.md](../STATUS.md) §2).
   and materializes the released tree instead.
 - `scripts/deploy-pages.sh` → **`pages-dist/`** = `out/` + `_headers` + the byte-for-byte
   materialized release tree under `v1/`. Gitignored.
-- `wrangler.toml` (`name = "litepsm"`, `pages_build_output_dir = "pages-dist"`,
+- `wrangler.toml` (`name = "litespm"`, `[assets] directory = "./pages-dist"`,
+  `not_found_handling = "404-page"`) — the deployment name is the hostname and now matches the
+  rebrand; the legacy `litepsm` Worker still serves the same frozen release until retired
   `[assets] directory = "./pages-dist"`) — the deployment name is the hostname and is deliberately
   **not** rebranded ([REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md) `M1`).
 - Canonical origin comes from `NEXT_PUBLIC_SITE_URL` at build time, defaulting to the live
@@ -117,9 +120,6 @@ The site is public static content. Binding rules:
 - Catalog freshness is not verified anywhere: no CI step runs the Python builder, so
   `data/catalog.json` can go stale while every build stays green (row counts are printed by the
   builders, not asserted against each other).
-- The site renders catalog data the Go client cannot sync against **at the live origin** (the
-  release tree builds and tests in-repo, but the origin still serves the legacy pointer and no
-  tree — [STATUS.md](../STATUS.md) §2, pending a `deploy-pages.sh` upload).
 - UI stacks described elsewhere in prose do not all exist here: the dependency list contains no
   Radix packages — the components use plain React, Tailwind and `lucide-react` icons.
 - `next build` in CI proves the export compiles; it does not prove the deployed origin serves it

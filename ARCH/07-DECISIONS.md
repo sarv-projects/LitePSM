@@ -21,11 +21,13 @@ Downstream credentials (API keys, OAuth tokens) reside in the operating system's
 The public catalog is deployed as static, immutable JSON files via Cloudflare Pages from a private GitHub repository. No application server, database, or worker is required for public discovery.
 
 > *Implementation note (2026-10-05):* the live origin is a Cloudflare **Worker** static-assets
-> deployment (`wrangler.toml`, `pages_build_output_dir = "pages-dist"`) at
-> `https://litepsm.sarveshbh-2022.workers.dev`, packaged by `scripts/deploy-pages.sh`. The
+> deployment (`wrangler.toml`, `[assets] directory = "./pages-dist"`) at
+> `https://litespm.sarveshbh-2022.workers.dev`, packaged by `scripts/deploy-pages.sh`. The
 > "static immutable JSON, no application server" half of the decision holds; the "Cloudflare Pages"
-> product name does not match the deployment. Recorded so the migration to Pages (or a rename)
-> is a deliberate change.
+> product name does not match the deployment. A prior revision of this note recorded the origin as
+> the pre-rebrand `litepsm` Worker and flagged the rename as a deliberate pending change; that
+> migration was completed on 2026-10-05 (new Worker deployed and verified serving release
+> `rel-2026-10-05-01`, all origin references updated together — `REMEDIATION-PLAN.md` M1).
 
 ### D-005: Source Federation over Monolithic Rewriting
 LiteSPM aggregates documented upstream feeds and Git marketplace manifests. It preserves original source attribution and upstream identifiers rather than attempting to hand-curate or rewrite thousands of packages.

@@ -52,7 +52,7 @@ litespm
 ```
 1.  **Compiled-In Advisories:** The wizard prints advisory metadata from strings compiled into the
     binary (`cmd/litespm/wizard.go:138-143`). It performs **no** `/v1/current.json` fetch at setup
-    time; the only network fetch path is `catalog sync`, which is currently broken at the origin
+    time; the only network fetch path is `catalog sync`, which succeeds against the live origin
     ([STATUS.md](STATUS.md) §2).
 2.  **Select Your Agent:** Choose your agent from the interactive dropdown (for Claude Code, Codex, OpenCode, and many more).
 3.  **Auto-Detection:** LiteSPM scans your filesystem for the agent's configuration file.

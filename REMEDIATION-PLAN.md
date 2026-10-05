@@ -57,7 +57,7 @@ Falsified then fixed and re-verified: **X1** diskspace build tags narrowed (netb
 
 | ID | Defect | Status |
 |---|---|---|
-| M1 | `wrangler.toml` worker name vs live origin | FIXED — the **deployment** name stays `litepsm` (it determines the `*.workers.dev` hostname; the product brand is LiteSPM) + explanatory comment; origins unchanged |
+| M1 | `wrangler.toml` worker name vs live origin | SUPERSEDED (2026-10-05) — originally FIXED by keeping the **deployment** name `litepsm`; the repository later completed the coordinated rename to `litespm`: new Worker deployed and verified serving `rel-2026-10-05-01`, `wrangler.toml`/`DefaultRegistryURL`/`site.ts`/npm/docs updated in one change. The legacy `litepsm` Worker still serves the same frozen release until retired |
 | M2 | Rename dropped legacy state/config/env/host-key (upgrade data loss, duplicate bridge) | FIXED — legacy root adoption (non-destructive), `LITEPSM_*` env fallback, legacy project config, host bridge-key adoption/removal; 17 hermetic tests |
 | M3 | `install.execute` cannot complete (no artifact source) | OPEN → Phase 4 (marked PARTIAL). **Re-confirmed 2026-10-05 with a call-site citation:** `internal/install/engine.go:204` rejects an `Execute` with neither `TreeSource` nor `ArchiveSource`; the daemon handler at `cmd/litespm/main.go:1420-1426` supplies neither; `internal/bridge/shim.go:349` (`request_install`) calls that handler. An agent therefore cannot install anything via `/marketplace`. Highest-value single fix in the repository. |
 | m1 | dead `/explore/?sort=newest` link | FIXED |

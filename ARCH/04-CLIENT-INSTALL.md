@@ -214,7 +214,7 @@ What actually happens today:
 *   The setup wizard prints **compiled-in** advisory metadata only — no HTTP request
     (`cmd/litespm/wizard.go:138-143`).
 *   In-agent `/marketplace` reads resolve against the **local catalog index**, refreshed only by an
-    explicit `litespm catalog sync` (which is currently broken at the origin — STATUS §2).
+    explicit `litespm catalog sync` (which succeeds against the live origin — STATUS §2).
 *   `litespm update` / `self-update` updates the **binary** (`internal/update`, SHA-256 only, no
     signature check), not installed capabilities.
 

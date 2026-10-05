@@ -1,15 +1,21 @@
 # A Cloudflare Worker's `name` sets its `<name>.<account>.workers.dev` hostname.
-# The live origin is https://litepsm.sarveshbh-2022.workers.dev, and the client,
+# The live origin is https://litespm.sarveshbh-2022.workers.dev, and the client,
 # site and npm docs all target it (internal/config/config.go, web/lib/site.ts,
-# npm/README.md). The product is branded LiteSPM, but the deployment is still
-# `litepsm`: renaming it would move the hostname and break every configured
-# origin. Renaming the deployment is a separate, coordinated migration that
-# must change this name and all three origin references together.
-name = "litepsm"
+# npm/README.md).
+#
+# This name was `litepsm` until 2026-10-05. The rebrand (ff0a1db) had
+# deliberately left the *deployment* name on the pre-rename spelling to avoid
+# moving the origin; the migration was then completed explicitly — the new
+# Worker was deployed, its origin verified (release rel-2026-10-05-01, sequence
+# 143, byte-identical to the committed release), and every origin reference was
+# updated in one change. The legacy `litepsm` Worker still serves the same
+# frozen release; retire it once nothing points at it.
+name = "litespm"
 compatibility_date = "2024-09-23"
-pages_build_output_dir = "pages-dist"
 
-# Support for Cloudflare Workers Static Assets
+# Cloudflare Workers Static Assets. `pages_build_output_dir` was removed: it is
+# a Pages-only field, and its presence made `wrangler deploy` warn that this was
+# a "Pages project" on every build. This deployment is a Worker.
 [assets]
 directory = "./pages-dist"
 not_found_handling = "404-page"

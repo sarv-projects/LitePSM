@@ -11,7 +11,7 @@
 
 Public discovery metadata is distributed as immutable HTTPS static JSON served from a Cloudflare
 Worker static-assets deployment (`wrangler.toml`); the origin the client defaults to is
-`https://litepsm.sarveshbh-2022.workers.dev` (`internal/config/config.go:21`).
+`https://litespm.sarveshbh-2022.workers.dev` (`internal/config/config.go:24`).
 
 ### 1.1 Endpoint inventory — what exists, what reads it, what the origin serves
 
@@ -27,16 +27,17 @@ Worker static-assets deployment (`wrangler.toml`); the origin the client default
 | `/v1/releases/{id}/items/{encoded-id}.json` | — | — | **`DESIGNED`** (ARCH/18 §1–§2); not emitted |
 
 `litespm catalog sync` reads exactly the first three paths in order (`internal/catalog/client.go:92-193`).
-Against the live origin it fails today:
+Against the live origin it succeeds today (probe 2026-10-05):
 
 ```text
 200  /v1/current.json
-404  /v1/releases/rel-2026-09-30-01/manifest.json
-404  /v1/releases/rel-2026-09-30-01/listings.json
+200  /v1/releases/rel-2026-10-05-01/manifest.json
+200  /v1/releases/rel-2026-10-05-01/listings.json
 ```
 
-So the sync path is `WIRED` **and broken at the origin** ([STATUS.md](../STATUS.md) §2,
-[ARCH/31 §4.2](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin)).
+So the sync path is `SHIPPED` ([STATUS.md](../STATUS.md) §2,
+[ARCH/31 §4.2](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin)
+— the defect it records was closed on 2026-10-05).
 What the current code reads and writes is the `/v1/releases/<id>/{manifest,listings,versions}.json`
 layout — `internal/catalog/client.go` and `internal/catalogbuild/compiler.go` agree on it, and
 `TestReleasePathContractPinsDocumentedLayout` (`internal/catalog/catalog_test.go:217`) pins both the
@@ -78,8 +79,8 @@ Shape as typed by `catalogbuild.CurrentPointer` (`internal/catalogbuild/compiler
     (`scripts/deploy-pages.sh:31-42`).
 *   **Integrity Guarantee:** the client verifies `listings.json` against `manifest.json` before
     accepting it (`internal/catalog/client.go:153-189`).
-*   **Availability:** built in-repo (`litespm catalog build`, end-to-end tested) but **not
-    published** — the live origin still returns 404 for the whole tree (STATUS §2).
+*   **Availability:** built in-repo (`litespm catalog build`, end-to-end tested) and
+    **published** — the live origin serves the whole tree (verified 2026-10-05, STATUS §2).
 
 ---
 

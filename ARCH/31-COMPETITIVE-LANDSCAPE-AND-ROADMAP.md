@@ -115,17 +115,21 @@ and `/v1/releases/<id>/listings.json`. Live probes against the configured origin
 404  /v1/releases/rel-2026-09-30-01/listings.json
 ```
 
-`litespm catalog sync` therefore cannot succeed against production. `web/public/v1/current.json`
-exists and is served, but the release tree it points at is not published at the origin. (The client's release
+`litespm catalog sync` therefore could not succeed against production. `web/public/v1/current.json`
+exists and is served, but the release tree it points at was not published at the origin. (The client's release
 path was corrected from the un-namespaced `releases/<id>/…` to `/v1/releases/<id>/…` in the
 working tree — [ARCH/06 §1.1](06-API-CONTRACTS.md#11-endpoint-inventory--what-exists-what-reads-it-what-the-origin-serves).
-The 404 is unchanged: neither form is published, and the origin was re-probed on 2026-10-05.)
+The 404 was unchanged in either form when the origin was re-probed on 2026-10-05; it was closed
+later the same day — see the update below.)
 
 > **Update (2026-10-05, later).** The tree now *builds* in-repo: `litespm catalog build` cuts
 > `rel-2026-10-05-01` (sequence 143) from the committed dataset, reproduces it byte-for-byte via
 > `-materialize` (which `scripts/deploy-pages.sh` runs), and an automated end-to-end test
-> (`test/catalog_e2e_test.go`) builds → serves → syncs → searches it. The **live origin has not
-> been re-published**, so every live observation above still holds until `pages-dist/` is uploaded.
+> (`test/catalog_e2e_test.go`) builds → serves → syncs → searches it. **The origin was then
+> re-published the same day** and serves the Go-built pointer + tree (`rel-2026-10-05-01`, all
+> four files 200, byte-identical to the committed release); `catalog sync` succeeds against it.
+> The defect in §4.2 is closed. The same-day rename of the deployment from `litepsm` to `litespm`
+> is recorded in `REMEDIATION-PLAN.md` M1.
 
 **Three further mismatches in the same file, all verified** (these describe the *live* pointer;
 the committed `web/public/v1/current.json` is now Go-built and no longer has them):
@@ -376,7 +380,7 @@ gate is always a real user workflow — never "files exist", never "tests exist"
 
 | Phase | Objective | Gate (a real workflow must pass) |
 |---|---|---|
-| **0 — Truth** | Close §4.1–4.4; apply §8 (R1–R12); land `LICENSE`/`NOTICE`; reconcile D4 | `litespm catalog sync` succeeds against the live origin; an agent's `/marketplace` install completes; no document claims a state its code lacks |
+| **0 — Truth** | Close §4.1–4.4; apply §8 (R1–R12); land `LICENSE`/`NOTICE`; reconcile D4 | `litespm catalog sync` succeeds against the live origin (**done 2026-10-05**); an agent's `/marketplace` install completes (**open**); no document claims a state its code lacks |
 | **1 — Reproducibility** | `litespm.yml` + `litespm.lock`; frozen install; deployment ledger; three-way reconcile | `litespm install --frozen` reproduces byte-identical CAS trees on a clean machine; a hand-edited owned config node produces a conflict, not a silent overwrite |
 | **2 — Runtime** | Capability registry; real `invoke`/`get`/`cancel`; deadlines, cancellation, concurrency; provider rows persisted; health + circuit breaker | A tool called through the Bridge reaches a provider, respects a deadline, and returns a receipt — with the `providers` table populated by non-test code (closes m4) |
 | **3 — Evidence** | Static scan; canonical identity graph; compatibility evidence; Evidence Card; `policy explain` | `litespm search postgres` shows one canonical entry with its sources and evidence states, and every deny names the rule that caused it |

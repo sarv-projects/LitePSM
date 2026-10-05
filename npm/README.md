@@ -59,9 +59,9 @@ checks it against the published SHA-256 checksums — aborting on a mismatch, bu
 **warning and proceeding unverified** if the manifest has no entry for your
 platform (see [`SECURITY.md`](https://github.com/sarv-projects/LiteSPM/blob/main/SECURITY.md)).
 
-> **Honest status.** The catalog client and the install path are not end-to-end
-> today: `litespm catalog sync` 404s against the live origin, and `litespm install`
-> uses a synthetic local package because remote resolve/verify is not wired. See
+> **Honest status.** The catalog is live end-to-end: `litespm catalog sync` fetches the published
+> release from the origin and indexes it. The install path is still not end-to-end — `litespm
+> install` uses a synthetic local package because remote resolve/verify is not wired. See
 > [`STATUS.md`](https://github.com/sarv-projects/LiteSPM/blob/main/STATUS.md).
 
 ## Quickstart
@@ -124,7 +124,7 @@ Inside a configured agent, just type:
 | `litespm agent [list\|resolve <id>]` | List ACP agents / resolve a launch spec |
 | `litespm skills [add\|list\|update\|remove]` | Manage installed `SKILL.md` skills |
 | `litespm doctor [--repair] [--yes]` | Health checks and repairs |
-| `litespm catalog sync` | Refresh the local catalog cache — **currently 404s at the live origin** |
+| `litespm catalog sync` | Refresh the local catalog cache from the published release |
 | `litespm daemon serve` | Start the background supervisor and IPC engine |
 | `litespm self-update [--force]` | Update the native binary |
 
@@ -168,7 +168,7 @@ processes. Injecting stored secrets into a provider's environment at launch is
 
 - **Repository:** https://github.com/sarv-projects/LiteSPM
 - **Issues:** https://github.com/sarv-projects/LiteSPM/issues
-- **Catalog API:** https://litepsm.sarveshbh-2022.workers.dev/v1/current.json
+- **Catalog API:** https://litespm.sarveshbh-2022.workers.dev/v1/current.json
 
 ## License
 

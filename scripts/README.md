@@ -61,9 +61,11 @@ a script.
   the command fails closed if the pointer is missing or not a Go-built pointer) +
   `_headers` (immutable `/v1/releases/*`, no-cache `/v1/current.json`, CORS, `nosniff`).
   `pages-dist/` is gitignored.
-- **Who runs it.** Manual only. No workflow references it. `wrangler.toml`
-  (`pages_build_output_dir`, `[assets] directory`) points at `pages-dist/`, so **uploading to the
-  live origin is not automated anywhere in this repository** — it must be done by hand.
+- **Who runs it.** No workflow in this repository references it, and it only packages — the
+  `wrangler.toml` (`name = "litespm"`, `[assets] directory = "./pages-dist"`) upload is a separate
+  step. The origin was published and verified 2026-10-05 (release `rel-2026-10-05-01`); whether
+  subsequent uploads are triggered by an external Cloudflare build or by hand is outside this
+  repository's control.
 - **Truthfulness gaps.** It packages, it does not deploy. It reproduces the released pointer but
   never cuts a new release: refreshing the catalog is `python3 scripts/build_full_catalog.py`
   (dataset) then `go run ./cmd/litespm catalog build --out web/public` (pointer + tree), and only

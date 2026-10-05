@@ -64,8 +64,8 @@ protocol version and the string `✓ 6 Verified Host Adapters Compiled & Availab
     (`internal/catalog/client.go:20-26`) decodes only `releaseId`, `sequence`,
     `itemCount` and `updated`. The only network fetch of `/v1/current.json` is
     `catalog sync` (`Client.Sync` → `FetchCurrent`, `internal/catalog/client.go:196-197`
-    and `91-101`), which is `WIRED` but **broken at the live origin**: the
-    pointer answers 200 while the release tree it points at 404s (`STATUS.md` §2).
+    and `91-101`), which is `SHIPPED`: the pointer and the release tree it names both answer 200
+    at the live origin (verified 2026-10-05, `STATUS.md` §2).
 *   **Zero local mutation.** Reading advisory metadata (when it is wired) is a
     passive read; it may tell the user a newer client binary is required. Config
     parsing and mutation are performed exclusively by the compiled-in binary, so
