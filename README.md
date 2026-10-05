@@ -27,7 +27,7 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 |---|---|---|---|
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `DESIGNED` | `ARCH/00`–`ARCH/37` exist. `ARCH/24` is an aspirational inventory, not a compiled one; `ARCH/18` specifies an output tree (`index.json`, `shards/`, `items/`) that the compiler does not emit (those outputs are labelled `DESIGNED`) |
 | **Phase B** | **Foundations, Storage & Local IPC** | `TESTED` | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL, 22 tables), `internal/ipc` (named pipes / Unix sockets). Contract tests bind; see [STATUS.md](STATUS.md) §1 |
-| **Phase C** | **Static Catalog & Discovery Plane** | `IMPLEMENTED`; `catalog sync` `WIRED` **but broken at origin** | `internal/source` (8 adapters) and `internal/catalogbuild` are `IMPLEMENTED` with test-only callers; `internal/catalog` is `WIRED` through `litespm catalog sync`. **The release tree is never published**, so sync returns 404 against the live origin — [ARCH/31 §4.2](ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin) |
+| **Phase C** | **Static Catalog & Discovery Plane** | `TESTED` for build+sync; `catalog sync` `WIRED` **but broken at live origin** | `internal/catalogbuild` + `litespm catalog build` are `TESTED` (real-dataset + end-to-end build→serve→sync→search tests); `internal/catalog` is `WIRED` through `litespm catalog sync`, whose automated E2E is green against the deployable tree. **The live origin has not been re-published** — it still serves only the legacy pointer (no `schemaVersion`, no tree), so sync fails closed there until `scripts/deploy-pages.sh` output is uploaded — [ARCH/31 §4.2](ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin) |
 | **Phase D** | **Safe Extraction & Skill Store** | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | `internal/resolver` and `internal/skills` are reached from production paths and `internal/artifact` is test-covered ([STATUS.md](STATUS.md) §1/§3); `internal/install` is `IMPLEMENTED`. The daemon's `install.execute` supplies no artifact source, so an agent-driven install cannot complete — [ARCH/31 §4.1](ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#41-the-agent-facing-install-path-cannot-complete--wired-is-false) |
 | **Phase E** | **Process Supervision, Bridge & Host Adapters** | `WIRED` for hosts; `IMPLEMENTED` for provider runtime | 6 bespoke adapters + 44 generic BridgeTargets (50 total, `ARCH/30`) + 77 skill targets are registered. Provider autostart is inert: the `providers` table is never populated by non-test code (finding `m4`). See [STATUS.md](STATUS.md) §1/§4 |
 | **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | `WIRED` (secrets) / `IMPLEMENTED` (mcpclient, auth) | Dual-profile client, native OS keystores, OAuth PKCE loopback exist; the secrets vault is opened before serving (`WIRED`), but secrets are not injected at provider launch and `mcpclient` / `auth` have zero production importers — the `AuthBroker` currently has no consumer (finding 99), [STATUS.md](STATUS.md) §1/§4 |
@@ -35,7 +35,8 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | **Phase H** | **Release Engineering & Packaging** | `IMPLEMENTED` | Cross-platform builds, npm wrapper, CI checks. `self-update` completes only once a release publishes `litespm-*` assets (packaging P7) |
 | **Phase I** | **Golden Fixtures, Self-Update & Migrations** | `TESTED` for fixtures and migrations; self-update `WIRED` (unsigned) | Fixtures corpus and migration engine (forward apply + downgrade guard) are tested; `self-update` is fail-closed on SHA-256 with rollback. Release signing is not done — see [SECURITY.md](SECURITY.md). Per-row detail: [TODO.md](TODO.md) Phase I |
 
-**Not yet true of LiteSPM, and not claimed anywhere:** a published catalog release tree, an
+**Not yet true of LiteSPM, and not claimed anywhere:** a catalog release tree published **at the
+live origin** (the tree builds and tests in-repo; the origin upload is pending), an
 end-to-end agent-driven install, provider autostart, a project manifest + lockfile, signed releases
 or packages, runtime policy enforcement, and any isolation level beyond process supervision.
 
@@ -129,8 +130,8 @@ LiteSPM bifurcates system responsibilities between an untrusted public discovery
 2.  **Interactive TUI Wizard:** Running `litespm` launches an interactive terminal interface:
     *   **Compiled-In Adapters:** The wizard prints advisory metadata from strings compiled into the
         binary (`cmd/litespm/wizard.go:138-143`). It makes **no HTTP request** at setup time; the
-        `catalog sync` path is the only network fetch, and it is broken at the origin
-        ([STATUS.md](STATUS.md) §2).
+        `catalog sync` path is the only network fetch, and it fails closed at the live origin
+        (legacy pointer, no release tree — [STATUS.md](STATUS.md) §2).
     *   **Agent Selector Dropdown:** Select your agent (Cline, Pi Agent, Grok Build, Claude Code, Codex, OpenCode).
     *   **Automated Config Discovery:** LiteSPM scans platform-standard paths across Windows, macOS, and Linux.
     *   **Graceful Fallback:** If the file is not found, prompts the user to:

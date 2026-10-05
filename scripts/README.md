@@ -14,8 +14,8 @@ history is in [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md).
 |---|---|---|---|
 | `build-release.sh` | bash | **Release** (`.github/workflows/release.yml`, on `v*` tags) | Yes — `set -euo pipefail`, `go build` aborts |
 | `deploy-pages.sh` | bash | **Manual** (site packaging) | Yes — `set -euo pipefail` + explicit leak audit `exit 1` |
-| `build_full_catalog.py` | Python | **Manual** (deployed catalog producer) | **No content assertions** — aborts only if a fetch raises |
-| `gen_hosts_ts.go` | Go (`//go:build ignore`) | **Manual** (before catalog build) | Yes — `os.Exit(1)` on write failure |
+| `build_full_catalog.py` | Python | **Manual** (catalog dataset producer) | **No content assertions** — aborts only if a fetch raises; validation is fail-closed at release build time in Go |
+| `gen_hosts_ts.go` | Go (`//go:build ignore`) | **Manual** (before `build_full_catalog.py`) | Yes — `os.Exit(1)` on write failure |
 | `check_ci.py` | Python | **Manual** (status probe) | Yes by contract — exit `0` / `1` / `2` |
 | `check_headers.py` | Python | **Manual** (upstream research) | No — prints, never asserts |
 | `check_voltagent.py` | Python | **Manual** (upstream research) | No — prints, never asserts (network errors raise) |
@@ -47,30 +47,35 @@ a script.
 
 ## `deploy-pages.sh` — Cloudflare Pages packaging + leak audit
 
-- **Purpose.** Build the Next.js static export, stage a `pages-dist/` directory, write the `_headers`
-  CDN cache policy (`ARCH/18` §4), and audit the staged tree for source/secret leaks
-  (`ARCH/18` §5 strict allowlist).
+- **Purpose.** Build the Next.js static export, stage a `pages-dist/` directory, **materialize the
+  released catalog `/v1` tree with the Go builder**, write the `_headers` CDN cache policy
+  (`ARCH/18` §4), and audit the staged tree for source/secret leaks (`ARCH/18` §5 strict allowlist).
 - **Invocation.** `./scripts/deploy-pages.sh` from the repo root; optionally
   `NEXT_PUBLIC_SITE_URL=https://<origin> ./scripts/deploy-pages.sh`.
-- **Inputs.** `web/` (runs `npm ci || npm install`, then `npm run build`), `web/public/v1/current.json`.
-- **Outputs.** `pages-dist/` = copy of `web/out/` + `v1/current.json` (if the export lacks it) +
+- **Inputs.** `web/` (runs `npm ci || npm install`, then `npm run build`), and the released pointer
+  `web/public/v1/current.json` (must exist — it is the release the bundle reproduces).
+- **Outputs.** `pages-dist/` = copy of `web/out/` **with its exported `v1/` replaced** by
+  `go run ./cmd/litespm catalog build --materialize --out pages-dist`, which reproduces the
+  released pointer's id/sequence/createdAt and manifest **byte for byte** (release ids are
+  immutable in the CDN cache, so the deployed bytes must be exactly the bytes the pointer digests;
+  the command fails closed if the pointer is missing or not a Go-built pointer) +
   `_headers` (immutable `/v1/releases/*`, no-cache `/v1/current.json`, CORS, `nosniff`).
   `pages-dist/` is gitignored.
 - **Who runs it.** Manual only. No workflow references it. `wrangler.toml`
   (`pages_build_output_dir`, `[assets] directory`) points at `pages-dist/`, so **uploading to the
   live origin is not automated anywhere in this repository** — it must be done by hand.
-- **Truthfulness gaps.** It packages, it does not deploy. It never regenerates catalog data, so it
-  ships whatever `web/data/catalog.json` and `web/public/v1/current.json` were last committed. The
-  `npm ci || npm install` fallback hides a lockfile mismatch. Its forbidden-file `find` expression
-  rejects `.go`, `.env*`, `.pem`, `.key`, `.db`, `.sqlite*` and any `.ts` file, but cannot catch a
-  secret pasted into `.json`/`.html` — and because the script is manual, the audit has no CI
-  enforcement.
+- **Truthfulness gaps.** It packages, it does not deploy. It reproduces the released pointer but
+  never cuts a new release: refreshing the catalog is `python3 scripts/build_full_catalog.py`
+  (dataset) then `go run ./cmd/litespm catalog build --out web/public` (pointer + tree), and only
+  then this script. The `npm ci || npm install` fallback hides a lockfile mismatch. Its
+  forbidden-file `find` expression rejects `.go`, `.env*`, `.pem`, `.key`, `.db`, `.sqlite*` and any
+  `.ts` file, but cannot catch a secret pasted into `.json`/`.html` — and because the script is
+  manual, the audit has no CI enforcement.
 
-## `build_full_catalog.py` — **the deployed catalog producer**
+## `build_full_catalog.py` — **the catalog dataset producer**
 
-- **Purpose.** Fetch upstream markdown registries, normalize them into catalog rows, and publish the
-  data the public site serves. This — not the Go compiler — is what produces the live catalog
-  (`STATUS.md` §2, `ARCH/31` §4.3).
+- **Purpose.** Fetch upstream markdown registries, normalize them into catalog rows, and publish
+  the dataset the site and `litespm catalog build` consume (`STATUS.md` §2, `ARCH/31` §4.3).
 - **Invocation.** `python3 scripts/build_full_catalog.py` from the repo root (Python 3, stdlib only,
   network required).
 - **Inputs.** Upstream raw GitHub markdown: `punkpeye/awesome-mcp-servers`,
@@ -78,18 +83,24 @@ a script.
   and the two registries `web/data/hosts.json` + `web/data/skill-targets.json` (run
   `gen_hosts_ts.go` first — if they are unreadable the script warns and publishes **empty** host
   lists).
-- **Outputs.** `web/data/catalog.json` (**5,814 rows** as committed),
-  `web/public/v1/current.json` (pointer: `releaseId rel-2026-09-30-01`, `sequence 142`,
-  `itemCount 5814`, `manifestDigest`, `advisories`), `web/data/release.json` (the same pointer
-  bundled at build time).
+- **Outputs.** `web/data/catalog.json` (**5,814 rows** as committed; every listing id passes through
+  fail-closed `canonical_id()`, which strips query junk/apostrophes and maps everything outside
+  `[A-Za-z0-9_.~%+-]` to `-` — an earlier revision shipped six ids the domain grammar rejects) and
+  the dataset stats in `web/data/release.json` (`itemCount`, per-kind counts, `hostCompatibility`,
+  `datasetDigest`; the `releaseId`/`sequence`/`manifestDigest`/`createdAt` keys belong to
+  `litespm catalog build` and are preserved on merge). **It no longer writes
+  `web/public/v1/current.json`** — the served pointer and release tree have a single owner, the Go
+  builder.
 - **Who runs it.** Manual, by a maintainer, whenever the catalog should be refreshed. **CI never
   runs it** — so a green build says nothing about catalog freshness or correctness.
-- **Truthfulness gaps.** It is a second builder alongside `internal/catalogbuild.CompileRelease`,
-  which has no non-test caller: locked decision **D4 is contested** (`REMEDIATION-PLAN.md`).
-  It has **no content assertions** — no row-count floor, no schema/ID validation, no non-zero exit
-  when output is degraded; vendor-source fetch failures are printed as `skipped` and the build
-  continues. It aborts only if a primary fetch raises. By documented policy it publishes
-  `stars: null` on every row (no popularity figures are invented).
+- **Truthfulness gaps.** It shares the publication pipeline with `litespm catalog build`: Python
+  owns ingestion (dataset rows), Go owns publication (pointer, release id/sequence, digests). That
+  split is what the code does today, but locked decision **D4 is not yet adjudicated**
+  (`REMEDIATION-PLAN.md` is history; `STATUS.md` §2 tracks closing it). It has **no content
+  assertions** — no row-count floor, no schema/ID validation of its own (the fail-closed validation
+  lives in `catalogbuild.ParseDataset` and runs at release build time), no non-zero exit when output
+  is degraded; vendor-source fetch failures are printed as `skipped` and the build continues. By
+  documented policy it publishes `stars: null` on every row (no popularity figures are invented).
 
 ## `gen_hosts_ts.go` — host registries for the web data files
 
@@ -147,8 +158,11 @@ not ingestion: the ingestion path they informed is `build_full_catalog.py`.
   `bash -n scripts/*.sh` (syntax) and `python3 -m py_compile scripts/*.py` (byte-compile) only.
 - **Executed by the release workflow:** `build-release.sh`.
 - **Manual-only:** `deploy-pages.sh`, `build_full_catalog.py`, `gen_hosts_ts.go`, `check_ci.py`,
-  and the six research probes.
-- **Assertion-less (never fail on bad content):** `build_full_catalog.py` (no row/schema checks),
-  `fetch_test.py` (always exits 0), and the six research probes.
-- **The deployed catalog producer:** `build_full_catalog.py`, manually run — see the D4 note in
-  [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md) and `ARCH/31` §4.3.
+  and the six research probes. (Not a script, but the same workflow: the release/publication step
+  `go run ./cmd/litespm catalog build --out web/public` is also manual, and `deploy-pages.sh` runs
+  its `-materialize` form on every packaging run.)
+- **Assertion-less (never fail on bad content):** `build_full_catalog.py` (no row/schema checks of
+  its own — validation happens fail-closed later in `catalogbuild.ParseDataset` at release build
+  time), `fetch_test.py` (always exits 0), and the six research probes.
+- **The deployed catalog dataset producer:** `build_full_catalog.py`, manually run. Publication of
+  the pointer/release tree is `litespm catalog build`; see the D4 note above and `ARCH/31` §4.3.

@@ -78,7 +78,8 @@ Shape as typed by `catalogbuild.CurrentPointer` (`internal/catalogbuild/compiler
     (`scripts/deploy-pages.sh:31-42`).
 *   **Integrity Guarantee:** the client verifies `listings.json` against `manifest.json` before
     accepting it (`internal/catalog/client.go:153-189`).
-*   **Availability:** `DESIGNED` — never published; the origin returns 404 for the whole tree.
+*   **Availability:** built in-repo (`litespm catalog build`, end-to-end tested) but **not
+    published** — the live origin still returns 404 for the whole tree (STATUS §2).
 
 ---
 

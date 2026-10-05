@@ -116,12 +116,19 @@ and `/v1/releases/<id>/listings.json`. Live probes against the configured origin
 ```
 
 `litespm catalog sync` therefore cannot succeed against production. `web/public/v1/current.json`
-exists and is served, but the release tree it points at is never published. (The client's release
+exists and is served, but the release tree it points at is not published at the origin. (The client's release
 path was corrected from the un-namespaced `releases/<id>/…` to `/v1/releases/<id>/…` in the
 working tree — [ARCH/06 §1.1](06-API-CONTRACTS.md#11-endpoint-inventory--what-exists-what-reads-it-what-the-origin-serves).
 The 404 is unchanged: neither form is published, and the origin was re-probed on 2026-10-05.)
 
-**Three further mismatches in the same file, all verified:**
+> **Update (2026-10-05, later).** The tree now *builds* in-repo: `litespm catalog build` cuts
+> `rel-2026-10-05-01` (sequence 143) from the committed dataset, reproduces it byte-for-byte via
+> `-materialize` (which `scripts/deploy-pages.sh` runs), and an automated end-to-end test
+> (`test/catalog_e2e_test.go`) builds → serves → syncs → searches it. The **live origin has not
+> been re-published**, so every live observation above still holds until `pages-dist/` is uploaded.
+
+**Three further mismatches in the same file, all verified** (these describe the *live* pointer;
+the committed `web/public/v1/current.json` is now Go-built and no longer has them):
 
 1. `manifestDigest` in the live pointer is `sha256` of **`web/data/catalog.json`**
    (`scripts/build_full_catalog.py:556-561`), while `catalogbuild.CurrentPointer.ManifestDigest`
@@ -139,15 +146,25 @@ The 404 is unchanged: neither form is published, and the origin was re-probed on
 `REMEDIATION-PLAN.md` locks **D4: "Go `catalogbuild` is the single builder."** In the tree:
 
 *   `internal/catalogbuild/compiler.go` emits exactly four files: `v1/current.json` and
-    `v1/releases/<id>/{listings,versions,manifest}.json`. It has **no non-test caller** —
-    `grep -rn 'catalogbuild\.'` outside its own package finds only type references from
-    `internal/catalog/client.go` and three test call sites. It publishes nothing.
+    `v1/releases/<id>/{listings,versions,manifest}.json`. At the time of the comparison it had
+    **no non-test caller** — `grep -rn 'catalogbuild\.'` outside its own package found only type
+    references from `internal/catalog/client.go` and three test call sites — and published nothing.
 *   `scripts/build_full_catalog.py` is what actually produces the deployed catalog:
     `web/data/catalog.json` (the ~3.4 MB blob the web app bundles), `web/public/v1/current.json`,
     and `web/data/release.json`. It honours `LITESPM_RELEASE_ID`.
 
 Either D4 is honoured (delete the Python builder, wire the Go one, publish the release tree) or D4
 is amended. Leaving both while calling the Go one canonical means the canonical builder is dead code.
+
+> **Update (2026-10-05, later).** The contradiction has been reduced to a *split*, not resolved as
+> a decision: `internal/catalogbuild` now has a non-test caller (`litespm catalog build` in
+> `cmd/litespm/main.go`), which owns the served pointer, the release id/sequence, and the release
+> tree; `scripts/build_full_catalog.py` was narrowed to dataset ingestion (`web/data/catalog.json`
+> + stats in `web/data/release.json` — single writer per key, ids funnelled through fail-closed
+> `canonical_id()`; its `LITESPM_RELEASE_ID` override was removed with the pointer write). The
+> Python builder is no longer a second *release* builder and no longer
+> writes `web/public/v1/*`. **D4 itself is still unadjudicated** — the split needs to be accepted
+> or overruled (`STATUS.md` §2).
 
 ### 4.4 `ARCH/18` specifies an output tree the compiler does not produce
 

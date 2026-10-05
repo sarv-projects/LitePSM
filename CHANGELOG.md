@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`litespm catalog build`.** Converts the committed dataset into the static
+  `/v1` release tree (`manifest.json`, `listings.json`, `versions.json`) and
+  owns the served pointer `web/public/v1/current.json`: release ids derive per
+  day with a `-NN` suffix, sequences advance from the released pointer, reused
+  release ids and non-advancing sequences fail closed (release paths are
+  CDN-immutable), and `-materialize` reproduces a released tree byte for byte —
+  `scripts/deploy-pages.sh` uses it for every packaging run.
+- **Catalog client integrity hardening.** `catalog sync` now verifies that the
+  pointer's `manifestDigest` matches the served manifest bytes before trusting
+  the release, validates `schemaVersion` and release-id path safety, caches
+  served bytes verbatim (pointer last, as a commit marker), and re-verifies
+  pointer/manifest/listings digests on every offline cache load.
+
 ### Changed
 
 - **Rebranded to LiteSPM.** The product, CLI (`cmd/litespm`), Go module
@@ -20,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module counts were corrected.
 
 ### Fixed
+
+- **JSON canonicalization numbers.** `CanonicalizeJSON` formatted numbers with
+  Go's `'g'` float style, turning every file size ≥ 10⁶ into scientific
+  notation (`4.900491e06`) — valid JSON, but not the integer a release
+  manifest declares, so the builder's own manifest could not be decoded back
+  into its `int64` size fields. It now follows RFC 8785 (ECMAScript
+  `Number::toString`) exactly, with range-boundary tests.
+- **Catalog dataset ids.** `scripts/build_full_catalog.py` normalizes listing
+  ids through fail-closed `canonical_id()` (query junk, apostrophes, and
+  characters outside the domain grammar map to `-`); the committed dataset
+  shipped six ids the domain grammar rejects and now has none.
 
 Verified remediation phases 0–3:
 

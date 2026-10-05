@@ -28,6 +28,9 @@ Thumbs.db
 web/node_modules/
 web/.next/
 web/out/
+# Built by `litespm catalog build --out web/public` at release/deploy time;
+# the committed artifact is the pointer web/public/v1/current.json only.
+web/public/v1/releases/
 pages-dist/
 *.tsbuildinfo
 __pycache__/

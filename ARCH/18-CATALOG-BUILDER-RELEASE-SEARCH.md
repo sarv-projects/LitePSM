@@ -1,30 +1,38 @@
 # Catalog Builder, Release Architecture & Search
 
-> **Honesty note (added 2026-10-05).** Sections 1, 2, and 4 of this document describe a target
-> output shape that the current builder does **not** produce, and that is not published.
+> **Honesty note (updated 2026-10-05).** Sections 1 and 2 describe a target output shape that the
+> builder only partially produces, and the live origin does not yet serve it.
 >
 > *   `CompileRelease` emits exactly four files: `v1/current.json` and
 >     `v1/releases/<id>/{listings,versions,manifest}.json`
->     (`internal/catalogbuild/compiler.go:102,118,151,172`). It does **not** emit `index.json`,
+>     (`internal/catalogbuild/compiler.go`). It does **not** emit `index.json`,
 >     `shards/<kind>/<category>.json`, `items/`, or `metadata.json` as drawn in §1 and §2.
-> *   `CompileRelease` has **no non-test caller**. Nothing publishes the `/v1/releases/` tree, so
->     `litespm catalog sync` cannot complete against the live origin: `/v1/current.json` returns 200
->     while the release files it names return 404.
-> *   The `_headers` cache policy in §4 **is** implemented — `scripts/deploy-pages.sh:31-42` writes it
+> *   The publisher has landed as `litespm catalog build` (`cmd/litespm/main.go`), which cuts the
+>     release from the dataset, owns the pointer, and — via `-materialize`, invoked by
+>     `scripts/deploy-pages.sh` — reproduces a released tree byte for byte.
+>     `test/catalog_e2e_test.go` syncs it end to end (build → serve → sync → search → offline
+>     reload). **The live origin has not been re-published yet:** it still serves the legacy
+>     pointer (`rel-2026-09-30-01`, no `schemaVersion`, a `manifestDigest` computed over
+>     `catalog.json`), which the client now rejects fail-closed — so `catalog sync` against the
+>     live origin fails until `scripts/deploy-pages.sh` output is uploaded.
+> *   The `_headers` cache policy in §4 **is** implemented — `scripts/deploy-pages.sh` writes it
 >     into the staging directory at deploy time. It is a build artifact under the gitignored
 >     `pages-dist/`, so it is absent from the source tree. §4 needs no correction.
-> *   `scripts/build_full_catalog.py` is what actually produces the deployed catalog
->     (`web/data/catalog.json`, `web/public/v1/current.json`, `web/data/release.json`), which
->     contradicts locked decision D4 ("Go `catalogbuild` is the single builder").
-> *   The live `web/public/v1/current.json` also disagrees with the Go `CurrentPointer` struct: its
->     `manifestDigest` is the digest of `catalog.json` rather than `manifest.json`, it has no
->     `schemaVersion`, and it carries advisory/count fields the Go struct does not declare.
+> *   Ownership: `scripts/build_full_catalog.py` now produces only the dataset
+>     (`web/data/catalog.json`) and the stats in `web/data/release.json`; the served pointer and
+>     release tree have a single writer, `litespm catalog build`. That split (Python = ingestion,
+>     Go = publication) is what the code does; locked decision D4 itself is still unadjudicated
+>     (`STATUS.md` §2).
+> *   The committed `web/public/v1/current.json` is now Go-built (`schemaVersion`, digest over
+>     `manifest.json`, second-precision timestamps); only the served origin copy is the legacy one
+>     described above.
 >
-> The normative path contract in §2 (`/v1/releases/...`) **is** what the client now requests, and
+> The normative path contract in §2 (`/v1/releases/...`) **is** what the client requests, and
 > `TestReleasePathContractPinsDocumentedLayout` in `internal/catalog/catalog_test.go` pins it against
 > a server that serves only the documented tree. See
 > [31 — Competitive Landscape & Roadmap](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md) §4.2–§4.4.
-> Until the publisher lands, treat §1, §2 and §4 as `DESIGNED`, not `WIRED`.
+> Until the origin is re-published, treat §1/§2's extra artifacts (`index.json`, `shards/`,
+> `items/`) as `DESIGNED`; the four-file tree + pointer are `WIRED`, not live.
 
 ## 1. Deterministic CI Catalog Builder
 

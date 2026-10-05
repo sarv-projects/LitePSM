@@ -52,7 +52,7 @@ Highest honest state per phase, with the subsystem rows that back it in [STATUS.
 |---|---|---|
 | A — Architecture Freeze & Schemas | `DESIGNED` | `ARCH/00`–`ARCH/37` exist; the specification is written, not verified |
 | B — Foundations, Storage & IPC | `TESTED` | `domain` / `state` / `ipc` tests bind; no independent falsification pass yet (STATUS §1) |
-| C — Static Catalog & Discovery | `WIRED` **(broken at origin)** for `litespm catalog sync`; `IMPLEMENTED` for the 8 source adapters and the compiler | release tree never published; `litespm catalog sync` 404s at the origin (STATUS §2) |
+| C — Static Catalog & Discovery | `TESTED` for the compiler + `catalog build`; `WIRED` **(broken at live origin)** for `litespm catalog sync` | release tree builds and tests in-repo but is not published at the live origin, so `catalog sync` fails closed there (STATUS §2) |
 | D — Extraction, Resolver & Skills | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | `install.execute` has no artifact source, so no agent install completes (STATUS §3) |
 | E — Supervision, Bridge & Hosts | `WIRED` for hosts; `IMPLEMENTED` for provider runtime | `providers` table never populated by non-test code → autostart inert (STATUS §4) |
 | F — MCP profiles, Secrets & OAuth | `WIRED` (secrets) / `IMPLEMENTED` (mcpclient, auth) | `mcpclient` and `auth` have zero production importers (STATUS §1, §4) |
@@ -96,8 +96,8 @@ that is not met is **not** met, regardless of how much of the deliverable exists
 ### Phase C: Static Catalog & Discovery Plane
 *   **Deliverables:**
     *   `internal/source`: source adapters for the official MCP registry, agent skills, and five marketplaces — 8 adapters, `IMPLEMENTED` with test-only callers (STATUS §2).
-    *   `internal/catalogbuild`: deterministic compiler emitting `v1/current.json` + `v1/releases/<id>/{listings,versions,manifest}.json` — `IMPLEMENTED`, **no non-test caller** (STATUS §2).
-    *   `internal/catalog`: client release fetcher with manifest-digest verification and local index — `WIRED` but broken at the origin.
+    *   `internal/catalogbuild`: deterministic compiler emitting `v1/current.json` + `v1/releases/<id>/{listings,versions,manifest}.json` — `TESTED`, non-test caller `litespm catalog build` (STATUS §2).
+    *   `internal/catalog`: client release fetcher with pointer→manifest→listings digest verification and local index — `WIRED` but broken at the **live** origin (the buildable tree is not published there).
     *   Deployment workflow with strict dist allowlist (`scripts/deploy-pages.sh`, including the `_headers` cache policy).
 *   **Gate:** two successive builds from identical fixtures are byte-for-byte identical; public deployment reveals zero private repository files.
 *   **Current state:** the byte-determinism claim is demonstrated for the Go compiler

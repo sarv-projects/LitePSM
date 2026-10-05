@@ -126,10 +126,10 @@ open); the rationale is preserved rather than back-ported into the earlier serie
 *   **Status:** Accepted (delete executed); resurrection deferred.
 
 ### D-022: Canonical Catalog Builder Is the Go `catalogbuild` (D4 — contested, open)
-*   **Context:** Two builders exist in the tree: `internal/catalogbuild.CompileRelease` (Go, deterministic, no non-test caller) and `scripts/build_full_catalog.py` (Python, the producer of everything actually deployed: `web/data/catalog.json`, `web/public/v1/current.json`).
+*   **Context:** Two builders existed in the tree: `internal/catalogbuild.CompileRelease` (Go, deterministic, no non-test caller) and `scripts/build_full_catalog.py` (Python, the producer of everything actually deployed: `web/data/catalog.json`, `web/public/v1/current.json`).
 *   **Decision (D4 in [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md)):** the Go `catalogbuild` is the single builder; canonical listing IDs are 4-segment.
-*   **Honest status:** the decision is recorded but **contradicted by the repository** and is explicitly contested ([ARCH/31 §4.3](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#43-decision-d4-is-contradicted-by-the-repository--there-are-two-catalog-builders), [STATUS.md](../STATUS.md) §2/§6). It must be either honoured (wire the Go builder, publish its release tree, retire the Python one) or amended. Until one of those happens, describing the Go builder as canonical describes `DESIGNED`-at-runtime code, not the deployed producer.
-*   **Status:** Accepted as written; **contest open**.
+*   **Honest status (updated 2026-10-05):** the code now runs a **split** — `litespm catalog build` owns the served pointer, release id/sequence, and `/v1/releases/` tree (byte-for-byte materialization at deploy, end-to-end tested), while the Python script is narrowed to dataset ingestion (`web/data/catalog.json` + stats) and no longer writes `web/public/v1/*`. The Go builder is no longer dead code, but **the contest is not closed**: the split itself has not been accepted or overruled as D4's resolution ([ARCH/31 §4.3](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#43-decision-d4-is-contradicted-by-the-repository--there-are-two-catalog-builders), [STATUS.md](../STATUS.md) §2/§6), and nothing publishes the tree to the live origin yet.
+*   **Status:** Accepted as written; **contest open** (implemented as split, awaiting adjudication).
 
 ### D-023: Binding Evidence-State Vocabulary
 *   **Context:** "Done" previously meant at least four different things across documents, which allowed claims a stricter reading of the code did not support.

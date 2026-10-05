@@ -103,7 +103,7 @@ type Listing struct {
 }
 ```
 **Written in production?** Not as database rows. Listings are emitted by
-`internal/catalogbuild.CompileRelease` (`IMPLEMENTED`, no non-test caller,
+`internal/catalogbuild.CompileRelease` (`TESTED`, non-test caller `litespm catalog build`,
 [STATUS.md](../STATUS.md) §2) and, for the deployed site, by
 `scripts/build_full_catalog.py` into `web/data/catalog.json` (`WIRED` deployed
 producer, [STATUS.md](../STATUS.md) §6). The `sources` / `source_snapshots` /

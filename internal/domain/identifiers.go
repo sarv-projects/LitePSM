@@ -20,9 +20,25 @@ var (
 	// e.g. inst_01J9X8K2M4N5P6Q7R8S9T0U1V2 or inst_user_sqlite_a1b2c3d4
 	RegexInstallID = regexp.MustCompile(`^inst_[0-9A-Za-z_-]{10,64}$`)
 
+	// RegexReleaseID validates a catalog release id such as rel-2026-10-05-01.
+	// The id is used verbatim inside remote URL segments and on-disk cache
+	// paths, so the character class excludes every path separator and forbids
+	// a leading dot: no release id can name ".", "..", or escape its directory.
+	RegexReleaseID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
 	// RegexDigest validates sha256:<hex>
 	RegexDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 )
+
+// ValidateReleaseID rejects a release id that is unsafe to place in a URL
+// segment or filesystem path. Both the release builder and the catalog client
+// call it, so a malformed id fails at the boundary instead of at the path.
+func ValidateReleaseID(raw string) error {
+	if !RegexReleaseID.MatchString(raw) {
+		return ErrInvalidIdentifier(raw, "<release-id>: [A-Za-z0-9][A-Za-z0-9._-]{0,63} (no slashes, no leading dot)")
+	}
+	return nil
+}
 
 // SourceID represents an immutable upstream catalog or feed identifier (<namespace>:<slug>)
 type SourceID string

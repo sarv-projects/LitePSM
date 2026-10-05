@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -203,29 +204,77 @@ func formatCanonicalString(s string, buf *bytes.Buffer) {
 	buf.WriteByte('"')
 }
 
-// formatCanonicalNumber ensures number representation complies with RFC 8785.
+// formatCanonicalNumber writes a JSON number per RFC 8785 §3.2.2: the
+// ECMAScript Number::toString result.
+//
+// A previous revision used Go's 'g' float format and then stripped exponent
+// signs. 'g' switches to scientific notation at 10^6, so a 4,900,491-byte
+// release file was written as "4.900491e06" — still a JSON number, but not
+// the integer a release manifest declares, and encoding/json refused to read
+// the builder's own manifest back into its int64 size field. The bug was
+// invisible to every test until a real-sized catalog release was compiled.
+//
+// The ranges below are ECMAScript's exactly: fixed notation while the decimal
+// point position n satisfies -6 < n <= 21, otherwise exponential with an
+// explicit sign ("1e+21", "1e-7").
 func formatCanonicalNumber(numStr string, buf *bytes.Buffer) error {
 	f, err := strconv.ParseFloat(numStr, 64)
 	if err != nil {
 		return fmt.Errorf("invalid number: %s", numStr)
 	}
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return fmt.Errorf("non-finite number not representable in JSON: %s", numStr)
+	}
 
-	// -0 must be serialized as 0
+	// 0 and -0 both serialize as 0, as in ECMAScript.
 	if f == 0 {
 		buf.WriteString("0")
 		return nil
 	}
+	if f < 0 {
+		buf.WriteByte('-')
+		f = -f
+	}
 
-	// Format float with ECMAScript 64-bit IEEE 754 precision
-	formatted := strconv.FormatFloat(f, 'g', -1, 64)
+	// Shortest round-trip representation, e.g. "4.900491e+06".
+	scientific := strconv.FormatFloat(f, 'e', -1, 64)
+	mantissa, exponent, _ := strings.Cut(scientific, "e")
+	exp, err := strconv.Atoi(exponent)
+	if err != nil {
+		return fmt.Errorf("invalid number: %s", numStr)
+	}
+	digits := strings.Replace(mantissa, ".", "", 1)
+	k := len(digits)
+	n := exp + 1 // decimal point position relative to the first digit
 
-	// In ES/RFC 8785, exponent must be lowercase 'e' and cannot have a redundant '+' sign
-	formatted = strings.ReplaceAll(formatted, "E+", "e+")
-	formatted = strings.ReplaceAll(formatted, "E-", "e-")
-	formatted = strings.ReplaceAll(formatted, "E", "e")
-	formatted = strings.ReplaceAll(formatted, "e+", "e")
-
-	buf.WriteString(formatted)
+	switch {
+	case k <= n && n <= 21:
+		buf.WriteString(digits)
+		buf.WriteString(strings.Repeat("0", n-k))
+	case 0 < n && n <= 21:
+		buf.WriteString(digits[:n])
+		buf.WriteByte('.')
+		buf.WriteString(digits[n:])
+	case -6 < n && n <= 0:
+		buf.WriteString("0.")
+		buf.WriteString(strings.Repeat("0", -n))
+		buf.WriteString(digits)
+	default:
+		buf.WriteString(digits[:1])
+		if k > 1 {
+			buf.WriteByte('.')
+			buf.WriteString(digits[1:])
+		}
+		buf.WriteByte('e')
+		exp10 := n - 1
+		if exp10 < 0 {
+			buf.WriteByte('-')
+			exp10 = -exp10
+		} else {
+			buf.WriteByte('+')
+		}
+		buf.WriteString(strconv.Itoa(exp10))
+	}
 	return nil
 }
 

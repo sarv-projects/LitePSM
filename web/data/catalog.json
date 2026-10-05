@@ -15229,9 +15229,9 @@
     "installHint": "/plugin install zyte-web-data@claude-plugins-official"
   },
   {
-    "id": "mcp:joshseane:-nmlp-mcp",
+    "id": "mcp:joshseane:nmlp-mcp",
     "name": "-nmlp-mcp",
-    "slug": "-nmlp-mcp",
+    "slug": "nmlp-mcp",
     "kind": "mcp",
     "summary": "First-edition book identification using points of issue, number-line decoding and publisher rules, plus New Mexico book-donation logistics.",
     "category": "Art & Culture",
@@ -26063,9 +26063,9 @@
     ]
   },
   {
-    "id": "mcp:mobb-dev:bugsy?tab=readme-ov-file",
+    "id": "mcp:mobb-dev:bugsy",
     "name": "bugsy?tab=readme-ov-file",
-    "slug": "bugsy?tab=readme-ov-file",
+    "slug": "bugsy",
     "kind": "mcp",
     "summary": "Mobb Vibe Shield identifies and remediates vulnerabilities in human and AI-written code.",
     "category": "Security & Testing",
@@ -29124,9 +29124,9 @@
     ]
   },
   {
-    "id": "mcp:planetscale:cli?tab=readme-ov-file",
+    "id": "mcp:planetscale:cli",
     "name": "cli?tab=readme-ov-file",
-    "slug": "cli?tab=readme-ov-file",
+    "slug": "cli",
     "kind": "mcp",
     "summary": "Built into the PlanetScale CLI: direct access to your PlanetScale databases.",
     "category": "Databases",
@@ -83703,9 +83703,9 @@
     ]
   },
   {
-    "id": "mcp:mattbusel:reddit-options-trader-rot-",
+    "id": "mcp:mattbusel:reddit-options-trader-rot",
     "name": "Reddit-Options-Trader-ROT-",
-    "slug": "reddit-options-trader-rot-",
+    "slug": "reddit-options-trader-rot",
     "kind": "mcp",
     "summary": "AI-scored trading signals from Reddit, SEC filings, FDA approvals, Congressional trades and other sources.",
     "category": "Finance & Crypto",
@@ -103637,9 +103637,9 @@
     "skillSource": "https://github.com/tronghieu/agent-skills"
   },
   {
-    "id": "skill:community:agent trust hub",
+    "id": "skill:community:agent-trust-hub",
     "name": "Agent Trust Hub",
-    "slug": "agent trust hub",
+    "slug": "agent-trust-hub",
     "kind": "skill",
     "summary": "Production-grade agent playbook for Agent Trust Hub",
     "category": "Security Notice",
@@ -104949,9 +104949,9 @@
     "skillSource": "https://officialskills.sh/garrytan/skills/browse"
   },
   {
-    "id": "skill:community:browse nvidia's official agent skills catalog",
+    "id": "skill:community:browse-nvidias-official-agent-skills-catalog",
     "name": "Browse Nvidia'S Official Agent Skills Catalog",
-    "slug": "browse nvidia's official agent skills catalog",
+    "slug": "browse-nvidias-official-agent-skills-catalog",
     "kind": "skill",
     "summary": "Production-grade agent playbook for Browse NVIDIA's official Agent Skills catalog",
     "category": "TypeScript Skills",
@@ -111733,9 +111733,9 @@
     "skillSource": "https://github.com/nowork-studio/notfair-plugin"
   },
   {
-    "id": "skill:notiondevs:notion skills for claude",
+    "id": "skill:notiondevs:notion-skills-for-claude",
     "name": "Notion Skills For Claude",
-    "slug": "notion skills for claude",
+    "slug": "notion-skills-for-claude",
     "kind": "skill",
     "summary": "Production-grade agent playbook for notiondevs/Notion Skills for Claude",
     "category": "Community Skills",
@@ -115813,9 +115813,9 @@
     "skillSource": "https://github.com/phuryn/pm-skills/tree/main/pm-product-strategy/skills/swot-analysis"
   },
   {
-    "id": "skill:community:synk skill security scanner",
+    "id": "skill:community:synk-skill-security-scanner",
     "name": "Synk Skill Security Scanner",
-    "slug": "synk skill security scanner",
+    "slug": "synk-skill-security-scanner",
     "kind": "skill",
     "summary": "Production-grade agent playbook for Synk Skill Security Scanner",
     "category": "Security Notice",

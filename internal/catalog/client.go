@@ -51,6 +51,12 @@ func NewClient(baseURL, cacheDir string, httpClient *http.Client) *Client {
 }
 
 // LoadFromCache loads existing cached catalog files from disk into the in-memory search index.
+//
+// The cache is re-verified on every load: the pointer must name a safe release
+// and carry a digest that matches the cached manifest bytes, and the cached
+// listings must match the manifest's entry. A corrupted or tampered cache
+// therefore loads as an empty index (caller receives the error) instead of as
+// poisoned search results.
 func (c *Client) LoadFromCache() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -65,15 +71,38 @@ func (c *Client) LoadFromCache() error {
 	if err := json.Unmarshal(data, &current); err != nil {
 		return err
 	}
+	if err := validateCurrent(&current); err != nil {
+		return err
+	}
 
 	// The on-disk cache mirrors the remote tree exactly, so a cached release is
 	// byte-identical to the served release and there is only one path convention
 	// to reason about. Release files live under /v1/ because /v1/current.json
 	// names them (see internal/catalogbuild/compiler.go and ARCH/18 §2).
-	listingsPath := filepath.Join(c.cacheDir, "v1", "releases", current.ReleaseID, "listings.json")
-	listingsData, err := os.ReadFile(listingsPath)
+	releaseDir := filepath.Join(c.cacheDir, "v1", "releases", current.ReleaseID)
+
+	manifestData, err := os.ReadFile(filepath.Join(releaseDir, "manifest.json"))
 	if err != nil {
 		return err
+	}
+	if actual := domain.ComputeBytesDigest(manifestData); actual != current.ManifestDigest {
+		return domain.ErrChecksumMismatch(current.ManifestDigest, actual)
+	}
+	var manifest catalogbuild.ReleaseManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return err
+	}
+	listingMeta, ok := manifest.Files["listings.json"]
+	if !ok {
+		return fmt.Errorf("cached manifest for %s has no listings.json entry", current.ReleaseID)
+	}
+
+	listingsData, err := os.ReadFile(filepath.Join(releaseDir, "listings.json"))
+	if err != nil {
+		return err
+	}
+	if actual := domain.ComputeBytesDigest(listingsData); actual != listingMeta.Digest {
+		return domain.ErrChecksumMismatch(listingMeta.Digest, actual)
 	}
 
 	var listings []*domain.Listing
@@ -88,113 +117,160 @@ func (c *Client) LoadFromCache() error {
 	return nil
 }
 
+// validateCurrent enforces the pointer contract before its contents are used:
+// a supported schema version, a path-safe release id (the id becomes a URL
+// segment and a cache directory), and a manifest digest to anchor the rest of
+// the release. It runs for both fetched and cached pointers.
+func validateCurrent(current *catalogbuild.CurrentPointer) error {
+	if current.SchemaVersion != catalogbuild.CurrentPointerSchemaVersion {
+		return fmt.Errorf("current.json schemaVersion %d is not supported (want %d)",
+			current.SchemaVersion, catalogbuild.CurrentPointerSchemaVersion)
+	}
+	if err := domain.ValidateReleaseID(current.ReleaseID); err != nil {
+		return fmt.Errorf("current.json names an unsafe release id: %w", err)
+	}
+	if !domain.RegexDigest.MatchString(current.ManifestDigest) {
+		return fmt.Errorf("current.json manifestDigest %q is not a sha256 digest", current.ManifestDigest)
+	}
+	return nil
+}
+
 // FetchCurrent retrieves the /v1/current.json release pointer from the remote registry or local cache.
 func (c *Client) FetchCurrent(ctx context.Context) (*catalogbuild.CurrentPointer, error) {
+	current, _, err := c.fetchCurrent(ctx)
+	return current, err
+}
+
+// fetchCurrent fetches the pointer and retains the served bytes.
+func (c *Client) fetchCurrent(ctx context.Context) (*catalogbuild.CurrentPointer, []byte, error) {
 	url := fmt.Sprintf("%s/v1/current.json", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch /v1/current.json: %w", err)
+		return nil, nil, fmt.Errorf("failed to fetch /v1/current.json: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned status %d for %s", resp.StatusCode, url)
+		return nil, nil, fmt.Errorf("server returned status %d for %s", resp.StatusCode, url)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var current catalogbuild.CurrentPointer
 	if err := json.Unmarshal(body, &current); err != nil {
-		return nil, fmt.Errorf("failed to parse current.json: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse current.json: %w", err)
+	}
+	if err := validateCurrent(&current); err != nil {
+		return nil, nil, err
 	}
 
-	return &current, nil
+	return &current, body, nil
 }
 
 // FetchManifest retrieves and verifies the root manifest for a specific release.
 func (c *Client) FetchManifest(ctx context.Context, releaseID string) (*catalogbuild.ReleaseManifest, error) {
+	manifest, _, err := c.fetchManifest(ctx, releaseID)
+	return manifest, err
+}
+
+// fetchManifest fetches the manifest and retains the served bytes; the
+// pointer's digest is computed over exactly these bytes.
+func (c *Client) fetchManifest(ctx context.Context, releaseID string) (*catalogbuild.ReleaseManifest, []byte, error) {
+	if err := domain.ValidateReleaseID(releaseID); err != nil {
+		return nil, nil, fmt.Errorf("refusing to fetch manifest for unsafe release id: %w", err)
+	}
 	url := fmt.Sprintf("%s/v1/releases/%s/manifest.json", c.baseURL, releaseID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch manifest: status %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("failed to fetch manifest: status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var manifest catalogbuild.ReleaseManifest
 	if err := json.Unmarshal(body, &manifest); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal manifest.json: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal manifest.json: %w", err)
 	}
 
-	return &manifest, nil
+	return &manifest, body, nil
 }
 
 // FetchListings downloads listings.json and validates its SHA-256 against the manifest.
 func (c *Client) FetchListings(ctx context.Context, releaseID string, manifest *catalogbuild.ReleaseManifest) ([]*domain.Listing, error) {
+	listings, _, err := c.fetchListings(ctx, releaseID, manifest)
+	return listings, err
+}
+
+// fetchListings downloads listings.json, verifies it against the manifest, and
+// retains the served bytes for cache persistence.
+func (c *Client) fetchListings(ctx context.Context, releaseID string, manifest *catalogbuild.ReleaseManifest) ([]*domain.Listing, []byte, error) {
 	fileMeta, exists := manifest.Files["listings.json"]
 	if !exists {
-		return nil, fmt.Errorf("manifest missing listings.json entry")
+		return nil, nil, fmt.Errorf("manifest missing listings.json entry")
 	}
 
+	if err := domain.ValidateReleaseID(releaseID); err != nil {
+		return nil, nil, fmt.Errorf("refusing to fetch listings for unsafe release id: %w", err)
+	}
 	url := fmt.Sprintf("%s/v1/releases/%s/listings.json", c.baseURL, releaseID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download listings.json: status %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("failed to download listings.json: status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Verify digest
 	actualDigest := domain.ComputeBytesDigest(body)
 	if actualDigest != fileMeta.Digest {
-		return nil, domain.ErrChecksumMismatch(fileMeta.Digest, actualDigest)
+		return nil, nil, domain.ErrChecksumMismatch(fileMeta.Digest, actualDigest)
 	}
 
 	var listings []*domain.Listing
 	if err := json.Unmarshal(body, &listings); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal listings.json: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal listings.json: %w", err)
 	}
 
-	return listings, nil
+	return listings, body, nil
 }
 
 // Sync checks for remote catalog updates, verifies integrity, and updates the local cache and index.
 func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
-	current, err := c.FetchCurrent(ctx)
+	current, currentRaw, err := c.fetchCurrent(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -213,14 +289,23 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 		}, nil
 	}
 
-	// Download manifest
-	manifest, err := c.FetchManifest(ctx, current.ReleaseID)
+	// Download manifest; the served bytes are retained because the pointer's
+	// digest is computed over exactly those bytes (a re-marshal would change
+	// key order and formatting and fail the comparison).
+	manifest, manifestRaw, err := c.fetchManifest(ctx, current.ReleaseID)
 	if err != nil {
 		return nil, err
 	}
 
+	// The pointer is the trust anchor for the whole release: without this
+	// check a swapped manifest would be accepted as long as its own internal
+	// digests were self-consistent.
+	if actual := domain.ComputeBytesDigest(manifestRaw); actual != current.ManifestDigest {
+		return nil, domain.ErrChecksumMismatch(current.ManifestDigest, actual)
+	}
+
 	// Download listings
-	listings, err := c.FetchListings(ctx, current.ReleaseID, manifest)
+	listings, listingsRaw, err := c.fetchListings(ctx, current.ReleaseID, manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -228,16 +313,27 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 	// Persist to local disk cache if cacheDir is set
 	if c.cacheDir != "" {
 		releaseDir := filepath.Join(c.cacheDir, "v1", "releases", current.ReleaseID)
-		_ = os.MkdirAll(releaseDir, 0755)
+		if err := os.MkdirAll(releaseDir, 0755); err != nil {
+			return nil, fmt.Errorf("create catalog cache: %w", err)
+		}
 
-		manifestBytes, _ := json.Marshal(manifest)
-		_ = os.WriteFile(filepath.Join(releaseDir, "manifest.json"), manifestBytes, 0644)
-
-		listingsBytes, _ := json.Marshal(listings)
-		_ = os.WriteFile(filepath.Join(releaseDir, "listings.json"), listingsBytes, 0644)
-
-		currentBytes, _ := json.Marshal(current)
-		_ = os.WriteFile(filepath.Join(c.cacheDir, "v1", "current.json"), currentBytes, 0644)
+		// Served bytes are persisted verbatim so the cache mirrors the origin
+		// byte for byte and LoadFromCache's digest checks verify against the
+		// same manifest the pointer anchored. The pointer goes last: it is the
+		// commit marker LoadFromCache reads first, so an interrupted sync
+		// leaves the previous cache as the consistent state.
+		for _, w := range []struct {
+			path string
+			data []byte
+		}{
+			{filepath.Join(releaseDir, "manifest.json"), manifestRaw},
+			{filepath.Join(releaseDir, "listings.json"), listingsRaw},
+			{filepath.Join(c.cacheDir, "v1", "current.json"), currentRaw},
+		} {
+			if err := os.WriteFile(w.path, w.data, 0644); err != nil {
+				return nil, fmt.Errorf("persist catalog cache (%s): %w", w.path, err)
+			}
+		}
 	}
 
 	// Update in-memory index

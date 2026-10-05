@@ -1,33 +1,16 @@
 {
-  "releaseId": "rel-2026-09-30-01",
-  "sequence": 142,
-  "createdAt": "2026-10-01T17:22:45Z",
-  "itemCount": 5814,
-  "manifestDigest": "sha256:736a31e6eac4a2910a187e1c834dc4d342d3201d4adc1b9961ad3c4a96af6715",
-  "advisories": [
-    {
-      "hostId": "cline",
-      "status": "supported",
-      "minVersion": "3.0.0"
-    },
-    {
-      "hostId": "pi-agent",
-      "status": "supported",
-      "minVersion": "0.4.0"
-    },
-    {
-      "hostId": "grok-build",
-      "status": "supported",
-      "minVersion": "1.0.0"
-    }
-  ],
-  "totalCapabilities": 5814,
-  "mcpServersCount": 4079,
   "agentSkillsCount": 1103,
-  "pluginsCount": 632,
+  "createdAt": "2026-10-05T20:49:41Z",
   "hostCompatibility": {
     "mcp": "all-bridge-adapters",
     "skill": "all-skill-targets",
     "plugin": "publisher-declared"
-  }
+  },
+  "itemCount": 5814,
+  "manifestDigest": "sha256:0e06b4f0341aed66ca0d99619211c39a9bb553f577b5180da4a8c618d2d3eb56",
+  "mcpServersCount": 4079,
+  "pluginsCount": 632,
+  "releaseId": "rel-2026-10-05-01",
+  "sequence": 143,
+  "totalCapabilities": 5814
 }

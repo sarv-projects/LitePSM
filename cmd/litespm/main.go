@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"github.com/sarv-projects/litespm/internal/agent"
 	"github.com/sarv-projects/litespm/internal/bridge"
 	"github.com/sarv-projects/litespm/internal/catalog"
+	"github.com/sarv-projects/litespm/internal/catalogbuild"
 	"github.com/sarv-projects/litespm/internal/config"
 	"github.com/sarv-projects/litespm/internal/doctor"
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -81,10 +83,18 @@ func main() {
 		runInstall(os.Args[2:])
 
 	case "catalog":
-		if len(os.Args) >= 3 && os.Args[2] == "sync" {
-			runCatalogSync()
+		if len(os.Args) >= 3 {
+			switch os.Args[2] {
+			case "sync":
+				runCatalogSync()
+			case "build":
+				runCatalogBuild(os.Args[3:])
+			default:
+				fmt.Println("Usage: litespm catalog [sync|build]")
+				os.Exit(1)
+			}
 		} else {
-			fmt.Println("Usage: litespm catalog sync")
+			fmt.Println("Usage: litespm catalog [sync|build]")
 			os.Exit(1)
 		}
 
@@ -153,6 +163,7 @@ Available Commands:
   search <query>              Search global catalog of MCP servers, skills, and plugins
   install <id>                Install and verify a capability into the local CAS store
   catalog sync                Synchronize latest catalog release from upstream
+  catalog build               Build the static /v1 release tree from the dataset
   bridge stdio [--host h]     Launch stateless stdio MCP bridge shim for host agent
   host [list|detect|setup]    Manage agent host adapters (Codex, Claude, OpenCode, Cline, Pi, Grok)
   agent list [--json]         List installable ACP agents from the registry
@@ -905,6 +916,261 @@ func runCatalogSync() {
 	}
 
 	fmt.Printf("✓ Catalog synchronization complete (Release %s, %d capabilities indexed).\n", res.ReleaseID, res.ItemCount)
+}
+
+// catalogBuildOptions are the inputs of buildCatalogRelease. The zero value
+// beyond dataset/out/prev is the "release mode" default: derive a fresh
+// release id, advance the sequence, stamp the current time.
+type catalogBuildOptions struct {
+	datasetPath string // dataset JSON to convert
+	outDir      string // directory that receives the /v1 tree
+	prevPath    string // released pointer that owns sequence/id authority
+	releaseID   string // "" => derive (release mode)
+	sequence    int    // <0  => derive (release mode)
+	createdAt   string // RFC3339, "" => now or SOURCE_DATE_EPOCH
+	materialize bool   // reproduce the released pointer's tree exactly
+}
+
+// buildCatalogRelease is the single path every /v1 release tree comes from:
+// the release step (dataset changed), the deploy step (-materialize, rebuilding
+// the already-released pointer's bytes), and tests all call it.
+//
+// Release mode (default) reads sequence authority from the released pointer at
+// opts.prevPath and always advances past it: sequence = previous+1, and a
+// same-day default id has its -NN suffix bumped so it never collides. Release
+// ids are immutable (the CDN caches /v1/releases/* forever), so an explicitly
+// reused id fails instead of silently republishing under a cached name.
+//
+// Materialize mode (-materialize) refuses to invent anything: it requires the
+// released pointer and reproduces its id, sequence, and creation time, so the
+// rebuilt tree is byte-identical to the release the pointer digests.
+func buildCatalogRelease(opts catalogBuildOptions) (*catalogbuild.BuildOutput, string, error) {
+	datasetRaw, err := os.ReadFile(opts.datasetPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("read dataset %s: %w", opts.datasetPath, err)
+	}
+	rows, err := catalogbuild.ParseDataset(datasetRaw)
+	if err != nil {
+		return nil, "", err
+	}
+
+	prev, err := readCurrentPointer(opts.prevPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	releaseID := opts.releaseID
+	sequence := opts.sequence
+	createdAt, err := parseBuildCreatedAt(opts.createdAt)
+	if err != nil {
+		return nil, "", err
+	}
+
+	switch {
+	case opts.materialize:
+		if prev == nil {
+			return nil, "", fmt.Errorf("no released pointer at %s to materialize", opts.prevPath)
+		}
+		if releaseID != "" && releaseID != prev.ReleaseID {
+			return nil, "", fmt.Errorf("-release-id %q contradicts released pointer %q", releaseID, prev.ReleaseID)
+		}
+		if opts.sequence >= 1 && opts.sequence != prev.Sequence {
+			return nil, "", fmt.Errorf("-sequence %d contradicts released pointer sequence %d", opts.sequence, prev.Sequence)
+		}
+		if opts.createdAt != "" && opts.createdAt != prev.CreatedAt {
+			return nil, "", fmt.Errorf("-created-at %q contradicts released pointer createdAt %q", opts.createdAt, prev.CreatedAt)
+		}
+		releaseID = prev.ReleaseID
+		sequence = prev.Sequence
+		createdAt, err = time.Parse(time.RFC3339, prev.CreatedAt)
+		if err != nil {
+			return nil, "", fmt.Errorf("released pointer createdAt %q is not RFC3339: %w", prev.CreatedAt, err)
+		}
+
+	default:
+		if releaseID == "" {
+			base := fmt.Sprintf("rel-%s", createdAt.Format("2006-01-02"))
+			releaseID = base + "-01"
+			// Same-day rebuilds must not reuse an already-published id.
+			if prev != nil && strings.HasPrefix(prev.ReleaseID, base+"-") {
+				if n, err := strconv.Atoi(strings.TrimPrefix(prev.ReleaseID, base+"-")); err == nil {
+					releaseID = fmt.Sprintf("%s-%02d", base, n+1)
+				}
+			}
+		}
+		if sequence < 1 { // 0 (the zero value) and negatives mean "derive"
+			sequence = 1
+			if prev != nil {
+				sequence = prev.Sequence + 1
+			}
+		}
+		if prev != nil {
+			if sequence <= prev.Sequence {
+				return nil, "", fmt.Errorf("-sequence %d does not advance past released sequence %d (%s): catalog sequences must increase",
+					sequence, prev.Sequence, opts.prevPath)
+			}
+			if releaseID == prev.ReleaseID {
+				return nil, "", fmt.Errorf("release id %q is already published at sequence %d (%s): release ids are immutable because CDNs cache /v1/releases/* forever; omit -release-id to derive a fresh one",
+					releaseID, prev.Sequence, opts.prevPath)
+			}
+		}
+	}
+
+	if err := domain.ValidateReleaseID(releaseID); err != nil {
+		return nil, "", err
+	}
+
+	// Release time is pinned to second precision. The pointer stores
+	// createdAt as RFC3339 seconds, and the same timestamp is embedded in
+	// every listing's provenance and version record — if the embedded value
+	// carried nanoseconds, materializing from the pointer could never
+	// reproduce the released bytes, and the deployed tree would fail the
+	// pointer digest it claims to satisfy.
+	createdAt = createdAt.UTC().Truncate(time.Second)
+
+	snapshotID := catalogbuild.DatasetSnapshotID(datasetRaw)
+	listings, versions, err := catalogbuild.ConvertDataset(rows, releaseID, snapshotID, createdAt)
+	if err != nil {
+		return nil, "", err
+	}
+
+	output, err := catalogbuild.CompileRelease(releaseID, sequence, []string{snapshotID}, listings, versions, createdAt)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := output.WriteToDirectory(opts.outDir); err != nil {
+		return nil, "", fmt.Errorf("write release tree to %s: %w", opts.outDir, err)
+	}
+	return output, snapshotID, nil
+}
+
+// readCurrentPointer loads a release pointer, treating a missing file as
+// "no previous release" but a corrupt one as an error: sequence authority
+// must never be guessed.
+func readCurrentPointer(path string) (*catalogbuild.CurrentPointer, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read previous pointer %s: %w", path, err)
+	}
+	var pointer catalogbuild.CurrentPointer
+	if err := json.Unmarshal(data, &pointer); err != nil {
+		return nil, fmt.Errorf("parse previous pointer %s: %w", path, err)
+	}
+	return &pointer, nil
+}
+
+// parseBuildCreatedAt resolves the release timestamp: an explicit RFC3339
+// value, else SOURCE_DATE_EPOCH (reproducible builds), else the current time.
+func parseBuildCreatedAt(explicit string) (time.Time, error) {
+	if explicit != "" {
+		parsed, err := time.Parse(time.RFC3339, explicit)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("-created-at must be RFC3339: %w", err)
+		}
+		return parsed, nil
+	}
+	if epoch := os.Getenv("SOURCE_DATE_EPOCH"); epoch != "" {
+		n, err := strconv.ParseInt(epoch, 10, 64)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("SOURCE_DATE_EPOCH must be unix seconds: %w", err)
+		}
+		return time.Unix(n, 0).UTC(), nil
+	}
+	return time.Now(), nil
+}
+
+// syncReleaseStats merges the release identity (releaseId, sequence,
+// manifestDigest, createdAt, counts) into the site's build-time stats bundle
+// when, and only when, this build is the one that updates the authority
+// pointer — i.e. prevPath lives under outDir. Deploy materializations and test
+// builds write their tree elsewhere and leave the bundle alone.
+//
+// The bundle is read-modify-write: dataset stats (per-kind counts,
+// hostCompatibility, datasetDigest) belong to scripts/build_full_catalog.py
+// and are preserved, exactly as the builder's identity keys are preserved when
+// that script runs. A missing bundle is skipped rather than created, because a
+// bundle without dataset stats would render the site's counts as zero.
+func syncReleaseStats(prevPath, outDir string, output *catalogbuild.BuildOutput) error {
+	if filepath.Clean(filepath.Dir(filepath.Dir(prevPath))) != filepath.Clean(outDir) {
+		return nil
+	}
+	statsPath := filepath.Join(filepath.Dir(filepath.Clean(outDir)), "data", "release.json")
+	data, err := os.ReadFile(statsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read release stats %s: %w", statsPath, err)
+	}
+	stats := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &stats); err != nil {
+		return fmt.Errorf("parse release stats %s: %w", statsPath, err)
+	}
+	for key, value := range map[string]any{
+		"releaseId":         output.Manifest.ReleaseID,
+		"sequence":          output.Current.Sequence,
+		"manifestDigest":    output.ManifestDigest,
+		"createdAt":         output.Manifest.CreatedAt,
+		"itemCount":         output.Manifest.ItemCount,
+		"totalCapabilities": output.Manifest.ItemCount,
+	} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("encode release stats %s: %w", key, err)
+		}
+		stats[key] = encoded
+	}
+	encoded, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode release stats: %w", err)
+	}
+	if err := os.WriteFile(statsPath, append(encoded, '\n'), 0644); err != nil {
+		return fmt.Errorf("write release stats %s: %w", statsPath, err)
+	}
+	return nil
+}
+
+// runCatalogBuild implements `litespm catalog build`: convert the dataset into
+// the static /v1 release tree (manifest + listings + versions + current.json).
+func runCatalogBuild(args []string) {
+	fs := flag.NewFlagSet("litespm catalog build", flag.ExitOnError)
+	dataset := fs.String("dataset", "web/data/catalog.json", "path to the catalog dataset JSON")
+	outDir := fs.String("out", "web/public", "directory to write the /v1 release tree into")
+	prevPath := fs.String("prev", "web/public/v1/current.json", "released pointer that owns sequence/id authority")
+	releaseID := fs.String("release-id", "", "release id (default: rel-<date>-NN derived from build time, NN bumped past the released pointer)")
+	sequence := fs.Int("sequence", -1, "release sequence (default: released sequence plus one; must increase)")
+	created := fs.String("created-at", "", "RFC3339 creation time (default: SOURCE_DATE_EPOCH if set, else now)")
+	materialize := fs.Bool("materialize", false, "reproduce the released pointer's tree byte-for-byte instead of cutting a new release")
+	_ = fs.Parse(args)
+
+	output, snapshotID, err := buildCatalogRelease(catalogBuildOptions{
+		datasetPath: *dataset,
+		outDir:      *outDir,
+		prevPath:    *prevPath,
+		releaseID:   *releaseID,
+		sequence:    *sequence,
+		createdAt:   *created,
+		materialize: *materialize,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Catalog build failed: %v\n", err)
+		os.Exit(1)
+	}
+	if err := syncReleaseStats(*prevPath, *outDir, output); err != nil {
+		fmt.Fprintf(os.Stderr, "Catalog build failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	manifest := output.Manifest
+	fmt.Printf("✓ Catalog release built\n")
+	fmt.Printf("  Release:  %s (sequence %d, %d items)\n", manifest.ReleaseID, output.Current.Sequence, manifest.ItemCount)
+	fmt.Printf("  Snapshot: %s\n", snapshotID)
+	fmt.Printf("  Manifest: %s\n", manifest.ContentDigest)
+	fmt.Printf("  Pointer:  %s\n", filepath.Join(*outDir, "v1", "current.json"))
+	fmt.Printf("  Tree:     %s\n", filepath.Join(*outDir, "v1", "releases", manifest.ReleaseID))
 }
 
 func createSyntheticPackageArtifact(listingID string) []byte {

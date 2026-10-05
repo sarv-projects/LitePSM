@@ -32,6 +32,11 @@ type ReleaseManifest struct {
 	Files           map[string]ReleaseManifestFile `json:"files"`
 }
 
+// CurrentPointerSchemaVersion is the /v1/current.json schema version this tree
+// produces and the client accepts; a pointer at any other version is rejected
+// before its fields are used (internal/catalog.validateCurrent).
+const CurrentPointerSchemaVersion = 1
+
 // CurrentPointer represents /v1/current.json pointing to the latest verified release.
 type CurrentPointer struct {
 	SchemaVersion  int    `json:"schemaVersion"`
@@ -60,8 +65,8 @@ func CompileRelease(
 	versions []*domain.VersionRecord,
 	createdAt time.Time,
 ) (*BuildOutput, error) {
-	if releaseID == "" {
-		return nil, fmt.Errorf("releaseID cannot be empty")
+	if err := domain.ValidateReleaseID(releaseID); err != nil {
+		return nil, fmt.Errorf("invalid releaseID: %w", err)
 	}
 
 	createdAtISO := createdAt.UTC().Format(time.RFC3339)

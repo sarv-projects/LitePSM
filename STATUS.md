@@ -31,7 +31,7 @@ whose only real origin is broken is `WIRED` with the breakage stated, not
 
 | Subsystem | State | Evidence | To reach the next state |
 |---|---|---|---|
-| `internal/domain` (IDs, models, RFC 8785 JCS, `LPSM-*` errors) | `TESTED` | Imported by every subsystem; `internal/domain/domain_test.go`. Note: `CanonicalizeJSON` takes `[]byte`, not `any` | Independent falsification pass |
+| `internal/domain` (IDs, models, RFC 8785 JCS, `LPSM-*` errors) | `TESTED` | Imported by every subsystem; `internal/domain/domain_test.go` + `canonical_test.go`. Number canonicalization follows ECMAScript `Number::toString` exactly — it previously used Go's `'g'` float format and emitted `4.900491e06` for sizes ≥ 10⁶, which no manifest decoder accepts (caught by the origin-replica run, 2026-10-05). Note: `CanonicalizeJSON` takes `[]byte`, not `any` | Independent falsification pass |
 | `internal/config` (platform paths, env, legacy adoption) | `WIRED` | `internal/config/paths.go`; legacy `LITEPSM_*` fallback `internal/config/config.go:132`; `internal/config/legacy_test.go` | — |
 | `internal/state` (SQLite WAL, 22 tables, safe CAS rollback journal) | `TESTED` | `internal/state/operations.go`; recovery tests; the daemon **halts** on recovery failure with `Fatal: startup recovery failed` → **exit 1** (`cmd/litespm/main.go:1173-1175`); `70` is a *doctor* category code only (`ARCH/20` §2) | Independent falsification pass |
 | `internal/ipc` (Named Pipe DACL / Unix socket 0600, dispatcher) | `TESTED` | `internal/ipc/`; the `Serve`/`Stop` race is fixed and reproduced under `-race -count=50` | — |
@@ -53,11 +53,12 @@ whose only real origin is broken is `WIRED` with the breakage stated, not
 
 | Subsystem | State | Evidence | To reach the next state |
 |---|---|---|---|
-| `internal/source` (8 upstream adapters) | `IMPLEMENTED` | `internal/source/`; **test-only callers**; no `catalog build` CLI command | A non-test caller that ingests into a published release |
-| `internal/catalogbuild` `CompileRelease` | `IMPLEMENTED` | `internal/catalogbuild/compiler.go`; emits `v1/current.json` + `v1/releases/<id>/{listings,versions,manifest}.json`; `CompileRelease` / `BuildOutput.WriteToDirectory` have **no non-test caller** (the package *is* imported by `internal/catalog/client.go:14`, but only for its result types, `CurrentPointer` / `ReleaseManifest`) | A non-test caller + CI publish |
-| `litespm catalog sync` | `WIRED` **(broken at origin)** | `internal/catalog/client.go`; `cmd/litespm/main.go:83-85` (`runCatalogSync`). Live (re-probed 2026-10-05): `/v1/current.json` 200 but `/v1/releases/rel-2026-09-30-01/manifest.json` **404** | Publish a release tree whose fields match `CurrentPointer`; add a live-sync test |
-| Deployed web catalog data | `SHIPPED` | `web/data/catalog.json` is built by `scripts/build_full_catalog.py` (Python) and bundled/served by the web app | Unify with the Go builder (`D4` is contested) |
-| Catalog release tree `/v1/releases/<id>/` | `DESIGNED` | Never published; live 404. ARCH/18 §1–§2 also specify `index.json` / `shards/` / `items/` the compiler does not emit | Publish the tree from committed snapshots |
+| `internal/source` (8 upstream adapters) | `IMPLEMENTED` | `internal/source/`; **test-only callers**; `litespm catalog build` exists but reads the Python-produced dataset, not these adapters | A non-test caller that ingests into a published release |
+| `litespm catalog build` (dataset → release tree) | `TESTED` | `cmd/litespm/main.go` (`runCatalogBuild`, `buildCatalogRelease`): validates the dataset fail-closed (`catalogbuild.ParseDataset`), converts it, cuts/advances the release id + sequence from the released pointer, refuses release-id reuse and non-advancing sequences, and materializes a released pointer byte-for-byte (`-materialize`). Release time is pinned to second precision so provenance and pointer cannot diverge. Tests: `cmd/litespm/catalog_build_test.go`, `internal/catalogbuild/dataset_test.go` (real 5,814-row dataset incl. manifest decode at real sizes), `internal/domain/canonical_test.go` | Run in `release.yml`/deploy with `SOURCE_DATE_EPOCH` for reproducible CI cuts |
+| `internal/catalogbuild` `CompileRelease` | `TESTED` | `internal/catalogbuild/compiler.go`; emits `v1/current.json` + `v1/releases/<id>/{listings,versions,manifest}.json`; non-test caller `runCatalogBuild`; reproducibility asserted in `test/catalog_e2e_test.go` | Independent falsification pass |
+| `litespm catalog sync` | `WIRED` **(broken at live origin)** | `internal/catalog/client.go`: verifies pointer→manifest→listings digests (raw bytes), validates `schemaVersion`/release-id path safety, re-verifies the cache on every load; `runCatalogSync`. Automated E2E `test/catalog_e2e_test.go` (build → serve → sync → search → offline reload) is green, as was a manual origin-replica run (2026-10-05, incl. fail-closed tamper rejection). **Live origin still serves only the legacy pointer** (`rel-2026-09-30-01`, no `schemaVersion`, no release tree) and is rejected fail-closed | Re-run `scripts/deploy-pages.sh` against the live origin, then re-probe |
+| Deployed web catalog data | `SHIPPED` | `web/data/catalog.json` + the stats in `web/data/release.json` are built by `scripts/build_full_catalog.py` (Python) and bundled/served by the web app; the pointer/release identity keys in `release.json` are stamped by `litespm catalog build` (single writer per key) | Close `D4`: the split (Python = dataset ingestion, Go = release/pointer publication) is implemented but not yet adjudicated |
+| Catalog release tree `/v1/releases/<id>/` | `WIRED` **(not at live origin)** | Built by `litespm catalog build`; committed pointer `web/public/v1/current.json` (`rel-2026-10-05-01`, sequence 143); `scripts/deploy-pages.sh` materializes the released tree into the bundle byte-for-byte; E2E test + origin-replica run green. Live origin still 404s (`ARCH/18` §1–§2 `index.json`/`shards`/`items` remain un-emitted by design) | Publish via `deploy-pages.sh`, then re-probe the live origin |
 | Catalog deltas / shards / FTS index | `DESIGNED` | One ~3.4 MB `catalog.json` blob; no shard or FTS output | A measured trigger, then shard + delta output |
 
 ## 3. Install plane
@@ -109,7 +110,7 @@ whose only real origin is broken is `WIRED` with the breakage stated, not
 | TUI / local dashboard | `DESIGNED` | CLI only; the web site is public and separate | Daemon-call-only TUI |
 | Shell completion (bash/zsh/fish/PowerShell) | `DESIGNED` | None | `cmd/litespm` generators |
 | Air-gapped signed bundle | `DESIGNED` | — | Signed offline bundle (needs §5 signing) |
-| `scripts/build_full_catalog.py` (Python builder) | `WIRED` **(deployed producer)** | It is what publishes `web/public/v1/current.json` and `web/data/*`; CI never runs it (`ARCH/31` §4.3) | Honour or amend `D4` (one builder) |
+| `scripts/build_full_catalog.py` (Python builder) | `WIRED` **(dataset producer)** | It publishes `web/data/catalog.json` and the dataset stats in `web/data/release.json`; it no longer touches `web/public/v1/*` — the served pointer and release tree belong to `litespm catalog build` (single writer per key). Listing ids are funnelled through fail-closed `canonical_id()` (an earlier revision shipped six ids the domain grammar rejects). CI never runs it (`ARCH/31` §4.3) | Close `D4` (the ingestion/publication split above is implemented, not adjudicated); add row assertions |
 
 **Companion guides for this section.** [`scripts/README.md`](scripts/README.md) inventories every
 script in `scripts/` and records which workflow (if any) runs it — `ci.yml` only syntax-checks them
@@ -129,10 +130,12 @@ table.
 
 ## Not yet true, and not claimed
 
-A published catalog release tree with a succeeding `catalog sync`; an
+A published catalog release tree **at the live origin** with a succeeding
+`catalog sync` against it (the tree builds, tests green, and reproduces
+byte-for-byte; only the origin publish is pending), an
 end-to-end agent-driven install; provider autostart (the `providers` table is
 never populated by non-test code); a project manifest + lockfile; signed
 releases or packages; runtime policy enforcement; `invoke` / `get` / `cancel`;
 an invocation registry; and any isolation level beyond process supervision.
-Signed releases and the catalog release tree are the two gaps that block the
-most downstream work.
+Signed releases and the live publish of the catalog release tree are the two
+gaps that block the most downstream work.

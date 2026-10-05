@@ -51,6 +51,40 @@ BRIDGE_HOSTS = _load_registry("hosts.json", "name")
 SKILL_TARGET_HOSTS = _load_registry("skill-targets.json", "displayName")
 
 
+# LISTING ID GRAMMAR
+# The Go domain requires every listing id to match
+#   RegexListingID = ^(plugin|mcp|skill|...):[a-z0-9_:-]+:[A-Za-z0-9_.~%+-]+$
+# (internal/domain/identifiers.go). An earlier revision interpolated raw
+# upstream names into ids, which shipped six invalid ones: two MCP servers
+# whose names carried a scraped "?tab=readme-ov-file" query string, and four
+# skills whose names contained spaces or an apostrophe. Downstream, every Go
+# consumer rejects those ids, so the fix belongs here -- at the source -- and
+# every id-construction site funnels through canonical_id().
+_UPSTREAM_INVALID = re.compile(r"[^A-Za-z0-9_.~%+-]+")
+
+
+def canonical_slug(text):
+    """Normalize an upstream name into the listing-id upstream grammar.
+
+    Strips URL query/fragment junk and apostrophes first (the two defects
+    that shipped invalid ids), then maps every remaining character outside
+    ``[A-Za-z0-9_.~%+-]`` to '-'. Idempotent: a grammar-conforming input
+    returns unchanged.
+    """
+    s = str(text).strip().split("?", 1)[0].split("#", 1)[0]
+    s = s.replace("'", "")
+    s = _UPSTREAM_INVALID.sub("-", s)
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    return s
+
+
+def canonical_id(kind, source, upstream):
+    tail = canonical_slug(upstream)
+    if not tail:
+        raise ValueError(f"empty upstream id for {kind}:{source} (from {upstream!r})")
+    return f"{kind}:{source.lower()}:{tail}"
+
+
 def clean_desc(text):
     # Remove markdown badges [![...](...)]
     text = re.sub(r'\[\!\[[^\]]*\]\([^\)]*\)\](?:\([^\)]*\))?', '', text)
@@ -168,8 +202,8 @@ def build_full_catalog():
             m = re.match(r'-\s+\[([^\]]+)\]\(([^)]+)\)\s*[-–—:]\s*(.+)', line_s)
             if m:
                 name, path, desc = m.groups()
-                slug = name.lower().replace(" ", "-")
-                item_id = f"mcp:modelcontextprotocol:{slug}"
+                slug = canonical_slug(name.lower())
+                item_id = canonical_id("mcp", "modelcontextprotocol", slug)
                 if item_id not in seen_ids:
                     seen_ids.add(item_id)
                     items.append({
@@ -211,8 +245,8 @@ def build_full_catalog():
             m = re.match(r'-\s+\[([^\]]+)\]\((https?://github\.com/([^/]+)/([^/\)#]+)[^\)]*)\)(.*)', raw_line)
             if m:
                 label, gh_url, owner, repo, rest = m.groups()
-                slug = repo.lower().replace(".", "-").replace("_", "-")
-                item_id = f"mcp:{owner.lower()}:{slug}"
+                slug = canonical_slug(repo.lower().replace(".", "-").replace("_", "-"))
+                item_id = canonical_id("mcp", owner, slug)
                 if item_id in seen_ids:
                     continue
                 seen_ids.add(item_id)
@@ -297,8 +331,8 @@ def build_full_catalog():
                 parts = label.split("/")
                 owner = parts[0] if len(parts) > 1 else "community"
                 slug_name = parts[1] if len(parts) > 1 else parts[0]
-                slug = slug_name.lower().replace(".", "-").replace("_", "-")
-                item_id = f"skill:{owner.lower()}:{slug}"
+                slug = canonical_slug(slug_name.lower().replace(".", "-").replace("_", "-"))
+                item_id = canonical_id("skill", owner, slug)
 
                 if item_id in seen_ids:
                     continue
@@ -428,8 +462,8 @@ def build_full_catalog():
             base = base_slug(name)
             if not base:
                 continue
-            slug = f"{src['key']}-{base}"
-            item_id = f"plugin:{src['id_owner']}:{base}"
+            slug = canonical_slug(f"{src['key']}-{base}")
+            item_id = canonical_id("plugin", src["id_owner"], base)
             if item_id in seen_ids or slug in seen_slugs:
                 continue
             seen_ids.add(item_id)
@@ -481,7 +515,7 @@ def build_full_catalog():
                     skill = base_slug(sp.split("/")[-1])
                     if not skill:
                         continue
-                    skill_id = f"skill:anthropics:{skill}"
+                    skill_id = canonical_id("skill", "anthropics", skill)
                     skill_slug = f"askills-{skill}"
                     if skill_id in seen_ids or skill_slug in seen_slugs:
                         continue
@@ -545,14 +579,19 @@ def build_full_catalog():
     file_size_mb = os.path.getsize(out_path) / (1024 * 1024)
     print(f"Written successfully to {out_path} ({file_size_mb:.2f} MB)")
 
-    # Publish the release manifest.
+    # Publish the release stats bundle.
     #
-    # Two copies on purpose:
-    #   web/public/v1/current.json  served to clients that fetch it at runtime
-    #   web/data/release.json       imported at BUILD time so the static html
-    #                               already shows real numbers instead of a
-    #                               "checking release manifest..." placeholder
-    #                               that only resolves once JS runs
+    # Ownership (single writer per key):
+    #   - this script owns the DATASET STATS: itemCount/totalCapabilities,
+    #     per-kind counts, hostCompatibility, datasetDigest. It merges them
+    #     into web/data/release.json, which the site imports at BUILD time so
+    #     the static html already shows real numbers instead of a "checking
+    #     release manifest..." placeholder that only resolves once JS runs.
+    #   - `litespm catalog build` (the Go builder) owns the RELEASE IDENTITY:
+    #     releaseId, sequence, manifestDigest, createdAt. Those keys are
+    #     preserved here and stamped by the builder, because the builder also
+    #     owns the served pointer web/public/v1/current.json and the release
+    #     tree its digest names. Two writers of one key is how digests drift.
     #
     # itemCount and totalCapabilities previously disagreed (5185 vs 5814) because
     # only one of them was maintained. They are now the same measurement.
@@ -564,7 +603,7 @@ def build_full_catalog():
         digest = hashlib.sha256(f.read()).hexdigest()
 
     # SOURCE_DATE_EPOCH keeps CI builds reproducible when set; otherwise the
-    # release is stamped with build time, the honest default for a release.
+    # stats are stamped with build time, the honest default.
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
     created = (
         datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc)
@@ -572,41 +611,36 @@ def build_full_catalog():
         else datetime.datetime.now(datetime.timezone.utc)
     )
 
-    v1_path = os.path.join(os.path.dirname(__file__), "..", "web", "public", "v1", "current.json")
-    v1_data = {}
-    if os.path.exists(v1_path):
-        with open(v1_path, "r", encoding="utf-8") as f:
-            v1_data = json.load(f)
-
-    v1_data["itemCount"] = len(items)
-    v1_data["totalCapabilities"] = len(items)
-    v1_data["mcpServersCount"] = mcp_count
-    v1_data["agentSkillsCount"] = skill_count
-    v1_data["pluginsCount"] = plugin_count
-    v1_data["manifestDigest"] = f"sha256:{digest}"
-    # Host compatibility is a property of the KIND, not of each row: an MCP
-    # server is installable into every bridge adapter, a skill only into hosts
-    # with a documented skills directory. Storing the 50-name list on each of
-    # 4,079 rows cost 4.8 MB and said nothing the kind did not already say.
-    v1_data["hostCompatibility"] = {
-        "mcp": "all-bridge-adapters",
-        "skill": "all-skill-targets",
-        "plugin": "publisher-declared",
-    }
-    v1_data["createdAt"] = created.strftime("%Y-%m-%dT%H:%M:%SZ")
-    if os.environ.get("LITESPM_RELEASE_ID"):
-        v1_data["releaseId"] = os.environ["LITESPM_RELEASE_ID"]
-
-    with open(v1_path, "w", encoding="utf-8") as f:
-        json.dump(v1_data, f, indent=2)
-        f.write("\n")
-
     bundled_path = os.path.join(os.path.dirname(__file__), "..", "web", "data", "release.json")
+    stats = {}
+    if os.path.exists(bundled_path):
+        with open(bundled_path, "r", encoding="utf-8") as f:
+            stats = json.load(f)
+
+    stats.update({
+        "itemCount": len(items),
+        "totalCapabilities": len(items),
+        "mcpServersCount": mcp_count,
+        "agentSkillsCount": skill_count,
+        "pluginsCount": plugin_count,
+        "datasetDigest": f"sha256:{digest}",
+        # Host compatibility is a property of the KIND, not of each row: an MCP
+        # server is installable into every bridge adapter, a skill only into hosts
+        # with a documented skills directory. Storing the 50-name list on each of
+        # 4,079 rows cost 4.8 MB and said nothing the kind did not already say.
+        "hostCompatibility": {
+            "mcp": "all-bridge-adapters",
+            "skill": "all-skill-targets",
+            "plugin": "publisher-declared",
+        },
+        "statsUpdatedAt": created.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+
     with open(bundled_path, "w", encoding="utf-8") as f:
-        json.dump(v1_data, f, indent=2)
+        json.dump(stats, f, indent=2)
         f.write("\n")
 
-    print(f"Published release manifest: {len(items)} capabilities, sha256:{digest[:12]}")
+    print(f"Published dataset stats: {len(items)} capabilities, sha256:{digest[:12]}")
 
 if __name__ == "__main__":
     build_full_catalog()

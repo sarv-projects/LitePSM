@@ -6,9 +6,12 @@ coverage. It is a *read-only public site* — it never talks to the local daemon
 vault.
 
 Capability state: **`WIRED`** for the static marketplace, and the deployed catalog data is
-**`SHIPPED`** — see [STATUS.md](../STATUS.md) §1–§2. `litespm catalog sync` against the same origin
-is **broken at the source** (the release tree 404s), which is why the site and the binary can show
-different catalog files: [ARCH/31 §4.2](../ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin).
+**`SHIPPED`** — see [STATUS.md](../STATUS.md) §1–§2. `litespm catalog sync` against the **live**
+origin is still rejected fail-closed (the live origin serves only the legacy pointer — no
+`schemaVersion`, no release tree), even though the release tree now builds and tests green in-repo
+(`litespm catalog build`); the site and the binary can therefore still show different catalog
+files until the origin is re-published via `scripts/deploy-pages.sh`:
+[ARCH/31 §4.2](../ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#42-the-published-catalog-and-the-client-read-different-files--the-sync-path-is-dead-at-the-origin).
 
 ---
 
@@ -48,8 +51,8 @@ web/
 | `data/catalog.json` | **5,814** rows (`id`, `name`, `slug`, `kind`, `summary`, `category`, `publisher`, `transport`, `runtime`, `stars`, `version`, `command`, `args`, …) | `lib/catalog.ts`, `lib/search.worker.ts` (MiniSearch index in a Web Worker) | `scripts/build_full_catalog.py` |
 | `data/hosts.json` | **50** bridge adapters | `lib/hosts.ts` | `scripts/gen_hosts_ts.go` from `internal/host` |
 | `data/skill-targets.json` | **77** skill install targets | `lib/hosts.ts` | `scripts/gen_hosts_ts.go` from `internal/skills` |
-| `data/release.json` | release pointer (`releaseId`, `sequence`, `itemCount`, `manifestDigest`, `advisories`, per-kind counts, host compatibility) | imported at **build time** (`lib/telemetry.ts`) | `scripts/build_full_catalog.py` |
-| `public/v1/current.json` | same pointer, `releaseId rel-2026-09-30-01`, `sequence 142`, `itemCount 5814` | fetched at **runtime**, `cache: "no-store"` (`lib/telemetry.ts:110`) — the app's **only** network request | `scripts/build_full_catalog.py` (copied through by `scripts/deploy-pages.sh`) |
+| `data/release.json` | merged stats bundle: dataset stats (`itemCount`, per-kind counts, `hostCompatibility`, `datasetDigest`) + release identity (`releaseId`, `sequence`, `manifestDigest`, `createdAt`) | imported at **build time** (`lib/telemetry.ts`) | **Single writer per key:** `scripts/build_full_catalog.py` merges the dataset stats, `litespm catalog build` stamps the release identity |
+| `public/v1/current.json` | released pointer, `releaseId rel-2026-10-05-01`, `sequence 143`, `itemCount 5814`, `manifestDigest` over `manifest.json` | fetched at **runtime**, `cache: "no-store"` (`lib/telemetry.ts:110`) — the app's **only** network request | `go run ./cmd/litespm catalog build --out web/public` (copied through by `scripts/deploy-pages.sh`, which re-materializes it byte-for-byte) |
 
 `stars` is `null` on every row by policy: no upstream source exposes a machine-readable popularity
 figure, so none is published (`ARCH/26` §12.4).
@@ -59,22 +62,31 @@ figure, so none is published (`ARCH/26` §12.4).
 1. `go run scripts/gen_hosts_ts.go` → regenerates `data/hosts.json` + `data/skill-targets.json`
    from the Go registries (so host counts cannot drift from the binary).
 2. `python3 scripts/build_full_catalog.py` → fetches upstream registries and writes
-   `data/catalog.json`, `public/v1/current.json`, `data/release.json`.
-3. `./scripts/deploy-pages.sh` → runs `npm ci` + `npm run build`, stages `pages-dist/`, writes the
+   `data/catalog.json` + the dataset stats in `data/release.json` (ids funnelled through fail-closed
+   `canonical_id()`).
+3. `go run ./cmd/litespm catalog build --out web/public` → converts the dataset into the release
+   tree (`public/v1/releases/<id>/{manifest,listings,versions}.json`), writes the released pointer
+   `public/v1/current.json`, and stamps the release identity into `data/release.json`. Cuts a new
+   release id/sequence from the previous pointer (releases are immutable in the CDN cache).
+4. `./scripts/deploy-pages.sh` → runs `npm ci` + `npm run build`, stages `pages-dist/`, replaces the
+   exported `v1/` with a byte-for-byte materialization of the released tree, writes the
    `_headers` cache policy, and runs the leak allowlist audit.
-4. Publication to the live origin is a **manual** step — no workflow uploads `pages-dist/`
+5. Publication to the live origin is a **manual** step — no workflow uploads `pages-dist/`
    (`wrangler.toml` points at it).
 
-**All of this is manual.** CI never regenerates catalog data, and the Go release compiler
-(`internal/catalogbuild.CompileRelease`) has no non-test caller — two builders exist and locked
-decision **D4 is contested** ([REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md), `ARCH/31` §4.3).
+**All of this is manual.** CI never regenerates catalog data. The builders are split by role —
+Python owns dataset ingestion, `litespm catalog build` (Go) owns pointer/release publication —
+which is what the code does today; locked decision **D4 is implemented-as-split but not yet
+adjudicated** ([STATUS.md](../STATUS.md) §2).
 
 ## 5. Output & deployment
 
 - `npm run build` → **`web/out/`** (≈4.7 MB: `index.html`, `_next/`, `explore/`, `agents/`,
-  `categories/`, `trending/`, `package/`, `404.html`, `v1/`). Gitignored.
-- `scripts/deploy-pages.sh` → **`pages-dist/`** = `out/` + `_headers` + `v1/current.json`.
-  Gitignored.
+  `categories/`, `trending/`, `package/`, `404.html`, `v1/`). Gitignored. The exported `v1/`
+  carries whatever the last local `catalog build` left in `public/v1/` — the deploy script drops it
+  and materializes the released tree instead.
+- `scripts/deploy-pages.sh` → **`pages-dist/`** = `out/` + `_headers` + the byte-for-byte
+  materialized release tree under `v1/`. Gitignored.
 - `wrangler.toml` (`name = "litepsm"`, `pages_build_output_dir = "pages-dist"`,
   `[assets] directory = "./pages-dist"`) — the deployment name is the hostname and is deliberately
   **not** rebranded ([REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md) `M1`).
@@ -102,11 +114,12 @@ The site is public static content. Binding rules:
 
 - `npm run start` and `npm run lint` are unusable (§1); there is no `type-check` script despite a
   comment in `lib/hosts.ts` naming one.
-- Catalog freshness is not verified anywhere: no CI step runs the Python builder or checks that
-  `data/catalog.json` matches `public/v1/current.json` (`sequence`/`itemCount` are printed by the
-  builder, not asserted).
-- The site renders catalog data that the Go client cannot sync against (broken release tree at the
-  origin — [STATUS.md](../STATUS.md) §2).
+- Catalog freshness is not verified anywhere: no CI step runs the Python builder, so
+  `data/catalog.json` can go stale while every build stays green (row counts are printed by the
+  builders, not asserted against each other).
+- The site renders catalog data the Go client cannot sync against **at the live origin** (the
+  release tree builds and tests in-repo, but the origin still serves the legacy pointer and no
+  tree — [STATUS.md](../STATUS.md) §2, pending a `deploy-pages.sh` upload).
 - UI stacks described elsewhere in prose do not all exist here: the dependency list contains no
   Radix packages — the components use plain React, Tailwind and `lucide-react` icons.
 - `next build` in CI proves the export compiles; it does not prove the deployed origin serves it
