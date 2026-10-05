@@ -1,0 +1,46 @@
+LiteSPM
+Copyright 2026 sarv-projects
+
+This product includes software developed at sarv-projects.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. You may obtain a copy of the
+License in the LICENSE file distributed with this product or at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+Third-party attributions
+--------------------------------------------------------------------------------
+
+Host skill-directory tables in `internal/skills` are transcribed from the
+`vercel-labs/skills` agent directory map (MIT). See README section 3.4 for the
+per-agent path table and its provenance note.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+The LiteSPM Go binary statically links the following direct modules declared in
+`go.mod`. Each is distributed under the license shown; the complete license text
+ships with the module source. The npm launcher has no runtime dependencies and
+uses only Node.js built-ins. See `.github/DEPENDENCY-LICENSE-INVENTORY.md` for
+source URLs and verification status.
+
+| Module | License |
+| --- | --- |
+| github.com/Microsoft/go-winio | MIT |
+| github.com/dustin/go-humanize | MIT |
+| github.com/google/uuid | BSD-3-Clause |
+| github.com/mattn/go-isatty | MIT |
+| github.com/ncruces/go-strftime | MIT |
+| github.com/remyoudompheng/bigfft | BSD-3-Clause |
+| golang.org/x/sys | BSD-3-Clause |
+| modernc.org/libc | BSD-3-Clause |
+| modernc.org/mathutil | BSD-3-Clause |
+| modernc.org/memory | BSD-3-Clause |
+| modernc.org/sqlite | BSD-3-Clause |
+
+No direct dependency license is unverified at the time of writing. Any license
+that cannot be confirmed must be recorded as `UNKNOWN — verify before release`
+in the inventory rather than estimated.

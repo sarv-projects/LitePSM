@@ -99,7 +99,7 @@ func TestManifestIntegrity(t *testing.T) {
 
 	// Check that each file in the manifest matches its actual hash
 	for filename, fileMeta := range out.Manifest.Files {
-		relPath := filepath.ToSlash(filepath.Join("releases", releaseID, filename))
+		relPath := filepath.ToSlash(filepath.Join("v1", "releases", releaseID, filename))
 		fileBytes, exists := out.Files[relPath]
 		if !exists {
 			t.Fatalf("manifest declares file %s (rel: %s) but not generated", filename, relPath)
@@ -115,7 +115,7 @@ func TestManifestIntegrity(t *testing.T) {
 	}
 
 	// Verify current.json manifestDigest matches
-	manifestPath := fmt.Sprintf("releases/%s/manifest.json", releaseID)
+	manifestPath := fmt.Sprintf("v1/releases/%s/manifest.json", releaseID)
 	expectedManifestDigest := domain.ComputeBytesDigest(out.Files[manifestPath])
 	if out.Current.ManifestDigest != expectedManifestDigest {
 		t.Fatalf("current.json manifestDigest mismatch: got %s, expected %s", out.Current.ManifestDigest, expectedManifestDigest)
@@ -142,9 +142,9 @@ func TestWriteToDirectory(t *testing.T) {
 	// Check files on disk
 	checkFiles := []string{
 		filepath.Join(tmpDir, "v1", "current.json"),
-		filepath.Join(tmpDir, "releases", "rel_test_write", "manifest.json"),
-		filepath.Join(tmpDir, "releases", "rel_test_write", "listings.json"),
-		filepath.Join(tmpDir, "releases", "rel_test_write", "versions.json"),
+		filepath.Join(tmpDir, "v1", "releases", "rel_test_write", "manifest.json"),
+		filepath.Join(tmpDir, "v1", "releases", "rel_test_write", "listings.json"),
+		filepath.Join(tmpDir, "v1", "releases", "rel_test_write", "versions.json"),
 	}
 
 	for _, f := range checkFiles {

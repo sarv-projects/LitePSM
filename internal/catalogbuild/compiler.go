@@ -94,7 +94,11 @@ func CompileRelease(
 	if err != nil {
 		return nil, fmt.Errorf("failed to canonicalize listings: %w", err)
 	}
-	listingsPath := fmt.Sprintf("releases/%s/listings.json", releaseID)
+	// Release files live under the same /v1 API namespace as the pointer that
+	// names them, so a client that fetched <base>/v1/current.json resolves every
+	// relative path below <base>/v1/. ARCH/18 §2 and the CDN cache policy both
+	// specify /v1/releases/; this path must not drift from them.
+	listingsPath := fmt.Sprintf("v1/releases/%s/listings.json", releaseID)
 	outputFiles[listingsPath] = canonicalListings
 	manifestFiles["listings.json"] = ReleaseManifestFile{
 		Size:   int64(len(canonicalListings)),
@@ -110,7 +114,7 @@ func CompileRelease(
 	if err != nil {
 		return nil, fmt.Errorf("failed to canonicalize versions: %w", err)
 	}
-	versionsPath := fmt.Sprintf("releases/%s/versions.json", releaseID)
+	versionsPath := fmt.Sprintf("v1/releases/%s/versions.json", releaseID)
 	outputFiles[versionsPath] = canonicalVersions
 	manifestFiles["versions.json"] = ReleaseManifestFile{
 		Size:   int64(len(canonicalVersions)),
@@ -143,7 +147,7 @@ func CompileRelease(
 	if err != nil {
 		return nil, fmt.Errorf("failed to canonicalize manifest: %w", err)
 	}
-	manifestPath := fmt.Sprintf("releases/%s/manifest.json", releaseID)
+	manifestPath := fmt.Sprintf("v1/releases/%s/manifest.json", releaseID)
 	outputFiles[manifestPath] = canonicalManifest
 	manifestDigest := domain.ComputeBytesDigest(canonicalManifest)
 

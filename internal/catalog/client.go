@@ -66,7 +66,11 @@ func (c *Client) LoadFromCache() error {
 		return err
 	}
 
-	listingsPath := filepath.Join(c.cacheDir, "releases", current.ReleaseID, "listings.json")
+	// The on-disk cache mirrors the remote tree exactly, so a cached release is
+	// byte-identical to the served release and there is only one path convention
+	// to reason about. Release files live under /v1/ because /v1/current.json
+	// names them (see internal/catalogbuild/compiler.go and ARCH/18 §2).
+	listingsPath := filepath.Join(c.cacheDir, "v1", "releases", current.ReleaseID, "listings.json")
 	listingsData, err := os.ReadFile(listingsPath)
 	if err != nil {
 		return err
@@ -117,7 +121,7 @@ func (c *Client) FetchCurrent(ctx context.Context) (*catalogbuild.CurrentPointer
 
 // FetchManifest retrieves and verifies the root manifest for a specific release.
 func (c *Client) FetchManifest(ctx context.Context, releaseID string) (*catalogbuild.ReleaseManifest, error) {
-	url := fmt.Sprintf("%s/releases/%s/manifest.json", c.baseURL, releaseID)
+	url := fmt.Sprintf("%s/v1/releases/%s/manifest.json", c.baseURL, releaseID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -153,7 +157,7 @@ func (c *Client) FetchListings(ctx context.Context, releaseID string, manifest *
 		return nil, fmt.Errorf("manifest missing listings.json entry")
 	}
 
-	url := fmt.Sprintf("%s/releases/%s/listings.json", c.baseURL, releaseID)
+	url := fmt.Sprintf("%s/v1/releases/%s/listings.json", c.baseURL, releaseID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -223,9 +227,8 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 
 	// Persist to local disk cache if cacheDir is set
 	if c.cacheDir != "" {
-		releaseDir := filepath.Join(c.cacheDir, "releases", current.ReleaseID)
+		releaseDir := filepath.Join(c.cacheDir, "v1", "releases", current.ReleaseID)
 		_ = os.MkdirAll(releaseDir, 0755)
-		_ = os.MkdirAll(filepath.Join(c.cacheDir, "v1"), 0755)
 
 		manifestBytes, _ := json.Marshal(manifest)
 		_ = os.WriteFile(filepath.Join(releaseDir, "manifest.json"), manifestBytes, 0644)

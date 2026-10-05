@@ -75,6 +75,12 @@ jobs:
           fi
           echo "npm package version v${VERSION} matches the tag"
 
+      # The npm tarball must carry the project license and notices. The canonical
+      # files live at the repository root; copy them into ./npm so the `files`
+      # allowlist in npm/package.json packs them.
+      - name: Stage license files for npm
+        run: cp LICENSE NOTICE npm/
+
       # Deliberately after the GitHub release: the npm postinstall fetches the
       # v<version> assets, so publishing before they exist would ship a package
       # whose binary download 404s.
