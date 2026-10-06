@@ -12,7 +12,9 @@ echo "● Building Next.js Static Export..."
 (
     cd web
     echo "● Installing web dependencies..."
-    npm ci || npm install
+    # Strict lockfile install. A silent `|| npm install` fallback would let a
+    # release ship a dependency tree that no lockfile describes.
+    npm ci
     # NEXT_PUBLIC_SITE_URL sets the canonical origin used for metadata, Open
     # Graph and JSON-LD URLs; it must name the origin that serves the site.
     # Empty keeps the built-in default from web/lib/site.ts.
@@ -45,6 +47,13 @@ if [ ! -f "${PAGES_DIR}/v1/current.json" ] || [ ! -d "${PAGES_DIR}/v1/releases" 
     exit 1
 fi
 
+# The CDN caches /v1/releases/* immutably and /v1/current.json is the only
+# mutable part, so a tree that disagrees with its own pointer is unrecoverable
+# once uploaded: the digest chain is checked here, before upload, using the same
+# rules `catalog sync` applies on the client.
+echo "● Verifying /v1 tree against its pointer (digest chain)..."
+go run ./cmd/litespm catalog build --verify "${PAGES_DIR}"
+
 echo "● Writing Cloudflare Pages _headers..."
 cat << 'EOF' > "${PAGES_DIR}/_headers"
 # Immutable release directory (forever cached)
@@ -62,14 +71,20 @@ EOF
 
 echo "● Running Strict Dist Allowlist & Leak Prevention Audit..."
 # Check for forbidden extensions or secret leaks (.go, .git, .env, .pem, .key, etc.)
+# Source maps are the leak this audit originally missed: a .js.map embeds the
+# original module source, so shipping one publishes the code behind the bundle.
+# The .ts rule used to carry a chain of -not exceptions that could never apply
+# (a .ts file never matches *.js and friends), which read like an allowlist while
+# forbidding every .ts file; it is now the single rule it meant to be.
 FORBIDDEN_FILES=$(find "${PAGES_DIR}" -type f \( \
     -name "*.go" -o \
+    -name "*.map" -o \
     -name "*.env*" -o \
     -name "*.pem" -o \
     -name "*.key" -o \
     -name "*.db" -o \
     -name "*.sqlite*" -o \
-    -name "*.ts" -not -name "*.js" -not -name "*.css" -not -name "*.html" -not -name "*.json" -not -name "*.txt" -not -name "*.svg" -not -name "*.ico" -not -name "*.png" -not -name "_headers" -not -name "_routes.json" \
+    -name "*.ts" \
 \))
 
 if [ -n "${FORBIDDEN_FILES}" ]; then

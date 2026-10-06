@@ -1153,7 +1153,23 @@ func runCatalogBuild(args []string) {
 	sequence := fs.Int("sequence", -1, "release sequence (default: released sequence plus one; must increase)")
 	created := fs.String("created-at", "", "RFC3339 creation time (default: SOURCE_DATE_EPOCH if set, else now)")
 	materialize := fs.Bool("materialize", false, "reproduce the released pointer's tree byte-for-byte instead of cutting a new release")
+	verifyDir := fs.String("verify", "", "verify an already-written tree in this directory against its own pointer, then exit (used by packaging)")
 	_ = fs.Parse(args)
+
+	// --verify is the packaging gate: the CDN caches /v1/releases/* immutably,
+	// so a tree that disagrees with its pointer must fail the deploy, not ship.
+	if *verifyDir != "" {
+		pointer, manifest, err := catalogbuild.VerifyMaterializedTree(*verifyDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Catalog tree verification failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Catalog tree verified against its pointer\n")
+		fmt.Printf("  Release:  %s (sequence %d, %d items)\n", manifest.ReleaseID, pointer.Sequence, manifest.ItemCount)
+		fmt.Printf("  Manifest: %s\n", pointer.ManifestDigest)
+		fmt.Printf("  Files:    %d verified byte-for-byte\n", len(manifest.Files))
+		return
+	}
 
 	output, snapshotID, err := buildCatalogRelease(catalogBuildOptions{
 		datasetPath: *dataset,

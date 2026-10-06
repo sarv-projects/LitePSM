@@ -101,6 +101,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Installer executes only verified bytes.** `npm/scripts/install-binary.js` verified checksums best-effort: a missing manifest entry, an unreadable
+  manifest or a fetch failure each printed a warning and installed the binary anyway, and a digest mismatch aborted while still exiting 0, so npm
+  reported success with no binary present. Verification is now fail-closed — anything unproven is deleted rather than installed — and a refusal is
+  reported as an integrity failure rather than a network notice. Redirects are also HTTPS-only now: an `http://` Location previously downgraded both
+  the binary and its checksum manifest to cleartext, which combined with the fail-open path to mean arbitrary code execution.
+- **The npm wrapper no longer runs whatever `litespm` is on `PATH`.** `resolveBinary()` fell back to `which litespm` with no version or checksum check,
+  so `npm i -g litespm` could silently execute an older release, a local build, or anything earlier on `PATH`. A package that pins a version now runs
+  that version or exits non-zero.
+- **Deploy leak audit missed source maps.** `scripts/deploy-pages.sh` forbade `*.go`, `*.env*`, keys and databases but not `*.map`, so a `.js.map` —
+  which embeds the original module source — would have shipped to the CDN. Its `*.ts` rule also carried a chain of `-not` exceptions that could never
+  apply (a `.ts` file never matches `*.js`), reading like an allowlist while forbidding every `.ts` file; both are fixed. `npm ci || npm install` is
+  now a strict `npm ci`, so a release cannot ship a dependency tree no lockfile describes.
+- **Packaging now verifies the release tree against its own pointer.** `/v1/releases/*` is CDN-cached immutably, so a tree that disagrees with
+  `current.json` is unrecoverable once uploaded, and nothing checked it: `scripts/deploy-pages.sh` only asserted the files existed. `litespm catalog
+  build --verify <dir>` re-runs the client digest chain (`pointer.manifestDigest` → `manifest.files[].digest`/`size`) over the written bundle and the
+  deploy script calls it. Verified against a materialized tree and against a one-byte `listings.json` edit and a truncated `versions.json`, both of
+  which now fail the deploy.
+
 - **JSON canonicalization numbers.** `CanonicalizeJSON` formatted numbers with
   Go's `'g'` float style, turning every file size ≥ 10⁶ into scientific
   notation (`4.900491e06`) — valid JSON, but not the integer a release

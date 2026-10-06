@@ -42,7 +42,8 @@ function fetchText(url, redirects = 0) {
       .on("response", (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
-          resolve(fetchText(res.headers.location, redirects + 1));
+          // A downgrade here would be silently accepted, so it throws instead.
+          resolve(fetchText(resolveRedirect(url, res.headers.location), redirects + 1));
           return;
         }
         if (res.statusCode !== 200) {
@@ -80,8 +81,37 @@ const agent = new https.Agent({ keepAlive: false });
 // Guard against a stalled transfer: an npm lifecycle script must never hang.
 const REQUEST_TIMEOUT_MS = 120000;
 
+/**
+ * Refuse anything that is not plain HTTPS.
+ *
+ * This installer downloads a native binary and then executes it, so it is the
+ * one place in the tree where a transport downgrade turns into code execution:
+ * a redirect to http:// would deliver both the binary and its checksum manifest
+ * in cleartext, and a fail-open verification would then accept them. Redirect
+ * hosts are deliberately not pinned — GitHub serves release assets from
+ * objects.githubusercontent.com, and LITESPM_RELEASE_REPO exists so a mirror can
+ * be substituted without a code change — but the scheme is never negotiable.
+ */
+function assertHTTPS(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    throw new Error(`malformed URL: ${url}`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`refusing non-HTTPS URL (${parsed.protocol}//): ${url}`);
+  }
+  return url;
+}
+
 function request(url) {
-  return https.get(url, { agent, timeout: REQUEST_TIMEOUT_MS });
+  return https.get(assertHTTPS(url), { agent, timeout: REQUEST_TIMEOUT_MS });
+}
+
+/** Resolve a redirect Location against the current URL, keeping HTTPS mandatory. */
+function resolveRedirect(currentUrl, location) {
+  return assertHTTPS(new URL(location, currentUrl).toString());
 }
 
 function downloadFile(url, targetPath) {
@@ -104,10 +134,11 @@ function downloadFile(url, targetPath) {
 
     const handleResponse = (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        // Follow GitHub redirect. The response MUST be drained, otherwise its
-        // socket is never released and the process cannot exit.
+        // Follow the GitHub redirect. The response MUST be drained, otherwise
+        // its socket is never released and the process cannot exit. The target
+        // must still be HTTPS (see assertHTTPS).
         res.resume();
-        request(res.headers.location).on("error", done).on("timeout", function () {
+        request(resolveRedirect(url, res.headers.location)).on("error", done).on("timeout", function () {
           this.destroy(new Error("download timeout"));
         }).on("response", handleResponse);
         return;
@@ -135,6 +166,62 @@ function downloadFile(url, targetPath) {
       })
       .on("response", handleResponse);
   });
+}
+
+/**
+ * Verify a downloaded binary against the release's published SHA-256 manifest,
+ * deleting it and throwing unless the digest is proven. Fail-closed by design.
+ */
+async function verifyDownloadedBinary(binaryPath, binName, releaseBase) {
+  const fail = (reason) => {
+    try {
+      fs.unlinkSync(binaryPath);
+    } catch (e) {
+      /* best effort */
+    }
+    const err = new Error(`refusing to install ${binName}: ${reason}`);
+    // Distinguishes "we could not prove these bytes" from "there were no
+    // bytes", because the two demand different operator responses.
+    err.unverified = true;
+    throw err;
+  };
+
+  let sums;
+  try {
+    sums = await fetchText(`${releaseBase}/SHA256SUMS.txt`);
+  } catch (err) {
+    fail(`the checksum manifest could not be fetched (${err.message})`);
+  }
+
+  const expected = checksumFor(sums, binName);
+  if (!expected) {
+    fail(`no checksum entry for ${binName} in SHA256SUMS.txt`);
+  }
+
+  return assertVerifiedDigest(binaryPath, binName, expected);
+}
+
+/**
+ * Compare a downloaded file against an expected digest, deleting it and
+ * throwing when they disagree. Split out from verifyDownloadedBinary so the
+ * accept and reject paths are testable without standing up TLS.
+ */
+function assertVerifiedDigest(binaryPath, binName, expected) {
+  const actual = computeFileSHA256(binaryPath);
+  if (actual !== expected) {
+    try {
+      fs.unlinkSync(binaryPath);
+    } catch (e) {
+      /* best effort */
+    }
+    const err = new Error(
+      `refusing to install ${binName}: checksum mismatch (expected ${expected}, got ${actual})`
+    );
+    err.unverified = true;
+    throw err;
+  }
+  console.log(`[litespm] Verified SHA-256 checksum for ${binName}`);
+  return actual;
 }
 
 async function installBinary() {
@@ -182,25 +269,13 @@ async function installBinary() {
     const tempTarget = `${targetPath}.tmp.${Date.now()}`;
     await downloadFile(releaseUrl, tempTarget);
 
-    // Verify the downloaded binary against the published SHA-256 checksums.
-    // A mismatch aborts the install; a missing manifest is surfaced as a warning.
-    try {
-      const sums = await fetchText(`${releaseBase}/SHA256SUMS.txt`);
-      const expected = checksumFor(sums, binName);
-      if (expected) {
-        const actual = computeFileSHA256(tempTarget);
-        if (actual !== expected) {
-          fs.unlinkSync(tempTarget);
-          console.warn(`[litespm] Checksum mismatch for ${binName} (expected ${expected}, got ${actual}); aborting install.`);
-          return;
-        }
-        console.log(`[litespm] Verified SHA-256 checksum for ${binName}`);
-      } else {
-        console.warn(`[litespm] Warning: no checksum entry for ${binName}; proceeding unverified.`);
-      }
-    } catch (verifyErr) {
-      console.warn(`[litespm] Warning: could not verify checksum (${verifyErr.message}).`);
-    }
+    // Verification is FAIL-CLOSED. Bytes are on disk and this script's entire
+    // job is to make them trustworthy, so an unverifiable download is discarded
+    // rather than installed: a missing manifest, a missing entry, an unreadable
+    // manifest or a digest mismatch all leave no binary behind. Proceeding on a
+    // warning would mean the one artifact we execute is the one artifact we
+    // could not check.
+    await verifyDownloadedBinary(tempTarget, binName, releaseBase);
 
     fs.renameSync(tempTarget, targetPath);
     if (process.platform !== "win32") {
@@ -209,12 +284,22 @@ async function installBinary() {
     fs.writeFileSync(stampPath, `${VERSION}\n`);
     console.log(`[litespm] Successfully downloaded and installed ${binName} to ${targetPath}`);
   } catch (err) {
-    console.warn(`[litespm] Notice: could not download the native binary (${err.message}).`);
-    console.warn(`[litespm] Expected release asset: ${releaseUrl}`);
-    console.warn(
-      `[litespm] If that release does not exist yet, push the v${VERSION} tag and let its GitHub release publish before installing from npm.`
-    );
-    console.warn(`[litespm] LiteSPM will resolve or re-attempt on first invocation.`);
+    if (err && err.unverified) {
+      // No binary was installed and nothing unverified will run. This is a
+      // release-integrity failure, not a network one, so it must not read like
+      // a transient notice.
+      console.warn(`[litespm] INSTALL REFUSED — ${err.message}`);
+      console.warn(
+        `[litespm] The download was discarded rather than installed unverified. Verify SHA256SUMS.txt for v${VERSION} on the release, then reinstall.`
+      );
+    } else {
+      console.warn(`[litespm] Notice: could not download the native binary (${err.message}).`);
+      console.warn(`[litespm] Expected release asset: ${releaseUrl}`);
+      console.warn(
+        `[litespm] If that release does not exist yet, push the v${VERSION} tag and let its GitHub release publish before installing from npm.`
+      );
+      console.warn(`[litespm] LiteSPM will resolve or re-attempt on first invocation.`);
+    }
   }
 }
 
@@ -233,4 +318,13 @@ if (require.main === module) {
     });
 }
 
-module.exports = { installBinary, computeFileSHA256, checksumFor, agent };
+module.exports = {
+  installBinary,
+  computeFileSHA256,
+  checksumFor,
+  verifyDownloadedBinary,
+  assertVerifiedDigest,
+  assertHTTPS,
+  resolveRedirect,
+  agent,
+};

@@ -43,15 +43,14 @@ function resolveBinary() {
     }
   }
 
-  // 2. Fallback to pre-installed system binary
-  const fallback = spawnSync(process.platform === "win32" ? "where" : "which", ["litespm"], { encoding: "utf8" });
-  if (fallback.status === 0 && fallback.stdout.trim()) {
-    const sysPath = fallback.stdout.split("\n")[0].trim();
-    if (sysPath && sysPath !== __filename) {
-      return sysPath;
-    }
-  }
-
+  // There is deliberately NO "whatever `litespm` is on PATH" fallback.
+  //
+  // It used to be here, and it silently subverted the point of this wrapper: a
+  // `litespm i -g litespm` would run whatever binary happened to come first on
+  // PATH — an older release, a build in the user's own tree, or anything an
+  // attacker managed to place there — with no version check and no checksum. A
+  // package that pins a version must run that version or fail. If the pinned
+  // binary is genuinely missing, main() says so and exits non-zero.
   return null;
 }
 

@@ -50,6 +50,15 @@ jobs:
           node --check npm/bin/litespm.js
           node --check npm/scripts/install-binary.js
 
+      # The installer is the only place this project executes a downloaded
+      # native binary, so its refusal paths are tested rather than assumed.
+      # test_npm.js needs a binary to resolve, so one is built first and dropped
+      # in dist/ under the name the wrapper looks for.
+      - name: Test npm Wrapper and Installer
+        run: |
+          go build -o "dist/$(node -p "require('./npm/bin/litespm.js').getBinaryName()")" ./cmd/litespm
+          cd npm && npm test
+
   test-go:
     name: Test Go Engine (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
