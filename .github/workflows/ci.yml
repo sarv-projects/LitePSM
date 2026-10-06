@@ -59,6 +59,20 @@ jobs:
           go build -o "dist/$(node -p "require('./npm/bin/litespm.js').getBinaryName()")" ./cmd/litespm
           cd npm && npm test
 
+      # The committed dataset is the input to every published release. Nothing
+      # else in CI touched it, so an edit that made the dataset un-compilable
+      # (duplicate or unsafe listing ids) or that drifted from the released tree
+      # would only surface at deploy time, on the machine doing the deploying.
+      # --materialize reproduces the released pointer byte for byte from the
+      # committed dataset, so this is a reproducibility check, not a network one.
+      - name: Verify Dataset Reproduces the Released Tree
+        run: |
+          go run ./cmd/litespm catalog build \
+            --materialize \
+            --out "${{ runner.temp }}/release-check" \
+            --prev web/public/v1/current.json
+          go run ./cmd/litespm catalog build --verify "${{ runner.temp }}/release-check"
+
   test-go:
     name: Test Go Engine (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -91,6 +105,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # scripts/deploy-pages.sh materializes the release tree with the Go
+      # builder, so packaging it here requires the Go toolchain too.
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -112,3 +134,13 @@ jobs:
 
       - name: Verify Static Output
         run: test -f web/out/index.html
+
+      # Package the bundle exactly as scripts/deploy-pages.sh does — export,
+      # drop the copied /v1, materialize the released tree — and then judge it
+      # with the same audit script the deploy runs. This is what catches a source
+      # map in the export or a release tree that no longer matches its pointer,
+      # before either reaches the CDN.
+      - name: Package and Audit the Deploy Bundle
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/deploy-pages.sh

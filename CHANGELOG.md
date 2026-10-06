@@ -101,6 +101,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI now judges the deploy bundle with the deploy's own checks.** `scripts/deploy-pages.sh` was referenced by no workflow, so its packaging — and
+  the leak audit and digest verification inside it — only ever ran on the machine doing the deploying. Both judgements moved into
+  `scripts/audit-pages-dist.sh`, which the deploy script and CI now call, so a source map in the export or a release tree that no longer matches its
+  pointer fails CI instead of shipping. `build-web` gained the Go toolchain the packaging step needs.
+- **CI proves the committed dataset still reproduces the published release.** Nothing in CI touched `web/data/catalog.json`, so an edit that made it
+  un-compilable (duplicate or unsafe listing ids), or that drifted from the released tree, surfaced only at deploy time. CI now runs
+  `catalog build --materialize` against the committed pointer — a hermetic reproducibility check, no network — and verifies the result.
+- **A stale local build can no longer shadow the pinned release.** The postinstall preferred `dist/<binary>` over the published release and stamped the
+  install `"local"`, so a checkout with an old build reinstalled it forever and never fetched the version the package pins. `dist/` is now ignored
+  unless `LITESPM_ALLOW_LOCAL_DIST=1` is set, and that path says plainly that its checksum is unverified.
+
 - **Installer executes only verified bytes.** `npm/scripts/install-binary.js` verified checksums best-effort: a missing manifest entry, an unreadable
   manifest or a fetch failure each printed a warning and installed the binary anyway, and a digest mismatch aborted while still exiting 0, so npm
   reported success with no binary present. Verification is now fail-closed — anything unproven is deleted rather than installed — and a refusal is

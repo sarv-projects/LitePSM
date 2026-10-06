@@ -160,6 +160,23 @@ processes. Injecting stored secrets into a provider's environment at launch is
   content digest)`, forcing re-approval on upstream changes — `IMPLEMENTED`, not
   yet reachable from a workflow (see the status note above).
 
+### Installing a local build
+
+`npm install` installs the published binary for this package version. If a
+checkout has a stale `dist/` binary it is ignored, deliberately: the postinstall
+used to prefer it and stamp the install `"local"`, so the stale build was
+reinstalled forever and the pinned release never arrived.
+
+To install a binary you built yourself (for example while testing a change
+before publishing a release), opt in explicitly:
+
+```bash
+LITESPM_ALLOW_LOCAL_DIST=1 npm install -g litespm
+```
+
+That path does not verify a checksum, because a local build has no published
+digest.
+
 ## Requirements
 
 - Node.js ≥ 18 (for the npm launcher), or a supported native binary.

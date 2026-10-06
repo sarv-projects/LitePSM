@@ -249,16 +249,30 @@ async function installBinary() {
     );
   }
 
-  // 2. Check if dist/ contains the pre-compiled binary (e.g. local build or git checkout)
+  // 2. A pre-built binary in dist/ is a developer convenience, NOT a substitute
+  //    for the pinned release. It used to take precedence and was stamped
+  //    "local", so a checkout with a stale dist/ kept installing that binary
+  //    forever and never re-downloaded the version this package pins. It is now
+  //    opt-in: set LITESPM_ALLOW_LOCAL_DIST=1 to use it deliberately, e.g.
+  //    while testing a build before publishing a release.
   const localDist = path.join(__dirname, "..", "..", "dist", binName);
-  if (fs.existsSync(localDist)) {
+  if (process.env.LITESPM_ALLOW_LOCAL_DIST === "1" && fs.existsSync(localDist)) {
     fs.copyFileSync(localDist, targetPath);
     if (process.platform !== "win32") {
       fs.chmodSync(targetPath, 0o755);
     }
-    fs.writeFileSync(stampPath, "local\n");
-    console.log(`[litespm] Installed ${binName} to ${targetPath}`);
+    fs.writeFileSync(stampPath, `${VERSION}-local\n`);
+    console.log(
+      `[litespm] Using the LOCAL build at ${localDist} (LITESPM_ALLOW_LOCAL_DIST=1). ` +
+        `It is not the published v${VERSION} binary and its checksum is not verified.`
+    );
     return;
+  }
+  if (fs.existsSync(localDist)) {
+    console.log(
+      `[litespm] Ignoring the local build at ${localDist}; installing the published ` +
+        `v${VERSION} binary. Set LITESPM_ALLOW_LOCAL_DIST=1 to use it deliberately.`
+    );
   }
 
   // 3. Fallback: Download pre-compiled release binary from GitHub Releases
