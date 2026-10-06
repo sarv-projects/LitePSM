@@ -25,6 +25,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -340,6 +342,156 @@ func lookupInMap(root map[string]any, keyPath []string) map[string]any {
 		return m
 	}
 	return map[string]any{}
+}
+
+// HostServerEntry is a registered server as it exists in a host config, with the
+// listing it came from when LiteSPM wrote it. Reading it back is how a caller
+// recovers the command to run without the catalog: the config the user can see
+// is the single source of truth for what is installed.
+type HostServerEntry struct {
+	Name      string
+	Command   string
+	Args      []string
+	Env       map[string]string
+	Transport string
+	ListingID string
+}
+
+// ListServerEntriesWithValues returns the registered servers with their launch
+// lines, skipping the bridge. listingID is resolved from the install records
+// passed in, so a server LiteSPM did not install comes back without one.
+func ListServerEntriesWithValues(ctx context.Context, hostID string, scope domain.InstallScope) ([]HostServerEntry, error) {
+	adapter, err := GetAdapter(hostID)
+	if err != nil {
+		return nil, err
+	}
+	spec, ok := entrySpecFor(adapter)
+	if !ok {
+		return nil, fmt.Errorf("host %q has no documented MCP entry shape", hostID)
+	}
+	configPath, err := adapter.DetectConfig(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if spec.Format == FormatTOML {
+		return tomlServerEntries(spec, string(data)), nil
+	}
+
+	root, perr := parseConfigJSON(BridgeTarget{TolerateComments: true}, data)
+	if perr != nil {
+		return nil, fmt.Errorf("%s: %w", adapter.Descriptor().DisplayName, perr)
+	}
+	var out []HostServerEntry
+	for name, value := range lookupInMap(root, spec.KeyPath) {
+		if name == litespmServerName || name == legacyServerName {
+			continue
+		}
+		entry := HostServerEntry{Name: name, Transport: "stdio"}
+		if m, ok := value.(map[string]any); ok {
+			entry.Command, _ = m["command"].(string)
+			entry.Transport, _ = m["type"].(string)
+			if argv, ok := m["command"].([]any); ok {
+				// ShapeLocalArray hosts store a combined argv array.
+				entry.Command = ""
+				for i, item := range argv {
+					if s, ok := item.(string); ok {
+						if i == 0 {
+							entry.Command = s
+						} else {
+							entry.Args = append(entry.Args, s)
+						}
+					}
+				}
+			}
+			if raw, ok := m["args"].([]any); ok {
+				for _, item := range raw {
+					if s, ok := item.(string); ok {
+						entry.Args = append(entry.Args, s)
+					}
+				}
+			}
+			if env, ok := m["env"].(map[string]any); ok {
+				entry.Env = map[string]string{}
+				for k, v := range env {
+					if s, ok := v.(string); ok {
+						entry.Env[k] = s
+					}
+				}
+			}
+		} else if s, ok := value.(string); ok && spec.Shape == ShapeCommandString {
+			// ShapeCommandString hosts store one bare command line.
+			fields := strings.Fields(s)
+			if len(fields) > 0 {
+				entry.Command = fields[0]
+				entry.Args = fields[1:]
+			}
+		}
+		if entry.Command == "" {
+			continue
+		}
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// tomlServerEntries reads [mcp_servers.<name>] tables back into entries.
+func tomlServerEntries(spec entrySpec, content string) []HostServerEntry {
+	prefix := "[" + strings.Join(spec.KeyPath, ".") + "."
+	var out []HostServerEntry
+	var current *HostServerEntry
+	flush := func() {
+		if current != nil && current.Command != "" {
+			out = append(out, *current)
+		}
+		current = nil
+	}
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) && strings.HasSuffix(trimmed, "]") {
+			flush()
+			name := strings.TrimSuffix(strings.TrimPrefix(trimmed, prefix), "]")
+			if name == litespmServerName || name == legacyServerName {
+				continue
+			}
+			current = &HostServerEntry{Name: name, Transport: "stdio"}
+			continue
+		}
+		if current == nil {
+			continue
+		}
+		key, value, found := strings.Cut(trimmed, "=")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		switch key {
+		case "command":
+			if unquoted, err := strconv.Unquote(value); err == nil {
+				current.Command = unquoted
+			}
+		case "args":
+			if unquoted, err := strconv.Unquote("[" + strings.Trim(value, "[]") + "]"); err == nil {
+				for _, item := range strings.Split(unquoted, ",") {
+					if s, err := strconv.Unquote(strings.TrimSpace(item)); err == nil {
+						current.Args = append(current.Args, s)
+					}
+				}
+			}
+		}
+	}
+	flush()
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // ListServerEntries returns the entry names currently registered for a host, so

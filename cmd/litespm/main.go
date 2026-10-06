@@ -23,6 +23,7 @@ import (
 	"github.com/sarv-projects/litespm/internal/catalog"
 	"github.com/sarv-projects/litespm/internal/catalogbuild"
 	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/discover"
 	"github.com/sarv-projects/litespm/internal/doctor"
 	"github.com/sarv-projects/litespm/internal/domain"
 	"github.com/sarv-projects/litespm/internal/host"
@@ -118,6 +119,12 @@ func main() {
 
 	case "agent":
 		runAgentCommand(os.Args[2:])
+
+	case "capabilities", "caps":
+		runCapabilities(os.Args[2:])
+
+	case "invoke":
+		runInvoke(os.Args[2:])
 
 	case "skills":
 		if len(os.Args) < 3 {
@@ -2015,20 +2022,83 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 
 	// 10. capabilities.search: not wired yet (canned results were removed).
 	// Catalog discovery over real data lives in catalog.search.
+	// 10. capabilities.search answers over the DISCOVERED tools of installed
+	// providers, which is a different question from catalog.search: that one
+	// searches what exists in the registry, this one searches what this machine
+	// has actually installed and probed.
 	server.RegisterHandler("capabilities.search", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		return nil, &ipc.RPCError{
-			Code:    ipc.CodeMethodNotFound,
-			Message: "not implemented: capabilities.search is not wired yet; use catalog.search",
+		var req struct {
+			Query  string `json:"query"`
+			Limit  int    `json:"limit"`
+			Source string `json:"source"`
 		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params"}
+			}
+		}
+		rows, err := db.ListCapabilities(ctx, req.Source)
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		}
+		query := strings.ToLower(strings.TrimSpace(req.Query))
+		limit := req.Limit
+		if limit <= 0 || limit > 200 {
+			limit = 50
+		}
+		matches := make([]map[string]any, 0, limit)
+		for _, row := range rows {
+			if query != "" &&
+				!strings.Contains(strings.ToLower(row.Name), query) &&
+				!strings.Contains(strings.ToLower(row.Description), query) {
+				continue
+			}
+			if len(matches) >= limit {
+				break
+			}
+			matches = append(matches, map[string]any{
+				"capabilityId":      row.CapabilityID,
+				"name":              row.Name,
+				"description":       row.Description,
+				"providerId":        row.ProviderID,
+				"schemaFingerprint": row.SchemaFingerprint,
+			})
+		}
+		return map[string]any{"capabilities": matches, "totalDiscovered": len(rows)}, nil
 	})
 
 	// 11. capabilities.describe: not wired yet (canned schema/status removed).
 	// Listing metadata over real data lives in catalog.get_item.
+	// 11. capabilities.describe returns one discovered tool's real input schema
+	// and the provider command behind it, so an agent can call it correctly
+	// instead of guessing argument names.
 	server.RegisterHandler("capabilities.describe", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		return nil, &ipc.RPCError{
-			Code:    ipc.CodeMethodNotFound,
-			Message: "not implemented: capabilities.describe is not wired yet; use catalog.get_item",
+		var req struct {
+			CapabilityID string `json:"capabilityId"`
 		}
+		if err := json.Unmarshal(params, &req); err != nil || strings.TrimSpace(req.CapabilityID) == "" {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "capabilityId is required"}
+		}
+		record, err := db.GetCapability(ctx, req.CapabilityID)
+		if err != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams,
+				Message: fmt.Sprintf("no discovered capability %q; run 'litespm capabilities refresh'", req.CapabilityID)}
+		}
+		provider, perr := db.GetProvider(ctx, record.ProviderID)
+		if perr != nil {
+			return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: perr.Error()}
+		}
+		return map[string]any{
+			"capabilityId":      record.CapabilityID,
+			"name":              record.Name,
+			"description":       record.Description,
+			"inputSchema":       json.RawMessage(record.InputSchemaJSON),
+			"schemaFingerprint": record.SchemaFingerprint,
+			"providerId":        record.ProviderID,
+			"transport":         provider.Transport,
+			"command":           provider.Command,
+			"discoveredAt":      record.DiscoveredAt,
+		}, nil
 	})
 
 	// 12. provider.probe reports the supervisor's real view of one provider:
@@ -2064,18 +2134,29 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 	// daemon writes no capability rows (nothing to resolve a capabilityId
 	// against) and the supervisor has no MCP session dispatch to call into.
 	server.RegisterHandler("provider.invoke", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
-		return nil, &ipc.RPCError{
-			Code: ipc.CodeMethodNotFound,
-			Message: "not implemented: no capability rows are persisted to resolve a capabilityId against, " +
-				"and the provider supervisor exposes no MCP session dispatch; tool execution is fail-closed until both exist",
+		var req struct {
+			CapabilityID string          `json:"capabilityId"`
+			Arguments    json.RawMessage `json:"arguments"`
 		}
+		if err := json.Unmarshal(params, &req); err != nil || strings.TrimSpace(req.CapabilityID) == "" {
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "capabilityId is required"}
+		}
+		result, err := discover.Invoke(ctx, db, req.CapabilityID, req.Arguments)
+		if err != nil {
+			// A tool that is not installed, not discovered, or whose schema
+			// drifted is the caller's problem to fix, not an internal failure.
+			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
+		}
+		return map[string]any{"output": result.Output, "isError": result.IsError}, nil
 	})
 
-	// 14. invocation.get: the daemon has no invocation registry to query.
+	// 14. invocation.get stays unimplemented, with the reason narrowed: the
+	// asynchronous invocation registry is ARCH/34, still DESIGNED. provider.invoke
+	// is synchronous by contract (ARCH/06 §4), so nothing here invents a row.
 	server.RegisterHandler("invocation.get", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		return nil, &ipc.RPCError{
 			Code:    ipc.CodeMethodNotFound,
-			Message: "not implemented: the daemon records no invocation registry, so no invocationId can be looked up",
+			Message: "not implemented: there is no invocation registry to look up. provider.invoke is synchronous by contract (ARCH/06 §4); the asynchronous registry is ARCH/34, still DESIGNED",
 		}
 	})
 
@@ -2084,7 +2165,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 	server.RegisterHandler("invocation.cancel", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		return nil, &ipc.RPCError{
 			Code:    ipc.CodeMethodNotFound,
-			Message: "not implemented: no invocation registry exists to cancel from (the supervisor only starts/stops provider processes)",
+			Message: "not implemented: there is no invocation registry to cancel from. provider.invoke is synchronous and runs to completion in the request (ARCH/06 §4); the cancellable registry is ARCH/34, still DESIGNED",
 		}
 	})
 

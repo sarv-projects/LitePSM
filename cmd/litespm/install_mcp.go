@@ -153,6 +153,17 @@ func installMCPFromListing(
 	if err := db.SaveInstall(ctx, rec); err != nil {
 		return nil, fmt.Errorf("record the install: %w", err)
 	}
+	// The provider row's component_id is a foreign key onto install_components
+	// (ARCH/12 §13), so the component must exist. SaveInstallComponent keys that
+	// table by install id, which is also what SaveProvider falls back to.
+	if err := db.SaveInstallComponent(ctx, &domain.InstallComponentRecord{
+		InstallID:     outcome.InstallID,
+		Kind:          domain.ComponentMCPProvider,
+		ComponentName: name,
+		Path:          "",
+	}); err != nil {
+		return nil, fmt.Errorf("record the installed component: %w", err)
+	}
 	// One host_registrations row per config actually modified: this is the first
 	// production caller of that table, so it is also the first evidence that it
 	// records something real.

@@ -48,13 +48,56 @@ func ConnectStdio(ctx context.Context, in io.Reader, out io.Writer) (*StdioClien
 		}`),
 	}
 
-	_, err := c.sendRequest(ctx, initReq)
-	if err != nil {
+	if _, err := c.sendRequest(ctx, initReq); err != nil {
 		_ = c.CloseSession()
 		return nil, fmt.Errorf("stdio initialize failed: %w", err)
 	}
 
+	// A server must receive `notifications/initialized` before it will answer
+	// anything beyond the handshake. Omitting it leaves a session that connects,
+	// initializes, and then hangs on the first tools/list — which is why the
+	// legacy and HTTP clients both sent it and this one did not.
+	if err := c.sendNotification(ctx, "notifications/initialized", map[string]any{}); err != nil {
+		_ = c.CloseSession()
+		return nil, fmt.Errorf("stdio initialized notification failed: %w", err)
+	}
+
 	return c, nil
+}
+
+// sendNotification writes a JSON-RPC notification, which has no id and no reply.
+func (c *StdioClient) sendNotification(ctx context.Context, method string, params map[string]any) error {
+	if method == "" {
+		return fmt.Errorf("notification method is empty")
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	encoded, err := json.Marshal(JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  method,
+		Params:  json.RawMessage(mustMarshal(params)),
+	})
+	if err != nil {
+		return err
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if _, err := c.writer.Write(append(encoded, '\n')); err != nil {
+		return err
+	}
+	if flusher, ok := c.writer.(interface{ Flush() error }); ok {
+		return flusher.Flush()
+	}
+	return nil
+}
+
+func mustMarshal(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 func (c *StdioClient) ProtocolVersion() ProtocolVersion {

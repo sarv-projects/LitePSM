@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -335,6 +336,24 @@ func (db *DB) saveInstallComponentExec(ctx context.Context, ex execer, comp *dom
 	return err
 }
 
+// GetInstallComponent reads one installed-component row by its id.
+func (db *DB) GetInstallComponent(ctx context.Context, componentID string) (*domain.InstallComponentRecord, error) {
+	row := db.raw.QueryRowContext(ctx, `
+	SELECT component_id, install_id, kind, name, COALESCE(relative_path, ''), enabled
+	FROM install_components WHERE component_id = ?;`, componentID)
+	var (
+		rec     domain.InstallComponentRecord
+		enabled int
+	)
+	if err := row.Scan(&rec.InstallID, &rec.InstallID, &rec.Kind, &rec.ComponentName, &rec.Path, &enabled); err != nil {
+		return nil, err
+	}
+	if enabled == 1 {
+		rec.Status = string(domain.InstallActive)
+	}
+	return &rec, nil
+}
+
 // CommitInstallOperation writes the install record, its primary component
 // record, and the journal transition to "committed" in one SQLite transaction.
 // A crash therefore leaves either no install row (startup recovery rolls the
@@ -405,8 +424,68 @@ func (db *DB) ListProviders(ctx context.Context) ([]*ProviderConfig, error) {
 	return list, rows.Err()
 }
 
+// ProviderMode maps a transport onto the `providers.mode` enum in ARCH/12 §13.
+//
+// The column is a CHECK-constrained enum of 'local-stdio', 'remote-http',
+// 'legacy-sse', while the rest of the codebase speaks transports ("stdio",
+// "sse", "http"). Writing a transport straight into that column produced a
+// constraint violation the first time anything actually called this writer.
+func ProviderMode(transport string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(transport)) {
+	case "", "stdio", "local-stdio":
+		return "local-stdio", nil
+	case "sse", "legacy-sse":
+		return "legacy-sse", nil
+	case "http", "https", "streamable-http", "remote-http":
+		return "remote-http", nil
+	default:
+		return "", fmt.Errorf("transport %q has no providers.mode value", transport)
+	}
+}
+
+// launchSpec is the JSON written to providers.launch_spec_json: everything needed
+// to start the provider, and nothing else. The previous writer put the argument
+// list in runtime_adapter and the auth profile id in launch_spec_json, so a
+// provider row described a program that did not exist.
+type launchSpec struct {
+	Command    string            `json:"command"`
+	Args       []string          `json:"args,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	WorkingDir string            `json:"workingDir,omitempty"`
+}
+
 // SaveProvider stores supervised MCP provider configuration.
 func (db *DB) SaveProvider(ctx context.Context, p *domain.ProviderRecord) error {
+	mode, err := ProviderMode(p.Transport)
+	if err != nil {
+		return err
+	}
+	var args []string
+	if strings.TrimSpace(p.ArgsJSON) != "" {
+		if err := json.Unmarshal([]byte(p.ArgsJSON), &args); err != nil {
+			return fmt.Errorf("provider %s has an unreadable ArgsJSON: %w", p.ProviderID, err)
+		}
+	}
+	var env map[string]string
+	if strings.TrimSpace(p.EnvJSON) != "" {
+		if err := json.Unmarshal([]byte(p.EnvJSON), &env); err != nil {
+			return fmt.Errorf("provider %s has an unreadable EnvJSON: %w", p.ProviderID, err)
+		}
+	}
+	spec, err := json.Marshal(launchSpec{Command: p.Command, Args: args, Env: env, WorkingDir: p.WorkingDir})
+	if err != nil {
+		return err
+	}
+
+	// component_id is a foreign key onto install_components. SaveInstallComponent
+	// keys that table by install id, so an unset ComponentID falls back to the
+	// install id — which is a row that exists — rather than to a display name
+	// that does not.
+	componentID := p.ComponentID
+	if componentID == "" {
+		componentID = p.InstallID
+	}
+
 	query := `
 	INSERT OR REPLACE INTO providers (provider_id, install_id, component_id, mode, runtime_adapter, launch_spec_json, auth_profile_id, enabled, autostart, created_at)
 	VALUES (?, ?, ?, ?, 'process', ?, ?, 1, 0, ?);`
@@ -416,16 +495,104 @@ func (db *DB) SaveProvider(ctx context.Context, p *domain.ProviderRecord) error 
 		authArg = p.AuthProfileID
 	}
 
-	_, err := db.raw.ExecContext(ctx, query,
+	_, err = db.raw.ExecContext(ctx, query,
 		p.ProviderID,
 		p.InstallID,
-		p.ComponentName,
-		p.Transport,
-		p.ArgsJSON,
+		componentID,
+		mode,
+		string(spec),
 		authArg,
 		p.CreatedAt,
 	)
 	return err
+}
+
+// GetProvider reads one provider row back into a ProviderRecord, reconstructing
+// the launch specification so a caller does not have to know the column layout.
+func (db *DB) GetProvider(ctx context.Context, providerID string) (*domain.ProviderRecord, error) {
+	row := db.raw.QueryRowContext(ctx, `
+	SELECT provider_id, install_id, component_id, mode, launch_spec_json, COALESCE(auth_profile_id, '')
+	FROM providers WHERE provider_id = ?;`, providerID)
+	var (
+		rec       domain.ProviderRecord
+		mode      string
+		launchRaw string
+		enabled   int
+	)
+	if err := row.Scan(&rec.ProviderID, &rec.InstallID, &rec.ComponentID, &mode, &launchRaw, &rec.AuthProfileID); err != nil {
+		return nil, err
+	}
+	_ = enabled
+	rec.Transport = mode
+	var spec launchSpec
+	if launchRaw != "" {
+		if err := json.Unmarshal([]byte(launchRaw), &spec); err != nil {
+			return nil, fmt.Errorf("provider %s has an unreadable launch spec: %w", providerID, err)
+		}
+	}
+	rec.Command = spec.Command
+	rec.WorkingDir = spec.WorkingDir
+	if len(spec.Args) > 0 {
+		if b, err := json.Marshal(spec.Args); err == nil {
+			rec.ArgsJSON = string(b)
+		}
+	}
+	if len(spec.Env) > 0 {
+		if b, err := json.Marshal(spec.Env); err == nil {
+			rec.EnvJSON = string(b)
+		}
+	}
+	return &rec, nil
+}
+
+// GetCapability reads one discovered capability row.
+func (db *DB) GetCapability(ctx context.Context, capabilityID string) (*domain.CapabilityRecord, error) {
+	row := db.raw.QueryRowContext(ctx, `
+	SELECT capability_id, provider_id, native_name, COALESCE(description, ''), input_schema_json, schema_fingerprint, discovered_at
+	FROM capabilities WHERE capability_id = ?;`, capabilityID)
+	var (
+		rec domain.CapabilityRecord
+		at  time.Time
+	)
+	if err := row.Scan(&rec.CapabilityID, &rec.ProviderID, &rec.Name, &rec.Description,
+		&rec.InputSchemaJSON, &rec.SchemaFingerprint, &at); err != nil {
+		return nil, err
+	}
+	rec.DiscoveredAt = at
+	rec.UpdatedAt = at
+	return &rec, nil
+}
+
+// ListCapabilities returns capability rows, optionally narrowed to one provider.
+func (db *DB) ListCapabilities(ctx context.Context, providerID string) ([]domain.CapabilityRecord, error) {
+	query := `SELECT capability_id, provider_id, native_name, COALESCE(description, ''), input_schema_json, schema_fingerprint, discovered_at
+		FROM capabilities`
+	args := []any{}
+	if providerID != "" {
+		query += ` WHERE provider_id = ?`
+		args = append(args, providerID)
+	}
+	query += ` ORDER BY capability_id;`
+	rows, err := db.raw.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []domain.CapabilityRecord
+	for rows.Next() {
+		var (
+			rec domain.CapabilityRecord
+			at  time.Time
+		)
+		if err := rows.Scan(&rec.CapabilityID, &rec.ProviderID, &rec.Name, &rec.Description,
+			&rec.InputSchemaJSON, &rec.SchemaFingerprint, &at); err != nil {
+			return nil, err
+		}
+		rec.DiscoveredAt = at
+		rec.UpdatedAt = at
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 // SaveCapability stores a tool schema and fingerprint.

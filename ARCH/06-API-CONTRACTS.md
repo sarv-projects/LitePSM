@@ -231,9 +231,9 @@ Status column = highest honest state per [STATUS.md](../STATUS.md) §1/§4.
 | `capabilities.search` | Searches capability/tool names across providers | **`-32601`** — "not wired yet; use `catalog.search`" (`:1628-1633`) |
 | `capabilities.describe` | Inspects capability schema, effects, and status | **`-32601`** (`:1637-1642`) |
 | `provider.probe` | Reports the supervisor's real view of one provider | Resolves (`:1648`); nothing tracks a provider in practice (no non-test provider rows) |
-| `provider.invoke` | Policy-evaluated tool execution | **`-32601`** — no capability rows, no dispatch (`:1676-1683`) |
-| `invocation.get` | Retrieves invocation status | **`-32601`** — no invocation registry (`:1685-1691`) |
-| `invocation.cancel` | Cancels an active invocation | **`-32601`** (`:1694-1700`) |
+| `provider.invoke` | Policy-evaluated tool execution | Resolves — calls a discovered capability through `internal/discover`; synchronous per §4, and refuses when the tool's schema has drifted since discovery |
+| `invocation.get` | Retrieves invocation status | **`-32601`** — the asynchronous registry is ARCH/34, still `DESIGNED` |
+| `invocation.cancel` | Cancels an active invocation | **`-32601`** — as above |
 | `host.detect_config` | Probes default agent configuration file path | Resolves (`:1702`) |
 | `host.apply_setup` | Injects the Bridge MCP entry with atomic pre-edit backup | Resolves (`:1711`) |
 | `doctor.run_checks` | Runs 10 non-mutating system diagnostics | Resolves (`:1740`) |
@@ -243,13 +243,15 @@ Notes:
 
 *   `install.update` has **no handler**; update flows must go through a fresh
     `resolver.prepare_plan` + `install.execute` until one exists.
-*   The five `-32601` handlers are deliberate fail-closed stubs with concrete reasons; they are not
-    missing-method errors and must not be described as working features.
+*   `capabilities.search`, `capabilities.describe` and `provider.invoke` were `-32601` stubs until
+    2026-10-06 and now resolve over discovered capability rows. `provider.invoke` is **synchronous**,
+    as this contract specifies; the cancellable asynchronous registry (`invocation.get` /
+    `invocation.cancel`) remains ARCH/34 and stays a stub. Two stubs remain `-32601` with that
+    concrete reason, and must not be described as working features.
 *   Future methods are specified elsewhere and are **not** registered here: `profile.*` and
-    `lease.*` in [ARCH/35](35-PROFILES-AND-CAPABILITY-LEASES.md) (`DESIGNED`), the real
-    `provider.invoke` / `invocation.get` / `invocation.cancel` in
-    [ARCH/34](34-RUNTIME-INVOCATION-RECEIPTS.md) (`DESIGNED`), and `policy explain` /
-    `audit --ci` in [ARCH/36](36-ENTERPRISE-POLICY-AND-AUDIT.md) (`DESIGNED`).
+    `lease.*` in [ARCH/35](35-PROFILES-AND-CAPABILITY-LEASES.md) (`DESIGNED`), the asynchronous
+    invocation registry in [ARCH/34](34-RUNTIME-INVOCATION-RECEIPTS.md) (`DESIGNED`), and
+    `policy explain` / `audit --ci` in [ARCH/36](36-ENTERPRISE-POLICY-AND-AUDIT.md) (`DESIGNED`).
 
 ---
 

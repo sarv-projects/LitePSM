@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -427,13 +428,18 @@ func TestListProviders_DecodesConfiguration(t *testing.T) {
 		t.Fatalf("SaveInstallComponent failed: %v", err)
 	}
 
-	launchSpec := `{"executable":"/bin/sh","args":["-c","sleep 1"]}`
+	// A ProviderRecord describes a program: the command and its argument list go
+	// into launch_spec_json together. The previous writer put the argument list
+	// in runtime_adapter and the auth profile id in launch_spec_json, so this
+	// test had to pass a hand-built launch spec through ArgsJSON to store
+	// anything coherent — which is what hid the mapping bug.
 	if err := db.SaveProvider(ctx, &domain.ProviderRecord{
 		ProviderID:    "prov_test_0001",
 		InstallID:     installID,
 		ComponentName: installID,
-		Transport:     "local-stdio",
-		ArgsJSON:      launchSpec,
+		Transport:     "stdio",
+		Command:       "/bin/sh",
+		ArgsJSON:      `["-c","sleep 1"]`,
 		CreatedAt:     now,
 	}); err != nil {
 		t.Fatalf("SaveProvider failed: %v", err)
@@ -447,14 +453,35 @@ func TestListProviders_DecodesConfiguration(t *testing.T) {
 		t.Fatalf("expected 1 provider, got %d", len(list))
 	}
 	p := list[0]
-	if p.ProviderID != "prov_test_0001" || p.Mode != "local-stdio" || p.LaunchSpecJSON != launchSpec {
+	// "stdio" is the transport the rest of the codebase speaks; the column is a
+	// CHECK-constrained enum, so the writer has to translate it.
+	if p.ProviderID != "prov_test_0001" || p.Mode != "local-stdio" {
 		t.Errorf("unexpected provider config: %+v", p)
+	}
+	var spec struct {
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}
+	if err := json.Unmarshal([]byte(p.LaunchSpecJSON), &spec); err != nil {
+		t.Fatalf("launch spec is not JSON: %v (%s)", err, p.LaunchSpecJSON)
+	}
+	if spec.Command != "/bin/sh" || len(spec.Args) != 2 || spec.Args[0] != "-c" {
+		t.Errorf("launch spec does not describe the program: %s", p.LaunchSpecJSON)
 	}
 	if !p.Enabled {
 		t.Error("provider row defaults to enabled")
 	}
 	if p.Autostart {
 		t.Error("provider row must not claim autostart it was not configured with")
+	}
+
+	// A provider row must read back as the same program it was written as.
+	readBack, err := db.GetProvider(ctx, "prov_test_0001")
+	if err != nil {
+		t.Fatalf("GetProvider: %v", err)
+	}
+	if readBack.Command != "/bin/sh" || readBack.ArgsJSON != `["-c","sleep 1"]` {
+		t.Errorf("provider did not round-trip: %+v", readBack)
 	}
 }
 

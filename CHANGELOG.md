@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Installed MCP servers are discoverable and callable.** Installing a server wrote a config entry and stopped there: nothing knew what the server
+  could do, so `capabilities.search`, `capabilities.describe` and `provider.invoke` answered `-32601` with the reason "no capability rows are persisted".
+  `internal/discover` closes that chain — it spawns a configured host's registered server, probes its tools through `mcpclient`, writes `providers` and
+  `capabilities` rows (the first production callers of those writers), and invokes one capability after re-checking its schema fingerprint, refusing a
+  call whose arguments would no longer match what was validated. A drift refusal is a hard stop, not a warning. `provider.invoke` stays synchronous,
+  as ARCH/06 §4 specifies; `invocation.get` / `invocation.cancel` remain `-32601` because the cancellable registry is ARCH/34 (`DESIGNED`), and their
+  reason now says so. New CLI: `litespm capabilities list|search|describe|refresh` and `litespm invoke <capability-id>`. Verified end to end against a
+  locally published release and a real MCP server: sync → install → probe (2 tools) → list → describe → invoke, plus refusal after the server changed
+  its schema.
+
+- **`providers` rows are written correctly.** `SaveProvider` put the argument list in `runtime_adapter` and the auth profile id in `launch_spec_json`,
+  and wrote the transport straight into a CHECK-constrained enum column that does not contain `stdio`. It had no production caller, and its test had
+  been written to fit the confusion — passing a hand-built launch spec through `ArgsJSON` and a pre-translated mode — which is what kept the mapping
+  wrong. It now builds a real launch specification, translates the transport to the column's enum, and resolves `component_id` as the foreign key it
+  is; `GetProvider` reads a row back into the same record it was written from.
+
+- **`ConnectStdio` completes the MCP handshake.** It sent `initialize` and stopped, never sending `notifications/initialized`, which every real server
+  requires before it will answer anything else: a session would connect, initialize, and then hang on the first `tools/list`. The legacy and HTTP
+  clients both sent it. `internal/discover`'s test server refuses to answer until it arrives, so the hang is now a test failure rather than a
+  production surprise.
+
 - **MCP server installs complete.** `litespm install <mcp-id>` and the Bridge `request_install` →
   `install.execute` path now register a catalog MCP server with agent hosts. Two gaps had to close first. The release already published a launch line
   in `versions.json` (`components[].runtime` — `command`, `args`, `type`), but `catalog sync` downloaded only the pointer, manifest and listings, so

@@ -76,8 +76,10 @@ Two consequences worth stating precisely:
 *   **Naming split.** MCP tool names are `verb_noun` (`search_catalog`,
     `load_skill`); daemon methods are `domain.verb` (`catalog.search`,
     `skills.load_body`). `search_capabilities` (MCP tool) maps to the daemon
-    method `capabilities.search` — it is *not* an alias of `search_catalog`,
-    which queries the catalog index instead. The full mapping is §1.2.
+    method `capabilities.search` — it is *not* an alias of `search_catalog`:
+    `catalog.search` answers "what exists in the registry", while
+    `capabilities.search` answers "what is installed here and actually starts".
+    The full mapping is §1.2.
 *   **Error rendering.** A daemon `-32601` reaches the host as an MCP *tool*
     result, not a JSON-RPC error object: `FormatErrorResult`
     (`shim.go:590-605`) only passes through `*domain.LPSMError`, so a raw
@@ -98,13 +100,13 @@ Two consequences worth stating precisely:
 | 3 | `prepare_install` | `resolver.prepare_plan` (`:323`) | `WIRED` — plan persisted with `planHash` |
 | 4 | `request_install` | `install.execute` (`:341`) | `WIRED` **for skills** (installs files through the skills ledger), `LPSM-ARTIFACT-UNAVAILABLE` for MCP/plugin ([STATUS.md](../STATUS.md) §3) |
 | 5 | `list_installed` | `tools.list` (`:359`) | `WIRED` — installs + read-only detected external tools |
-| 6 | `search_capabilities` | `capabilities.search` (`:370`) | **`-32601`** — handler returns `not implemented … use catalog.search` (`cmd/litespm/main.go:1628-1633`) |
-| 7 | `describe_capability` | `capabilities.describe` (`:388`) | **`-32601`** (`main.go:1637-1642`) |
+| 6 | `search_capabilities` | `capabilities.search` (`:370`) | Resolves — searches the tools **discovered on this machine**, which is a different question from `search_catalog`'s registry search |
+| 7 | `describe_capability` | `capabilities.describe` (`:388`) | Resolves — returns the real input schema, fingerprint and the command behind it |
 | 8 | `load_skill` | `skills.load_body` (`:404`) | `WIRED` |
 | 9 | `read_skill_resource` | `skills.read_resource` (`:433`) | `WIRED` — path-traversal checked (`main.go:1601-1608`) |
-| 10 | `invoke_capability` | `provider.invoke` (`:452`) | **`-32601`** — no capability rows, no session dispatch (`main.go:1676-1682`) |
-| 11 | `get_invocation` | `invocation.get` (`:475`) | **`-32601`** — no invocation registry (`main.go:1685-1690`) |
-| 12 | `cancel_invocation` | `invocation.cancel` (`:491`) | **`-32601`** (`main.go:1694-1699`) |
+| 10 | `invoke_capability` | `provider.invoke` (`:452`) | Resolves — spawns the installed server and calls the discovered tool; refuses on schema drift |
+| 11 | `get_invocation` | `invocation.get` (`:475`) | **`-32601`** — the async registry is ARCH/34 (`DESIGNED`); `provider.invoke` is synchronous by contract |
+| 12 | `cancel_invocation` | `invocation.cancel` (`:491`) | **`-32601`** — as tool 11 |
 
 > Line numbers in the table are the `case` labels inside `DispatchTool`
 > (`shim.go:270-511`).

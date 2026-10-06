@@ -453,8 +453,12 @@ type InstallPlan struct {
 
 // ProviderRecord tracks a registered MCP provider daemon process or remote endpoint.
 type ProviderRecord struct {
-	ProviderID    string    `json:"providerId"`
-	InstallID     string    `json:"installId"`
+	ProviderID string `json:"providerId"`
+	InstallID  string `json:"installId"`
+	// ComponentID is the install_components row this provider runs as. It is a
+	// foreign key in ARCH/12 §13, so it must be a real component id and not the
+	// component's display name.
+	ComponentID   string    `json:"componentId,omitempty"`
 	ComponentName string    `json:"componentName"`
 	Transport     string    `json:"transport"`
 	Endpoint      string    `json:"endpoint,omitempty"`

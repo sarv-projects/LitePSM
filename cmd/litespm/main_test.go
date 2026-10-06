@@ -492,24 +492,69 @@ func TestRegisteredHandlers_RealBehavior(t *testing.T) {
 		}
 	})
 
+	// provider.invoke, capabilities.search and capabilities.describe are WIRED:
+	// they answer over discovered capability rows (internal/discover). A request
+	// for a capability that was never discovered must therefore be an
+	// InvalidParams complaint, NOT a "not implemented" stub — a stub here would
+	// mean the install→discover→invoke chain silently does not work.
+	t.Run("provider.invoke unknown capability is wired", func(t *testing.T) {
+		var raw json.RawMessage
+		err := h.client.Call(ctx, "provider.invoke", map[string]any{
+			"capabilityId": "inst_user_mcp_demo_missing_1_0_0/demo/nope",
+			"arguments":    map[string]any{},
+		}, &raw)
+		if code := rpcCode(t, err); code != ipc.CodeInvalidParams {
+			t.Errorf("code=%d, want %d — provider.invoke is implemented and must not "+
+				"answer MethodNotFound (err=%v)", code, ipc.CodeInvalidParams, err)
+		}
+	})
+
+	t.Run("capabilities.search returns real rows", func(t *testing.T) {
+		var out struct {
+			Capabilities []map[string]any `json:"capabilities"`
+			Total        int              `json:"totalDiscovered"`
+		}
+		if err := h.client.Call(ctx, "capabilities.search", map[string]any{"query": "anything"}, &out); err != nil {
+			t.Fatalf("capabilities.search: %v", err)
+		}
+		if out.Capabilities == nil {
+			t.Error("capabilities must be an empty list, not null, when nothing is discovered")
+		}
+	})
+
+	t.Run("capabilities.describe unknown capability is wired", func(t *testing.T) {
+		var raw json.RawMessage
+		err := h.client.Call(ctx, "capabilities.describe", map[string]any{
+			"capabilityId": "inst_user_mcp_demo_missing_1_0_0/demo/nope",
+		}, &raw)
+		if code := rpcCode(t, err); code != ipc.CodeInvalidParams {
+			t.Errorf("code=%d, want %d (err=%v)", code, ipc.CodeInvalidParams, err)
+		}
+	})
+
 	unimplemented := []struct {
 		method   string
 		mustSay  string
 		otherSay string
 	}{
-		{"provider.invoke", "capability rows", ""},
-		{"invocation.get", "invocation registry", ""},
-		{"invocation.cancel", "invocation registry", ""},
+		// The asynchronous invocation registry is ARCH/34, still DESIGNED.
+		// provider.invoke is synchronous by contract (ARCH/06 §4), so these two
+		// stay honest stubs rather than inventing a row that outlives its process.
+		{"invocation.get", "invocation registry", "ARCH/34"},
+		{"invocation.cancel", "invocation registry", "ARCH/34"},
 	}
 	for _, tc := range unimplemented {
 		t.Run(tc.method, func(t *testing.T) {
 			var raw json.RawMessage
-			err := h.client.Call(ctx, tc.method, map[string]any{"providerId": "prov_x"}, &raw)
+			err := h.client.Call(ctx, tc.method, map[string]any{"invocationId": "inv_x"}, &raw)
 			if code := rpcCode(t, err); code != ipc.CodeMethodNotFound {
 				t.Errorf("code=%d, want %d (err=%v)", code, ipc.CodeMethodNotFound, err)
 			}
 			if !strings.Contains(err.Error(), tc.mustSay) {
 				t.Errorf("reason %q must mention %q", err, tc.mustSay)
+			}
+			if tc.otherSay != "" && !strings.Contains(err.Error(), tc.otherSay) {
+				t.Errorf("reason %q must point at %s", err, tc.otherSay)
 			}
 		})
 	}
