@@ -34,3 +34,6 @@ web/public/v1/releases/
 pages-dist/
 *.tsbuildinfo
 __pycache__/
+
+# Cloudflare CLI local state (auth cache, temp files)
+.wrangler/
