@@ -139,11 +139,40 @@ protocol version and the string `✓ 6 Verified Host Adapters Compiled & Availab
 *   **Detected External Capabilities:** Scans existing configured servers in read-only mode.
 
 ### 3.7 Data-driven targets: 44 generic + 6 bespoke = 50 total (`internal/host/target.go`, `ARCH/30`)
-*   The six adapters above are hand-written and retained (they carry behaviour the generic path does not model: OpenCode v1/v2 layouts, TOML handling, Pi extension generation, Cline comment preservation).
+*   The six adapters above are hand-written and retained (they carry behaviour the generic path does not model: OpenCode's two config layouts and the Pi extension file).
 *   All other agents are data rows (`verifiedBridgeTargets` in `internal/host/targets_data.go`, **44 rows**) served by the single `GenericAdapter` (`internal/host/generic.go`). Bespoke IDs always win name collisions (`TestBridgeTargetTableDoesNotShadowBespokeAdapters`).
 *   **Counts:** `litespm host list` prints `Registered Agent Host Adapters (50)`. Skill installation targets are a separate set of **77** rows in `internal/skills/agents.go` (`ARCH/30` §10); the two sets overlap but are not equal, and `host list` reports bridge adapters only.
 *   **Scope:** only `GenericAdapter.DetectConfig` honours `domain.ScopeProject`; every other `DetectConfig` ignores the `scope` argument and all production callers pass `ScopeUser`.
-*   Surgical merge (`internal/host/jsonc_merge.go` + TOML merger) preserves comments/key order; strict-JSON hosts refuse commented files rather than guessing. See ARCH/30 for the honesty contract, exclusion table (23 unverified agents), and integrity tests.
+*   Surgical merge (`internal/host/jsonc_merge.go` + TOML merger) preserves comments/key order. See ARCH/30 for the honesty contract, exclusion table (23 unverified agents), and integrity tests.
+
+#### 3.7.1 Config-write contract (all hosts, bespoke and generic)
+
+A host config belongs to the user, so a setup or removal must touch exactly one
+member. The rules are uniform across all 50 adapters:
+
+*   **Splice, never re-serialize.** JSON and JSONC hosts are edited by byte
+    offset (`mergeJSONEntrySurgical`), TOML hosts by a table-level text edit.
+    Comments, key order, indentation, unknown keys and the trailing newline
+    outside the touched object survive byte for byte. The four bespoke JSON
+    adapters (`claudecode.go`, `cline.go`, `opencode.go`, `piagent.go`) share the
+    same helper as the generic path (`renderBridgeEntryJSON`), so no host
+    re-serializes a user's file.
+*   **Comments are tolerated on read and preserved on write.** A host's own file
+    may legitimately be JSONC — Cline's lives in VS Code's globalStorage settings
+    — so reads go through `parseHostJSON`. Genuinely invalid JSON is still
+    refused; a commented config is not "invalid".
+*   **Never write what cannot be read back.** The merged text is re-parsed and the
+    entry asserted before it is written, and removal refuses rather than writing a
+    document it has just proved is broken.
+*   **Removal finds the entry wherever it is.** A host with more than one
+    documented layout (OpenCode: `mcp.<name>`, `mcp.servers`, `mcpServers`) tries
+    each path and rewrites only the one that actually holds an entry, so
+    `host remove` cannot silently leave a bridge registration behind.
+*   **Round-trip fidelity.** TOML configs and multi-line JSON objects are
+    restored byte for byte by `host remove`. A single-line JSON object may retain
+    one line break, because inserting an entry into it necessarily added a line;
+    content and validity are preserved. Guarantees are pinned by
+    `internal/host/json_splice_test.go` and the `host remove` round-trip tests.
 
 ---
 

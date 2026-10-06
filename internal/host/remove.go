@@ -20,7 +20,6 @@ package host
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -32,6 +31,25 @@ import (
 type removalSpec struct {
 	Format  ConfigFormat
 	KeyPath []string
+	// Candidates are alternative container paths, tried in order. OpenCode has
+	// three documented shapes (v1 flat `mcp.<name>`, v2 nested `mcp.servers`,
+	// and the `mcpServers` spelling some configs use), and the layout a file
+	// actually uses can differ from the one the adapter last wrote — for
+	// example after an upgrade, or when a user reorganised their config by
+	// hand. Removal must find the entry wherever it is, or `host remove`
+	// silently leaves a bridge registration behind.
+	Candidates [][]string
+}
+
+// effectiveKeyPaths returns the paths to try, most likely first.
+func (s removalSpec) effectiveKeyPaths() [][]string {
+	if len(s.Candidates) > 0 {
+		return s.Candidates
+	}
+	if len(s.KeyPath) == 0 {
+		return nil
+	}
+	return [][]string{s.KeyPath}
 }
 
 // bespokeRemovalSpecs covers the hand-written adapters, which do not expose a
@@ -50,7 +68,7 @@ var bespokeRemovalSpecs = map[string]removalSpec{
 //
 // OpenCode is the one host with two documented layouts (v1 `mcpServers`, v2
 // `mcp.servers`), so its spec is chosen by reading the file rather than assumed.
-func removalSpecFor(adapter HostAdapter, configPath string) (removalSpec, error) {
+func removalSpecFor(adapter HostAdapter) (removalSpec, error) {
 	id := strings.ToLower(adapter.Descriptor().HostID)
 
 	if g, ok := adapter.(*GenericAdapter); ok {
@@ -61,7 +79,7 @@ func removalSpecFor(adapter HostAdapter, configPath string) (removalSpec, error)
 	}
 
 	if id == "opencode" {
-		return openCodeRemovalSpec(configPath), nil
+		return openCodeRemovalSpec(), nil
 	}
 	if spec, ok := bespokeRemovalSpecs[id]; ok {
 		return spec, nil
@@ -69,20 +87,20 @@ func removalSpecFor(adapter HostAdapter, configPath string) (removalSpec, error)
 	return removalSpec{}, fmt.Errorf("no removal path is defined for host %q", id)
 }
 
-// openCodeRemovalSpec detects which of OpenCode's two layouts the file uses.
-func openCodeRemovalSpec(configPath string) removalSpec {
-	data, err := os.ReadFile(configPath)
-	if err == nil {
-		var root map[string]any
-		if json.Unmarshal(data, &root) == nil {
-			if mcp, ok := root["mcp"].(map[string]any); ok {
-				if _, ok := mcp["servers"].(map[string]any); ok {
-					return removalSpec{Format: FormatJSON, KeyPath: []string{"mcp", "servers"}}
-				}
-			}
-		}
-	}
-	return removalSpec{Format: FormatJSON, KeyPath: []string{"mcpServers"}}
+// openCodeRemovalSpec lists every documented OpenCode container shape.
+//
+// OpenCode is the one host with more than one layout: v1 keeps servers
+// directly under `mcp`, v2 nests them under `mcp.servers`, and some configs
+// use the `mcpServers` spelling. Which shape a file uses can also differ from
+// the one the adapter last wrote — after an upgrade, or when a user
+// reorganised their config by hand — so removal tries each in turn and
+// rewrites only the one that actually holds an entry. Deriving the path by
+// reading the file is not enough on its own: a config that fails to parse
+// (JSONC, a stray trailing comma) would silently push removal onto the wrong
+// path and leave the bridge registration behind.
+func openCodeRemovalSpec() removalSpec {
+	paths := [][]string{{"mcp", "servers"}, {"mcp"}, {"mcpServers"}}
+	return removalSpec{Format: FormatJSON, KeyPath: paths[0], Candidates: paths}
 }
 
 // RemovalResult reports exactly what happened, so a caller can distinguish
@@ -117,14 +135,28 @@ func PlanRemoval(ctx context.Context, adapter HostAdapter, backupDir string) (*H
 	}
 	orig := string(data)
 
-	spec, err := removalSpecFor(adapter, configPath)
+	spec, err := removalSpecFor(adapter)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	proposed, removed, err := stripBridgeEntry(orig, spec)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", adapter.Descriptor().DisplayName, err)
+	// Try every documented container path: the first one that actually holds a
+	// bridge entry is the one the adapter wrote, and it is the only one we
+	// rewrite. A file that matches none of them is reported as "not present"
+	// rather than rewritten blindly.
+	proposed, removed := orig, false
+	effective := spec.KeyPath
+	for _, candidate := range spec.effectiveKeyPaths() {
+		attempt := spec
+		attempt.KeyPath = candidate
+		updated, didRemove, err := stripBridgeEntry(orig, attempt)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", adapter.Descriptor().DisplayName, err)
+		}
+		if didRemove {
+			proposed, removed, effective = updated, true, candidate
+			break
+		}
 	}
 	if !removed {
 		return nil, &RemovalResult{
@@ -134,6 +166,7 @@ func PlanRemoval(ctx context.Context, adapter HostAdapter, backupDir string) (*H
 			Reason:     "the litespm entry is not present in this file",
 		}, nil
 	}
+	spec.KeyPath = effective
 
 	// Never write a config we cannot read back.
 	if spec.Format == FormatJSON {
@@ -224,7 +257,110 @@ func stripJSONEntryNamed(content string, keyPath []string, serverName string) (s
 	if err != nil {
 		return "", false, err
 	}
-	return content[:objStart] + updated + content[objEnd:], true, nil
+
+	merged := content[:objStart] + updated + content[objEnd:]
+	cutPos := objStart + memberStart
+
+	// A comment line immediately above the removed member belongs to it.
+	// Leaving it behind strands the member before the cut as a dangling comma
+	// followed by a comment, which is invalid JSON — so the removal would be
+	// refused and the bridge entry could never be removed from a JSONC config.
+	// Drop such comments (bounded) until the document parses again. Files
+	// without this shape are untouched: the first parse check passes.
+	for attempt := 0; attempt < 6; attempt++ {
+		if _, perr := parseConfigJSON(BridgeTarget{TolerateComments: true}, []byte(merged)); perr == nil {
+			break
+		}
+		// Syntactic repairs first: they are position-independent. A comma left
+		// before a closing brace is the common residue of removing a member, and
+		// clearing it usually restores validity on its own.
+		if repaired, fixed := dropDanglingCommaBeforeBrace(merged); fixed {
+			merged = repaired
+			continue
+		}
+		if next, moved, ok := dropPrecedingCommentLine(merged, cutPos); ok {
+			merged, cutPos = next, moved
+			continue
+		}
+		break
+	}
+	return merged, true, nil
+}
+
+// dropDanglingCommaBeforeBrace removes a `,` left immediately before a closing
+// brace. Removing the last member of an object leaves exactly that, and JSON
+// forbids it. It runs only when the document no longer parses, so a well-formed
+// removal is never touched.
+func dropDanglingCommaBeforeBrace(text string) (string, bool) {
+	for i := 0; i < len(text); i++ {
+		if text[i] != '}' {
+			continue
+		}
+		j := i - 1
+		for j >= 0 {
+			if isJSONSpace(text[j]) {
+				j--
+				continue
+			}
+			// A comment line between the comma and the brace hides the comma;
+			// step over it the same way whitespace is stepped over.
+			if before, ok := startOfCommentLineBefore(text, j); ok {
+				j = before
+				continue
+			}
+			break
+		}
+		if j >= 0 && text[j] == ',' {
+			return text[:j] + text[j+1:], true
+		}
+	}
+	return text, false
+}
+
+// startOfCommentLineBefore reports whether the line ending at j is a comment
+// line, and if so returns the offset just before that line so a backward scan
+// can step over the whole comment.
+func startOfCommentLineBefore(text string, j int) (int, bool) {
+	if j < 0 || j >= len(text) {
+		return j, false
+	}
+	lineStart := strings.LastIndex(text[:j+1], "\n") + 1
+	trimmed := strings.TrimSpace(text[lineStart : j+1])
+	if !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "/*") {
+		return j, false
+	}
+	return lineStart - 1, true
+}
+
+// dropPrecedingCommentLine removes a comment line that belongs to the member
+// cut at pos, together with the blank/indented lines between them, returning
+// the shortened text and the adjusted position. It walks back over
+// whitespace-only lines because the cut usually starts at an indented quote.
+func dropPrecedingCommentLine(text string, pos int) (string, int, bool) {
+	if pos <= 0 || pos > len(text) {
+		return text, pos, false
+	}
+	search := pos
+	for i := 0; i < 6; i++ {
+		if search < 0 {
+			break
+		}
+		lineStart := strings.LastIndex(text[:search], "\n") + 1
+		trimmed := strings.TrimSpace(text[lineStart:search])
+		if trimmed == "" {
+			search = lineStart - 1
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "/*") {
+			break
+		}
+		end := lineStart
+		if end > 0 {
+			end-- // take the newline that opened the comment line with it
+		}
+		return text[:end] + text[pos:], end, true
+	}
+	return text, pos, false
 }
 
 // keyStartForValue walks backwards from a value to the opening quote of the key
@@ -313,15 +449,34 @@ func deleteObjectMember(text string, memberStart, memberEnd int) (string, error)
 		return text[:memberStart] + text[i:], nil
 	}
 
+	// No trailing comma, so this was the LAST member: take the comma that
+	// separated it from the previous one. The scan has to look through a
+	// comment line, because a member documented with `// ...` directly above
+	// it puts the comma before the comment rather than immediately before the
+	// member; without skipping it the comma dangles and the document stops
+	// parsing.
 	j := memberStart
-	for j > 0 && isJSONSpace(text[j-1]) {
-		j--
-	}
-	if j > 0 && text[j-1] == ',' {
-		j--
-		for j > 0 && isJSONSpace(text[j-1]) {
+	for j > 0 {
+		c := text[j-1]
+		if isJSONSpace(c) {
 			j--
+			continue
 		}
+		if c == ',' {
+			j--
+			for j > 0 && isJSONSpace(text[j-1]) {
+				j--
+			}
+			break
+		}
+		if c == '/' && j >= 2 && text[j-2] == '/' {
+			// Step back over this comment line and keep looking.
+			for j > 0 && text[j-1] != '\n' {
+				j--
+			}
+			continue
+		}
+		break
 	}
 	return text[:j] + text[memberEnd:], nil
 }

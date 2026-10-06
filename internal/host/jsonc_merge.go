@@ -176,18 +176,25 @@ func isEmptyJSONObject(body string) bool {
 	return strings.TrimSpace(body) == "{"
 }
 
-// nestedValueLiteral renders the JSON object value that, placed under an
-// existing object, creates keyPath down to the `litespm` member holding entry.
-func nestedValueLiteral(keyPath []string, entry string, indent string) string {
-	if len(keyPath) == 0 {
-		return entry
-	}
+// chainLiteral renders the value for a container member whose NAME is supplied
+// by the caller, containing the remaining container chain in keys and, at the
+// leaf, the `litespm` member holding entry.
+//
+//	keys = []          -> {"litespm": entry}             (member "mcpServers")
+//	keys = ["servers"] -> {"servers": {"litespm": ...}}  (member "mcp")
+//
+// keyPath names containers only and `litespm` is always the leaf member. The
+// previous helper hardcoded `litespm` at the leaf and dropped intermediate
+// names, so a two-level path such as opencode's `mcp.servers` produced a
+// spurious extra `mcp` level. No data-driven target used a two-level path, so
+// the defect stayed latent until the bespoke adapters were routed here.
+func chainLiteral(keys []string, entry string, indent string) string {
 	inner := indent + "  "
-	if len(keyPath) == 1 {
+	if len(keys) == 0 {
 		return "{\n" + inner + fmt.Sprintf("%q: %s", litespmServerName, entry) + "\n" + indent + "}"
 	}
-	child := nestedValueLiteral(keyPath[1:], entry, inner)
-	return "{\n" + inner + fmt.Sprintf("%q: %s", keyPath[0], child) + "\n" + indent + "}"
+	child := chainLiteral(keys[1:], entry, inner)
+	return "{\n" + inner + fmt.Sprintf("%q: %s", keys[0], child) + "\n" + indent + "}"
 }
 
 // ensureKeyPath makes sure the object at keyPath exists, creating any missing
@@ -228,7 +235,9 @@ func ensureKeyPath(raw string, keyPath []string, entry any) (string, int, int, e
 		}
 		objText := cur[containerStart:containerEnd]
 		memberIndent := lineIndentOf(cur, containerStart) + "  "
-		value := nestedValueLiteral(keyPath[depth:], string(entryCompact), memberIndent)
+		// The inserted member is named keyPath[depth]; its value is the rest of
+		// the container chain plus the `litespm` leaf.
+		value := chainLiteral(keyPath[depth+1:], string(entryCompact), memberIndent)
 		closeRel := strings.LastIndex(objText, "}")
 		if closeRel < 0 {
 			return "", 0, 0, fmt.Errorf("cannot create %v: parent is not an object", keyPath[:depth])

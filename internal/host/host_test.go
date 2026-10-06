@@ -236,9 +236,9 @@ func TestOpenCodePlanSetup_EmitsLocalTypeAndArrayCommand(t *testing.T) {
 
 	assertLocalEntry := func(t *testing.T, content string, nested bool) {
 		t.Helper()
-		if !strings.Contains(content, `"type": "local"`) {
-			t.Fatalf("proposed content missing explicit local server type:\n%s", content)
-		}
+		// The entry is spliced in surgically, so its own formatting follows the
+		// surrounding document rather than a fixed pretty-printer: assert the
+		// semantics after decoding rather than a particular whitespace.
 		var root map[string]any
 		if err := json.Unmarshal([]byte(content), &root); err != nil {
 			t.Fatalf("proposed content is not valid JSON: %v", err)

@@ -105,6 +105,43 @@ func (a *GenericAdapter) PlanSetup(ctx context.Context, binaryPath, backupDir st
 	}, nil
 }
 
+// parseHostJSON parses a host config for READING, tolerating `//` and `/* */`
+// comments. A host's own config may legitimately be JSONC — Cline's file lives
+// inside VS Code's globalStorage settings, where users hand-edit — and refusing
+// to read it would strand the user with no diagnostics and no setup at all.
+func parseHostJSON(data []byte) (map[string]any, error) {
+	return parseConfigJSON(BridgeTarget{TolerateComments: true}, data)
+}
+
+// renderBridgeEntryJSON produces the new content for a bespoke JSON/JSONC host
+// config by surgical splice: the bridge entry is upserted and the pre-rename
+// `litepsm` entry is removed surgically, so user comments, key order,
+// indentation and the file's trailing newline all survive byte-for-byte.
+//
+// The bespoke adapters previously parsed into a map and re-serialized, which
+// reordered every key, reflowed the whole document and dropped a trailing
+// newline — a rewrite of someone else's file far beyond the one entry that
+// changed. The merged text is re-parsed and the entry asserted before it is
+// returned, so a writer bug fails loudly instead of shipping a corrupt config.
+func renderBridgeEntryJSON(hostName, orig string, keyPath []string, entry any) (string, error) {
+	cleaned, _, err := stripJSONEntryNamed(orig, keyPath, legacyServerName)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", hostName, err)
+	}
+	merged, err := mergeJSONEntrySurgical(cleaned, keyPath, entry)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", hostName, err)
+	}
+	verify, err := parseHostJSON([]byte(merged))
+	if err != nil {
+		return "", fmt.Errorf("%s: merged config would be invalid JSON, refusing to write: %w", hostName, err)
+	}
+	if !inspectEntry(verify, keyPath) {
+		return "", fmt.Errorf("%s: merged config is missing the bridge entry, refusing to write", hostName)
+	}
+	return merged, nil
+}
+
 // renderConfig produces the full new file content for a config.
 //
 // Every JSON target is written by surgical splice rather than parse-and-

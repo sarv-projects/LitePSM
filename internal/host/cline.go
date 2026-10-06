@@ -2,12 +2,10 @@ package host
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
 )
@@ -75,31 +73,13 @@ func (a *ClineAdapter) PlanSetup(ctx context.Context, binaryPath string, backupD
 		return nil, err
 	}
 
-	var rootMap map[string]any
-	if strings.TrimSpace(origContent) != "" && strings.TrimSpace(origContent) != "{}" {
-		if err := json.Unmarshal([]byte(origContent), &rootMap); err != nil {
-			return nil, fmt.Errorf("failed to parse existing cline config %s: %w", configPath, err)
-		}
-	}
-	if rootMap == nil {
-		rootMap = make(map[string]any)
-	}
-
-	mcpServers, ok := rootMap["mcpServers"].(map[string]any)
-	if !ok {
-		mcpServers = make(map[string]any)
-	}
-
-	// Adopt a pre-rename `litepsm` entry: drop it before writing the current
-	// `litespm` entry so the config keeps exactly one bridge server.
-	delete(mcpServers, legacyServerName)
-	mcpServers["litespm"] = map[string]any{
+	// Surgical splice, not parse-and-re-serialize: Cline's config lives in
+	// VS Code's globalStorage settings and is hand-edited, so comments, key
+	// order, indentation and the trailing newline must survive byte-for-byte.
+	proposed, err := renderBridgeEntryJSON("cline", origContent, []string{"mcpServers"}, map[string]any{
 		"command": filepath.ToSlash(binaryPath),
 		"args":    []string{"bridge", "stdio", "--host", "cline"},
-	}
-	rootMap["mcpServers"] = mcpServers
-
-	proposedBytes, err := json.MarshalIndent(rootMap, "", "  ")
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +88,7 @@ func (a *ClineAdapter) PlanSetup(ctx context.Context, binaryPath string, backupD
 		HostID:          "cline",
 		ConfigPath:      configPath,
 		OriginalContent: origContent,
-		ProposedContent: string(proposedBytes),
+		ProposedContent: proposed,
 		BackupPath:      backupPath,
 	}, nil
 }
@@ -137,8 +117,8 @@ func (a *ClineAdapter) VerifySetup(ctx context.Context) (*HostVerification, erro
 		return &HostVerification{HostID: "cline", ConfigPath: configPath, Status: "missing"}, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return &HostVerification{HostID: "cline", ConfigPath: configPath, Status: "corrupted"}, nil
 	}
 
@@ -172,8 +152,8 @@ func (a *ClineAdapter) DetectPreExistingComponents(ctx context.Context) ([]PreEx
 		return nil, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return nil, nil
 	}
 

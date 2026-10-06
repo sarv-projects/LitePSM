@@ -45,6 +45,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed; MCP/plugin listings fail closed with `LPSM-ARTIFACT-UNAVAILABLE`
   because the catalog carries no artifact locator for them.
 
+- **Host config splice contract (`ARCH/16` §3.7.1).** Every JSON/JSONC host —
+  the four bespoke adapters as well as the 44 data-driven targets — now edits a
+  user config by byte offset (`renderBridgeEntryJSON`) instead of parsing into a
+  map and re-serializing. Comments, key order, indentation, unknown keys and the
+  trailing newline survive byte for byte; `cline`, `claude-code`, `opencode` and
+  `pi-agent` previously reformatted, re-sorted and reflowed the whole document.
+  Reads go through a comment-tolerant parse, so a JSONC config (Cline's lives in
+  VS Code's globalStorage settings) can be set up and inspected instead of being
+  refused; genuinely invalid JSON is still refused.
+- **`host remove` layout tolerance.** Removal now tries every documented
+  container path and rewrites only the one that actually holds the bridge entry.
+  OpenCode's real v1 layout is `mcp.<name>`, while removal looked for a
+  top-level `mcpServers`, so `host remove` could leave a registration behind; a
+  JSONC config also defeated the old layout detection. Removal additionally
+  repairs the residue of cutting a member (a comma stranded before a closing
+  brace, a comment line that documented the removed member) and refuses rather
+  than writing a document it has just proved is broken.
+
 ### Changed
 
 - **Deployment renamed to `litespm`.** The live Cloudflare Worker moved from the
@@ -63,6 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Connectors removed.** The unreachable `internal/connector` package and its
   seeds were deleted (delete rather than ship dead wiring); documentation and
   module counts were corrected.
+
+- Host config removal restores TOML configs and multi-line JSON objects byte for
+  byte. A single-line JSON object can retain one line break, because inserting an
+  entry into it necessarily added a line; content and validity are preserved.
 
 ### Fixed
 
@@ -99,6 +121,14 @@ Verified remediation phases 0–3:
   rollback.
 - **Release contract.** The release asset file-name contract was corrected so
   the self-update path and the published artifacts agree.
+
+- **Multi-level container paths in the surgical merge.** The container-chain
+  builder hardcoded the `litespm` member name at the leaf and dropped
+  intermediate key names, so a two-level path such as OpenCode's `mcp.servers`
+  produced a spurious extra `mcp` level (`mcp.mcp.litespm`). Every data-driven
+  target uses a one-level path, so the defect was latent until the bespoke
+  adapters were routed through the shared helper; it is now pinned by
+  `TestMergeJSONEntrySurgicalTwoLevelKeyPath`.
 
 ### Known limitations
 

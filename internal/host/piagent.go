@@ -2,7 +2,6 @@ package host
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,14 +73,15 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 		return nil, err
 	}
 
-	var rootMap map[string]any
+	// Read tolerantly (a user may have left comments in the config) purely to
+	// learn which container is in use, then splice: everything else in the file
+	// survives byte-for-byte.
+	var existing map[string]any
 	if strings.TrimSpace(origContent) != "" && strings.TrimSpace(origContent) != "{}" {
-		if err := json.Unmarshal([]byte(origContent), &rootMap); err != nil {
+		existing, err = parseHostJSON([]byte(origContent))
+		if err != nil {
 			return nil, fmt.Errorf("failed to parse existing pi-agent config %s: %w", configPath, err)
 		}
-	}
-	if rootMap == nil {
-		rootMap = make(map[string]any)
 	}
 
 	bridgeEntry := map[string]any{
@@ -91,30 +91,21 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 
 	// Check if "mcp.servers" or "mcp" exists vs "mcpServers". A pre-rename
 	// `litepsm` entry is adopted (deleted) from whichever container is used, so
-	// only one bridge server remains.
-	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
-		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
-			delete(serversVal, legacyServerName)
-			serversVal["litespm"] = bridgeEntry
-			mcpVal["servers"] = serversVal
-			rootMap["mcp"] = mcpVal
+	// only one bridge server remains. A new config defaults to mcpServers.
+	keyPath := []string{"mcpServers"}
+	if mcpVal, ok := existing["mcp"].(map[string]any); ok {
+		if _, ok := mcpVal["servers"].(map[string]any); ok {
+			keyPath = []string{"mcp", "servers"}
 		} else {
-			delete(mcpVal, legacyServerName)
-			mcpVal["litespm"] = bridgeEntry
-			rootMap["mcp"] = mcpVal
+			keyPath = []string{"mcp"}
 		}
-	} else if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
-		delete(mcpServers, legacyServerName)
-		mcpServers["litespm"] = bridgeEntry
-		rootMap["mcpServers"] = mcpServers
-	} else {
-		// Default to mcpServers
-		rootMap["mcpServers"] = map[string]any{
-			"litespm": bridgeEntry,
-		}
+	} else if _, ok := existing["mcp"]; ok {
+		keyPath = []string{"mcp"}
+	} else if _, ok := existing["mcpServers"]; ok {
+		keyPath = []string{"mcpServers"}
 	}
 
-	proposedBytes, err := json.MarshalIndent(rootMap, "", "  ")
+	proposed, err := renderBridgeEntryJSON("pi-agent", origContent, keyPath, bridgeEntry)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +114,7 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 		HostID:          "pi-agent",
 		ConfigPath:      configPath,
 		OriginalContent: origContent,
-		ProposedContent: string(proposedBytes),
+		ProposedContent: proposed,
 		BackupPath:      backupPath,
 	}, nil
 }
@@ -171,8 +162,8 @@ func (a *PiAgentAdapter) VerifySetup(ctx context.Context) (*HostVerification, er
 		return &HostVerification{HostID: "pi-agent", ConfigPath: configPath, Status: "missing"}, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return &HostVerification{HostID: "pi-agent", ConfigPath: configPath, Status: "corrupted"}, nil
 	}
 
@@ -214,8 +205,8 @@ func (a *PiAgentAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pre
 		return nil, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return nil, nil
 	}
 

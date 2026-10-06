@@ -2,11 +2,9 @@ package host
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
 )
@@ -48,31 +46,13 @@ func (a *ClaudeCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, ba
 		return nil, err
 	}
 
-	var rootMap map[string]any
-	if strings.TrimSpace(origContent) != "" && strings.TrimSpace(origContent) != "{}" {
-		if err := json.Unmarshal([]byte(origContent), &rootMap); err != nil {
-			return nil, fmt.Errorf("failed to parse existing claude config %s: %w", configPath, err)
-		}
-	}
-	if rootMap == nil {
-		rootMap = make(map[string]any)
-	}
-
-	mcpServers, ok := rootMap["mcpServers"].(map[string]any)
-	if !ok {
-		mcpServers = make(map[string]any)
-	}
-
-	// Adopt a pre-rename `litepsm` entry: drop it before writing the current
-	// `litespm` entry so the config keeps exactly one bridge server.
-	delete(mcpServers, legacyServerName)
-	mcpServers["litespm"] = map[string]any{
+	// Surgical splice, not parse-and-re-serialize: `.claude.json` is a large
+	// shared settings document, so comments, key order, indentation and the
+	// trailing newline must survive byte-for-byte.
+	proposed, err := renderBridgeEntryJSON("claude-code", origContent, []string{"mcpServers"}, map[string]any{
 		"command": filepath.ToSlash(binaryPath),
 		"args":    []string{"bridge", "stdio", "--host", "claude-code"},
-	}
-	rootMap["mcpServers"] = mcpServers
-
-	proposedBytes, err := json.MarshalIndent(rootMap, "", "  ")
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +61,7 @@ func (a *ClaudeCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, ba
 		HostID:          "claude-code",
 		ConfigPath:      configPath,
 		OriginalContent: origContent,
-		ProposedContent: string(proposedBytes),
+		ProposedContent: proposed,
 		BackupPath:      backupPath,
 	}, nil
 }
@@ -110,8 +90,8 @@ func (a *ClaudeCodeAdapter) VerifySetup(ctx context.Context) (*HostVerification,
 		return &HostVerification{HostID: "claude-code", ConfigPath: configPath, Status: "missing"}, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return &HostVerification{HostID: "claude-code", ConfigPath: configPath, Status: "corrupted"}, nil
 	}
 
@@ -145,8 +125,8 @@ func (a *ClaudeCodeAdapter) DetectPreExistingComponents(ctx context.Context) ([]
 		return nil, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return nil, nil
 	}
 

@@ -318,7 +318,7 @@ func TestRemovalSpecForBespokeAdapters(t *testing.T) {
 		if err != nil {
 			t.Fatalf("adapter %s not registered: %v", id, err)
 		}
-		got, err := removalSpecFor(adapter, "")
+		got, err := removalSpecFor(adapter)
 		if err != nil {
 			t.Fatalf("%s: %v", id, err)
 		}
@@ -331,7 +331,7 @@ func TestRemovalSpecForBespokeAdapters(t *testing.T) {
 func TestEveryRegisteredAdapterHasARemovalPath(t *testing.T) {
 	for _, adapter := range ListAdapters() {
 		id := adapter.Descriptor().HostID
-		if _, err := removalSpecFor(adapter, ""); err != nil {
+		if _, err := removalSpecFor(adapter); err != nil {
 			t.Errorf("host %q cannot be uninstalled: %v", id, err)
 		}
 	}

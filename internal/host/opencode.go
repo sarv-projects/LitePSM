@@ -2,7 +2,6 @@ package host
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,14 +73,15 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 		return nil, err
 	}
 
-	var rootMap map[string]any
+	// Read tolerantly (a user may have left comments in the config) purely to
+	// learn which layout is in use, then splice: everything else in the file
+	// survives byte-for-byte.
+	var existing map[string]any
 	if strings.TrimSpace(origContent) != "" && strings.TrimSpace(origContent) != "{}" {
-		if err := json.Unmarshal([]byte(origContent), &rootMap); err != nil {
+		existing, err = parseHostJSON([]byte(origContent))
+		if err != nil {
 			return nil, fmt.Errorf("failed to parse existing opencode config %s: %w", configPath, err)
 		}
-	}
-	if rootMap == nil {
-		rootMap = make(map[string]any)
 	}
 
 	bridgeEntry := map[string]any{
@@ -91,45 +91,20 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 		"command": append([]string{filepath.ToSlash(binaryPath)}, "bridge", "stdio", "--host", "opencode"),
 	}
 
-	// Detect whether v2 (mcp.servers) or v1 (mcp.<name>) is in use
-	mcpVal, hasMcp := rootMap["mcp"]
-	isV2 := false
-	if hasMcp {
-		if mcpMap, ok := mcpVal.(map[string]any); ok {
-			if serversVal, hasServers := mcpMap["servers"]; hasServers {
-				if _, ok := serversVal.(map[string]any); ok {
-					isV2 = true
-				}
-			}
+	// Detect whether v2 (mcp.servers) or v1 (mcp.<name>) is in use. A new
+	// config defaults to the v2 nested layout.
+	keyPath := []string{"mcp", "servers"}
+	if mcpMap, ok := existing["mcp"].(map[string]any); ok {
+		if _, hasServers := mcpMap["servers"].(map[string]any); hasServers {
+			keyPath = []string{"mcp", "servers"}
+		} else {
+			keyPath = []string{"mcp"}
 		}
+	} else if _, hasFlat := existing["mcp"]; hasFlat {
+		keyPath = []string{"mcp"}
 	}
 
-	if isV2 {
-		mcpMap := rootMap["mcp"].(map[string]any)
-		serversMap := mcpMap["servers"].(map[string]any)
-		delete(serversMap, legacyServerName)
-		serversMap["litespm"] = bridgeEntry
-		mcpMap["servers"] = serversMap
-		rootMap["mcp"] = mcpMap
-	} else if hasMcp {
-		// Existing v1 layout
-		mcpMap, ok := mcpVal.(map[string]any)
-		if !ok {
-			mcpMap = make(map[string]any)
-		}
-		delete(mcpMap, legacyServerName)
-		mcpMap["litespm"] = bridgeEntry
-		rootMap["mcp"] = mcpMap
-	} else {
-		// New config defaults to v2 nested layout
-		rootMap["mcp"] = map[string]any{
-			"servers": map[string]any{
-				"litespm": bridgeEntry,
-			},
-		}
-	}
-
-	proposedBytes, err := json.MarshalIndent(rootMap, "", "  ")
+	proposed, err := renderBridgeEntryJSON("opencode", origContent, keyPath, bridgeEntry)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +113,7 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 		HostID:          "opencode",
 		ConfigPath:      configPath,
 		OriginalContent: origContent,
-		ProposedContent: string(proposedBytes),
+		ProposedContent: proposed,
 		BackupPath:      backupPath,
 	}, nil
 }
@@ -167,8 +142,8 @@ func (a *OpenCodeAdapter) VerifySetup(ctx context.Context) (*HostVerification, e
 		return &HostVerification{HostID: "opencode", ConfigPath: configPath, Status: "missing"}, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return &HostVerification{HostID: "opencode", ConfigPath: configPath, Status: "corrupted"}, nil
 	}
 
@@ -207,8 +182,8 @@ func (a *OpenCodeAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pr
 		return nil, nil
 	}
 
-	var rootMap map[string]any
-	if err := json.Unmarshal(data, &rootMap); err != nil {
+	rootMap, err := parseHostJSON(data)
+	if err != nil {
 		return nil, nil
 	}
 
