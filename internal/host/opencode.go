@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -28,33 +27,36 @@ func (a *OpenCodeAdapter) Descriptor() HostDescriptor {
 	}
 }
 
+// DetectConfig resolves the global OpenCode config file.
+//
+// OpenCode resolves its config directory through xdg-basedir, so
+// $XDG_CONFIG_HOME applies on every OS including Windows, and OPENCODE_CONFIG_DIR
+// overrides the directory outright. Both `opencode.json` and `opencode.jsonc`
+// are read, `.jsonc` first (source: ConfigPaths.files() returns
+// ["${name}.jsonc", "${name}.json"]).
+//
+// Two paths this adapter used to probe were removed because no OpenCode release
+// reads them: `~/.opencode.json` and `%APPDATA%\OpenCode\opencode.json`. Probing
+// them was not harmless — when the real file was absent they became the default
+// target, so the bridge was written somewhere OpenCode never looks while setup
+// reported success.
 func (a *OpenCodeAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	homeDir := resolveHomeDir()
-
-	var candidates []string
-	if runtime.GOOS == "windows" {
-		// Native Windows user scope is %USERPROFILE%\.config\opencode\opencode.json.
-		// %APPDATA% is retained only as a legacy fallback for older installs.
-		candidates = append(candidates, filepath.Join(homeDir, ".config", "opencode", "opencode.json"))
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			candidates = append(candidates, filepath.Join(appData, "OpenCode", "opencode.json"))
-		}
-		candidates = append(candidates, filepath.Join(homeDir, ".opencode.json"))
+	dir := ""
+	if v := os.Getenv("OPENCODE_CONFIG_DIR"); v != "" {
+		dir = v
 	} else {
-		candidates = append(candidates, filepath.Join(homeDir, ".config", "opencode", "opencode.json"))
-		candidates = append(candidates, filepath.Join(homeDir, ".opencode.json"))
+		dir = filepath.Join(xdgConfigDir(resolveHomeDir()), "opencode")
 	}
-
+	candidates := []string{
+		filepath.Join(dir, "opencode.jsonc"),
+		filepath.Join(dir, "opencode.json"),
+	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			return c, nil
 		}
 	}
-
-	if len(candidates) > 0 {
-		return candidates[0], nil
-	}
-	return filepath.Join(homeDir, ".config", "opencode", "opencode.json"), nil
+	return candidates[1], nil
 }
 
 func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error) {
@@ -73,16 +75,15 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 		return nil, err
 	}
 
-	// Read tolerantly (a user may have left comments in the config) purely to
-	// learn which layout is in use, then splice: everything else in the file
-	// survives byte-for-byte.
-	var existing map[string]any
-	if strings.TrimSpace(origContent) != "" && strings.TrimSpace(origContent) != "{}" {
-		existing, err = parseHostJSON([]byte(origContent))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse existing opencode config %s: %w", configPath, err)
-		}
-	}
+	// OpenCode has ONE documented layout: servers are direct members of the
+	// `mcp` object. The published schema types `mcp` as additionalProperties of
+	// McpLocalConfig/McpRemoteConfig and contains no `servers` key, and the
+	// runtime rejects a member without `type`
+	// ("Ignoring MCP config entry without type"). A two-level `mcp.servers`
+	// path was therefore invented here and silently produced a config
+	// OpenCode refuses to load, while this adapter's own verify looked for the
+	// same invented path and reported ready.
+	orig := pruneEmptyLegacyServersObject(origContent)
 
 	bridgeEntry := map[string]any{
 		"type": "local",
@@ -91,20 +92,7 @@ func (a *OpenCodeAdapter) PlanSetup(ctx context.Context, binaryPath string, back
 		"command": append([]string{filepath.ToSlash(binaryPath)}, "bridge", "stdio", "--host", "opencode"),
 	}
 
-	// Detect whether v2 (mcp.servers) or v1 (mcp.<name>) is in use. A new
-	// config defaults to the v2 nested layout.
-	keyPath := []string{"mcp", "servers"}
-	if mcpMap, ok := existing["mcp"].(map[string]any); ok {
-		if _, hasServers := mcpMap["servers"].(map[string]any); hasServers {
-			keyPath = []string{"mcp", "servers"}
-		} else {
-			keyPath = []string{"mcp"}
-		}
-	} else if _, hasFlat := existing["mcp"]; hasFlat {
-		keyPath = []string{"mcp"}
-	}
-
-	proposed, err := renderBridgeEntryJSON("opencode", origContent, keyPath, bridgeEntry)
+	proposed, err := renderBridgeEntryJSON("opencode", orig, []string{"mcp"}, bridgeEntry)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +117,29 @@ func (a *OpenCodeAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan) 
 		BackupPath: plan.BackupPath,
 		Success:    true,
 	}, nil
+}
+
+// pruneEmptyLegacyServersObject removes the `mcp.servers` object that earlier
+// LiteSPM versions wrote, but only once it is empty. OpenCode treats every
+// member of `mcp` as a server definition and rejects one without `type`, so a
+// leftover `servers` object is a config error the user cannot see the cause of.
+// A `servers` object that still holds someone else's entries is left alone.
+func pruneEmptyLegacyServersObject(orig string) string {
+	out := orig
+	for _, name := range []string{legacyServerName, litespmServerName} {
+		if stripped, removed, err := stripJSONEntryNamed(out, []string{"mcp", "servers"}, name); err == nil && removed {
+			out = stripped
+		}
+	}
+	innerStart, innerEnd, found, spanErr := jsonValueSpan(stripJSONComments(out), []string{"mcp", "servers"})
+	if spanErr == nil && found && !isEmptyJSONObject(strings.TrimSpace(out[innerStart:innerEnd])) {
+		// Someone else's servers are still configured there: leave it be.
+		return out
+	}
+	if pruned, prunedOK, err := stripJSONEntryNamed(out, []string{"mcp"}, "servers"); err == nil && prunedOK {
+		return pruned
+	}
+	return out
 }
 
 func (a *OpenCodeAdapter) VerifySetup(ctx context.Context) (*HostVerification, error) {

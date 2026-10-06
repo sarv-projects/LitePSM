@@ -109,6 +109,46 @@ go test ./... -count=1     # all packages green
 
 Registered adapters after this change: **50** (6 hand-written + 44 verified targets).
 
+### 8.1 Host documentation audit — 2026-10-06
+
+Every row in `internal/host/targets_data.go` and all six hand-written adapters
+were re-checked against live vendor documentation, one host at a time. The
+previous claim in that file's header — "every row here was checked against that
+agent's own documentation" — was not true for every row, and the audit found
+defects that produce **silent failure**: LiteSPM writes the bridge, reports
+`ready`, and the host never reads it.
+
+**Fixed (silent failure — the host ignored us):**
+
+| Row / adapter | Defect |
+|---|---|
+| `opencode` | Wrote `mcp.servers.litespm`. No such key exists: the published schema types `mcp` as a map of server entries and the runtime rejects a member without `type`. Also probed `~/.opencode.json` and `%APPDATA%\OpenCode\opencode.json` (no release reads either), ignored `OPENCODE_CONFIG_DIR`/`XDG_CONFIG_HOME`, and never looked at `opencode.jsonc`. |
+| `cline` | Wrote the VS Code `globalStorage` settings file. Cline moved it to `~/.cline/data/settings/cline_mcp_settings.json` (shared by all clients) and reads globalStorage only in a one-shot migration, so writes there are a no-op. `CLINE_MCP_SETTINGS_PATH`/`CLINE_DATA_DIR` ignored. |
+| `amp` | Wrote a nested `{"amp":{"mcpServers":…}}`. Amp's published schema declares the property literally as `"amp.mcpServers"` with `additionalProperties:false`, so the nested form was both unread and schema-invalid. Now `FlatKey`. |
+| `pi-agent` | Probed two undocumented paths, and switched to a `mcp`/`mcp.servers` container whenever the file contained an unrelated top-level `mcp` object — a container no Pi version reads. `PI_CODING_AGENT_DIR` ignored. |
+| `crush` | Windows user-global path taken from `%APPDATA%`; Crush reads `%LOCALAPPDATA%`. Its schema marks `type` as **required** and its decoder applies no default, so the entry started no transport at all. New `ShapeStdioTyped`. |
+| `codex` / `grok-build` | Ignored `CODEX_HOME` / `GROK_HOME` (both documented; `internal/skills` already honoured them, so the two subsystems disagreed). Probed an undocumented `%APPDATA%` fallback. |
+| `codebuddy` | Candidate list skipped the documented middle entry (`~/.codebuddy/mcp.json`, `<root>/mcp.json`), so an existing one made us write to a file the host never consults. Its own `Note` already documented the correct chain. |
+| `kode` | `KODE_CONFIG_DIR` changes the **filename** to `config.json`, not `kode.json`. |
+| `kilo` | Selected `kilo.jsonc` without `TolerateComments`, so setup failed on the very comments that motivate `.jsonc`. |
+| `fx` | Project `.mcp.json` uses `mcpServers`, not `mcp`. |
+| `aider-desk` | `AIDER_DESK_HOME_DIR` ignored. `qwen-code`: `QWEN_HOME` ignored. |
+| `astrbot` | Fell back to `$HOME` for its root; AstrBot falls back to the process working directory. |
+| `tabnine-cli` | Documented workspace scope unregistered; published `DocsURL` returns 404. |
+| `cortex`, `codearts-agent`, `kiro-cli` | Documented candidate/scope paths missing. |
+| shared writer | `RenderManualSetup` emitted the entry object where the **server name** belongs, so the wizard's paste-this-snippet fallback printed invalid JSON for all 44 rows. |
+
+**Open, deliberately not "fixed":**
+
+* **Vendor self-contradictions on `type`.** Cursor and Firebender publish a field table marking `type` required while every JSON example on the page omits it; the Snowflake CLI page requires it and its Desktop page omits it; Kiro, Copilot, Augment and Rovo are unverifiable either way. We write the minimal stdio entry and do not guess. If any of these turns out to require `type`, the row's shape is a one-line change.
+* **Trailing commas.** CodeBuddy documents JSONC *with* trailing commas. Go's decoder rejects them, so such a file fails closed at setup. Widening the reader is a separate, larger change than comment tolerance.
+* **Comment tolerance can outpace the host.** Cline, Claude Code, Pi and Roo parse with a strict `JSON.parse`. Our tolerant reader will splice into a commented file that the host then rejects. Fail-closed on our side is not enough to surface it; see §9.
+* **Unverified row details** left in place but not relied upon: the `OH_PERSISTENCE_DIR` branch, droid's "user wins" precedence note, and the Devin note's Windsurf claim (vendor pages 404).
+
+The durable lesson, now enforced by `internal/host/host_docs_audit_test.go`:
+assert the *host-visible* result (valid JSON, the server named, the entry under
+the key the vendor documents), not just that our own writer round-trips.
+
 ## 9. Known limitations
 
 * `TolerateComments` is advisory metadata. The writer preserves comments for all JSON targets regardless; the flag records which hosts document the format as comment-tolerant.

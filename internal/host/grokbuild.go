@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -27,31 +26,23 @@ func (a *GrokBuildAdapter) Descriptor() HostDescriptor {
 	}
 }
 
+// DetectConfig resolves Grok Build's user-level settings file.
+//
+// The documented user path is `$GROK_HOME/config.toml` with `$GROK_HOME`
+// defaulting to `~/.grok` ("Home for config, auth, sessions, skills, plugins,
+// and logs"). This adapter previously ignored the variable, so a relocated home
+// received the bridge in a file Grok never reads. internal/skills already
+// honoured GROK_HOME.
+//
+// The `%APPDATA%\Grok\config.toml` fallback is gone: it appears in no xAI
+// documentation, and the documented Windows user path is
+// `%USERPROFILE%\.grok\config.toml`, which the default already covers.
 func (a *GrokBuildAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	homeDir := resolveHomeDir()
-
-	var candidatePaths []string
-	if runtime.GOOS == "windows" {
-		// Native Windows user scope is %USERPROFILE%\.grok\config.toml.
-		// %APPDATA% is retained only as a legacy fallback for older installs.
-		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".grok", "config.toml"))
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			candidatePaths = append(candidatePaths, filepath.Join(appData, "Grok", "config.toml"))
-		}
-	} else {
-		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".grok", "config.toml"))
+	dir := os.Getenv("GROK_HOME")
+	if dir == "" {
+		dir = filepath.Join(resolveHomeDir(), ".grok")
 	}
-
-	for _, p := range candidatePaths {
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
-		}
-	}
-
-	if len(candidatePaths) > 0 {
-		return candidatePaths[0], nil
-	}
-	return filepath.Join(homeDir, ".grok", "config.toml"), nil
+	return filepath.Join(dir, "config.toml"), nil
 }
 
 func (a *GrokBuildAdapter) PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error) {

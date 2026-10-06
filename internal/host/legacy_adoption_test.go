@@ -208,7 +208,12 @@ func TestBespokeJSONAdaptersAdoptLegacyEntry(t *testing.T) {
 
 // TestPiAgentAdoptsLegacyEntryInNestedLayout covers pi-agent's documented
 // mcp.servers layout.
-func TestPiAgentAdoptsLegacyEntryInNestedLayout(t *testing.T) {
+// TestPiAgentIgnoresForeignContainersAndAdoptsLegacyEntry pins that the bridge
+// always lands in `mcpServers`, the only container Pi reads. Earlier revisions
+// wrote into `mcp` / `mcp.servers` whenever the file happened to contain an
+// unrelated top-level `mcp` object, which put the bridge where Pi never looks.
+// Pi ignores unknown top-level keys, so that foreign object is left untouched.
+func TestPiAgentIgnoresForeignContainersAndAdoptsLegacyEntry(t *testing.T) {
 	home := useTempHome(t)
 	adapter := &PiAgentAdapter{}
 	ctx := context.Background()
@@ -223,11 +228,28 @@ func TestPiAgentAdoptsLegacyEntryInNestedLayout(t *testing.T) {
 		t.Fatalf("ApplySetup: %v", err)
 	}
 	out, _ := os.ReadFile(path)
-	assertSingleCurrentBridge(t, string(out), []string{"mcp", "servers"})
+	root, err := parseHostJSON(out)
+	if err != nil {
+		t.Fatalf("config does not parse: %v\n%s", err, out)
+	}
+	container, ok := root["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers container missing:\n%s", out)
+	}
+	if _, ok := container[litespmServerName]; !ok {
+		t.Fatalf("bridge entry missing from mcpServers:\n%s", out)
+	}
+	if n := strings.Count(string(out), `"litespm"`); n != 1 {
+		t.Errorf("expected exactly one bridge entry, found %d:\n%s", n, out)
+	}
 }
 
-// TestOpenCodeAdoptsLegacyEntryInBothLayouts covers v1 (mcp.<name>) and v2
-// (mcp.servers.<name>).
+// TestOpenCodeAdoptsLegacyEntryInBothLayouts covers the flat layout and the
+// nested `mcp.servers` layout that earlier LiteSPM versions wrote. Upstream
+// OpenCode has no nested layout — the published schema types `mcp` as a map of
+// server entries and the runtime rejects a member without `type` — so the
+// legacy entry must be adopted from wherever it sits and the current entry
+// written flat, or the bridge is invisible to the host.
 func TestOpenCodeAdoptsLegacyEntryInBothLayouts(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
@@ -236,14 +258,14 @@ func TestOpenCodeAdoptsLegacyEntryInBothLayouts(t *testing.T) {
 		keyPath []string
 	}{
 		{
-			name:    "v1",
+			name:    "flat",
 			seed:    `{"mcp":{"mine":{"command":"x"},"litepsm":{"command":"/old/legacy"}}}`,
 			keyPath: []string{"mcp"},
 		},
 		{
-			name:    "v2",
+			name:    "legacy nested layout",
 			seed:    `{"mcp":{"servers":{"mine":{"type":"local","command":["x"]},"litepsm":{"type":"local","command":["/old/legacy"]}}}}`,
-			keyPath: []string{"mcp", "servers"},
+			keyPath: []string{"mcp"},
 		},
 	}
 	for _, tc := range cases {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -27,34 +26,28 @@ func (a *PiAgentAdapter) Descriptor() HostDescriptor {
 	}
 }
 
+// DetectConfig resolves Pi's user-level MCP file.
+//
+// Pi reads servers from `<agent-dir>/mcp.json`, where the agent directory is
+// `~/.pi/agent` unless `PI_CODING_AGENT_DIR` overrides it (documented; also
+// `agentDir` in the SDK). Two fallback paths this adapter used to probe
+// (`~/.pi/config.json`, `~/.pi/mcp.json`) appear in no Pi documentation or
+// source, and probing them was not harmless: when the real file was absent they
+// became the write target, so the bridge landed in a file Pi never reads.
 func (a *PiAgentAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	homeDir := resolveHomeDir()
+	return filepath.Join(piAgentDir(), "mcp.json"), nil
+}
 
-	var candidates []string
-	if runtime.GOOS == "windows" {
-		candidates = append(candidates, filepath.Join(homeDir, ".pi", "agent", "mcp.json"))
-		candidates = append(candidates, filepath.Join(homeDir, ".pi", "config.json"))
-		candidates = append(candidates, filepath.Join(homeDir, ".pi", "mcp.json"))
-	} else {
-		candidates = append(candidates, filepath.Join(homeDir, ".pi", "agent", "mcp.json"))
-		candidates = append(candidates, filepath.Join(homeDir, ".pi", "config.json"))
-		candidates = append(candidates, filepath.Join(homeDir, ".pi", "mcp.json"))
+// piAgentDir returns Pi's agent directory, honouring the documented override.
+func piAgentDir() string {
+	if dir := os.Getenv("PI_CODING_AGENT_DIR"); dir != "" {
+		return dir
 	}
-
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c, nil
-		}
-	}
-
-	if len(candidates) > 0 {
-		return candidates[0], nil
-	}
-	return filepath.Join(homeDir, ".pi", "agent", "mcp.json"), nil
+	return filepath.Join(resolveHomeDir(), ".pi", "agent")
 }
 
 func (a *PiAgentAdapter) ExtensionPath() string {
-	return filepath.Join(resolveHomeDir(), ".pi", "agent", "extensions", "litespm.ts")
+	return filepath.Join(piAgentDir(), "extensions", "litespm.ts")
 }
 
 func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error) {
@@ -76,11 +69,11 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 	// Read tolerantly (a user may have left comments in the config) purely to
 	// learn which container is in use, then splice: everything else in the file
 	// survives byte-for-byte.
-	var existing map[string]any
+	// Read tolerantly (a user may have left comments in the config) so a broken
+	// document is reported before anything is written.
 	if strings.TrimSpace(origContent) != "" && strings.TrimSpace(origContent) != "{}" {
-		existing, err = parseHostJSON([]byte(origContent))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse existing pi-agent config %s: %w", configPath, err)
+		if _, perr := parseHostJSON([]byte(origContent)); perr != nil {
+			return nil, fmt.Errorf("failed to parse existing pi-agent config %s: %w", configPath, perr)
 		}
 	}
 
@@ -89,23 +82,14 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 		"args":    []string{"bridge", "stdio", "--host", "pi-agent"},
 	}
 
-	// Check if "mcp.servers" or "mcp" exists vs "mcpServers". A pre-rename
-	// `litepsm` entry is adopted (deleted) from whichever container is used, so
-	// only one bridge server remains. A new config defaults to mcpServers.
-	keyPath := []string{"mcpServers"}
-	if mcpVal, ok := existing["mcp"].(map[string]any); ok {
-		if _, ok := mcpVal["servers"].(map[string]any); ok {
-			keyPath = []string{"mcp", "servers"}
-		} else {
-			keyPath = []string{"mcp"}
-		}
-	} else if _, ok := existing["mcp"]; ok {
-		keyPath = []string{"mcp"}
-	} else if _, ok := existing["mcpServers"]; ok {
-		keyPath = []string{"mcpServers"}
-	}
-
-	proposed, err := renderBridgeEntryJSON("pi-agent", origContent, keyPath, bridgeEntry)
+	// `mcpServers` is the only container Pi reads ("The format matches other MCP
+	// clients"), so it is also the only one we may write. Earlier revisions
+	// switched to `mcp` or `mcp.servers` whenever the file happened to contain an
+	// unrelated top-level `mcp` object, which put the bridge somewhere Pi never
+	// looks while verify reported ready.
+	// A pre-rename `litepsm` entry is adopted (deleted) from that container, so
+	// only one bridge server remains.
+	proposed, err := renderBridgeEntryJSON("pi-agent", origContent, []string{"mcpServers"}, bridgeEntry)
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -27,32 +26,26 @@ func (a *CodexAdapter) Descriptor() HostDescriptor {
 	}
 }
 
+// DetectConfig resolves Codex's user-level config file.
+//
+// Codex stores its local state under `CODEX_HOME` (default `~/.codex`), and
+// "Codex stores its local state under CODEX_HOME (defaults to ~/.codex)" is
+// explicit in both the docs and its source. This adapter previously ignored the
+// variable, so a relocated home (CI, dev containers) received the bridge in a
+// file Codex never reads while `host verify` reported ready. The skills table in
+// internal/skills already honoured CODEX_HOME, so the two subsystems disagreed
+// about where the same directory is.
+//
+// The `%APPDATA%\Codex\config.toml` fallback is gone: it is in no OpenAI
+// documentation, and the documented Windows system-config path is the different
+// `%ProgramData%\OpenAI\Codex\config.toml`, which is an administrator-owned
+// file we must not write.
 func (a *CodexAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
-	homeDir := resolveHomeDir()
-
-	var candidatePaths []string
-	if runtime.GOOS == "windows" {
-		// Native Windows user scope is %USERPROFILE%\.codex\config.toml.
-		// %APPDATA% is retained only as a legacy fallback for older installs.
-		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".codex", "config.toml"))
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			candidatePaths = append(candidatePaths, filepath.Join(appData, "Codex", "config.toml"))
-		}
-	} else {
-		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".codex", "config.toml"))
+	dir := os.Getenv("CODEX_HOME")
+	if dir == "" {
+		dir = filepath.Join(resolveHomeDir(), ".codex")
 	}
-
-	for _, p := range candidatePaths {
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
-		}
-	}
-
-	// Fallback default
-	if len(candidatePaths) > 0 {
-		return candidatePaths[0], nil
-	}
-	return filepath.Join(homeDir, ".codex", "config.toml"), nil
+	return filepath.Join(dir, "config.toml"), nil
 }
 
 func (a *CodexAdapter) PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error) {

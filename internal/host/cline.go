@@ -26,23 +26,43 @@ func (a *ClineAdapter) Descriptor() HostDescriptor {
 	}
 }
 
+// DetectConfig resolves the Cline MCP settings file.
+//
+// Cline moved this file out of the VS Code extension's globalStorage into a
+// location shared by every Cline client: the extension source states "the MCP
+// settings file lives at ~/.cline/data/settings/cline_mcp_settings.json
+// (shared across VSCode, CLI, and JetBrains clients)", and reads the old
+// globalStorage path only as a ONE-SHOT legacy migration. Writing to the
+// globalStorage path therefore does nothing on any current install, while
+// `CLINE_MCP_SETTINGS_PATH` or `CLINE_DATA_DIR` relocate the real one.
+//
+// Precedence: the env overrides first (they are what the running client uses),
+// then the shared path, then the legacy globalStorage files for a client too
+// old to have migrated. When nothing exists yet we create the shared path,
+// because that is the file every current Cline reads.
 func (a *ClineAdapter) DetectConfig(ctx context.Context, scope domain.InstallScope) (string, error) {
 	homeDir := resolveHomeDir()
 
 	var candidates []string
-	if runtime.GOOS == "windows" {
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			candidates = append(candidates, filepath.Join(appData, "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"))
-			candidates = append(candidates, filepath.Join(appData, "Code - Insiders", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"))
+	preferred := ""
+	if override := os.Getenv("CLINE_MCP_SETTINGS_PATH"); override != "" {
+		candidates = append(candidates, override)
+		preferred = override
+	}
+	if dataDir := os.Getenv("CLINE_DATA_DIR"); dataDir != "" {
+		candidate := filepath.Join(dataDir, "settings", "cline_mcp_settings.json")
+		candidates = append(candidates, candidate)
+		if preferred == "" {
+			preferred = candidate
 		}
-		candidates = append(candidates, filepath.Join(homeDir, ".config", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"))
-	} else if runtime.GOOS == "darwin" {
-		candidates = append(candidates, filepath.Join(homeDir, "Library", "Application Support", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"))
-		candidates = append(candidates, filepath.Join(homeDir, "Library", "Application Support", "Code - Insiders", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"))
-	} else {
-		// Linux / Unix
-		candidates = append(candidates, filepath.Join(homeDir, ".config", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"))
-		candidates = append(candidates, filepath.Join(homeDir, ".config", "Code - Insiders", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"))
+	}
+	shared := filepath.Join(homeDir, ".cline", "data", "settings", "cline_mcp_settings.json")
+	candidates = append(candidates, shared)
+
+	// Legacy: VS Code / VS Code Insiders globalStorage, read once by Cline's
+	// settings migration. Kept last so a pre-migration client is still found.
+	for _, c := range legacyClineSettingsPaths(homeDir) {
+		candidates = append(candidates, c)
 	}
 
 	for _, c := range candidates {
@@ -50,11 +70,38 @@ func (a *ClineAdapter) DetectConfig(ctx context.Context, scope domain.InstallSco
 			return c, nil
 		}
 	}
-
-	if len(candidates) > 0 {
-		return candidates[0], nil
+	// Nothing exists yet. Create the file the running client reads: the
+	// override if one is set, otherwise the shared path.
+	if preferred != "" {
+		return preferred, nil
 	}
-	return filepath.Join(homeDir, ".config", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"), nil
+	return shared, nil
+}
+
+// legacyClineSettingsPaths lists the pre-migration VS Code globalStorage
+// locations, in Cline's own order.
+func legacyClineSettingsPaths(homeDir string) []string {
+	suffix := filepath.Join("User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json")
+	var roots []string
+	if runtime.GOOS == "windows" {
+		if appData := os.Getenv("APPDATA"); appData != "" {
+			roots = append(roots, filepath.Join(appData, "Code"), filepath.Join(appData, "Code - Insiders"))
+		}
+		roots = append(roots, filepath.Join(homeDir, ".config", "Code"), filepath.Join(homeDir, ".config", "Code - Insiders"))
+	} else if runtime.GOOS == "darwin" {
+		roots = append(roots,
+			filepath.Join(homeDir, "Library", "Application Support", "Code"),
+			filepath.Join(homeDir, "Library", "Application Support", "Code - Insiders"))
+	} else {
+		roots = append(roots,
+			filepath.Join(homeDir, ".config", "Code"),
+			filepath.Join(homeDir, ".config", "Code - Insiders"))
+	}
+	paths := make([]string, 0, len(roots))
+	for _, r := range roots {
+		paths = append(paths, filepath.Join(r, suffix))
+	}
+	return paths
 }
 
 func (a *ClineAdapter) PlanSetup(ctx context.Context, binaryPath string, backupDir string) (*HostChangePlan, error) {

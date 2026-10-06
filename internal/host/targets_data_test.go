@@ -52,7 +52,7 @@ func TestBridgeTargetRowsAreComplete(t *testing.T) {
 				t.Errorf("unknown format %q", tgt.Format)
 			}
 			switch tgt.Shape {
-			case ShapeObject, ShapeLocalArray, ShapeCommandString:
+			case ShapeObject, ShapeLocalArray, ShapeCommandString, ShapeStdioTyped:
 			default:
 				t.Errorf("unknown entry shape %q", tgt.Shape)
 			}

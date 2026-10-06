@@ -283,7 +283,10 @@ func TestOpenCodePlanSetup_EmitsLocalTypeAndArrayCommand(t *testing.T) {
 		}
 	}
 
-	t.Run("v2_default", func(t *testing.T) {
+	// OpenCode has one documented layout: servers are direct members of `mcp`.
+	// A `mcp.servers` nesting is not in the published schema, and the runtime
+	// rejects a member without `type`, so it must never be written.
+	t.Run("new_config_defaults_to_flat_mcp", func(t *testing.T) {
 		newHermeticHome(t)
 		adapter := &OpenCodeAdapter{}
 		plan, err := adapter.PlanSetup(ctx, "/opt/litespm/litespm", t.TempDir())
@@ -293,10 +296,13 @@ func TestOpenCodePlanSetup_EmitsLocalTypeAndArrayCommand(t *testing.T) {
 		if plan.HostID != "opencode" {
 			t.Errorf("unexpected plan HostID: %s", plan.HostID)
 		}
-		assertLocalEntry(t, plan.ProposedContent, true)
+		assertLocalEntry(t, plan.ProposedContent, false)
+		if strings.Contains(plan.ProposedContent, `"servers"`) {
+			t.Errorf("wrote an undocumented mcp.servers container:\n%s", plan.ProposedContent)
+		}
 	})
 
-	t.Run("v1_existing", func(t *testing.T) {
+	t.Run("existing_flat_config", func(t *testing.T) {
 		home := newHermeticHome(t)
 		configDir := filepath.Join(home, ".config", "opencode")
 		if err := os.MkdirAll(configDir, 0700); err != nil {

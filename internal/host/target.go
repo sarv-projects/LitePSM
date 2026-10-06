@@ -42,6 +42,12 @@ const (
 	// a single combined argv array with an explicit transport type (OpenCode,
 	// Kilo, fx, CodeArts, Posit Assistant).
 	ShapeLocalArray EntryShape = "local-array"
+	// ShapeStdioTyped is {"type": "stdio", "command": "...", "args": [...]}.
+	// Crush is the case: its published JSON schema marks `type` as required and
+	// its Go config decoder has no omitempty and no default, so an entry without
+	// it matches no transport case and the server is never started. Most hosts
+	// default an absent `type` to stdio, so this shape is opt-in per row.
+	ShapeStdioTyped EntryShape = "stdio-typed"
 	// ShapeCommandString maps a server name straight to one stdio command
 	// line, with no wrapper object (Xum/Mux).
 	ShapeCommandString EntryShape = "command-string"
@@ -69,6 +75,15 @@ type BridgeTarget struct {
 	ProjectKey []string
 	// Shape is how one server entry is written.
 	Shape EntryShape
+
+	// FlatKey marks a host whose container is a single literal member name that
+	// happens to contain a dot, rather than a chain of nested objects. Amp is the
+	// case: its published settings schema declares the property literally as
+	// "amp.mcpServers" with additionalProperties:false, so writing the nested
+	// object {"amp":{"mcpServers":{...}}} produces a file Amp both ignores and
+	// rejects. Hosts that genuinely nest (`zcode` uses mcp.servers) must leave
+	// this false, because for them the dot is structure, not punctuation.
+	FlatKey bool
 
 	// TolerateComments marks hosts whose config permits `//` and `/* */`
 	// comments (JSONC). We strip comments before parsing and never rewrite
@@ -116,6 +131,8 @@ func (t BridgeTarget) jsonEntryValue(binaryPath string) any {
 	case ShapeLocalArray:
 		argv := append([]string{bin}, bridgeArgs(t.ID)...)
 		return map[string]any{"type": "local", "command": argv}
+	case ShapeStdioTyped:
+		return map[string]any{"type": "stdio", "command": bin, "args": bridgeArgs(t.ID)}
 	case ShapeCommandString:
 		return quoteCommandArg(bin) + " " + strings.Join(bridgeArgs(t.ID), " ")
 	default:
@@ -151,13 +168,14 @@ func filepathSlash(p string) string {
 // repo-local configuration declare no user key, so user scope falls back to the
 // project key rather than producing an empty path.
 func (t BridgeTarget) keyPathFor(projectScope bool) []string {
-	if projectScope && len(t.ProjectKey) > 0 {
-		return t.ProjectKey
+	keys := t.ProjectKey
+	if !(projectScope && len(t.ProjectKey) > 0) && len(t.UserKey) > 0 {
+		keys = t.UserKey
 	}
-	if len(t.UserKey) > 0 {
-		return t.UserKey
+	if t.FlatKey && len(keys) > 1 {
+		return []string{strings.Join(keys, ".")}
 	}
-	return t.ProjectKey
+	return keys
 }
 
 // lookupEntry returns the stored value for the litespm server at a key path.

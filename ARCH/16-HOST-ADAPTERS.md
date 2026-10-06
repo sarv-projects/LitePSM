@@ -80,23 +80,20 @@ protocol version and the string `✓ 6 Verified Host Adapters Compiled & Availab
 ### 3.1 Cline (VS Code Extension) (`internal/host/cline.go`)
 *   **Host ID:** `cline`
 *   **Target Configuration (user scope only — `DetectConfig` ignores `scope`):**
-    *   **Windows:** `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json` (plus the `Code - Insiders` variant)
-    *   **macOS:** `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (plus `Code - Insiders`)
-    *   **Linux:** `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (plus `Code - Insiders`)
-*   **Format:** JSON.
+    *   **All platforms:** `~/.cline/data/settings/cline_mcp_settings.json`. This is the file every Cline client reads (extension, CLI, JetBrains), per the extension source: *"The MCP settings file lives at `~/.cline/data/settings/` … shared across VSCode, CLI, and JetBrains clients."*
+    *   **Overrides:** `CLINE_MCP_SETTINGS_PATH` (a file) or `CLINE_DATA_DIR` (a directory), both documented. When set, that file is the one created and written.
+    *   **Legacy, probed last:** the VS Code `globalStorage` settings file (`%APPDATA%\Code…`, `~/Library/Application Support/Code…`, `~/.config/Code…`, plus `Code - Insiders`). Current Cline reads it only in a one-shot migration, so a bridge written there is invisible to a migrated install; it is probed only so a client too old to have migrated is still found.
+*   **Format:** JSON (the host parses it with a strict `JSON.parse`; we read comment-tolerantly, see `ARCH/30` §8.1).
 *   **Managed Injection:** Injects under `mcpServers.litespm`.
-*   **Cline CLI:** The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LiteSPM does not currently manage.
+*   **Corrected 2026-10-06:** this section previously claimed the globalStorage path was current and the CLI's `~/.cline/…` path was "not managed". That was backwards; the audit (`ARCH/30` §8.1) traced the current contract in the vendor's own source.
 *   **Detected External Capabilities:** Scans sibling keys under `mcpServers` (skipping `litespm`/`litepsm`) as read-only detected entries.
 
 ### 3.2 Pi Agent (`pi-coding-agent`) (`internal/host/piagent.go`)
 *   **Host ID:** `pi-agent`
-*   **Target Configuration candidates (in order):**
-    *   `~/.pi/agent/mcp.json`
-    *   `~/.pi/config.json`
-    *   `~/.pi/mcp.json`
-*   **Project scope:** `.pi/mcp.json` is documented for the host, but `DetectConfig` never scans the working directory — setup and detection are user-scope.
-*   **Format:** JSON.
-*   **Managed Injection:** Writes the bridge entry into whichever container exists (`mcp.servers`, `mcp`, or `mcpServers`, defaulting to `mcpServers`) **and** creates `~/.pi/agent/extensions/litespm.ts` if absent (`piagent.go:136-153`).
+*   **Target Configuration:** `<agent-dir>/mcp.json`, where the agent directory is `~/.pi/agent` unless `PI_CODING_AGENT_DIR` overrides it (documented; also `agentDir` in the SDK). `~/.pi/config.json` and `~/.pi/mcp.json` were previously probed and are in no Pi documentation or source — removed, because probing them made an absent real file resolve to a path Pi never reads. Corrected 2026-10-06 (`ARCH/30` §8.1).
+*   **Project scope:** `.pi/mcp.json` is documented for the host, but `DetectConfig` never scans the working directory — setup and detection are user-scope. Note the host *replaces* a user entry with a same-named project entry, so a project file can disable the bridge for that repository.
+*   **Format:** JSON (strict `JSON.parse` upstream; comments are tolerated on our side only — see `ARCH/30` §8.1).
+*   **Managed Injection:** Writes under `mcpServers` — the only container Pi reads — and creates `<agent-dir>/extensions/litespm.ts` if absent. Earlier revisions switched to `mcp` or `mcp.servers` whenever the file contained an unrelated top-level `mcp` object, which put the bridge where Pi never looks.
 *   **Companion extension:** the generated file registers a Pi command named **`litespm`** (not `/marketplace`) whose handler calls the bridge's `list_installed`. **It is never removed by `host remove` / `uninstall`** — removal only strips config entries (`internal/host/remove.go`).
 *   **Detected External Capabilities:** Detects external tools from the discovered config file in read-only mode.
 
@@ -129,17 +126,14 @@ protocol version and the string `✓ 6 Verified Host Adapters Compiled & Availab
 
 ### 3.6 OpenCode (`internal/host/opencode.go`)
 *   **Host ID:** `opencode`
-*   **Target Configuration candidates:** `~/.config/opencode/opencode.json`, then `~/.opencode.json`; on native Windows `%USERPROFILE%\.config\opencode\opencode.json` with `%APPDATA%\OpenCode\opencode.json` as legacy fallback. Project scope (`opencode.json` / `.opencode/`) is host-documented; the adapter does not scan it.
-*   **Format:** JSON.
-*   **Local Entry Shape:** Local MCP entries require `"type": "local"` and a combined string array `"command"`, e.g. `{"mcp":{"servers":{"litespm":{"type":"local","command":["litespm","bridge","stdio","--host","opencode"]}}}}`.
-*   **Version Mapping Profile:**
-    *   `v1.x`: uses a root `mcp` dictionary (`mcp.litespm`).
-    *   `v2.x`: uses the nested `mcp.servers` object (`mcp.servers.litespm`).
-    The adapter inspects the existing document structure — if `mcp.servers` exists it writes v2, if `mcp` exists without `servers` it writes v1, and a new document defaults to v2 (`opencode.go:94-124`).
+*   **Target Configuration candidates:** `$OPENCODE_CONFIG_DIR/{opencode.jsonc,opencode.json}` when that variable is set, otherwise `$XDG_CONFIG_HOME/opencode/` (default `~/.config/opencode/`) with the same two filenames, `.jsonc` first. OpenCode resolves this directory through xdg-basedir on every OS including Windows. Project scope (`opencode.json` / `opencode.jsonc` / `.opencode/`) is host-documented; the adapter does not scan it. `~/.opencode.json` and `%APPDATA%\OpenCode\opencode.json` are **not** read by any release and are no longer probed.
+*   **Format:** JSON or JSONC — both are documented, so comments are tolerated.
+*   **Local Entry Shape:** Local MCP entries require `"type": "local"` and a combined string array `"command"`, e.g. `{"mcp":{"litespm":{"type":"local","command":["litespm","bridge","stdio","--host","opencode"]}}}`.
+*   **Layout (corrected 2026-10-06):** there is exactly **one** documented layout — servers are direct members of the `mcp` object. The published schema types `mcp` as `additionalProperties` of `McpLocalConfig | McpRemoteConfig | {enabled}` and contains no `servers` key, and the runtime skips any member without `type` (*"Ignoring MCP config entry without type"*). A `mcp.servers.<name>` layout was previously documented here and implemented; it produced a config OpenCode refuses to load while our own verify reported ready. Setup now also prunes an `mcp.servers` object left by an earlier version, but only once it is empty.
 *   **Detected External Capabilities:** Scans existing configured servers in read-only mode.
 
 ### 3.7 Data-driven targets: 44 generic + 6 bespoke = 50 total (`internal/host/target.go`, `ARCH/30`)
-*   The six adapters above are hand-written and retained (they carry behaviour the generic path does not model: OpenCode's two config layouts and the Pi extension file).
+*   The six adapters above are hand-written and retained (they carry behaviour the generic path does not model: Cline's legacy-path fallback and shared-settings overrides, and the Pi extension file).
 *   All other agents are data rows (`verifiedBridgeTargets` in `internal/host/targets_data.go`, **44 rows**) served by the single `GenericAdapter` (`internal/host/generic.go`). Bespoke IDs always win name collisions (`TestBridgeTargetTableDoesNotShadowBespokeAdapters`).
 *   **Counts:** `litespm host list` prints `Registered Agent Host Adapters (50)`. Skill installation targets are a separate set of **77** rows in `internal/skills/agents.go` (`ARCH/30` §10); the two sets overlap but are not equal, and `host list` reports bridge adapters only.
 *   **Scope:** only `GenericAdapter.DetectConfig` honours `domain.ScopeProject`; every other `DetectConfig` ignores the `scope` argument and all production callers pass `ScopeUser`.

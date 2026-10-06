@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Host documentation audit (2026-10-06, `ARCH/30` §8.1).** Every bridge target and all six hand-written adapters were re-checked against live vendor
+  documentation. The table header had claimed each row was checked against the agent's own documentation; for a number of rows that was not true, and the
+  defects found share one failure mode — the bridge is written, `host verify` reports ready, and the host never reads it. Corrected: an invented OpenCode
+  `mcp.servers` layout (the host has only a flat `mcp` map), Cline's settings file (it moved out of the VS Code `globalStorage` into
+  `~/.cline/data/settings/`), Pi's undocumented fallback paths and its wrong container, Amp's container (a literal top-level `"amp.mcpServers"` key, not a
+  nested object — its schema sets `additionalProperties:false`), Crush's Windows path and its schema-required `type`, `CODEX_HOME`/`GROK_HOME`/
+  `AIDER_DESK_HOME_DIR`/`QWEN_HOME`/`PI_CODING_AGENT_DIR`/`OPENCODE_CONFIG_DIR` overrides, CodeBuddy's and Kilo's documented candidates, fx's project key,
+  Kode's `KODE_CONFIG_DIR` filename, AstrBot's root, and three rows missing a documented scope. `RenderManualSetup` also emitted the entry object where the
+  server name belongs, so the wizard's paste-this-snippet fallback printed invalid JSON for all 44 data rows. New: `FlatKey` and `ShapeStdioTyped` target
+  metadata, and `internal/host/host_docs_audit_test.go`, which asserts the host-visible result (valid JSON, the server named, the entry under the key the
+  vendor documents) for every registered adapter rather than only that our writer round-trips. Vendor self-contradictions on `type` (Cursor, Firebender, the
+  two Snowflake pages) are recorded rather than guessed at.
+
 - **`litespm catalog build`.** Converts the committed dataset into the static
   `/v1` release tree (`manifest.json`, `listings.json`, `versions.json`) and
   owns the served pointer `web/public/v1/current.json`: release ids derive per

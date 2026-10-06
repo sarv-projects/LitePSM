@@ -346,10 +346,15 @@ func (a *GenericAdapter) RenderManualSetup(binaryPath string) string {
 	case ShapeLocalArray:
 		argv := append([]string{bin}, bridgeArgs(a.Target.ID)...)
 		snippet = fmt.Sprintf("{\n  \"type\": \"local\",\n  \"command\": [\"%s\"]\n}", strings.Join(argv, "\", \""))
+	case ShapeStdioTyped:
+		snippet = fmt.Sprintf("{\n  \"type\": \"stdio\",\n  \"command\": %q,\n  \"args\": [\"bridge\", \"stdio\", \"--host\", %q]\n}", bin, a.Target.ID)
 	default:
 		snippet = fmt.Sprintf("{\n  \"command\": %q,\n  \"args\": [\"bridge\", \"stdio\", \"--host\", %q]\n}", bin, a.Target.ID)
 	}
-	return fmt.Sprintf("# %s\n{\n  %q: {\n    %s\n  }\n}", a.Target.ID, key, indentJSON(snippet, "    "))
+	// The snippet must be pasteable as-is, so it names the server: an entry
+	// object in place of the server name is not valid JSON, and a user who
+	// pastes it gets a config the host cannot read.
+	return fmt.Sprintf("# %s\n{\n  %q: {\n    %q: %s\n  }\n}", a.Target.ID, key, litespmServerName, indentJSON(snippet, "    "))
 }
 
 func indentJSON(s, pad string) string {

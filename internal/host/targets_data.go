@@ -1,12 +1,23 @@
 package host
 
-// targets_data.go — verified agent bridge targets.
+// targets_data.go — agent bridge targets, each traced to a primary source.
 //
-// Every row here was checked against that agent's own documentation or
-// repository; DocsURL records the source. A target that could not be verified
-// is deliberately ABSENT rather than filled with a guess: an unverified config
-// path produces an installer that silently writes to the wrong place, which is
-// worse than reporting the agent as unsupported.
+// Every row here is claimed to be checked against that agent's own
+// documentation or repository; DocsURL records the source. A target that could
+// not be verified is deliberately ABSENT rather than filled with a guess: an
+// unverified config path produces an installer that silently writes to the
+// wrong place, which is worse than reporting the agent as unsupported.
+//
+// That claim was AUDITED on 2026-10-06, host by host, against live vendor
+// documentation (see ARCH/30 §8.1). The first pass had not been done against
+// primary sources for every row, and the audit found real defects on 14 rows
+// plus three in the shared writer — including an invented OpenCode layout and a
+// flat-key container that was being written as a nested object. The rule this
+// file now lives by: a row is only correct if a maintainer can point at the
+// vendor sentence that says so. Where a vendor contradicts itself (Cursor and
+// Firebender publish a field table marking `type` required while every example
+// omits it), the row records the contradiction instead of guessing; those are
+// listed in ARCH/30 §8.1.
 //
 // Deliberately excluded, with the reason
 //	recorded so nobody re-adds them blindly:
@@ -66,6 +77,18 @@ func windowsAppData() string {
 	return os.Getenv("APPDATA")
 }
 
+// windowsLocalAppData returns %LOCALAPPDATA% on native Windows and "" elsewhere.
+// It is gated on the OS for the same reason windowsAppData is: on Unix
+// LOCALAPPDATA is meaningless, and honouring it there would silently redirect a
+// config path. Crush reads its Windows user-global config from this directory,
+// not from %APPDATA%.
+func windowsLocalAppData() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	return os.Getenv("LOCALAPPDATA")
+}
+
 // firstExisting returns the first path that exists, else the first candidate.
 func firstExisting(candidates ...string) string {
 	for _, c := range candidates {
@@ -84,8 +107,14 @@ var verifiedBridgeTargets = []BridgeTarget{
 	{
 		ID: "aider-desk", Name: "AiderDesk", Format: FormatJSON,
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
-		Shape:          ShapeObject,
-		UserPath:       func(home string) string { return filepath.Join(home, ".aider-desk", "mcp-servers.json") },
+		Shape: ShapeObject,
+		UserPath: func(home string) string {
+			// The vendor documents AIDER_DESK_HOME_DIR as the relocation mechanism.
+			if dir := os.Getenv("AIDER_DESK_HOME_DIR"); dir != "" {
+				return filepath.Join(dir, "mcp-servers.json")
+			}
+			return filepath.Join(home, ".aider-desk", "mcp-servers.json")
+		},
 		ProjectPath:    func(root string) string { return filepath.Join(root, ".aider-desk", "mcp-servers.json") },
 		DetectPaths:    []string{".aider-desk"},
 		DetectBinaries: []string{"aider-desk"},
@@ -95,7 +124,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 	{
 		ID: "amp", Name: "Amp", Format: FormatJSON,
 		UserKey: []string{"amp", "mcpServers"}, ProjectKey: []string{"amp", "mcpServers"},
-		Shape: ShapeObject, TolerateComments: true,
+		Shape: ShapeObject, TolerateComments: true, FlatKey: true,
 		UserPath: func(home string) string {
 			return firstExisting(filepath.Join(xdgConfigDir(home), "amp", "settings.json"), filepath.Join(xdgConfigDir(home), "amp", "settings.jsonc"))
 		},
@@ -103,7 +132,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".config/amp"},
 		DetectBinaries: []string{"amp"},
 		DocsURL:        "https://ampcode.com/docs/customize/mcp",
-		Note:           "Nested under an \"amp\" object. Remote definitions are server-side and not file-configurable.",
+		Note:           "The container is the literal top-level key \"amp.mcpServers\": Amp's published schema sets additionalProperties:false, so a nested \"amp\" object is both ignored and invalid. Remote definitions are server-side and not file-configurable.",
 	},
 	{
 		ID: "antigravity", Name: "Antigravity", Format: FormatJSON,
@@ -133,9 +162,17 @@ var verifiedBridgeTargets = []BridgeTarget{
 		UserKey: []string{"mcpServers"},
 		Shape:   ShapeObject,
 		UserPath: func(home string) string {
+			// AstrBot resolves its root as ASTRBOT_ROOT, else the process working
+			// directory (else ~/.astrbot in the packaged desktop runtime). Falling
+			// back to $HOME, as this row did, targeted ~/data/mcp_server.json,
+			// which AstrBot never opens in a source or container deployment.
 			root := os.Getenv("ASTRBOT_ROOT")
 			if root == "" {
-				root = home
+				if cwd, err := os.Getwd(); err == nil {
+					root = cwd
+				} else {
+					root = home
+				}
 			}
 			return filepath.Join(root, "data", "mcp_server.json")
 		},
@@ -225,7 +262,8 @@ var verifiedBridgeTargets = []BridgeTarget{
 	},
 	{
 		ID: "fx", Name: "fx", Format: FormatJSON,
-		UserKey: []string{"mcp"}, ProjectKey: []string{"mcp"},
+		// fx reads `mcp` in the user file and `mcpServers` in a project .mcp.json.
+		UserKey: []string{"mcp"}, ProjectKey: []string{"mcpServers"},
 		Shape:          ShapeLocalArray,
 		UserPath:       func(home string) string { return filepath.Join(home, ".fx", "mcp.json") },
 		ProjectPath:    func(root string) string { return filepath.Join(root, ".mcp.json") },
@@ -312,7 +350,9 @@ var verifiedBridgeTargets = []BridgeTarget{
 		Note:           "No documented env override for the harness path.",
 	},
 	{
-		ID: "kilo", Name: "Kilo Code", Format: FormatJSON,
+		// Kilo documents kilo.jsonc as a supported filename; that is the reason to
+		// use it, so a commented config must be readable.
+		ID: "kilo", Name: "Kilo Code", Format: FormatJSON, TolerateComments: true,
 		UserKey: []string{"mcp"}, ProjectKey: []string{"mcp"},
 		Shape: ShapeLocalArray,
 		UserPath: func(home string) string {
@@ -345,9 +385,18 @@ var verifiedBridgeTargets = []BridgeTarget{
 	{
 		ID: "kiro-cli", Name: "Kiro CLI", Format: FormatJSON,
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
-		Shape:          ShapeObject,
-		UserPath:       func(home string) string { return filepath.Join(home, ".kiro", "settings", "mcp.json") },
-		ProjectPath:    func(root string) string { return filepath.Join(root, ".kiro", "settings", "mcp.json") },
+		Shape: ShapeObject,
+		UserPath: func(home string) string {
+			// Kiro publishes two path sets for the same file; probe both.
+			return firstExisting(
+				filepath.Join(home, ".kiro", "settings", "mcp.json"),
+				filepath.Join(home, ".kiro", "mcp.json"))
+		},
+		ProjectPath: func(root string) string {
+			return firstExisting(
+				filepath.Join(root, ".kiro", "settings", "mcp.json"),
+				filepath.Join(root, ".kiro", "mcp.json"))
+		},
 		DetectPaths:    []string{".kiro"},
 		DetectBinaries: []string{"kiro-cli"},
 		DocsURL:        "https://kiro.dev/docs/mcp/configuration",
@@ -374,12 +423,16 @@ var verifiedBridgeTargets = []BridgeTarget{
 	{
 		ID: "crush", Name: "Crush", Format: FormatJSON,
 		UserKey: []string{"mcp"}, ProjectKey: []string{"mcp"},
-		Shape: ShapeObject,
+		// Crush's published schema requires `type`, and its decoder applies no
+		// default, so an entry without it starts no transport at all.
+		Shape: ShapeStdioTyped,
 		UserPath: func(home string) string {
 			if v := os.Getenv("CRUSH_GLOBAL_CONFIG"); v != "" {
 				return filepath.Join(v, "crush.json")
 			}
-			if ad := windowsAppData(); ad != "" {
+			if ad := windowsLocalAppData(); ad != "" {
+				// Crush documents %LOCALAPPDATA%\crush\crush.json for the Windows
+				// user-global file; %APPDATA% is not read.
 				return filepath.Join(ad, "crush", "crush.json")
 			}
 			return filepath.Join(xdgConfigDir(home), "crush", "crush.json")
@@ -435,7 +488,11 @@ var verifiedBridgeTargets = []BridgeTarget{
 		UserPath: func(home string) string {
 			return firstExisting(filepath.Join(home, ".codeartsdoer", "codearts_cli.jsonc"), filepath.Join(home, ".codeartsdoer", "codearts_cli.json"))
 		},
-		ProjectPath: func(root string) string { return filepath.Join(root, ".codeartsdoer", "codearts_cli.jsonc") },
+		ProjectPath: func(root string) string {
+			return firstExisting(
+				filepath.Join(root, ".codeartsdoer", "codearts_cli.jsonc"),
+				filepath.Join(root, ".codeartsdoer", "codearts_cli.json"))
+		},
 		DetectPaths: []string{".codeartsdoer"},
 		DocsURL:     "https://support.huaweicloud.com/intl/en-us/usermanual-cli/codeartsagent_cli_0035.html",
 		Note:        "Three deviations from the common shape: key is \"mcp\", command is an argv ARRAY, and the env key is \"environment\".",
@@ -445,16 +502,26 @@ var verifiedBridgeTargets = []BridgeTarget{
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
 		Shape: ShapeObject, TolerateComments: true,
 		UserPath: func(home string) string {
-			return firstExisting(filepath.Join(home, ".codebuddy", ".mcp.json"), filepath.Join(home, ".codebuddy.json"))
+			// Documented priority: .mcp.json, then mcp.json (deprecated), then the
+			// legacy ~/.codebuddy.json. Skipping the middle candidate made an
+			// existing mcp.json invisible to us, so the bridge was written to a
+			// file CodeBuddy never consults for MCP.
+			return firstExisting(
+				filepath.Join(home, ".codebuddy", ".mcp.json"),
+				filepath.Join(home, ".codebuddy", "mcp.json"),
+				filepath.Join(home, ".codebuddy.json"))
 		},
-		ProjectPath:    func(root string) string { return filepath.Join(root, ".mcp.json") },
+		ProjectPath: func(root string) string {
+			return firstExisting(filepath.Join(root, ".mcp.json"), filepath.Join(root, "mcp.json"))
+		},
 		DetectPaths:    []string{".codebuddy"},
 		DetectBinaries: []string{"codebuddy", "cbc"},
 		DocsURL:        "https://codebuddy.ai/docs/cli/mcp",
 		Note:           "JSONC. Read order: .mcp.json -> mcp.json (deprecated) -> ~/.codebuddy.json (legacy).",
 	},
 	{
-		ID: "codestudio", Name: "Code Studio", Format: FormatJSON,
+		// The vendor's documented .codestudio/mcp.json sample contains // comments.
+		ID: "codestudio", Name: "Code Studio", Format: FormatJSON, TolerateComments: true,
 		ProjectKey:  []string{"servers"},
 		Shape:       ShapeObject,
 		ProjectPath: func(root string) string { return filepath.Join(root, ".codestudio", "mcp.json") },
@@ -556,8 +623,14 @@ var verifiedBridgeTargets = []BridgeTarget{
 	{
 		ID: "qwen-code", Name: "Qwen Code", Format: FormatJSON,
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
-		Shape:          ShapeObject,
-		UserPath:       func(home string) string { return filepath.Join(home, ".qwen", "settings.json") },
+		Shape: ShapeObject,
+		UserPath: func(home string) string {
+			// QWEN_HOME customizes the global configuration directory.
+			if dir := os.Getenv("QWEN_HOME"); dir != "" {
+				return filepath.Join(dir, ".qwen", "settings.json")
+			}
+			return filepath.Join(home, ".qwen", "settings.json")
+		},
 		ProjectPath:    func(root string) string { return filepath.Join(root, ".qwen", "settings.json") },
 		DetectPaths:    []string{".qwen"},
 		DetectBinaries: []string{"qwen"},
@@ -609,11 +682,13 @@ var verifiedBridgeTargets = []BridgeTarget{
 	{
 		ID: "tabnine-cli", Name: "Tabnine CLI", Format: FormatJSON,
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
-		Shape:          ShapeObject,
-		UserPath:       func(home string) string { return filepath.Join(home, ".tabnine", "agent", "settings.json") },
+		Shape:    ShapeObject,
+		UserPath: func(home string) string { return filepath.Join(home, ".tabnine", "agent", "settings.json") },
+		// The vendor documents a workspace settings file with the same shape.
+		ProjectPath:    func(root string) string { return filepath.Join(root, ".tabnine", "agent", "settings.json") },
 		DetectPaths:    []string{".tabnine"},
 		DetectBinaries: []string{"tabnine"},
-		DocsURL:        "https://docs.tabnine.com/main/tabnine-agent/mcp-intro-and-setup/mcp-server-config",
+		DocsURL:        "https://docs.tabnine.com/main/getting-started/tabnine-agent/mcp-intro-and-setup/mcp-server-config",
 		Note:           "mcpServers lives inside a general settings document shared by many features, so only that key is touched. The product is in maintenance mode and deprecated after 2026-12-31.",
 	},
 	{
