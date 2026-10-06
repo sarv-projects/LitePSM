@@ -301,6 +301,7 @@ def build_full_catalog():
                         "url": f"https://github.com/{owner}"
                     },
                     "transport": transport,
+                    **({"upstreamTransportHint": upstream_transport_hint} if upstream_transport_hint else {}),
                     "runtime": runtime,
                     "stars": None,
                     "version": "1.0.0",

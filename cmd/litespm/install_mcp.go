@@ -248,10 +248,10 @@ func printMCPInstall(outcome *mcpInstallOutcome) {
 		fmt.Printf("  • %-12s %s entry in %s\n", h.HostID, verb, h.ConfigPath)
 	}
 	if outcome.ClaimedTransport != "" && outcome.ClaimedTransport != "stdio" {
-		// Recorded, not obeyed. Saying so is the difference between a caveat and
-		// a silent wrong answer.
-		fmt.Printf("  Note: the catalog labels this server %q but publishes no URL for it, so the\n"+
-			"        local stdio command above is what was registered.\n", outcome.ClaimedTransport)
+		// A future release may publish a remote endpoint. Until one does, say so
+		// rather than registering a local entry and implying otherwise.
+		fmt.Printf("  Note: the catalog lists this server as %q but publishes no endpoint URL, so the\n"+
+			"        local command above is what was registered.\n", outcome.ClaimedTransport)
 	}
 	fmt.Printf("  Note: the catalog publishes no environment variables for this server. If it\n" +
 		"        needs credentials, add them under the same entry name in the host config\n" +
