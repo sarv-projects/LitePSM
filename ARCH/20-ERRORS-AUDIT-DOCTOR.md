@@ -84,7 +84,9 @@ the code is defined and whether production code actually emits it today.
 | `LPSM-AUTH-CALLBACK-TIMEOUT` | `errors.go:17` | Same as above (`auth/loopback.go:161`) — not reachable end-to-end |
 | `LPSM-HOST-CONFIG-NOT-FOUND` | `errors.go:261` | **No** — `ErrHostConfigNotFound` has zero callers in the tree; `internal/host` returns plain `fmt.Errorf` instead |
 | `LPSM-ARTIFACT-PATH-TRAVERSAL` | *(none)* | **No** — never constructed; the literal exists only in `internal/artifact/artifact_test.go:104` |
-| `LPSM-ARTIFACT-UNAVAILABLE` | `errors.go:266` | Yes — no-fetchable-artifact paths: `cmd/litespm/install_skill.go` (skill source gaps), `cmd/litespm/main.go` (unsupported kind), `internal/artifact/fetcher.go` (missing locator or archive type) |
+| `LPSM-INSTALL-TARGET-UNAVAILABLE` | `errors.go:281` | No — nothing to install into (no host set up); `cmd/litespm/install_mcp.go`. Mapped to `InvalidParams` |
+| `LPSM-NAME-CONFLICT` | `errors.go:267` | No — an install refuses to overwrite a name the user already registered; `internal/host/entry_install.go` and `cmd/litespm/install_mcp.go`. Mapped to `InvalidParams`, because the remedy (`--force`) belongs to the caller |
+| `LPSM-ARTIFACT-UNAVAILABLE` | `errors.go:288` | Yes — no-fetchable-artifact paths: `cmd/litespm/install_skill.go` (skill source gaps), `cmd/litespm/main.go` (unsupported kind, missing runtime descriptor), `internal/artifact/fetcher.go` (missing locator or archive type) |
 | `LPSM-EGRESS-BLOCKED` | `errors.go:283` | Yes — `internal/artifact/fetcher.go` (non-HTTPS scheme, URL credentials, SSRF ranges, redirect cap/downgrade). The fetcher itself has **no production caller yet** (no artifact locators in the catalog) |
 
 ---

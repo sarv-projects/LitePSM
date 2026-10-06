@@ -139,6 +139,36 @@ protocol version and the string `✓ 6 Verified Host Adapters Compiled & Availab
 *   **Scope:** only `GenericAdapter.DetectConfig` honours `domain.ScopeProject`; every other `DetectConfig` ignores the `scope` argument and all production callers pass `ScopeUser`.
 *   Surgical merge (`internal/host/jsonc_merge.go` + TOML merger) preserves comments/key order. See ARCH/30 for the honesty contract, exclusion table (23 unverified agents), and integrity tests.
 
+#### 3.7.2 Server-entry install (catalog MCP servers)
+
+`host.InstallServerEntry` registers a third-party MCP server, by name, in the
+same container the bridge occupies, so an agent can spawn it. It is the write path
+behind `litespm install <mcp-id>`.
+
+*   **The launch line comes from the version record.** A listing carries no
+    command; `versions.json` → `components[].runtime` does, and that is why
+    `catalog sync` fetches and digest-verifies that file. A listing with no
+    runnable component fails closed rather than producing a config the host
+    cannot start.
+*   **Per-host shape is data, not code.** Container key, format and entry shape
+    come from the target table for data-driven hosts and from
+    `bespokeEntrySpecs` for the hand-written six: a plain `{command,args}`,
+    OpenCode's required `{"type":"local","command":[…]}`, Crush's schema-required
+    `type: "stdio"`, a bare command string, or a TOML table.
+*   **Same write discipline as the bridge.** Surgical splice, atomic backup, and a
+    re-parse plus read-back that refuses to write a config it cannot verify.
+*   **Never silently clobber.** An existing entry of the same name is refused
+    (`LPSM-NAME-CONFLICT`); `--force` is the deliberate override. Names are
+    restricted to `[A-Za-z0-9_-]` and normalized, because several hosts document
+    exactly that and a name that worked on one host must not be the reason an
+    install fails on another. `litespm` and `litepsm` are reserved.
+*   **Targets are consented, not discovered.** With no `--host`, the install goes
+    to every host whose LiteSPM bridge verifies as registered — a host the user
+    never set LiteSPM up in is never edited on their behalf. With no such host,
+    the install fails closed (`LPSM-INSTALL-TARGET-UNAVAILABLE`).
+*   **What is recorded.** One `installs` row and one `host_registrations` row per
+    modified config, so the entry is not an orphan nothing can find again.
+
 #### 3.7.1 Config-write contract (all hosts, bespoke and generic)
 
 A host config belongs to the user, so a setup or removal must touch exactly one

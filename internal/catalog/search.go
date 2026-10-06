@@ -28,13 +28,57 @@ type SearchResult struct {
 type SearchIndex struct {
 	mu       sync.RWMutex
 	listings map[string]*domain.Listing // ID -> Listing
+	// versions maps a listing id to its published version records. A listing
+	// carries no launch line; the version record's component runtime does, so
+	// an installer cannot start anything from the listings index alone.
+	versions map[string][]*domain.VersionRecord
 }
 
 // NewSearchIndex initializes an empty search index.
 func NewSearchIndex() *SearchIndex {
 	return &SearchIndex{
 		listings: make(map[string]*domain.Listing),
+		versions: make(map[string][]*domain.VersionRecord),
 	}
+}
+
+// IndexVersions bulk indexes published version records by listing id.
+func (idx *SearchIndex) IndexVersions(versions []*domain.VersionRecord) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	for _, rec := range versions {
+		if rec == nil || rec.ListingID == "" {
+			continue
+		}
+		existing := idx.versions[rec.ListingID]
+		replaced := false
+		for i, prior := range existing {
+			if prior.Version == rec.Version {
+				existing[i] = rec
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			existing = append(existing, rec)
+		}
+		idx.versions[rec.ListingID] = existing
+	}
+}
+
+// VersionRecords returns the published version records for a listing, newest
+// version string first so "latest" is deterministic rather than map-ordered.
+func (idx *SearchIndex) VersionRecords(listingID string) []*domain.VersionRecord {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	records := idx.versions[listingID]
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]*domain.VersionRecord, len(records))
+	copy(out, records)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Version > out[j].Version })
+	return out
 }
 
 // IndexListings bulk indexes or updates listings in memory.

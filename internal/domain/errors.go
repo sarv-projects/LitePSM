@@ -256,6 +256,41 @@ func ErrArchiveSlip(path string) *LPSMError {
 	}
 }
 
+// ErrInstallTargetUnavailable reports that there is nowhere to install into: no
+// agent host is set up, or none of the requested hosts exists. It is a
+// precondition the user fixes by running `host setup`, so it gets its own code
+// rather than being folded into the artifact bucket — nothing about the catalog
+// is missing, and telling someone to check the catalog sends them the wrong way.
+func ErrInstallTargetUnavailable(detail string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-INSTALL-TARGET-UNAVAILABLE",
+		Message:   fmt.Sprintf("no install target: %s", detail),
+		Category:  "LPSM_RESOLVE",
+		Retryable: false,
+		Details: map[string]any{
+			"detail": detail,
+		},
+	}
+}
+
+// ErrNameConflict reports that an install would overwrite something the user
+// already configured. It is deliberately its own code rather than a generic
+// failure: nothing is missing and nothing is broken, the install is simply
+// refusing to clobber a name, and the caller's remedy is a deliberate re-run
+// with force. Reporting it as an artifact problem (or as an internal error)
+// would send the user looking in the wrong place entirely.
+func ErrNameConflict(detail string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-NAME-CONFLICT",
+		Message:   fmt.Sprintf("refusing to overwrite an existing entry: %s", detail),
+		Category:  "LPSM_RESOLVE",
+		Retryable: false,
+		Details: map[string]any{
+			"detail": detail,
+		},
+	}
+}
+
 // ErrArtifactUnavailable reports that a capability cannot be installed because
 // no fetchable artifact was supplied for it. It is the honest fail-closed
 // answer for kinds whose artifact ingestion is not wired yet: the message names

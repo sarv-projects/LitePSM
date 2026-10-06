@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP server installs complete.** `litespm install <mcp-id>` and the Bridge `request_install` →
+  `install.execute` path now register a catalog MCP server with agent hosts. Two gaps had to close first. The release already published a launch line
+  in `versions.json` (`components[].runtime` — `command`, `args`, `type`), but `catalog sync` downloaded only the pointer, manifest and listings, so
+  nothing could read it; `versions.json` is now fetched, digest-verified against the manifest, cached verbatim before the pointer commit marker, and
+  indexed (`internal/catalog/versions_test.go` covers the fetch, tamper rejection and the fail-closed case where a version publishes no runnable
+  component). Then `host.InstallServerEntry` (`internal/host/entry_install.go`) writes the entry: surgical splice, atomic backup, refusal on collision
+  (`LPSM-NAME-CONFLICT`), refusal when no host is set up (`LPSM-INSTALL-TARGET-UNAVAILABLE`), per-host entry shape taken from the target table or
+  `bespokeEntrySpecs`, and one `installs` plus one `host_registrations` row per modified config. `--host` and `--force` were added to
+  `litespm install`. Verified against the live catalog on a JSON host (comment, theme and a foreign server all preserved) and a TOML host.
+  Two limits are reported to the user rather than papered over: the dataset's `transport` field is an emoji heuristic from the upstream registry's
+  README (1,665 of 4,079 rows claim `sse` while carrying a local command, and no URL is published anywhere), so it is recorded but never obeyed; and
+  the dataset publishes no `env`, so a server needing credentials is registered but will need them added by hand.
+
 - **Host documentation audit (2026-10-06, `ARCH/30` §8.1).** Every bridge target and all six hand-written adapters were re-checked against live vendor
   documentation. The table header had claimed each row was checked against the agent's own documentation; for a number of rows that was not true, and the
   defects found share one failure mode — the bridge is written, `host verify` reports ready, and the host never reads it. Corrected: an invented OpenCode

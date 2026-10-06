@@ -761,9 +761,18 @@ type installFlags struct {
 	scope       domain.InstallScope
 	workspaceID string
 	showHelp    bool
+	// hosts names the agent hosts to register an MCP server with. Empty means
+	// every host whose LiteSPM bridge verifies as registered.
+	hosts []string
+	// force replaces an entry of the same name instead of refusing.
+	force bool
 }
 
-const installUsage = "Usage: litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]"
+const installUsage = "Usage: litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]\n" +
+	"                     [--host <host-id>]... [--force]\n\n" +
+	"  --host   register an MCP server with this agent host (repeatable). Default: every\n" +
+	"           host where 'litespm host setup' has been run.\n" +
+	"  --force  replace an existing entry with the same name instead of refusing."
 
 // parseInstallFlags parses `litespm install` arguments strictly: unknown
 // flags, missing flag values, an out-of-range --scope, extra positional
@@ -801,6 +810,14 @@ func parseInstallFlags(args []string) (installFlags, error) {
 			}
 			i++
 			flags.workspaceID = args[i]
+		case "--host":
+			if i+1 >= len(args) {
+				return flags, fmt.Errorf("flag %s requires a value", arg)
+			}
+			i++
+			flags.hosts = append(flags.hosts, args[i])
+		case "--force", "-f":
+			flags.force = true
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return flags, fmt.Errorf("unknown flag %q", arg)
@@ -881,6 +898,21 @@ func runInstall(args []string) {
 			os.Exit(1)
 		}
 		printSkillInstall(outcome)
+		return
+	}
+
+	if listing.Kind == domain.KindMCP {
+		runtime, runtimeErr := catClient.RuntimeForListing(listing.ID, versionOrLatest(flags.version))
+		if runtimeErr != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: %v\n", domain.ErrArtifactUnavailable(flags.listingID, runtimeErr.Error()))
+			os.Exit(1)
+		}
+		outcome, err := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(flags.version), flags.scope, flags.hosts, flags.force, runtime)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
+			os.Exit(1)
+		}
+		printMCPInstall(outcome)
 		return
 	}
 
@@ -1737,6 +1769,40 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 				}
 				return result, nil
 			}
+			if listing.Kind == domain.KindMCP {
+				runtime, rerr := catClient.RuntimeForListing(listingID, versionOrLatest(version))
+				if rerr != nil {
+					return nil, installRPCError(domain.ErrArtifactUnavailable(listingID, rerr.Error()))
+				}
+				outcome, ierr := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(version), scope, nil, false, runtime)
+				if ierr != nil {
+					return nil, installRPCError(ierr)
+				}
+				hosts := make([]map[string]any, 0, len(outcome.Hosts))
+				for _, h := range outcome.Hosts {
+					hosts = append(hosts, map[string]any{
+						"hostId":     h.HostID,
+						"configPath": h.ConfigPath,
+						"entryName":  h.Name,
+						"replaced":   h.Replaced,
+						"created":    h.Created,
+					})
+				}
+				result := map[string]any{
+					"installId":           outcome.InstallID,
+					"status":              string(domain.InstallActive),
+					"kind":                string(domain.KindMCP),
+					"entryName":           outcome.Entry.Name,
+					"command":             outcome.Entry.Command,
+					"args":                outcome.Entry.Args,
+					"hosts":               hosts,
+					"configuredTransport": outcome.ClaimedTransport,
+				}
+				if req.PlanID != "" {
+					result["planId"] = req.PlanID
+				}
+				return result, nil
+			}
 			return nil, installRPCError(domain.ErrArtifactUnavailable(listingID,
 				fmt.Sprintf("the %q install path is not wired yet: the published catalog carries no artifact locator for it", listing.Kind)))
 		}
@@ -2233,7 +2299,9 @@ func installRPCError(err error) *ipc.RPCError {
 		return &ipc.RPCError{Code: ipc.CodePlanStale, Message: err.Error()}
 	case "LPSM-POLICY-UNAUTHORIZED", "LPSM-POLICY-APPROVAL-CONSUMED", "LPSM-POLICY-APPROVAL-EXPIRED":
 		return &ipc.RPCError{Code: ipc.CodeUnauthorized, Message: err.Error()}
-	case "LPSM-STATE-NOT-FOUND", "LPSM-DOMAIN-INVALID-ID", "LPSM-STATE-CONFLICT":
+	// A name collision is the caller's input being wrong, not an internal
+	// failure: the request named something that already exists.
+	case "LPSM-STATE-NOT-FOUND", "LPSM-DOMAIN-INVALID-ID", "LPSM-STATE-CONFLICT", "LPSM-NAME-CONFLICT", "LPSM-INSTALL-TARGET-UNAVAILABLE":
 		return &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
 	default:
 		return &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}

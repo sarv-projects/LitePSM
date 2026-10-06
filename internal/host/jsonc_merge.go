@@ -263,6 +263,13 @@ func ensureKeyPath(raw string, keyPath []string, entry any) (string, int, int, e
 // keyPath without reformatting the rest of the document. Comments, key order
 // and indentation outside the touched object are preserved byte-for-byte.
 func mergeJSONEntrySurgical(raw string, keyPath []string, value any) (string, error) {
+	return mergeJSONEntrySurgicalNamed(raw, keyPath, litespmServerName, value)
+}
+
+// mergeJSONEntrySurgicalNamed is mergeJSONEntrySurgical for an arbitrary member
+// name. The bridge is always called `litespm`, but a catalog install writes the
+// SERVER's name into the same container, so the name cannot be hardcoded here.
+func mergeJSONEntrySurgicalNamed(raw string, keyPath []string, name string, value any) (string, error) {
 	if strings.TrimSpace(stripJSONComments(raw)) == "" {
 		raw = "{}"
 	}
@@ -271,7 +278,7 @@ func mergeJSONEntrySurgical(raw string, keyPath []string, value any) (string, er
 		return "", err
 	}
 	objText := cur[start:end]
-	updated, err := upsertObjectMember(objText, litespmServerName, value)
+	updated, err := upsertObjectMember(objText, name, value)
 	if err != nil {
 		return "", err
 	}

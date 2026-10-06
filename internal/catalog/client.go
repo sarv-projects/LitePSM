@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,7 +111,22 @@ func (c *Client) LoadFromCache() error {
 		return err
 	}
 
+	var versions []*domain.VersionRecord
+	if versionMeta, ok := manifest.Files["versions.json"]; ok {
+		versionsData, err := os.ReadFile(filepath.Join(releaseDir, "versions.json"))
+		if err != nil {
+			return err
+		}
+		if actual := domain.ComputeBytesDigest(versionsData); actual != versionMeta.Digest {
+			return domain.ErrChecksumMismatch(versionMeta.Digest, actual)
+		}
+		if err := json.Unmarshal(versionsData, &versions); err != nil {
+			return err
+		}
+	}
+
 	c.index.IndexListings(listings)
+	c.index.IndexVersions(versions)
 	c.currentReleaseID = current.ReleaseID
 	c.currentSequence = current.Sequence
 
@@ -268,6 +284,94 @@ func (c *Client) fetchListings(ctx context.Context, releaseID string, manifest *
 	return listings, body, nil
 }
 
+// FetchVersions downloads versions.json, verifies it against the manifest, and
+// returns the parsed records.
+//
+// versions.json is where the release publishes each listing's components, and a
+// component's runtime descriptor is the real launch line (`command`, `args`,
+// `type`). Listings carry no launch line, so an installer that wants to actually
+// start a server needs this file — which is why Sync caches it too.
+func (c *Client) FetchVersions(ctx context.Context, releaseID string, manifest *catalogbuild.ReleaseManifest) ([]*domain.VersionRecord, error) {
+	records, _, err := c.fetchVersions(ctx, releaseID, manifest)
+	return records, err
+}
+
+func (c *Client) fetchVersions(ctx context.Context, releaseID string, manifest *catalogbuild.ReleaseManifest) ([]*domain.VersionRecord, []byte, error) {
+	fileMeta, exists := manifest.Files["versions.json"]
+	if !exists {
+		return nil, nil, fmt.Errorf("manifest missing versions.json entry")
+	}
+	if err := domain.ValidateReleaseID(releaseID); err != nil {
+		return nil, nil, fmt.Errorf("refusing to fetch versions for unsafe release id: %w", err)
+	}
+	url := fmt.Sprintf("%s/v1/releases/%s/versions.json", c.baseURL, releaseID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("failed to download versions.json: status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+	if actualDigest := domain.ComputeBytesDigest(body); actualDigest != fileMeta.Digest {
+		return nil, nil, domain.ErrChecksumMismatch(fileMeta.Digest, actualDigest)
+	}
+	var versions []*domain.VersionRecord
+	if err := json.Unmarshal(body, &versions); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal versions.json: %w", err)
+	}
+	return versions, body, nil
+}
+
+// VersionRecordFor returns the published version record for a listing, if the
+// catalog has been synced. Installers use it to read the runtime descriptor; a
+// listing alone cannot start anything.
+func (c *Client) VersionRecordFor(listingID, version string) (*domain.VersionRecord, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	records := c.index.VersionRecords(listingID)
+	if len(records) == 0 {
+		return nil, fmt.Errorf("no published version record for %s; run 'litespm catalog sync' first", listingID)
+	}
+	if version == "" || version == "latest" {
+		return records[0], nil
+	}
+	for _, rec := range records {
+		if rec.Version == version {
+			return rec, nil
+		}
+	}
+	return nil, fmt.Errorf("listing %s has no published version %q", listingID, version)
+}
+
+// RuntimeForListing returns the stdio launch line for a listing, taken from the
+// published version record. It fails closed when the record declares no runtime
+// or no command, rather than letting an installer write a broken entry.
+func (c *Client) RuntimeForListing(listingID, version string) (*domain.RuntimeDescriptor, error) {
+	rec, err := c.VersionRecordFor(listingID, version)
+	if err != nil {
+		return nil, err
+	}
+	for _, component := range rec.Components {
+		if component.Runtime == nil {
+			continue
+		}
+		if strings.TrimSpace(component.Runtime.Command) == "" {
+			continue
+		}
+		return component.Runtime, nil
+	}
+	return nil, fmt.Errorf("listing %s publishes no runnable command for version %s", listingID, rec.Version)
+}
+
 // Sync checks for remote catalog updates, verifies integrity, and updates the local cache and index.
 func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 	current, currentRaw, err := c.fetchCurrent(ctx)
@@ -310,6 +414,12 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 		return nil, err
 	}
 
+	// Download versions: the launch line lives here, not in the listings.
+	versions, versionsRaw, err := c.fetchVersions(ctx, current.ReleaseID, manifest)
+	if err != nil {
+		return nil, err
+	}
+
 	// Persist to local disk cache if cacheDir is set
 	if c.cacheDir != "" {
 		releaseDir := filepath.Join(c.cacheDir, "v1", "releases", current.ReleaseID)
@@ -328,6 +438,7 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 		}{
 			{filepath.Join(releaseDir, "manifest.json"), manifestRaw},
 			{filepath.Join(releaseDir, "listings.json"), listingsRaw},
+			{filepath.Join(releaseDir, "versions.json"), versionsRaw},
 			{filepath.Join(c.cacheDir, "v1", "current.json"), currentRaw},
 		} {
 			if err := os.WriteFile(w.path, w.data, 0644); err != nil {
@@ -339,6 +450,7 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 	// Update in-memory index
 	c.mu.Lock()
 	c.index.IndexListings(listings)
+	c.index.IndexVersions(versions)
 	c.currentReleaseID = current.ReleaseID
 	c.currentSequence = current.Sequence
 	c.mu.Unlock()
