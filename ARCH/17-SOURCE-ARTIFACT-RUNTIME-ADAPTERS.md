@@ -90,7 +90,8 @@ Ingest(ctx context.Context, snapshotID string, rawManifest []byte) (*IngestResul
 
 ## 3. Artifact Layer (`internal/artifact`) — compiled exports
 
-No `ArtifactFetcher` interface exists. `internal/artifact/extractor.go` currently exports the following real functions, all of which operate on bytes already supplied by the caller:
+`internal/artifact/extractor.go` exports the following functions, all of which operate on bytes
+already supplied by the caller:
 
 | Export | Purpose |
 |---|---|
@@ -104,9 +105,10 @@ No `ArtifactFetcher` interface exists. `internal/artifact/extractor.go` currentl
 
 ---
 
-## 4. Artifact Fetcher Interface — `DESIGNED`
+## 4. Artifact Fetcher Interface — `HTTPArchiveFetcher` implemented
 
-Target interface (no `internal/artifact` fetcher type is compiled today; do not present this as shipped):
+`HTTPArchiveFetcher` is compiled in `internal/artifact/fetcher.go` and matches the interface below;
+`GitTreeFetcher` (shallow commit-pinned clone) is still `DESIGNED`.
 
 ```go
 type ArtifactFetcher interface {
@@ -117,7 +119,23 @@ type ArtifactFetcher interface {
 }
 ```
 
-Target strategies: `HTTPArchiveFetcher` (HTTPS tarball/zip, bounded via `SpoolDownloadBounded`, redirect limit, streaming SHA-256) and `GitTreeFetcher` (shallow commit-pinned clone, canonical tree digest). Both must be data-only: they MUST NOT execute package code. The lockfile ([32](32-MANIFEST-LOCK-INTEROP.md)) records the artifact SHA-256 and CAS tree digest this layer is required to reproduce.
+`HTTPArchiveFetcher` implements the ARCH/03 §5 rules the repository previously lacked: HTTPS only,
+no credentials in URLs, SSRF refusal of loopback/link-local/private/unspecified/multicast addresses
+at dial time (checking the concrete IP, so DNS cannot be re-pointed between check and connect),
+redirect cap, no https→http downgrade, request timeout, `SpoolDownloadBounded` size cap, streaming
+SHA-256, and fail-closed verification (an artifact with no expected digest is refused). It is
+data-only: it never executes or interprets the payload; extraction stays in `extractor.go`.
+
+**No production caller yet.** Nothing supplies it an `ArtifactRef`: the published catalog carries
+no artifact locators (`catalogbuild` emits `Artifacts: []`), and the client index does not expose
+version artifact refs. Its end-to-end behaviour is pinned by
+`internal/artifact/fetcher_test.go` and `test/archive_install_e2e_test.go` (download → verify →
+extract → CAS install). Wiring it in is gated on the catalog carrying artifact locators.
+
+Target strategies (remaining work): `GitTreeFetcher` (shallow commit-pinned clone, canonical tree
+digest). Both are data-only and MUST NOT execute package code. The lockfile
+([32](32-MANIFEST-LOCK-INTEROP.md)) records the artifact SHA-256 and CAS tree digest this layer is
+required to reproduce.
 
 ---
 

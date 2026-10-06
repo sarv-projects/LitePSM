@@ -274,6 +274,23 @@ func ErrArtifactUnavailable(listingID, detail string) *LPSMError {
 	}
 }
 
+// ErrEgressBlocked reports that an outbound fetch was refused by the SSRF
+// policy before any connection was made: a non-HTTPS scheme, a credential-
+// bearing URL, a redirect downgrade or loop, or a host that resolves into a
+// private, loopback, link-local or otherwise non-public range.
+func ErrEgressBlocked(target, reason string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-EGRESS-BLOCKED",
+		Message:   fmt.Sprintf("outbound fetch to %s refused: %s", target, reason),
+		Category:  "LPSM-EGRESS",
+		Retryable: false,
+		Details: map[string]any{
+			"target": target,
+			"reason": reason,
+		},
+	}
+}
+
 func ErrHostConfigNotFound(hostID, searchedPaths string) *LPSMError {
 	return &LPSMError{
 		Code:      "LPSM-HOST-CONFIG-NOT-FOUND",

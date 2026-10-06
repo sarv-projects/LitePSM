@@ -113,7 +113,11 @@ a config editor.
 > (`TestInstallExecuteSkillThroughDaemon`). The **synthetic package is removed**: MCP and plugin
 > listings now fail closed with `LPSM-ARTIFACT-UNAVAILABLE` because the published catalog carries
 > no artifact locator for them. Closing the archive half (MCP/plugin) is the remaining `M3` work;
-> the artifact source that would feed it is ARCH/17 §4's `ArtifactFetcher` (`DESIGNED`).
+> the artifact source that would feed it is ARCH/17 §4's `ArtifactFetcher` — its
+> `HTTPArchiveFetcher` is now implemented and tested (`internal/artifact/fetcher.go`:
+> HTTPS-only, SSRF/DNS-range refusal, redirect cap, bounded spool, fail-closed digest verification;
+> end-to-end pinned by `test/archive_install_e2e_test.go`), with no production caller until the
+> catalog carries artifact locators.
 
 ### 4.2 The published catalog and the client read different files — the sync path is dead at the origin
 

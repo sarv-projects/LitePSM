@@ -57,7 +57,7 @@ Every error returned by LiteSPM across CLI, IPC, and Bridge MCP interfaces confo
 ### 1.2 Full Inventory of Codes in the Tree (emission status)
 
 Verified 2026-10-05 against `internal/domain/errors.go` and every non-test call
-site. **22** distinct `LPSM-*` strings exist in Go sources; each row states where
+site. The rows below are the `LPSM-*` codes this inventory tracks; each states where
 the code is defined and whether production code actually emits it today.
 
 | Code | Defined | Emitted in production? |
@@ -84,6 +84,8 @@ the code is defined and whether production code actually emits it today.
 | `LPSM-AUTH-CALLBACK-TIMEOUT` | `errors.go:17` | Same as above (`auth/loopback.go:161`) — not reachable end-to-end |
 | `LPSM-HOST-CONFIG-NOT-FOUND` | `errors.go:261` | **No** — `ErrHostConfigNotFound` has zero callers in the tree; `internal/host` returns plain `fmt.Errorf` instead |
 | `LPSM-ARTIFACT-PATH-TRAVERSAL` | *(none)* | **No** — never constructed; the literal exists only in `internal/artifact/artifact_test.go:104` |
+| `LPSM-ARTIFACT-UNAVAILABLE` | `errors.go:266` | Yes — no-fetchable-artifact paths: `cmd/litespm/install_skill.go` (skill source gaps), `cmd/litespm/main.go` (unsupported kind), `internal/artifact/fetcher.go` (missing locator or archive type) |
+| `LPSM-EGRESS-BLOCKED` | `errors.go:283` | Yes — `internal/artifact/fetcher.go` (non-HTTPS scheme, URL credentials, SSRF ranges, redirect cap/downgrade). The fetcher itself has **no production caller yet** (no artifact locators in the catalog) |
 
 ---
 

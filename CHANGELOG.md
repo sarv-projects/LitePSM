@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   committed release, with the pointer digest matching the served manifest;
   `litespm catalog sync` and `search` were verified against it from a clean data
   root with no registry override.
+- **HTTPS artifact fetcher (ARCH/17 §4).** `internal/artifact/fetcher.go` adds
+  the retrieval half the artifact layer was missing: HTTPS-only, no credentials
+  in URLs, SSRF refusal of loopback/link-local/private/unspecified/multicast
+  addresses at dial time (dialing the checked IP, so DNS rebinding cannot bypass
+  it), redirect cap with no https→http downgrade, request timeout, bounded spool
+  with streaming SHA-256, and fail-closed verification that refuses an unpinned
+  artifact. Data-only; extraction is unchanged. Covered by
+  `internal/artifact/fetcher_test.go` and `test/archive_install_e2e_test.go`
+  (download → verify → extract → CAS install). It has no production caller yet:
+  the catalog carries no artifact locators.
 - **Marketplace skill installs.** `litespm install <skill-id>` and the Bridge
   `request_install` → `install.execute` path install real skills: the listing's
   source is fetched (GitHub `/tree/<ref>/<path>` browse URLs resolve to a clone
