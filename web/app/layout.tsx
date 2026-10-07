@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Sans_Condensed, IBM_Plex_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ToastViewport } from "../components/ui/Toast";
 import { SITE_URL } from "../lib/site";
@@ -10,23 +10,34 @@ import { SITE_URL } from "../lib/site";
  * row names so 63-character capability names stay legible in a narrow column.
  * Mono is reserved for content that is genuinely machine-readable.
  */
-const sans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+// Vendored latin woff2 files (web/fonts/, SIL OFL 1.1 — license alongside).
+// next/font/local keeps the rest of the pipeline identical to the former
+// next/font/google call — self-hosted URLs, swap display, metric-adjusted
+// fallback computed from the font file — but drops the build-time fetch to
+// fonts.googleapis.com, which twice took the CI static export down when the
+// runner could not reach Google. The Sans file is variable, so the three
+// weight faces share one file exactly as Google's own CSS served them.
+const sans = localFont({
+  src: [
+    { path: "../fonts/IBMPlexSans-latin.woff2", weight: "400", style: "normal" },
+    { path: "../fonts/IBMPlexSans-latin.woff2", weight: "500", style: "normal" },
+    { path: "../fonts/IBMPlexSans-latin.woff2", weight: "600", style: "normal" },
+  ],
   variable: "--font-sans",
   display: "swap",
 });
 
-const cond = IBM_Plex_Sans_Condensed({
-  subsets: ["latin"],
-  weight: ["600"],
+const cond = localFont({
+  src: [{ path: "../fonts/IBMPlexSansCondensed-600-latin.woff2", weight: "600", style: "normal" }],
   variable: "--font-cond",
   display: "swap",
 });
 
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const mono = localFont({
+  src: [
+    { path: "../fonts/IBMPlexMono-400-latin.woff2", weight: "400", style: "normal" },
+    { path: "../fonts/IBMPlexMono-500-latin.woff2", weight: "500", style: "normal" },
+  ],
   variable: "--font-mono",
   display: "swap",
 });
