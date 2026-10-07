@@ -25,7 +25,7 @@ export function SiteFooter() {
     <footer className="mt-auto border-t border-rule bg-surface">
       <div className="shell grid gap-8 py-10 md:grid-cols-[1.4fr_1fr_1fr]">
         <div>
-          <p className="t-cond text-[15px] font-semibold text-ink">LiteSPM Market</p>
+          <p className="text-[15px] font-semibold text-ink">LiteSPM Market</p>
           <p className="mt-1.5 max-w-prose text-[13px] leading-relaxed text-ink-2">
             One bridge entry per agent, installed once. The catalog is a snapshot of named upstream
             sources, and everything here is resolved locally by the LiteSPM daemon.
@@ -36,27 +36,27 @@ export function SiteFooter() {
           <h2 className="t-mono text-[11px] font-medium text-ink">Indexed</h2>
           <ul className="mt-2 space-y-1.5 text-[13px] text-ink-2">
             <li>
-              <Link href="/explore/" className="link">
+              <Link href="/explore/" className="link touch-link">
                 Explore
               </Link>
             </li>
             <li>
-              <Link href="/categories/" className="link">
+              <Link href="/categories/" className="link touch-link">
                 Categories
               </Link>
             </li>
             <li>
-              <Link href="/agents/" className="link">
+              <Link href="/agents/" className="link touch-link">
                 Agent hosts
               </Link>
             </li>
             <li>
-              <Link href="/trending/" className="link">
+              <Link href="/trending/" className="link touch-link">
                 Coverage
               </Link>
             </li>
             <li>
-              <a href="/v1/current.json" className="link t-mono !text-[12px]">
+              <a href="/v1/current.json" className="link touch-link t-mono !text-[12px]">
                 /v1/current.json
               </a>
             </li>

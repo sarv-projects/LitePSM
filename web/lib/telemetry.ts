@@ -171,23 +171,9 @@ export function useTelemetry(counts: Telemetry["counts"]): TelemetryState {
   return state;
 }
 
-/** Client-side lexical search across the fields the catalog actually exposes. */
-export function matchesQuery(item: Listing, q: string): boolean {
-  const query = q.toLowerCase().trim();
-  if (!query) return true;
-  const haystack = [
-    item.name,
-    item.summary,
-    item.category,
-    item.publisher?.name,
-    item.id,
-    item.slug,
-    item.runtime,
-    item.transport,
-    ...(item.tools || []).map((t) => `${t.name} ${t.description}`),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return query.split(/\s+/).every((token) => haystack.includes(token));
-}
+/**
+ * Lexical matching moved to `lib/query.ts` so the build-time topic counts and
+ * the runtime filter call the same function. Re-exported here because that is
+ * where every search caller already imports it from.
+ */
+export { matchesQuery } from "./query";

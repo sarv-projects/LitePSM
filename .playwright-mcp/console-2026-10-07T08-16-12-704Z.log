@@ -2,3 +2,32 @@
 [    3201ms] [WARNING] The resource http://127.0.0.1:8791/_next/static/media/98e207f02528a563-s.p.woff2 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://127.0.0.1:8791/agents/:0
 [    3201ms] [WARNING] The resource http://127.0.0.1:8791/_next/static/media/26d4368bf94c0ec4-s.p.woff2 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://127.0.0.1:8791/agents/:0
 [    3201ms] [WARNING] The resource http://127.0.0.1:8791/_next/static/media/f3bd7e38ce097e28-s.p.woff2 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://127.0.0.1:8791/agents/:0
+[ 5555580ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8791/explore/index.txt?host=Cursor&_rsc=1pq8p:0
+[ 5555589ms] [ERROR] Failed to fetch RSC payload for http://127.0.0.1:8791/explore/?host=Cursor. Falling back to browser navigation. TypeError: Failed to fetch
+    at h (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:66533)
+    at p (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:65209)
+    at http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:80736
+    at Object.a [as task] (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:42300)
+    at s.c (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:43005)
+    at s.enqueue (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:42430)
+    at c (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:80699)
+    at i (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:80224)
+    at u (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:87987)
+    at f (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:99743)
+    at Object.action (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:2:26319)
+    at i (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:2:25572)
+    at http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:2:26000
+    at Object.dispatch (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:2:26279)
+    at http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:115888
+    at http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:14137
+    at t.startTransition (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:2:60902)
+    at Object.prefetch (http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:1:14125)
+    at http://127.0.0.1:8791/_next/static/chunks/542.7bd46dbfdf0d29a1.js:1:488
+    at p (http://127.0.0.1:8791/_next/static/chunks/542.7bd46dbfdf0d29a1.js:1:502)
+    at onMouseEnter (http://127.0.0.1:8791/_next/static/chunks/542.7bd46dbfdf0d29a1.js:1:2142)
+    at uB (http://127.0.0.1:8791/_next/static/chunks/4bd1b696-059bf3360e3b5d4b.js:1:131447)
+    at http://127.0.0.1:8791/_next/static/chunks/4bd1b696-059bf3360e3b5d4b.js:1:137623
+    at nC (http://127.0.0.1:8791/_next/static/chunks/4bd1b696-059bf3360e3b5d4b.js:1:18576)
+    at uK (http://127.0.0.1:8791/_next/static/chunks/4bd1b696-059bf3360e3b5d4b.js:1:132754)
+    at sG (http://127.0.0.1:8791/_next/static/chunks/4bd1b696-059bf3360e3b5d4b.js:1:158334)
+    at sX (http://127.0.0.1:8791/_next/static/chunks/4bd1b696-059bf3360e3b5d4b.js:1:158249) @ http://127.0.0.1:8791/_next/static/chunks/517-1f6f2c9a75a9cdef.js:0

@@ -26,7 +26,7 @@ export default function CategoriesPage({ total, categories }: CategoriesViewProp
 
       <main id="main" className="shell flex-1 pt-8">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Categories</h1>
+          <h1 className="text-[24px] font-semibold tracking-tight text-ink">Categories</h1>
           <p className="t-mono text-[11px] text-ink-3">
             {formatCount(categories.length)} categories across {formatCount(total)} entries
           </p>

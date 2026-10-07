@@ -24,7 +24,7 @@ export default function AgentsPage({ hostCount, agents }: AgentsViewProps) {
 
       <main id="main" className="shell flex-1 pt-8">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Agent hosts</h1>
+          <h1 className="text-[24px] font-semibold tracking-tight text-ink">Agent hosts</h1>
           <p className="t-mono text-[11px] text-ink-3">
             {formatCount(hostCount)} hosts named · {HOSTS.length} with compiled-in adapters
           </p>

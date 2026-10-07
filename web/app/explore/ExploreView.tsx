@@ -102,6 +102,17 @@ function ExploreContent(props: ExploreViewProps) {
   const [filters, setFilters] = useQueryFilters(request);
   const { query, kind, category, agent, verifiedOnly, sort } = filters;
 
+  /**
+   * `?focus=search` is what the header's search affordance deep-links to. It
+   * focuses the field and does NOT seed the dataset request: focusing a box is
+   * not a reason to download 3.8 MB, and the first keystroke already is.
+   */
+  const [focusSearch, setFocusSearch] = useState(false);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("focus") === "search") setFocusSearch(true);
+  }, []);
+
   const setQuery = (q: string) => {
     request();
     setFilters((f) => ({ ...f, query: q }));
@@ -181,7 +192,7 @@ function ExploreContent(props: ExploreViewProps) {
       <main id="main" className="flex-1">
         <div className="shell pt-8">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
-            <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Explore</h1>
+            <h1 className="text-[24px] font-semibold tracking-tight text-ink">Explore</h1>
             <p className="t-mono text-[11px] text-ink-3">
               {total.toLocaleString("en-US")} entries · {categories.length} categories ·{" "}
               {hostCount} hosts
@@ -194,6 +205,7 @@ function ExploreContent(props: ExploreViewProps) {
               setQuery={setQuery}
               totalMatches={deferredQuery && full ? filtered.length : undefined}
               totalCount={total}
+              autoFocusOnMount={focusSearch}
             />
           </div>
 
@@ -211,7 +223,7 @@ function ExploreContent(props: ExploreViewProps) {
                   type="button"
                   aria-pressed={kind === k}
                   onClick={() => setKind(k)}
-                  className={`flex h-7 items-center gap-1.5 rounded-[3px] px-2.5 text-[12px] font-medium transition-colors ${
+                  className={`flex min-h-[44px] items-center gap-1.5 rounded-[3px] px-2.5 text-[12px] font-medium transition-colors duration-state ease-out md:h-9 md:min-h-0 ${
                     kind === k ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"
                   }`}
                 >
@@ -295,7 +307,7 @@ function ExploreContent(props: ExploreViewProps) {
                   id="explore-sort"
                   value={sort}
                   onChange={(e) => setSort(e.target.value as SortMode)}
-                  className="field !h-7 !py-0 text-[12px]"
+                  className="field !py-0 text-[12px]"
                 >
                   {SORTS.map((s) => (
                     <option key={s.id} value={s.id}>

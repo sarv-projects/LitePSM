@@ -16,8 +16,13 @@ const tokens = {
   "skill-wash": "var(--skill-wash)",
   plugin: "var(--plugin)",
   "plugin-wash": "var(--plugin-wash)",
+  // Brand indigo. `accent` is the fill (CTA, selected chip, focus ring);
+  // `accent-text` is the same hue as text, which dark mode needs to stay AA.
   accent: "var(--accent)",
+  brand: "var(--brand)",
   "accent-wash": "var(--accent-wash)",
+  "accent-text": "var(--accent-text)",
+  "accent-hover": "var(--accent-hover)",
   pop: "var(--pop)",
   "pop-wash": "var(--pop-wash)",
   dark: "var(--dark)",
@@ -26,7 +31,6 @@ const tokens = {
   "dark-ink": "var(--dark-ink)",
   "dark-ink-2": "var(--dark-ink-2)",
 };
-
 module.exports = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
@@ -41,11 +45,22 @@ module.exports = {
         ctl: "var(--r-ctl)",
         panel: "var(--r-panel)",
         hero: "var(--r-hero)",
+        card: "var(--r-card)",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         cond: ["var(--font-cond)", "var(--font-sans)", "ui-sans-serif", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+      },
+      boxShadow: {
+        card: "var(--shadow-card-hover)",
+      },
+      // J001 motion scale: state / hover / panel / entrance, ease-out.
+      transitionDuration: {
+        state: "120ms",
+        hover: "160ms",
+        panel: "200ms",
+        enter: "240ms",
       },
       maxWidth: {
         shell: "1440px",

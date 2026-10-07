@@ -71,8 +71,23 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#edf0f3",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0e14" },
+  ],
 };
+
+/**
+ * Theme resolution, run before first paint so the page never flashes the wrong
+ * surface. It only ever writes `data-theme` on <html>: "system" (the default,
+ * and what an unset attribute means) is resolved by CSS through
+ * `prefers-color-scheme`, "light" and "dark" pin it. The choice itself lives
+ * in `localStorage["litespm-theme"]` — no cookie, no server, no dependency.
+ *
+ * Kept as a plain string rather than an imported module so it is inlined in the
+ * HTML: a deferred script would run after the first frame and defeat it.
+ */
+const THEME_INIT = `(function(){try{var t=localStorage.getItem("litespm-theme");document.documentElement.dataset.theme=(t==="light"||t==="dark")?t:"system";}catch(e){document.documentElement.dataset.theme="system";}})();`;
 
 /**
  * Site-level structured data. This lives in the layout rather than on the
@@ -96,8 +111,16 @@ const SITE_JSON_LD = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${sans.variable} ${cond.variable} ${mono.variable}`}>
+    // `suppressHydrationWarning` because the theme script below writes
+    // `data-theme` before React hydrates; that attribute is deliberately not
+    // rendered on the server, which has no localStorage to read.
+    <html
+      lang="en"
+      className={`${sans.variable} ${cond.variable} ${mono.variable}`}
+      suppressHydrationWarning
+    >
       <body className="min-h-screen bg-paper text-ink">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_JSON_LD) }}
@@ -106,7 +129,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             content on every page. */}
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-ctl focus:bg-ink focus:px-3 focus:py-2 focus:text-[13px] focus:text-surface"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-ctl focus:bg-ink focus:px-3 focus:py-3 focus:text-[13px] focus:text-surface"
         >
           Skip to content
         </a>

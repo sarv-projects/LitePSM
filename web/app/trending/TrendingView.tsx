@@ -117,7 +117,7 @@ export default function CoveragePage({ total, boards }: TrendingViewProps) {
 
       <main id="main" className="shell flex-1 pt-8">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Coverage</h1>
+          <h1 className="text-[24px] font-semibold tracking-tight text-ink">Coverage</h1>
           <p className="t-mono text-[11px] text-ink-3">
             {formatCount(total)} entries · counted, not estimated
           </p>

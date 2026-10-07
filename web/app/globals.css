@@ -6,17 +6,35 @@
  * LiteSPM Market design tokens.
  *
  * The subject is a manifest index, so colour is reserved for data: three kind
- * hues and one accent. There is no green in this palette by design - nothing in
- * the catalog data supports a "safe / verified" claim, and an accent that means
- * nothing is decoration.
+ * hues and one brand accent. There is no green in this palette by design -
+ * nothing in the catalog data supports a "safe / verified" claim, and an accent
+ * that means nothing is decoration.
  *
- * Palette revision: the first pass was a cold blue-grey "ink on paper" that read
- * as austere. This one keeps the same structure and roles but warms the neutrals
- * and lets the kind hues carry more saturation, so the page reads as a friendly
- * index rather than a spec sheet. Every text/background pair below was checked
- * against WCAG: --ink-3 clears 4.5:1 on --paper, --rule-2 clears 3:1 on
- * --surface (WCAG 1.4.11, for control boundaries), and each kind hue clears
- * 4.5:1 on its own wash for 11px tile text.
+ * Palette revision (J001): the primary is now a deep indigo, `#3157f6`, and it
+ * is the ONLY brand colour. It is allowed on the logo, the hero graphic, solid
+ * CTAs, the search focus ring, the active nav item and the hero glow — and
+ * nowhere on the catalog body, which stays neutral so the three kind hues keep
+ * meaning "kind". Two derived tokens carry it as text (`--accent-text`, so a
+ * link stays AA in dark mode where the fill colour would only reach 3.5:1) and
+ * as a hover fill (`--accent-hover`).
+ *
+ * Type roles (J001): Plex Sans carries headings and product copy, Plex
+ * Condensed carries dense result rows and numeric tables only, Plex Mono
+ * carries ids, versions, paths, commands and code.
+ *
+ * Every text/background pair below was checked against WCAG 2.2:
+ *
+ *   light  --ink-3 #616e84 on --paper ............ 4.81:1
+ *          white on --accent #3157f6 ............. 5.49:1
+ *          --accent #3157f6 on --surface ......... 5.49:1
+ *          --rule-2 #8794a1 on --surface ......... 3.10:1  (1.4.11)
+ *          each kind hue on its own wash ......... >= 5.26:1 (11px tile text)
+ *   dark   --ink #edf1f7 on --paper #0b0e14 ...... 17.04:1
+ *          --ink-3 #97a3b6 on --paper ............ 7.57:1
+ *          white on --accent ..................... 5.49:1  (unchanged)
+ *          --accent-text #8fa9ff on --surface .... 8.01:1
+ *          --rule-2 #6a7690 on --surface ......... 3.97:1  (1.4.11)
+ *          each kind hue on its dark wash ........ >= 6.07:1
  *
  * Radius is assigned per element role, not globally:
  *   0px  table rows and ruled lists
@@ -24,9 +42,16 @@
  *   4px  interactive controls
  *   6px  the snippet terminal
  *   8px  the single dark install panel
+ *   12px discovery cards (CapabilityCard and friends — a card is furniture,
+ *        not a record, so it is the one place a soft radius belongs)
+ *
+ * Motion scale (J001): 120ms state / 160ms hover / 200ms panel / 240ms
+ * entrance, ease-out. The previous 90ms linear read as a terminal redraw.
  */
 @layer base {
   :root {
+    color-scheme: light;
+
     --paper: #f5f7fb;
     --surface: #ffffff;
     --sunken: #eef2f9;
@@ -41,14 +66,20 @@
 
     --ink: #17202f;
     --ink-2: #48566c;
-    /* 4.8:1 on --paper, so 11px meta text still clears AA. */
+    /* 4.81:1 on --paper, so 11px meta text still clears AA. */
     --ink-3: #616e84;
 
-    /* Primary interactive colour. Selected chips and solid buttons use this
-       instead of near-black, which is what made the first pass read as
-       black-and-white. White on --accent clears 6.6:1. */
-    --accent: #1f4fd8;
-    --accent-wash: #eaf0ff;
+    /* Brand indigo. `--accent` IS the brand token: solid CTAs, selected chips,
+       the search focus ring and the active nav. White on it clears 5.49:1.
+       `--brand` is the ARCH/25 §5.1 spelling of the same token, aliased here
+       so the document's name and the code's name cannot drift apart. */
+    --accent: #3157f6;
+    --brand: var(--accent);
+    --accent-wash: #e9eeff;
+    /* The same hue used as TEXT: 5.49:1 on --surface in light. */
+    --accent-text: #3157f6;
+    /* Solid-button hover: 7.14:1 under white text. */
+    --accent-hover: #2749cf;
 
     --mcp: #1f4fd8;
     --mcp-wash: #eaf0ff;
@@ -68,11 +99,122 @@
     --dark-signal: #9dc0ff;
 
     --shadow-panel: 0 1px 2px rgba(23, 32, 47, 0.04), 0 8px 24px -12px rgba(23, 32, 47, 0.22);
+    /* Cards lift, they do not glow. One shadow token for discovery surfaces. */
+    --shadow-card-hover: 0 2px 4px rgba(23, 32, 47, 0.05), 0 12px 28px -14px rgba(23, 32, 47, 0.3);
 
     --r-chip: 2px;
     --r-ctl: 4px;
     --r-panel: 6px;
     --r-hero: 8px;
+    --r-card: 12px;
+
+    /* Motion scale: state / hover / panel / entrance, all ease-out. */
+    --t-state: 120ms;
+    --t-hover: 160ms;
+    --t-panel: 200ms;
+    --t-enter: 240ms;
+
+    /* Control heights. Desktop: 40px primary, 36px default, 32px compact. */
+    --h-ctl: 36px;
+    --h-ctl-sm: 32px;
+    --h-ctl-lg: 40px;
+  }
+
+  /*
+   * Dark mode: system/light/dark. `data-theme` is written before first paint
+   * by the inline script in app/layout.tsx; `system` (the default, and what an
+   * absent attribute means) follows prefers-color-scheme through this block,
+   * and an explicit `light` must opt OUT of it — which the :not() guarantees.
+   * Not pure black: #0b0e14 with a #111620 surface and #171d2a raised layer.
+   */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+
+      --paper: #0b0e14;
+      --surface: #111620;
+      --sunken: #0e131b;
+      --sunken-2: #0c1017;
+      --hover: #171d2a;
+      --sel: #274070;
+
+      --rule: #283144;
+      --rule-2: #6a7690;
+
+      --ink: #edf1f7;
+      --ink-2: #c6cfdc;
+      --ink-3: #97a3b6;
+
+      --accent: #3157f6;
+      --accent-wash: #16203a;
+      /* The fill would only reach 3.52:1 on #0b0e14, so TEXT uses the tint. */
+      --accent-text: #8fa9ff;
+      --accent-hover: #4061f8;
+
+      --mcp: #7fa0ff;
+      --mcp-wash: #172447;
+      --skill: #4fd8ce;
+      --skill-wash: #0e2b2c;
+      --plugin: #be9df8;
+      --plugin-wash: #211a36;
+
+      --pop: #9a5b08;
+      --pop-wash: #2a1e0b;
+
+      --dark: #171d2a;
+      --dark-2: #1e2536;
+      --dark-rule: #2e3950;
+      --dark-ink: #edf1f7;
+      --dark-ink-2: #a9b5c8;
+      --dark-signal: #8fa9ff;
+
+      --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+      --shadow-card-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
+    }
+  }
+
+  /* Explicit dark: wins over the media query regardless of the OS setting. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --paper: #0b0e14;
+    --surface: #111620;
+    --sunken: #0e131b;
+    --sunken-2: #0c1017;
+    --hover: #171d2a;
+    --sel: #274070;
+
+    --rule: #283144;
+    --rule-2: #6a7690;
+
+    --ink: #edf1f7;
+    --ink-2: #c6cfdc;
+    --ink-3: #97a3b6;
+
+    --accent: #3157f6;
+    --accent-wash: #16203a;
+    --accent-text: #8fa9ff;
+    --accent-hover: #4061f8;
+
+    --mcp: #7fa0ff;
+    --mcp-wash: #172447;
+    --skill: #4fd8ce;
+    --skill-wash: #0e2b2c;
+    --plugin: #be9df8;
+    --plugin-wash: #211a36;
+
+    --pop: #9a5b08;
+    --pop-wash: #2a1e0b;
+
+    --dark: #171d2a;
+    --dark-2: #1e2536;
+    --dark-rule: #2e3950;
+    --dark-ink: #edf1f7;
+    --dark-ink-2: #a9b5c8;
+    --dark-signal: #8fa9ff;
+
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+    --shadow-card-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
   }
 
   html {
@@ -112,9 +254,20 @@
     text-wrap: pretty;
   }
 
+  /* The disclosure chevron is the only affordance; the UA's triangle would
+     sit on top of it (the same double-marker problem as the search field). */
+  summary {
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
   /*
    * One focus treatment for the whole site. Ink ring on paper, paper ring on
-   * the dark panel. No extra hue, so focus never competes with data colour.
+   * the dark panel — always the highest-contrast neutral available, so focus
+   * never competes with the brand or with data colour. Controls that carry the
+   * brand (the search field) hold it with their own border.
    */
   :focus-visible {
     outline: 2px solid var(--ink);
@@ -164,7 +317,10 @@
 }
 
 @layer components {
-  /* ---- typography helpers ------------------------------------------- */
+  /* ---- typography roles --------------------------------------------- */
+  /* Condensed is for dense result rows and numeric tables. It used to carry
+     headings and names too, which is what made the home page read as a
+     terminal; headings are Plex Sans now. */
   .t-tabular {
     font-variant-numeric: tabular-nums;
   }
@@ -174,7 +330,7 @@
   }
 
   .t-mono {
-    font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+    font-family: var(--font-mono), ui-monospace, monospace;
   }
 
   /* Horizontal rails (kind tabs, host switchers) opt out of the scrollbar. */
@@ -201,6 +357,48 @@
     .shell {
       padding-inline: 32px;
     }
+  }
+
+  /* ---- discovery section rhythm (home, ecosystem) ------------------- */
+  /* Discover surfaces are spacious on purpose; Explore keeps the ruled
+     `.section-head` below. */
+  .band {
+    padding-block: 32px;
+  }
+  @media (min-width: 768px) {
+    .band {
+      padding-block: 44px;
+    }
+  }
+
+  .band-title {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  @media (min-width: 768px) {
+    .band-title {
+      font-size: 24px;
+    }
+  }
+
+  .band-sub {
+    margin-top: 8px;
+    max-width: 72ch;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ink-2);
+  }
+
+  .kicker {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
   }
 
   /* ---- section head: sentence case, count right-aligned on the rule -- */
@@ -235,7 +433,7 @@
     padding: 9px 12px 9px 0;
     border-bottom: 1px solid var(--rule);
     background-color: var(--surface);
-    transition: background-color 90ms linear;
+    transition: background-color var(--t-state) ease-out;
   }
   .row:hover {
     background-color: var(--hover);
@@ -243,7 +441,7 @@
   .row-spine {
     align-self: stretch;
     background-color: var(--rule);
-    transition: background-color 90ms linear;
+    transition: background-color var(--t-state) ease-out;
   }
   .row:hover .row-spine,
   .row:focus-visible .row-spine {
@@ -263,6 +461,8 @@
     filter: saturate(1.35) brightness(0.82);
   }
 
+  /* Dense result row: Condensed is correct here — a 63-character name has to
+     stay legible in a narrow column, which is what this cut is for. */
   .row-name {
     display: block;
     font-family: var(--font-cond), var(--font-sans), sans-serif;
@@ -332,17 +532,17 @@
   .meta-kind-mcp {
     background-color: var(--mcp-wash);
     color: var(--mcp);
-    border: 1px solid rgba(31, 79, 216, 0.2);
+    border: 1px solid color-mix(in srgb, var(--mcp) 20%, transparent);
   }
   .meta-kind-skill {
     background-color: var(--skill-wash);
     color: var(--skill);
-    border: 1px solid rgba(11, 107, 114, 0.2);
+    border: 1px solid color-mix(in srgb, var(--skill) 20%, transparent);
   }
   .meta-kind-plugin {
     background-color: var(--plugin-wash);
     color: var(--plugin);
-    border: 1px solid rgba(124, 58, 212, 0.2);
+    border: 1px solid color-mix(in srgb, var(--plugin) 20%, transparent);
   }
 
   .meta-spec {
@@ -405,23 +605,28 @@
     color: var(--plugin);
   }
 
-  /* ---- chips and controls: 4px -------------------------------------- */
+  /* ---- chips and controls ------------------------------------------- */
   /* Controls are bounded by --ink-3, not --rule: a control boundary is the
      only thing identifying a control, so it needs 3:1 (WCAG 1.4.11). Rows and
-     sections are bounded by --rule, which is decoration between records. */
+     sections are bounded by --rule, which is decoration between records.
+     Sizes: 36px default, 32px compact, 40px primary CTA — and 44px on any
+     viewport narrow enough to be a touch screen. */
   .chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 26px;
-    padding: 0 8px;
+    min-height: var(--h-ctl-sm);
+    padding: 0 10px;
     border: 1px solid var(--ink-3);
     border-radius: var(--r-ctl);
     background-color: var(--surface);
     font-size: 12px;
     color: var(--ink-2);
     white-space: nowrap;
-    transition: background-color 90ms linear, border-color 90ms linear, color 90ms linear;
+    transition:
+      background-color var(--t-state) ease-out,
+      border-color var(--t-state) ease-out,
+      color var(--t-state) ease-out;
   }
   .chip:hover {
     border-color: var(--ink-2);
@@ -450,15 +655,19 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    height: 32px;
-    padding: 0 12px;
+    min-height: var(--h-ctl);
+    padding: 0 14px;
     border: 1px solid var(--ink-3);
     border-radius: var(--r-ctl);
     background-color: var(--surface);
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 500;
     color: var(--ink-2);
-    transition: background-color 90ms linear, border-color 90ms linear, color 90ms linear;
+    transition:
+      background-color var(--t-state) ease-out,
+      border-color var(--t-state) ease-out,
+      color var(--t-state) ease-out,
+      transform var(--t-hover) ease-out;
   }
   .btn:hover {
     border-color: var(--ink-2);
@@ -471,19 +680,60 @@
     color: #ffffff;
   }
   .btn-solid:hover {
-    background-color: #1a43b8;
-    border-color: #1a43b8;
+    background-color: var(--accent-hover);
+    border-color: var(--accent-hover);
     color: #ffffff;
+  }
+  /* Primary CTA: 40px on desktop, 44px on touch. */
+  .btn-lg {
+    min-height: var(--h-ctl-lg);
+    padding: 0 18px;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  /* Square icon control (theme toggle, search affordance). */
+  .btn-icon {
+    width: var(--h-ctl);
+    min-height: var(--h-ctl);
+    padding: 0;
   }
 
   .field {
-    height: 34px;
+    min-height: var(--h-ctl);
     padding: 0 10px;
     border: 1px solid var(--ink-3);
     border-radius: var(--r-ctl);
     background-color: var(--surface);
     font-size: 13px;
     color: var(--ink);
+  }
+
+  /* Touch viewports get a 44px floor on every interactive control class above.
+     Metadata text is explicitly allowed to stay small — only controls grow. */
+  /* Standalone text links (a "see all →" that is the whole target) grow to a
+     44px row on touch viewports too; links inside a sentence stay inline,
+     because WCAG 2.5.8 exempts inline links in a block of text and padding a
+     sentence out to 44px would wreck the line rhythm it lives in. */
+  .touch-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  @media (min-width: 768px) {
+    .touch-link {
+      min-height: 0;
+    }
+  }
+  @media (max-width: 767px) {
+    .chip,
+    .btn,
+    .btn-icon,
+    .field {
+      min-height: 44px;
+    }
+    .btn-icon {
+      width: 44px;
+    }
   }
 
   /* ---- the one dark surface: 8px ------------------------------------ */
@@ -537,9 +787,89 @@
     text-decoration-thickness: 1px;
   }
   .link:hover {
-    color: var(--accent);
-    text-decoration-color: var(--accent);
+    color: var(--accent-text);
+    text-decoration-color: var(--accent-text);
     text-decoration-thickness: 2px;
+  }
+
+  /* ---- copy affordance: a terminal line you can take with you -------- */
+  .cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: var(--h-ctl);
+    padding: 0 6px 0 12px;
+    border-radius: var(--r-panel);
+    background-color: var(--dark);
+    color: var(--dark-ink);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 13px;
+    max-width: 100%;
+  }
+  .cmd code {
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- hero glow: brand -> violet, no blobs, no parallax ------------- */
+  .hero-glow {
+    position: relative;
+    isolation: isolate;
+  }
+  .hero-glow::before {
+    content: "";
+    position: absolute;
+    inset: -40px 0 auto 0;
+    height: 420px;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(48% 60% at 18% 8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 72%),
+      radial-gradient(44% 56% at 78% 0%, color-mix(in srgb, var(--plugin) 12%, transparent), transparent 72%);
+    mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 55%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 55%, transparent 100%);
+  }
+
+  /* ---- entrance: 240ms, and only where nothing is being read yet ------ */
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .enter-rise {
+      animation: rise-in var(--t-enter) ease-out both;
+    }
+  }
+
+  /* ---- the one-bridge diagram ---------------------------------------- */
+  /* `pathLength="1"` normalises every connector, so one dash value drives all
+     of them. The default state is DRAWN: the animation is added only for a
+     wide viewport that has not asked for reduced motion, so mobile and
+     reduced-motion readers get the static diagram with no work to undo. The
+     per-path stagger rides in as an inline animation-delay, which never
+     matters when no animation is applied. */
+  .bridge-path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+    stroke-linecap: round;
+  }
+  @media (prefers-reduced-motion: no-preference) and (min-width: 768px) {
+    .bridge-path {
+      animation: bridge-draw 900ms ease-out both;
+    }
+  }
+  @keyframes bridge-draw {
+    from {
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
   }
 }
 
