@@ -133,12 +133,16 @@ func TestClaudeCodeAdapter(t *testing.T) {
 	}
 }
 
+// TestOpenCodeAdapter_V1_and_V2 pins the two shapes this adapter must cope
+// with on disk: the one documented layout (servers as direct members of `mcp`)
+// and the nested `mcp.servers` container older releases wrote, which is read
+// but never written.
 func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()
 	backupDir := filepath.Join(tempDir, "backups")
 
-	// Test V1 layout
+	// Documented layout: servers are direct members of `mcp`.
 	v1File := filepath.Join(tempDir, "opencode_v1.json")
 	v1Content := `{
   "mcp": {
@@ -175,7 +179,8 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
 		t.Fatalf("ApplySetup V1 failed: %v", err)
 	}
 
-	// Test V2 layout
+	// Legacy nested container written by older releases. Read compatibility
+	// only: PlanSetup prunes it when empty and never writes it.
 	v2File := filepath.Join(tempDir, "opencode_v2.json")
 	v2Content := `{
   "mcp": {
@@ -214,9 +219,80 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
 		t.Fatalf("ApplySetup V2 failed: %v", err)
 	}
 
-	manual := adapter.RenderManualSetup("litespm")
-	if !strings.Contains(manual, "servers") {
-		t.Errorf("v2 manual render expected servers key")
+	// The manual snippet is what a user pastes when the wizard cannot write the
+	// config itself, so it must show exactly one thing: the documented flat
+	// layout PlanSetup writes.
+	manual := adapter.RenderManualSetup("/opt/litespm/litespm")
+	assertManualSetupIsFlatMCP(t, manual)
+}
+
+// assertManualSetupIsFlatMCP pins the OpenCode manual snippet to the single
+// documented layout — servers as direct members of `mcp`, each carrying
+// `"type": "local"` and a combined command array — which is what
+// bespokeEntrySpecs["opencode"] (KeyPath ["mcp"], ShapeLocalArray) writes.
+//
+// This must fail if anyone reintroduces the nested `mcp.servers` container: it
+// is absent from OpenCode's published schema, and the runtime treats it as one
+// server definition named "servers" with no `type`, so it refuses to load the
+// file. The check decodes the snippet rather than grepping it, because a grep
+// can be satisfied by a comment while the pasted JSON stays wrong.
+func assertManualSetupIsFlatMCP(t *testing.T, manual string) {
+	t.Helper()
+
+	if !strings.Contains(manual, `"mcp"`) {
+		t.Errorf("manual snippet does not name the mcp key:\n%s", manual)
+	}
+	if !strings.Contains(manual, `"type": "local"`) {
+		t.Errorf("manual snippet does not declare type local:\n%s", manual)
+	}
+	if strings.Contains(manual, "servers") {
+		t.Errorf("manual snippet names a servers container:\n%s", manual)
+	}
+
+	// Strip the leading comment line the way a reader pasting the body does,
+	// then decode what is left.
+	body := manual
+	if i := strings.Index(body, "{"); i >= 0 {
+		body = body[i:]
+	}
+	var root map[string]any
+	if err := json.Unmarshal([]byte(body), &root); err != nil {
+		t.Fatalf("manual snippet is not pasteable JSON: %v\n%s", err, manual)
+	}
+	mcpMap, ok := root["mcp"].(map[string]any)
+	if !ok {
+		t.Fatalf("manual snippet missing the mcp object:\n%s", manual)
+	}
+	if _, nested := mcpMap["servers"]; nested {
+		t.Fatalf("manual snippet reintroduced the undocumented mcp.servers nesting:\n%s", manual)
+	}
+	entry, ok := mcpMap[litespmServerName].(map[string]any)
+	if !ok {
+		t.Fatalf("manual snippet missing the %s entry directly under mcp:\n%s", litespmServerName, manual)
+	}
+	if entry["type"] != "local" {
+		t.Errorf("manual snippet type = %v, want local", entry["type"])
+	}
+	command, ok := entry["command"].([]any)
+	if !ok {
+		t.Fatalf("manual snippet command must be a JSON array, got %T (%v)", entry["command"], entry["command"])
+	}
+	if len(command) < 2 {
+		t.Fatalf("manual snippet command must carry the executable and its args, got %v", command)
+	}
+	if command[0] != filepath.ToSlash("/opt/litespm/litespm") {
+		t.Errorf("manual snippet executable = %v, want the configured binary path", command[0])
+	}
+	var gotTail []string
+	for _, item := range command[1:] {
+		s, _ := item.(string)
+		gotTail = append(gotTail, s)
+	}
+	if strings.Join(gotTail, " ") != "bridge stdio --host opencode" {
+		t.Errorf("manual snippet bridge args = %v, want bridge stdio --host opencode", gotTail)
+	}
+	if _, hasArgs := entry["args"]; hasArgs {
+		t.Errorf("local entry must not use a separate args key: %v", entry["args"])
 	}
 }
 

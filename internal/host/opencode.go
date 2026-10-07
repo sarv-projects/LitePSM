@@ -11,7 +11,14 @@ import (
 )
 
 // OpenCodeAdapter manages integration with OpenCode CLI.
-// Supports both v1 root "mcp" and v2 nested "mcp.servers" configuration structures.
+//
+// OpenCode has ONE documented layout: servers are direct members of the root
+// `mcp` object, each one carrying a `type`. The nested `mcp.servers` container
+// that older LiteSPM releases wrote is not part of that layout — it is not in
+// the published schema and the runtime rejects a member without `type` — so
+// this adapter never writes it. It is still *read* (verify, pre-existing-tool
+// detection) so an install that already carries the nested shape keeps
+// reporting and detecting what is actually on disk.
 type OpenCodeAdapter struct{}
 
 func (a *OpenCodeAdapter) Descriptor() HostDescriptor {
@@ -160,6 +167,11 @@ func (a *OpenCodeAdapter) VerifySetup(ctx context.Context) (*HostVerification, e
 
 	registered := false
 	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
+		// The documented layout is flat: `mcp.litespm`. A nested
+		// `mcp.servers` container is only ever the residue of an older
+		// LiteSPM release, but it must still verify — the bridge entry is
+		// real, and reporting "missing" would send the user to re-run a
+		// setup that already succeeded.
 		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
 			if _, ok := serversVal["litespm"]; ok {
 				registered = true
@@ -204,7 +216,10 @@ func (a *OpenCodeAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pr
 		return nil, nil
 	}
 
-	// Check if v2 nested
+	// The documented layout stores servers directly under `mcp`. A nested
+	// `mcp.servers` container is the residue of an older LiteSPM release; it is
+	// read here so those installs still surface their foreign entries, and it is
+	// never written.
 	if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
 		for name, details := range serversVal {
 			if name == litespmServerName || name == legacyServerName {
@@ -214,7 +229,6 @@ func (a *OpenCodeAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pr
 			results = append(results, comp)
 		}
 	} else {
-		// v1 root mcp
 		for name, details := range mcpVal {
 			if name == litespmServerName || name == legacyServerName || name == "servers" {
 				continue
@@ -265,11 +279,19 @@ func (a *OpenCodeAdapter) extractComponent(name string, details any, configPath 
 	return comp
 }
 
+// RenderManualSetup prints the snippet the wizard falls back on when it cannot
+// write the config itself. It shows the same shape PlanSetup writes:
+// bespokeEntrySpecs["opencode"] is KeyPath ["mcp"] with ShapeLocalArray, so the
+// servers sit directly under `mcp`. The nested `mcp.servers` container earlier
+// revisions printed here is not in OpenCode's published schema — the runtime
+// treats every member of `mcp` as a server definition and rejects one without
+// `type` — which meant pasting the old snippet produced a config OpenCode
+// never loads.
 func (a *OpenCodeAdapter) RenderManualSetup(binaryPath string) string {
 	cleanBin := filepath.ToSlash(binaryPath)
-	return fmt.Sprintf(`// Add to opencode.json (v2 layout):
-"mcp": {
-  "servers": {
+	return fmt.Sprintf(`// Add to opencode.json: each entry under "mcp" is one server.
+{
+  "mcp": {
     "litespm": {
       "type": "local",
       "command": [%q, "bridge", "stdio", "--host", "opencode"]

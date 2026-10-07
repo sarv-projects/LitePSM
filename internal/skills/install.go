@@ -409,7 +409,15 @@ func CopySkillDir(src, dst string) error {
 		}
 		return copyFile(path, target, info.Mode(), info.Size())
 	})
-	return err
+	if err != nil {
+		// dst did not exist when we started and everything under it was
+		// created by this call, so a failed copy must not leave a partial
+		// tree behind: it would be indistinguishable from an installed skill,
+		// and every retry would refuse with "destination already exists".
+		_ = os.RemoveAll(dst)
+		return err
+	}
+	return nil
 }
 
 func copyFile(src, dst string, mode fs.FileMode, expectedSize int64) error {

@@ -113,7 +113,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 			categories = []string{"utilities"}
 		}
 
-		var versionSummaries []domain.VersionSummary
+		versionSummaries := []domain.VersionSummary{}
 		var compSummaries []domain.ComponentSummary
 		var reqSummaries []string
 
@@ -204,17 +204,31 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 			versions = append(versions, verRecord)
 		}
 
-		// Process remotes if no packages or in addition to packages
+		// A registry `remotes` entry publishes an endpoint, not a version —
+		// the schema has no version field for it at all. Earlier revisions
+		// stamped the sentinel "remote" here, which put a version string the
+		// upstream never published into the row's summaries and version
+		// records: fabricated metadata of the same class as the old "1.0.0"
+		// default, and one mcpInstallability counted as a proven version.
+		//
+		// The endpoint itself is real metadata and stays, as a component on a
+		// version-less record. It contributes no version summary, so a listing
+		// whose packages published nothing ends up with zero versions and
+		// resolves to discovery_only — searchable metadata with no install
+		// path, which is all the catalog can stand behind for it. The record
+		// carries no artifact either: there is no package coordinate to fetch
+		// and no version to build a locator from.
+		//
+		// The component ID still needs a non-empty version segment
+		// (ParseComponentID rejects an empty one), so it uses the literal
+		// "discovery" — the same convention internal/catalogbuild/dataset.go
+		// uses for a row with no proven version. Inventing a version number to
+		// fill that slot is exactly what this file must not do.
 		for _, rem := range srv.Remotes {
-			verStr := "remote"
-			versionSummaries = append(versionSummaries, domain.VersionSummary{
-				Version: verStr,
-			})
-
 			component := domain.Component{
-				ID:   string(domain.NewComponentID(listingID, verStr, domain.ComponentMCPProvider, "remote-server")),
+				ID:   string(domain.NewComponentID(listingID, versionlessComponentVersion, domain.ComponentMCPProvider, "server")),
 				Kind: domain.ComponentMCPProvider,
-				Name: "remote-server",
+				Name: "server",
 				Runtime: &domain.RuntimeDescriptor{
 					Type:     rem.Transport,
 					Endpoint: rem.URL,
@@ -224,7 +238,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 
 			verRecord := &domain.VersionRecord{
 				ListingID:        string(listingID),
-				Version:          verStr,
+				Version:          "",
 				SourceSnapshotID: snapshotID,
 				Components:       []domain.Component{component},
 				FetchedAt:        now,
@@ -264,8 +278,10 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 				IngestedAt:       now,
 			},
 			Status: status,
-			// Only a registry entry that published a package or remote with a
-			// launch descriptor proved something installable.
+			// Only a registry entry that published a package with a version
+			// proved something installable. An endpoint with no published
+			// version proves it exists, not what would be launched, so it
+			// stays discovery_only.
 			Installability: mcpInstallability(versionSummaries),
 		}
 
@@ -288,11 +304,19 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 	}, nil
 }
 
+// versionlessComponentVersion is the version segment used in a component ID for
+// a component that belongs to no published version. The ID format requires a
+// non-empty segment, and inventing a number there would be the same fabrication
+// this package refuses everywhere else; internal/catalogbuild/dataset.go uses
+// this literal for exactly the same reason.
+const versionlessComponentVersion = "discovery"
+
 // mcpInstallability maps "the registry entry published N proven versions" to
 // the proven installability class. An empty version string is not a version —
 // a row that published none is discovery_only, so no install path can ever
 // meet a listing that claims metadata_verified while being unable to name the
-// version it would install.
+// version it would install. Remote endpoints publish no version and therefore
+// add no summary: a listing that only has one is discovery_only.
 func mcpInstallability(versionSummaries []domain.VersionSummary) domain.Installability {
 	proven := 0
 	for _, summary := range versionSummaries {
