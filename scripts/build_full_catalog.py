@@ -1,5 +1,8 @@
 import urllib.error
 import urllib.request
+import contextlib
+import html
+import io
 import re
 import json
 import os
@@ -35,6 +38,20 @@ FEED_AWESOME_SKILLS = (
 FEED_OFFICIAL_SERVERS = (
     "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/README.md",
     "feed:modelcontextprotocol-servers",
+)
+# skills.sh and mcpservers.org are directories, not git manifests: the
+# producer walks each site's sitemap and reads one record per capability
+# (skills.sh: SKILL.md frontmatter through its download API; mcpservers.org:
+# public Wayback Machine replays of the directory pages -- the site's own
+# API paths are robots-disallowed, so pages are never fetched from
+# mcpservers.org itself). Both sourceIds follow the domain.SourceID grammar.
+FEED_SKILLSH = (
+    "https://skills.sh/sitemap.xml",
+    "feed:skills-sh",
+)
+FEED_MCPSERVERS = (
+    "https://mcpservers.org/sitemap.xml",
+    "feed:mcpservers-org",
 )
 
 # NOTE ON POPULARITY DATA
@@ -331,6 +348,130 @@ def obtain(url, source_id, timeout, refresh, label):
     return body
 
 
+
+def _obtain_quiet(url, source_id, timeout, refresh, label):
+    """obtain() without its per-fetch progress lines.
+
+    The bulk sources below record tens of thousands of snapshots; one
+    printed line per fetch would bury the run's real progress. Snapshots
+    and failure records are still written exactly as obtain() writes them.
+    """
+    with contextlib.redirect_stdout(io.StringIO()):
+        return obtain(url, source_id, timeout, refresh, label)
+
+
+def _obtain_bulk(url, source_id, timeout, refresh, label, attempts=4,
+                 base_delay=3.0, fatal=False):
+    """_obtain_quiet with bounded exponential backoff for transient errors.
+
+    fatal=True re-raises after the retries: it is for the few requests the
+    whole block depends on (a CDX page, a sitemap), where silently losing
+    one would understate coverage. fatal=False returns None so a single
+    flaky per-item fetch skips that item instead of failing a multi-hour
+    run. SnapshotIntegrityError is never retried -- a corrupt recording is
+    a local bug, not a transient network condition.
+    """
+    delay = base_delay
+    for attempt in range(1, attempts + 1):
+        try:
+            return _obtain_quiet(url, source_id, timeout, refresh, label)
+        except snapshot_store.SnapshotIntegrityError:
+            raise
+        except Exception as exc:
+            if attempt == attempts:
+                snapshot_store.log_failure(snapshot_store.default_root(),
+                                           url, label, str(exc))
+                if fatal:
+                    raise
+                return None
+            time.sleep(delay)
+            delay *= 2
+    return None
+
+
+def skill_md_description(payload):
+    """Pull `description` from the SKILL.md inside a skills.sh download
+    payload, or None when the payload carries no usable description.
+
+    A row without a summary would be a thin row and the dataset has none,
+    so an item whose SKILL.md lacks a frontmatter description is skipped.
+    """
+    try:
+        data = json.loads(payload)
+    except (ValueError, TypeError):
+        return None
+    files = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(files, list):
+        return None
+    main = None
+    for f in files:
+        if isinstance(f, dict) and f.get("path") == "SKILL.md":
+            main = f
+            break
+    if main is None:
+        for f in files:
+            if isinstance(f, dict) and str(f.get("path", "")).endswith("/SKILL.md"):
+                main = f
+                break
+    if main is None:
+        return None
+    body = main.get("contents") or ""
+    if not body.startswith("---"):
+        return None
+    end = body.find("\n---", 3)
+    front = body[3:end] if end > 0 else ""
+    m = re.search(r"^description:[ \t]*(.*)$", front, re.M)
+    if not m:
+        return None
+    value = m.group(1).strip()
+    # A folded/literal YAML block carries its text on the following
+    # indented lines; collect those instead of the indicator itself.
+    if value in ("", ">", ">-", "|", "|-") or re.fullmatch(r"[>|][+-]?\d?", value or ""):
+        parts = []
+        for line in front[m.end():].splitlines():
+            if not line.strip():
+                continue
+            if not line.startswith((" ", "\t")):
+                break
+            parts.append(line.strip())
+        value = " ".join(parts).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", chr(34)):
+        value = value[1:-1].strip()
+    value = re.sub(r"\s+", " ", value).strip()
+    return value or None
+
+
+def mcpservers_page_fields(page):
+    """(name, summary) parsed from a captured mcpservers.org directory page.
+
+    Both must be present: a title without a description (or the reverse) is
+    not enough to publish, and inventing the missing half is forbidden.
+    """
+    text = page.decode("utf-8", errors="replace")
+    name = None
+    m = re.search(r"<title[^>]*>(.*?)</title>", text, re.S | re.I)
+    if m:
+        title = html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
+        # Observed shape: "<Server> | Awesome MCP Servers" -- take the
+        # segment before the site separator, never the site's own name.
+        name = title.split("|")[0].strip() or None
+        if name and name.lower().startswith("mcpservers.org"):
+            name = None
+    summary = None
+    dq, sq = chr(34), chr(39)
+    for pattern in (
+        r'<meta[^>]+name=' + dq + r'description' + dq + r'[^>]+content=' + dq + r'([^' + dq + r']*)' + dq,
+        r'<meta[^>]+content=' + dq + r'([^' + dq + r']*)' + dq + r'[^>]+name=' + dq + r'description' + dq,
+    ):
+        m = re.search(pattern, text, re.S | re.I)
+        if m and m.group(1).strip():
+            summary = html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
+            break
+    if not name or not summary:
+        return None, None
+    return name, summary
+
+
 def build_full_catalog(refresh=False):
     print("Ingesting real registries...")
     snap_root = snapshot_store.default_root()
@@ -347,19 +488,19 @@ def build_full_catalog(refresh=False):
     official_url, official_source = FEED_OFFICIAL_SERVERS
 
     # 1. punkpeye/awesome-mcp-servers
-    print("1/3 punkpeye/awesome-mcp-servers...")
+    print("1/5 punkpeye/awesome-mcp-servers...")
     mcp_md = obtain(mcp_url, mcp_source, 25, refresh,
                     "awesome-mcp-servers").decode("utf-8", errors="ignore")
 
     # 2. VoltAgent/awesome-agent-skills
-    print("2/3 VoltAgent/awesome-agent-skills...")
+    print("2/5 VoltAgent/awesome-agent-skills...")
     skills_md = obtain(skills_url, skills_source, 25, refresh,
                        "awesome-agent-skills").decode("utf-8", errors="ignore")
 
     # 3. modelcontextprotocol/servers -- tolerating an upstream failure on a
     #    FIRST fetch (published behaviour: this feed may be absent), but never
     #    tolerating a corrupt recording: a refused snapshot aborts the build.
-    print("3/3 modelcontextprotocol/servers...")
+    print("3/5 modelcontextprotocol/servers...")
     try:
         official_raw = obtain(official_url, official_source, 15, refresh,
                               "official servers")
@@ -723,6 +864,205 @@ def build_full_catalog(refresh=False):
                     added += 1
         print(f"  {src['key']}: +{added} rows")
         row_counts.append((src["url"], src["source_id"], added))
+
+    # --- skills.sh: directory of agent skills (sitemap + SKILL.md records) ---
+    # The sitemap lists ~20k skill pages; for ids the rest of the catalog
+    # does not already carry, the download API returns the skill's files and
+    # the row is built from SKILL.md frontmatter. Nothing is invented when
+    # the frontmatter has no description (skipped and counted below).
+    print("4/5 skills.sh...")
+    skillsh_source = FEED_SKILLSH[1]
+    skillsh_index = FEED_SKILLSH[0]
+    skillsh_added = skillsh_seen = skillsh_nodesc = skillsh_failed = 0
+    try:
+        index_bytes = _obtain_bulk(skillsh_index, skillsh_source, 25, refresh,
+                                   "skills.sh sitemap index", fatal=True)
+        index_text = index_bytes.decode("utf-8", errors="replace")
+        submaps = sorted(loc for loc in re.findall(r"<loc>([^<]+)</loc>", index_text)
+                         if "sitemap-skills-" in loc)
+        skill_urls = []
+        for sm in submaps:
+            sm_bytes = _obtain_bulk(sm, skillsh_source, 30, refresh,
+                                    "skills.sh skills sitemap", fatal=True)
+            sm_text = sm_bytes.decode("utf-8", errors="replace")
+            for loc in re.findall(r"<loc>([^<]+)</loc>", sm_text):
+                for prefix in ("https://www.skills.sh/", "https://skills.sh/"):
+                    if loc.startswith(prefix):
+                        break
+                else:
+                    continue
+                parts = loc[len(prefix):].split("/")
+                if len(parts) != 3 or not all(parts):
+                    continue
+                owner, repo, sslug = parts
+                item_id = canonical_id("skill", owner, canonical_slug(sslug.lower()))
+                if item_id in seen_ids:
+                    skillsh_seen += 1
+                    continue
+                skill_urls.append((loc, owner, repo, sslug, item_id))
+        total = len(skill_urls)
+        print(f"  skills.sh: {total} skills not yet in the catalog "
+              f"({skillsh_seen} already present)")
+        for n, (loc, owner, repo, sslug, item_id) in enumerate(skill_urls, 1):
+            payload = _obtain_bulk(
+                f"https://skills.sh/api/download/{owner}/{repo}/{sslug}",
+                skillsh_source, 25, refresh, "skills.sh skill record")
+            if payload is None:
+                skillsh_failed += 1
+            else:
+                desc = skill_md_description(payload)
+                if not desc:
+                    skillsh_nodesc += 1
+                else:
+                    seen_ids.add(item_id)
+                    items.append({
+                        "id": item_id,
+                        "name": sslug.replace("-", " ").title(),
+                        "slug": canonical_slug(sslug.lower()),
+                        "kind": "skill",
+                        "summary": desc,
+                        "category": "Agent Skills",
+                        "publisher": publisher_obj(owner, loc, PROV_LIST),
+                        "stars": None,
+                        "version": None,
+                        "skillSource": loc,
+                        "installability": DISCOVERY_ONLY,
+                    })
+                    skillsh_added += 1
+            if n % 500 == 0:
+                print(f"  skills.sh: {n}/{total} processed ({skillsh_added} added)")
+            time.sleep(0.03)  # pacing: one polite request at a time
+        print(f"  skills.sh: +{skillsh_added} rows "
+              f"({skillsh_seen} already present, {skillsh_nodesc} without a "
+              f"SKILL.md description, {skillsh_failed} fetch failures)")
+        # The index snapshot is the root of this fetch chain (the rows come
+        # from per-skill records recorded under the same source id), so it
+        # carries the chain's row count for the snapshot report.
+        row_counts.append((skillsh_index, skillsh_source, skillsh_added))
+    except snapshot_store.SnapshotIntegrityError:
+        raise
+    except Exception as e:
+        # First-fetch tolerance mirrors the official-servers feed: an absent
+        # upstream must not abort the build and nothing is fabricated in its
+        # place. A corrupt recording remains fatal (SnapshotIntegrityError).
+        print(f"  skills.sh: ingestion failed ({e}); source skipped")
+        snapshot_store.log_failure(snapshot_store.default_root(),
+                                   skillsh_index, "ingest", str(e))
+
+    # --- mcpservers.org: directory pages, content via the Wayback Machine ---
+    # The sitemap supplies the URL list (locale-prefixed variants are
+    # filtered out); page content comes from public Wayback captures, never
+    # from mcpservers.org itself (its API paths are robots-disallowed).
+    # Pages with no capture, and captures lacking title+description, are
+    # skipped and counted -- never filled in.
+    print("5/5 mcpservers.org...")
+    mcps_source = FEED_MCPSERVERS[1]
+    mcps_index = FEED_MCPSERVERS[0]
+    mcps_added = mcps_seen = mcps_nocapture = mcps_nodesc = mcps_failed = 0
+    try:
+        mcps_index_bytes = _obtain_bulk(mcps_index, mcps_source, 25, refresh,
+                                        "mcpservers sitemap index", fatal=True)
+        mcps_index_text = mcps_index_bytes.decode("utf-8", errors="replace")
+        server_sitemaps = sorted({
+            loc for loc in re.findall(r"<loc>([^<]+)</loc>", mcps_index_text)
+            if "/sitemaps/servers/" in loc
+        })
+        new_pages = []
+        for sm in server_sitemaps:
+            sm_bytes = _obtain_bulk(sm, mcps_source, 40, refresh,
+                                    "mcpservers servers sitemap", fatal=True)
+            sm_text = sm_bytes.decode("utf-8", errors="replace")
+            for loc in re.findall(r"<loc>([^<]+)</loc>", sm_text):
+                if not loc.startswith("https://mcpservers.org/"):
+                    continue
+                path = loc[len("https://mcpservers.org"):]  # /servers/{owner}/{slug}
+                seg = [t for t in path.split("/") if t]
+                if len(seg) != 2 or seg[0] != "servers":
+                    continue  # locale-prefixed paths open with a locale code
+                owner, sslug = seg
+                item_id = canonical_id("mcp", owner, canonical_slug(sslug.lower()))
+                if item_id in seen_ids:
+                    mcps_seen += 1
+                    continue
+                new_pages.append((loc, path, owner, sslug, item_id))
+        print(f"  mcpservers.org: {len(new_pages)} servers not yet in the catalog "
+              f"({mcps_seen} already present); loading capture index...")
+
+        # Capture index: paginate the CDX query (collapse is applied in
+        # Python below -- collapsing inside the query shrinks each page and
+        # loses coverage), keeping the latest 200-status capture per path.
+        cdx_base = ("https://web.archive.org/cdx/search/cdx"
+                    "?url=mcpservers.org/servers/*"
+                    "&output=json&fl=original,timestamp,statuscode")
+        pages_doc = _obtain_bulk(cdx_base + "&showNumPages=true", mcps_source,
+                                 40, refresh, "CDX page count", fatal=True)
+        n_pages = int(json.loads(pages_doc)[1][0])
+        captures = {}
+        for page_no in range(n_pages):
+            rows_doc = _obtain_bulk(f"{cdx_base}&page={page_no}", mcps_source,
+                                    60, refresh, f"CDX page {page_no}", fatal=True)
+            rows = json.loads(rows_doc)
+            for original, ts, status in rows[1:]:
+                if status != "200" or "?" in original or "#" in original:
+                    continue
+                if not original.startswith("https://mcpservers.org/servers/"):
+                    continue
+                path = original[len("https://mcpservers.org"):]
+                prev = captures.get(path)
+                if prev is None or ts > prev:
+                    captures[path] = ts
+            print(f"  mcpservers.org: capture index page {page_no + 1}/{n_pages} "
+                  f"({len(captures)} unique captured pages)")
+            time.sleep(1.0)  # pacing against archive.org
+        for n, (loc, path, owner, sslug, item_id) in enumerate(new_pages, 1):
+            ts = captures.get(path)
+            if ts is None:
+                mcps_nocapture += 1
+                continue
+            page = _obtain_bulk(f"https://web.archive.org/web/{ts}id_/{loc}",
+                                mcps_source, 30, refresh, "mcpservers page replay")
+            if page is None:
+                mcps_failed += 1
+                continue
+            name, summary = mcpservers_page_fields(page)
+            if not name or not summary:
+                mcps_nodesc += 1
+                continue
+            seen_ids.add(item_id)
+            items.append({
+                "id": item_id,
+                "name": name,
+                "slug": canonical_slug(sslug.lower()),
+                "kind": "mcp",
+                "summary": summary,
+                # The directory page carries no category signal; this is the
+                # same default the awesome-list parser uses for an unsectioned
+                # entry -- not a claim about the server's domain.
+                "category": "Developer Tools",
+                "publisher": publisher_obj(owner, loc, PROV_LIST),
+                "transport": None,
+                "runtime": None,
+                "stars": None,
+                "version": None,
+                "command": None,
+                "args": None,
+                "installability": DISCOVERY_ONLY,
+            })
+            mcps_added += 1
+            if n % 500 == 0:
+                print(f"  mcpservers.org: {n}/{len(new_pages)} processed "
+                      f"({mcps_added} added)")
+            time.sleep(0.1)  # pacing against archive.org
+        print(f"  mcpservers.org: +{mcps_added} rows "
+              f"({mcps_seen} already present, {mcps_nocapture} not archived, "
+              f"{mcps_nodesc} without title+description, {mcps_failed} fetch failures)")
+        row_counts.append((mcps_index, mcps_source, mcps_added))
+    except snapshot_store.SnapshotIntegrityError:
+        raise
+    except Exception as e:
+        print(f"  mcpservers.org: ingestion failed ({e}); source skipped")
+        snapshot_store.log_failure(snapshot_store.default_root(),
+                                   mcps_index, "ingest", str(e))
 
     # Finalize the snapshots this run ingested: status healthy + itemCount.
     # Only recordings that exist are updated -- a skipped source has no

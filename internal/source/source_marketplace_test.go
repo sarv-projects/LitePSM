@@ -293,4 +293,24 @@ func TestKnownSources(t *testing.T) {
 			t.Errorf("source %s fails SourceID validation: %v", id, err)
 		}
 	}
+	// Directory sources (producer-walked, no git manifest): publisher and
+	// format must be present, manifest paths and repo URL must be empty --
+	// claiming a git manifest neither source has would be a lie.
+	for _, id := range []domain.SourceID{
+		"feed:skills-sh",
+		"feed:mcpservers-org",
+	} {
+		def, ok := LookupSource(id)
+		if !ok {
+			t.Errorf("source %s missing from registry", id)
+			continue
+		}
+		if def.Publisher == "" || def.Format == "" ||
+			len(def.ManifestPaths) != 0 || def.RepoURL != "" {
+			t.Errorf("source %s has a wrong registry entry: %+v", id, def)
+		}
+		if _, err := domain.ParseSourceID(string(id)); err != nil {
+			t.Errorf("source %s fails SourceID validation: %v", id, err)
+		}
+	}
 }

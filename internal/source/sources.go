@@ -110,6 +110,25 @@ var KnownSources = []SourceDef{
 		ManifestPaths: []string{".grok-plugin/marketplace.json"},
 		Format:        "grok-marketplace.json",
 	},
+	// The two directory sources are walked by the dataset producer
+	// (scripts/build_full_catalog.py): sitemap in, one record per
+	// capability. They carry no git manifest paths -- skills.sh serves
+	// SKILL.md frontmatter through its download API, mcpservers.org page
+	// metadata through public Wayback Machine replays (its own API paths
+	// are robots-disallowed). RepoURL stays empty because neither source
+	// is ingested from a git repository.
+	{
+		ID:        domain.SourceID("feed:skills-sh"),
+		Name:      "skills.sh directory",
+		Publisher: "skills.sh",
+		Format:    "skill-md",
+	},
+	{
+		ID:        domain.SourceID("feed:mcpservers-org"),
+		Name:      "MCPServers.org directory",
+		Publisher: "mcpservers.org",
+		Format:    "directory-html",
+	},
 }
 
 // LookupSource returns the registry entry for a SourceID, if known.
