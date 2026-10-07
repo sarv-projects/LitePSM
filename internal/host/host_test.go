@@ -94,7 +94,13 @@ args = ["-y", "@modelcontextprotocol/server-github"]
 
 func TestClaudeCodeAdapter(t *testing.T) {
 	ctx := context.Background()
+	// Hermetic: PlanSetup resolves the config through $HOME, so without
+	// pinning HOME the test reads (and depends on) the developer's real
+	// ~/.claude.json — a file it does not own and may not even be able to
+	// parse. Everything below runs against the temp home.
 	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+	t.Setenv("USERPROFILE", tempDir)
 	configFile := filepath.Join(tempDir, ".claude.json")
 	backupDir := filepath.Join(tempDir, "backups")
 
@@ -115,9 +121,13 @@ func TestClaudeCodeAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlanSetup failed: %v", err)
 	}
-	// override path for test
-	plan.ConfigPath = configFile
-	plan.OriginalContent = initialContent
+	// The plan must come from the pinned home, not any override.
+	if plan.ConfigPath != configFile {
+		t.Fatalf("PlanSetup resolved %q, want the pinned home config %q", plan.ConfigPath, configFile)
+	}
+	if plan.OriginalContent != initialContent {
+		t.Fatalf("PlanSetup read unexpected original content: %q", plan.OriginalContent)
+	}
 
 	res, err := adapter.ApplySetup(ctx, plan)
 	if err != nil {
@@ -125,6 +135,17 @@ func TestClaudeCodeAdapter(t *testing.T) {
 	}
 	if !res.Success {
 		t.Fatalf("expected success")
+	}
+	// The bridge entry landed in the temp config.
+	written, err := os.ReadFile(configFile)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(written), `"litespm"`) {
+		t.Errorf("temp config has no litespm entry after ApplySetup: %s", written)
+	}
+	if !strings.Contains(string(written), "@modelcontextprotocol/server-filesystem") {
+		t.Errorf("pre-existing entry lost by ApplySetup: %s", written)
 	}
 
 	manual := adapter.RenderManualSetup("/usr/bin/litespm")
