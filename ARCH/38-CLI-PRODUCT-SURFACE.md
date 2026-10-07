@@ -1,13 +1,14 @@
 # CLI Product Surface: Port, Orient & Help
 
-> **Status: `DESIGNED`.** This document specifies the Phase-J command family —
+> **Status: `IMPLEMENTED` for §3 (help), §4 (list/inventory) and §5 (copy);
+> `DESIGNED` for §2's unshipped verbs, §6 (orient), §7 (profiles) and §8
+> (plan/apply spine).** This document specifies the Phase-J command family —
 > `litespm copy` (cross-agent porting), `list`/`inventory`, the `help` system,
 > the orient commands (`status`/`diff`/`why`/`outdated`), and their
-> relationship to profiles and the plan/apply spine. **None of it has code**
-> except where a row in [TODO.md](../TODO.md) Phase J says otherwise, and no
-> command below may appear in `litespm help` before it exists (§3.1). Delivery
-> rows and acceptance evidence live in [TODO.md](../TODO.md) `LPSM-J010`–`J015`;
-> this document is the design those rows implement.
+> relationship to profiles and the plan/apply spine. Section headers carry the
+> current state; no command may appear in `litespm help` before it exists
+> (§3.1). Delivery rows and acceptance evidence live in [TODO.md](../TODO.md)
+> `LPSM-J010`–`J015`; this document is the design those rows implement.
 
 ---
 
@@ -110,7 +111,7 @@ are stable — spec'd in §5.7, shipped after copy).
 
 ---
 
-## 3. Help System
+## 3. Help System (`IMPLEMENTED` — `cmd/litespm/help.go`)
 
 ### 3.1 Structure
 
@@ -186,7 +187,7 @@ deployments), Reference vs Value (secrets).
 
 ---
 
-## 4. `list` and `inventory`
+## 4. `list` and `inventory` (`IMPLEMENTED` — `cmd/litespm/list.go`)
 
 Two audiences, one truth. Both read the same sources; they differ only in
 what they surface.
@@ -213,7 +214,7 @@ schema test (`TestInventoryJSONShape`) so automation can depend on it.
 
 ---
 
-## 5. `copy` — cross-agent porting
+## 5. `copy` — cross-agent porting (`IMPLEMENTED` — `cmd/litespm/copy.go`, `internal/porting`)
 
 ### 5.1 Problem & non-goals
 
