@@ -1,10 +1,12 @@
 # `scripts/` — repository scripts
 
-Eleven scripts live in this directory. **Two of them run on a push or pull request.**
+Twelve scripts live in this directory. **Two of them are executed on a push or pull request.**
 `.github/workflows/ci.yml` *checks the syntax* of every script (`bash -n scripts/*.sh`,
-`python3 -m py_compile scripts/*.py`) **and executes `deploy-pages.sh`** in its `build-web` job
-(so the staged bundle is packaged and leak-audited on every push/PR); `.github/workflows/release.yml`
-executes `build-release.sh`. The other nine are manual.
+`python3 -m py_compile scripts/*.py`) and **executes** `gen_hosts_ts.go` (regeneration gate),
+`deploy-pages.sh` (in its `build-web` job, so the staged bundle is packaged and leak-audited on
+every push/PR), and the npm wrapper tests; `.github/workflows/release.yml`
+executes `build-release.sh`. The rest are manual — including **`check_ci_local.sh`**, which runs
+the CI stages on your machine in CI order.
 
 Capability states for the subsystems these scripts feed are in [STATUS.md](../STATUS.md); defect
 history is in [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md).
@@ -15,8 +17,9 @@ history is in [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md).
 |---|---|---|---|
 | `build-release.sh` | bash | **Release** (`.github/workflows/release.yml`, on `v*` tags) | Yes — `set -euo pipefail`, `go build` aborts |
 | `deploy-pages.sh` | bash | **CI** (`.github/workflows/ci.yml`, `build-web` job, every push/PR) and **manual** (site packaging) | Yes — `set -euo pipefail` + explicit leak audit `exit 1` |
+| `check_ci_local.sh` | bash | **Manual** — mirrors `ci.yml` stage-for-stage (`--web`, `--quick` flags) | Yes — `set -euo pipefail`, every stage names itself on failure |
 | `build_full_catalog.py` | Python | **Manual** (catalog dataset producer) | **No content assertions** — aborts only if a fetch raises; validation is fail-closed at release build time in Go |
-| `gen_hosts_ts.go` | Go (`//go:build ignore`) | **Manual** (before `build_full_catalog.py`) | Yes — `os.Exit(1)` on write failure |
+| `gen_hosts_ts.go` | Go (`//go:build ignore`) | **CI** (regeneration gate in `static-checks`) and **manual** (before committing host-adapter edits) | Yes — `os.Exit(1)` on write failure |
 | `check_ci.py` | Python | **Manual** (status probe) | Yes by contract — exit `0` / `1` / `2` |
 | `check_headers.py` | Python | **Manual** (upstream research) | No — prints, never asserts |
 | `check_voltagent.py` | Python | **Manual** (upstream research) | No — prints, never asserts (network errors raise) |
