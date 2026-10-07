@@ -2,20 +2,24 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Copy, ExternalLink, ChevronRight, Info, SearchX, Check } from "lucide-react";
+import { Check, ChevronRight, SearchX } from "lucide-react";
 import { Header } from "../../components/navigation/Header";
 import { SiteFooter } from "../../components/layout/SiteFooter";
 import { Listing } from "../../lib/telemetry";
-import { HOSTS, bridgeSnippet, hostPath, PlatformOS } from "../../lib/hosts";
-import { copyText } from "../../lib/clipboard";
 import { formatCount } from "../../lib/format";
 import { kindLabel, listingHref, sortListings } from "../../lib/catalog";
 import { hostsFor } from "../../lib/hosts";
 import { VerifiedMark } from "../../components/catalog/PublisherMark";
 import { useCatalog } from "../../lib/catalogData";
 import { SITE_URL } from "../../lib/site";
+import { AGENT_CHOICES, findAgentChoice, rowWorksWithAgent } from "../../lib/landing";
+import type { AgentChoice } from "../../lib/landing";
+import { AddSteps, scrollToSection } from "../../components/package/AddSteps";
+import { PackageTabs } from "../../components/package/PackageTabs";
+import type { PackageTabId } from "../../components/package/PackageTabs";
 
-const INSTALL_COMMAND_PREFIX = "litespm install ";
+/** Same key the home strip writes; one preference, one storage slot. */
+const AGENT_STORAGE_KEY = "litespm-agent";
 
 /**
  * What `/package/` needs from the catalog, and all it needs before a reader
@@ -46,34 +50,6 @@ function buildLookup(rows: Listing[]): Map<string, Listing> {
     if (!byKey.has(row.slug)) byKey.set(row.slug, row);
   }
   return byKey;
-}
-
-/** A data field that may legitimately be missing in the snapshot. */
-function Value({ children, absent }: { children?: React.ReactNode; absent?: string }) {
-  if (children === undefined || children === null || children === "") {
-    return <span className="absent">{absent || "unspecified"}</span>;
-  }
-  return <>{children}</>;
-}
-
-function CopyButton({ text, label, message }: { text: string; label: string; message: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        if (await copyText(text, message)) {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 2000);
-        }
-      }}
-      aria-label={label}
-      className="btn shrink-0"
-    >
-      {copied ? <Check className="h-3.5 w-3.5 text-ink" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
-      {copied ? "Copied" : "Copy"}
-    </button>
-  );
 }
 
 /**
@@ -200,25 +176,41 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
   const lookup = useMemo(() => (full ? buildLookup(full) : null), [full]);
   const item = useMemo(() => (slug && lookup ? lookup.get(slug) ?? null : null), [slug, lookup]);
 
-  const [activeHost, setActiveHost] = useState("claude-code");
-  const [platformOs, setPlatformOs] = useState<PlatformOS>("linux");
-
+  // The agent preference. Reading it is enough to personalize the page;
+  // changing it writes the same `litespm-agent` key the home strip uses and
+  // recomputes over rows already in memory — it never calls `request()` (the
+  // E1 fetch contract: only a `?slug=` deep link asks for the dataset here).
+  const [agentId, setAgentId] = useState<string | null>(null);
   useEffect(() => {
-    const ua = typeof navigator !== "undefined" ? navigator.userAgent.toLowerCase() : "";
-    setPlatformOs(ua.includes("mac") ? "mac" : ua.includes("linux") ? "linux" : "win");
+    try {
+      setAgentId(window.localStorage.getItem(AGENT_STORAGE_KEY));
+    } catch {
+      // Storage can be unavailable (private mode, policy); the page still
+      // works, it just cannot remember the choice.
+    }
   }, []);
+  const changeAgent = (id: string) => {
+    setAgentId(id);
+    try {
+      window.localStorage.setItem(AGENT_STORAGE_KEY, id);
+    } catch {
+      /* preference is best-effort */
+    }
+  };
+  const agent: AgentChoice | null = findAgentChoice(agentId);
 
-  const host = HOSTS.find((h) => h.id === activeHost) ?? HOSTS[0];
+  // Which tab the detail section is showing. Local state only: switching a tab
+  // renders rows already in memory, nothing is fetched.
+  const [tab, setTab] = useState<PackageTabId>("overview");
 
-  const snippet = item ? bridgeSnippet(host, "litespm", platformOs) : "";
-
-  const related = useMemo(() => {
-    if (!item || !full) return [];
-    return sortListings(
-      full.filter((i) => i.id !== item.id && i.category === item.category),
-      "index"
-    ).slice(0, 6);
-  }, [item, full]);
+  // Version coverage over the loaded row set — a count only because this route
+  // has the rows in memory once a slug resolved.
+  const snapshot = useMemo(() => {
+    if (!full) return { total: 0, versioned: 0 };
+    let versioned = 0;
+    for (const row of full) if (row.version) versioned += 1;
+    return { total: full.length, versioned };
+  }, [full]);
 
   // Pre-hydration, and when the route is visited bare, we cannot know which
   // entry is wanted. Both cases get the route index: a described frame with
@@ -277,7 +269,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
   }
 
   const hosts = hostsFor(item);
-  const installCommand = `${INSTALL_COMMAND_PREFIX}${item.id}`;
+  const worksWith = rowWorksWithAgent(item, agent);
 
   // Rendered client-side because the entry is keyed off `?slug=`. Every field
   // here comes straight from the bundled record; nothing is inferred.
@@ -312,6 +304,31 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
     author: { "@type": "Organization", name: item.publisher?.name || "Unknown" },
     ...(item.publisher?.url ? { sameAs: item.publisher.url } : {}),
   };
+
+  /** Question two — plain first, exact fields one disclosure deeper. */
+  const canDo = {
+    mcp: {
+      plain:
+        "An MCP server is a small service your agent talks to: it gives your agent new tools to call — search, read, write, run — without the agent itself changing. Once LiteSPM has registered it, your agent reaches it through the one LiteSPM bridge entry.",
+      published:
+        "The catalog publishes this server's description and its runtime. The individual tools it exposes are discovered by your agent after it connects — this page does not list them.",
+      connects: "the single LiteSPM bridge entry, once per host",
+    },
+    skill: {
+      plain:
+        "An agent skill is a written workflow — a SKILL.md your agent loads as instructions when they are relevant. It changes what your agent knows how to do, not what software it runs.",
+      published:
+        "The catalog publishes the skill's name, description and source repository; the instructions themselves live in that repository.",
+      connects: "the host's own skills directory, where LiteSPM writes the file",
+    },
+    plugin: {
+      plain:
+        "A plugin is a bundle the agent host installs as a unit — its commands, hooks and tools come from the host's own plugin system. What a bundle contains is defined by its publisher.",
+      published:
+        "The catalog publishes the publisher's description and the hosts the publisher declares it works with.",
+      connects: "the host's own plugin command",
+    },
+  }[item.kind];
 
   return (
     <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
@@ -354,370 +371,328 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
       </nav>
 
       <main id="main" className="shell flex-1 pb-16 pt-7">
-        <div className="grid gap-x-10 gap-y-9 lg:grid-cols-[minmax(0,1fr)_320px]">
-          {/* ---------- main column ---------- */}
-          <div className="min-w-0">
-            <header className="border-l-2 border-ink pl-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="chip pointer-events-none">
-                  <span
-                    aria-hidden="true"
-                    className="h-2.5 w-[3px] rounded-[1px]"
-                    style={{ backgroundColor: `var(--${item.kind})` }}
-                  />
-                  {kindLabel(item.kind)}
-                </span>
-                {item.transport && <span className="chip pointer-events-none t-mono !text-[11px]">{item.transport}</span>}
-                {item.runtime && <span className="chip pointer-events-none t-mono !text-[11px]">{item.runtime}</span>}
-              </div>
+        <div className="mx-auto w-full max-w-[1040px]">
+          {/* ---- 1. What is this? -------------------------------------- */}
+          <header aria-labelledby="pkg-title">
+            <p className="kicker">What is this?</p>
 
-              <h1 className="t-cond mt-3 text-[28px] font-semibold leading-tight tracking-tight text-ink sm:text-[32px]">
-                {item.name}
-              </h1>
-              <p className="mt-2 max-w-prose text-[14px] leading-relaxed text-ink-2">{item.summary}</p>
-            </header>
-
-            {/* ---- install: the one dark surface, 8px ---- */}
-            <section className="on-dark panel-dark mt-7">
-              <h2 className="t-mono text-[11px] font-medium text-dark-ink-2">Install with LiteSPM</h2>
-
-              <div className="mt-2.5 flex items-center gap-2 border border-dark-rule bg-dark-2 px-3 py-2.5">
-                <span className="t-mono shrink-0 text-[12px] text-dark-ink-2" aria-hidden="true">
-                  $
-                </span>
-                <code className="t-mono min-w-0 flex-1 break-all text-[12px] text-dark-ink select-all">
-                  {installCommand}
-                </code>
-                <CopyButton text={installCommand} label="Copy install command" message="Install command copied" />
-              </div>
-
-              <p className="mt-3 text-[12px] leading-relaxed text-dark-ink-2">
-                Or run <code className="t-mono text-dark-ink">/marketplace</code> inside your agent and
-                search for “{item.name}”.
-              </p>
-            </section>
-
-            {/*
-              Only 441 of 5,814 entries publish a host-native command, and all
-              of them are plugins. Rendering an empty "Install with your agent"
-              heading on the other 92% would be a section that costs vertical
-              space to say nothing, so it appears only when there is a command
-              to show.
-            */}
-            {item.installHint && (
-              <section className="mt-8">
-                <div className="section-head">
-                  <h2>Install with your agent</h2>
-                  <span className="section-note">
-                    {item.kind === "skill"
-                      ? "Upstream source repository"
-                      : "The host's own plugin command"}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex items-center gap-2 border border-rule-2 bg-sunken px-3 py-2.5">
-                  <code className="t-mono min-w-0 flex-1 break-all text-[12px] text-ink select-all">
-                    {item.installHint}
-                  </code>
-                  <CopyButton
-                    text={item.installHint}
-                    label="Copy host install command"
-                    message="Install command copied"
-                  />
-                </div>
-              </section>
-            )}
-
-            {/* ---- setup: host x OS ---- */}
-            <section className="mt-8">
-              <div className="section-head">
-                <div>
-                  <h2>Setup</h2>
-                  <p className="section-note mt-0.5">
-                    One bridge entry per host. Pick an agent and a platform for the exact config file.
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-0.5 border border-ink-3 bg-sunken p-0.5">
-                  {(["win", "mac", "linux"] as PlatformOS[]).map((o) => (
-                    <button
-                      key={o}
-                      type="button"
-                      aria-pressed={platformOs === o}
-                      onClick={() => setPlatformOs(o)}
-                      className={`h-6 rounded-[3px] px-2.5 text-[11px] font-medium transition-colors ${
-                        platformOs === o ? "bg-ink text-surface" : "text-ink-2 hover:text-ink"
-                      }`}
-                    >
-                      {o === "win" ? "Windows" : o === "mac" ? "macOS" : "Linux"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="no-scrollbar mt-4 flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Agent host">
-                {HOSTS.map((h) => (
-                  <button
-                    key={h.id}
-                    type="button"
-                    aria-pressed={activeHost === h.id}
-                    onClick={() => setActiveHost(h.id)}
-                    className="chip shrink-0"
-                  >
-                    {h.name}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="t-mono text-[10px] text-ink-3">Config file</p>
-                  <div className="mt-1 flex items-start gap-2">
-                    <code className="t-mono min-w-0 flex-1 break-all border border-rule-2 bg-sunken px-2.5 py-2 text-[11px] text-ink-2">
-                      {hostPath(host, platformOs)}
-                    </code>
-                    <CopyButton
-                      text={hostPath(host, platformOs)}
-                      label="Copy configuration file path"
-                      message="Config path copied"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <p className="t-mono text-[10px] text-ink-3">Config format</p>
-                  <p className="t-mono mt-1 border border-rule-2 bg-sunken px-2.5 py-2 text-[11px] uppercase text-ink-2">
-                    {host.kind}
-                    {host.nested && <span className="ml-2 normal-case text-ink-3">nested v2 layout</span>}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <h3 className="text-[13px] font-semibold text-ink">
-                  Snippet
-                  <span className="ml-2 font-normal text-ink-3">LiteSPM bridge</span>
-                </h3>
-
-                <div className="on-dark mt-2 overflow-hidden rounded-panel bg-dark">
-                  <div className="flex items-center justify-between gap-2 border-b border-dark-rule px-3 py-2">
-                    <span className="t-mono truncate text-[11px] text-dark-ink-2">
-                      {host.name} · {host.kind === "toml" ? "config.toml" : "config.json"}
-                    </span>
-                    <CopyButton text={snippet} label="Copy configuration snippet" message="Snippet copied" />
-                  </div>
-                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3.5 font-mono text-[12px] leading-relaxed text-dark-ink">
-                    {snippet}
-                  </pre>
-                </div>
-
-                <p className="mt-2.5 flex items-start gap-2 text-[12px] leading-relaxed text-ink-3">
-                  <Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    Running <code className="t-mono text-ink-2">litespm</code> backs up the target file and
-                    injects this single entry, preserving existing entries.
-                  </span>
-                </p>
-              </div>
-            </section>
-
-            {/* ---- related ---- */}
-            {related.length > 0 && (
-              <section className="mt-9">
-                <div className="section-head">
-                  <h2>Also in {item.category}</h2>
-                  <Link
-                    href={`/explore/?category=${encodeURIComponent(item.category)}`}
-                    className="t-mono shrink-0 text-[12px] text-ink-2 hover:text-ink hover:underline"
-                  >
-                    see all
-                  </Link>
-                </div>
-                <ul>
-                  {related.map((r) => (
-                    <li key={r.id}>
-                      <Link
-                        href={listingHref(r)}
-                        className="grid grid-cols-[3px_minmax(0,1fr)_auto] items-center gap-3 border-b border-rule py-2.5 transition-colors hover:bg-hover"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="h-7 w-[3px] rounded-[1px]"
-                          style={{ backgroundColor: `var(--${r.kind})` }}
-                        />
-                        <span className="min-w-0">
-                          <span className="t-cond block truncate text-[14px] font-medium text-ink">
-                            {r.name}
-                          </span>
-                          <span className="row-meta">
-                            <span className="meta-publisher">{r.publisher?.name || "unspecified"}</span>
-                            <span className="truncate text-ink-3">{r.summary}</span>
-                          </span>
-                        </span>
-                        <span className="t-mono t-tabular shrink-0 text-[11px] text-ink-3">
-                          {r.kind}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </div>
-
-          {/* ---------- spec rail: a spec sheet, not a card ---------- */}
-          <aside className="min-w-0 lg:sticky lg:top-[68px] lg:self-start">
-            <div className="section-head">
-              <h2>Specification</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="chip pointer-events-none">
+                <span
+                  aria-hidden="true"
+                  className="h-2.5 w-[3px] rounded-[1px]"
+                  style={{ backgroundColor: `var(--${item.kind})` }}
+                />
+                {kindLabel(item.kind)}
+              </span>
+              <span className="chip pointer-events-none">{item.category}</span>
             </div>
 
-            <dl className="spec-list mt-3">
-              <div>
-                <dt>Catalog id</dt>
-                <dd className="t-mono !text-[12px]">{item.id}</dd>
-              </div>
-              <div>
-                <dt>Kind</dt>
-                <dd>{kindLabel(item.kind)}</dd>
-              </div>
-              <div>
-                <dt>Publisher</dt>
-                <dd>
-                  {item.publisher?.name ? (
-                    item.publisher.url && /^https?:\/\//i.test(item.publisher.url) ? (
-                      <a
-                        href={item.publisher.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="link inline-flex items-center gap-1"
-                      >
-                        {item.publisher.name}
-                        <ExternalLink className="h-3 w-3 text-ink-3" aria-hidden="true" />
-                      </a>
-                    ) : (
-                      item.publisher.name
-                    )
-                  ) : (
-                    <span className="absent">unspecified</span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Publisher listing</dt>
-                <dd>
-                  {item.publisher?.verified ? (
-                    <VerifiedMark glyph />
-                  ) : (
-                    <span className="absent">third-party list entry</span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Version</dt>
-                <dd className="t-mono !text-[12px]">
-                  <Value absent="unspecified">{item.version}</Value>
-                </dd>
-              </div>
-              <div>
-                <dt>Transport</dt>
-                <dd className="t-mono !text-[12px]">
-                  <Value absent={item.kind === "mcp" ? "unspecified" : "not applicable"}>
-                    {item.transport}
-                  </Value>
-                </dd>
-              </div>
-              <div>
-                <dt>Runtime</dt>
-                <dd className="t-mono !text-[12px]">
-                  <Value absent={item.kind === "mcp" ? "unspecified" : "not applicable"}>{item.runtime}</Value>
-                </dd>
-              </div>
-              <div>
-                <dt>Launch command</dt>
-                <dd className="t-mono !text-[12px]">
-                  {item.command ? (
-                    <span className="break-all">
-                      {item.command}
-                      {item.args?.length ? ` ${item.args.join(" ")}` : ""}
-                    </span>
-                  ) : (
-                    <span className="absent">unspecified</span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Skill source</dt>
-                <dd className="t-mono !text-[12px]">
-                  {item.skillSource ? (
-                    <a
-                      href={item.skillSource}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="link break-all"
-                    >
-                      {(() => {
-                        try {
-                           return new URL(item.skillSource).host;
-                        } catch {
-                          return item.skillSource;
-                        }
-                      })()}
-                    </a>
-                  ) : (
-                    <span className="absent">{item.kind === "skill" ? "unspecified" : "not applicable"}</span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Popularity</dt>
-                <dd>
-                  <span
-                    className="absent"
-                    title="The upstream sources expose no machine-readable star, download or install counts, so this catalog publishes none rather than an estimate."
-                  >
-                    unspecified
-                  </span>
-                </dd>
-              </div>
-            </dl>
+            <h1
+              id="pkg-title"
+              className="mt-3 text-[28px] font-semibold leading-tight tracking-tight text-ink sm:text-[32px]"
+            >
+              {item.name}
+            </h1>
 
-            <div className="section-head mt-7">
-              <h2>Agent compatibility</h2>
+            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-ink-2">
+              {item.publisher?.url && /^https?:\/\//i.test(item.publisher.url) ? (
+                <a
+                  href={item.publisher.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="link"
+                >
+                  {item.publisher.name}
+                </a>
+              ) : (
+                <span>{item.publisher?.name || "unspecified publisher"}</span>
+              )}
+              {item.publisher?.verified && <VerifiedMark glyph />}
+            </p>
+
+            <p className="mt-2.5 max-w-prose text-[14px] leading-relaxed text-ink-2">{item.summary}</p>
+          </header>
+
+          {/* ---- 2. What can it do? ------------------------------------ */}
+          <section aria-labelledby="pkg-can-title" className="mt-9">
+            <div className="section-head">
+              <h2 id="pkg-can-title">What can it do?</h2>
+              <span className="section-note">plain language first</span>
+            </div>
+
+            <p className="mt-3 max-w-prose text-[14px] leading-relaxed text-ink-2">{canDo.plain}</p>
+            <p className="mt-2 max-w-prose text-[13px] leading-relaxed text-ink-3">{canDo.published}</p>
+
+            <details className="group mt-2 border-t border-rule">
+              <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-state ease-out hover:text-ink md:min-h-[36px]">
+                Technical details
+                <span
+                  aria-hidden="true"
+                  className="text-ink-3 transition-transform duration-panel ease-out group-open:rotate-90"
+                >
+                  →
+                </span>
+              </summary>
+              <dl className="spec-list pb-1">
+                <div>
+                  <dt>Connects through</dt>
+                  <dd>{canDo.connects}</dd>
+                </div>
+                <div>
+                  <dt>Runtime</dt>
+                  <dd className="t-mono !text-[12px]">
+                    {item.runtime || (
+                      <span className="absent">{item.kind === "mcp" ? "unspecified" : "not applicable"}</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Transport</dt>
+                  <dd className="t-mono !text-[12px]">
+                    {item.transport || (
+                      <span className="absent">{item.kind === "mcp" ? "unspecified" : "not applicable"}</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          </section>
+
+          {/* ---- 3. Will it work with what I use? ---------------------- */}
+          <section
+            id="will-it-work"
+            aria-labelledby="pkg-fit-title"
+            tabIndex={-1}
+            className="mt-9 scroll-mt-16"
+          >
+            <div className="section-head">
+              <h2 id="pkg-fit-title">Will it work with what I use?</h2>
               <span className="section-note t-mono t-tabular">
-                {hosts.length} of {hostTotal}
+                {hosts.length} of {hostTotal} hosts
               </span>
             </div>
 
-            {hosts.length ? (
-              <ul className="mt-2">
-                {hosts.map((h) => (
-                  <li
-                    key={h}
-                    className="flex items-center justify-between gap-3 border-b border-rule py-1.5 text-[12px]"
-                  >
-                    <span className="text-ink-2">{h}</span>
-                    <span
-                      className="text-[11px] text-ink-3"
-                      title="Publisher-declared compatibility, not a LiteSPM test result"
-                    >
-                      declared
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-[12px] text-ink-3">This entry declares no agent compatibility.</p>
-            )}
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[12px] text-ink-3">You use:</span>
+              {AGENT_CHOICES.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={agent?.id === option.id}
+                  onClick={() => changeAgent(option.id)}
+                  className="chip"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
 
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
-              Compatibility is declared by the publisher. This site does not execute capabilities, so it
-              cannot confirm any of these claims.
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {!agent ? (
+                <p className="max-w-prose text-[13.5px] leading-relaxed text-ink-2">
+                  Pick the agent you use above and this entry answers immediately, from rows already
+                  on this page — no download is needed to say it.
+                </p>
+              ) : agent.hosts.length === 0 ? (
+                <p className="max-w-prose text-[13.5px] leading-relaxed text-ink-2">
+                  Nothing is measured against &ldquo;{agent.label}&rdquo;, so this entry makes no
+                  compatibility claim about it either way.
+                </p>
+              ) : (
+                <>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-chip border px-1.5 py-0.5 text-[11px] font-medium ${
+                      worksWith
+                        ? "border-accent/30 bg-accent-wash text-accent-text"
+                        : "border-rule bg-sunken text-ink-3"
+                    }`}
+                    title={
+                      worksWith
+                        ? "Derived from the capability's kind: MCP servers install through the bridge into any host with an adapter, skills into any host with a skills directory, plugins list their own hosts. A declaration, not a test result."
+                        : "This entry does not list that agent among its compatible hosts. An absence of a declaration, not a test result."
+                    }
+                  >
+                    {worksWith && <Check className="h-3 w-3" aria-hidden="true" />}
+                    {worksWith ? `Works with ${agent.label}` : `Not declared for ${agent.label}`}
+                  </span>
+                  <span className="max-w-prose text-[13px] leading-relaxed text-ink-3">
+                    {worksWith
+                      ? "from this entry's declared or kind-derived host list — a declaration, not a test run."
+                      : "an absence of a claim, not evidence of failure."}
+                  </span>
+                </>
+              )}
+            </div>
+
+            <p className="mt-3 max-w-prose text-[13px] leading-relaxed text-ink-3">
+              Compatibility is either declared by the publisher or derived from the entry&rsquo;s kind
+              (MCP servers run through the bridge, skills into any skills directory). This site does
+              not execute capabilities, so none of it is a test result.
             </p>
-          </aside>
+
+            <button
+              type="button"
+              className="btn mt-3"
+              onClick={() => {
+                setTab("compatibility");
+                scrollToSection("pkg-details");
+              }}
+            >
+              See the full compatibility list
+            </button>
+          </section>
+
+          {/* ---- 4. What access does it need? -------------------------- */}
+          <section aria-labelledby="pkg-access-title" className="mt-9">
+            <div className="section-head">
+              <h2 id="pkg-access-title">What access does it need?</h2>
+              <span className="section-note">what the catalog carries</span>
+            </div>
+
+            <p className="mt-3 max-w-prose text-[14px] leading-relaxed text-ink-2">
+              A per-entry list of the files, sites or credentials this capability can reach is
+              designed for the catalog but not published yet — so the honest answer today is{" "}
+              <span className="absent">not published</span>. What you do get: the config file
+              LiteSPM would touch (one bridge entry, backed up first), and — where a server needs a
+              credential — an environment variable you name at install time, recorded as a name
+              rather than a value.
+            </p>
+
+            <details className="group mt-2 border-t border-rule">
+              <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-state ease-out hover:text-ink md:min-h-[36px]">
+                Where access would be declared
+                <span
+                  aria-hidden="true"
+                  className="text-ink-3 transition-transform duration-panel ease-out group-open:rotate-90"
+                >
+                  →
+                </span>
+              </summary>
+              <dl className="spec-list pb-1">
+                <div>
+                  <dt>effects</dt>
+                  <dd className="!text-[12.5px]">
+                    <span className="absent">designed, not yet published</span> — the per-entry access
+                    declaration this page would quote
+                  </dd>
+                </div>
+                <div>
+                  <dt>command / args</dt>
+                  <dd className="t-mono !text-[12px]">
+                    {item.command ? (
+                      <span className="break-all">
+                        {item.command}
+                        {item.args?.length ? ` ${item.args.join(" ")}` : ""}
+                      </span>
+                    ) : (
+                      <span className="absent">unspecified</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>installHint</dt>
+                  <dd className="t-mono !text-[12px]">
+                    {item.installHint ? (
+                      <span className="break-all">{item.installHint}</span>
+                    ) : (
+                      <span className="absent">{item.kind === "plugin" ? "unspecified" : "not applicable"}</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>skillSource</dt>
+                  <dd className="t-mono !text-[12px]">
+                    {item.skillSource ? (
+                      <span className="break-all">{item.skillSource}</span>
+                    ) : (
+                      <span className="absent">{item.kind === "skill" ? "unspecified" : "not applicable"}</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          </section>
+
+          {/* ---- 5. How do I add it? ----------------------------------- */}
+          <div className="mt-9">
+            <AddSteps
+              item={item}
+              agent={agent}
+              onChooseAgent={() => scrollToSection("will-it-work")}
+            />
+          </div>
+
+          {/* ---- then: tabs -------------------------------------------- */}
+          <div id="pkg-details" tabIndex={-1} className="scroll-mt-16">
+            <PackageTabs
+              item={item}
+              agent={agent}
+              hostTotal={hostTotal}
+              snapshot={snapshot}
+              active={tab}
+              onChange={setTab}
+            />
+          </div>
+
+          {/* ---- related ---- */}
+          <RelatedRow item={item} full={full} />
         </div>
       </main>
 
       <SiteFooter />
     </div>
+  );
+}
+
+/** Also-in-category: discovery after the record, never a popularity list. */
+function RelatedRow({ item, full }: { item: Listing; full: Listing[] | null }) {
+  const related = useMemo(() => {
+    if (!item || !full) return [];
+    return sortListings(
+      full.filter((i) => i.id !== item.id && i.category === item.category),
+      "index"
+    ).slice(0, 6);
+  }, [item, full]);
+
+  if (related.length === 0) return null;
+
+  return (
+    <section className="mt-9">
+      <div className="section-head">
+        <h2>Also in {item.category}</h2>
+        <Link
+          href={`/explore/?category=${encodeURIComponent(item.category)}`}
+          className="t-mono shrink-0 text-[12px] text-ink-2 hover:text-ink hover:underline"
+        >
+          see all
+        </Link>
+      </div>
+      <ul>
+        {related.map((r) => (
+          <li key={r.id}>
+            <Link
+              href={listingHref(r)}
+              className="grid grid-cols-[3px_minmax(0,1fr)_auto] items-center gap-3 border-b border-rule py-2.5 transition-colors hover:bg-hover"
+            >
+              <span
+                aria-hidden="true"
+                className="h-7 w-[3px] rounded-[1px]"
+                style={{ backgroundColor: `var(--${r.kind})` }}
+              />
+              <span className="min-w-0">
+                <span className="t-cond block truncate text-[14px] font-medium text-ink">{r.name}</span>
+                <span className="row-meta">
+                  <span className="meta-publisher">{r.publisher?.name || "unspecified"}</span>
+                  <span className="truncate text-ink-3">{r.summary}</span>
+                </span>
+              </span>
+              <span className="t-mono t-tabular shrink-0 text-[11px] text-ink-3">{r.kind}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

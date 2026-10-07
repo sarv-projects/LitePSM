@@ -40,7 +40,7 @@ web/
                   import, and the view (`*View.tsx`) that hydrates from props.
                   `app/data/catalog.json/route.ts` exports the rows as `/data/catalog.json`
                   (`force-static`), byte-for-byte from `data/catalog.json`.
-  components/     catalog/  hero/  home/  layout/  navigation/  ui/
+  components/     catalog/  hero/  home/  layout/  navigation/  package/  ui/
   lib/            catalog.ts  catalogData.ts  hosts.ts  landing.ts  query.ts  telemetry.ts
                   search.worker.ts  useCatalogSearch.ts  site.ts  clipboard.ts  format.ts
   data/           catalog.json · hosts.json · skill-targets.json · release.json   (build inputs)
