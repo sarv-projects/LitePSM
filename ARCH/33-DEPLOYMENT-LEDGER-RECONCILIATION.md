@@ -1,6 +1,7 @@
 # Deployment Ledger & Three-Way Reconciliation
 
-Status: **`DESIGNED`.** This document specifies the deployment mutation ledger that replaces backup-based ownership, plus the three-way reconciliation algorithm and uninstall/update semantics. **No `deployment_mutations` table or reconciler exists**; today `host_backups` is a pre-edit snapshot, not an ownership model ([STATUS.md](../STATUS.md) §5). Do not present it as implemented.
+Status: **`IMPLEMENTED`** for install, reconcile and uninstall; **`DESIGNED`** for §6 update semantics.
+The `deployment_mutations` table exists (migration 002, `backup_path` in 003) and `internal/deployment.Reconcile` is the three-way decision this document specifies. Installs write their ledger rows inside the same SQLite transaction as the install/component/registration rows, and file writes keep a pre-write backup whose restore is registered as an LIFO compensation (`internal/lifecycle.InstallTxn`), so a failure at any step leaves configs byte-identical with no orphan rows. Images are node-level: `PreImageHash` is the fingerprint of the entry this write replaced (`PriorEntry` recorded alongside), `PostImageHash` the entry as written — which is what makes the pre-image arm of §4 live. `install.remove` strips only structures that still match what LiteSPM wrote and keeps what the user edited; `litespm restore` replays the recorded backups byte-for-byte and refuses when a file changed outside owned entries. §6 update routing and the §7 acceptance sketch are not fully wired; `host_backups` remains a safety net per §2.1 ([STATUS.md](../STATUS.md) §5).
 
 ---
 
@@ -37,7 +38,7 @@ type DeploymentMutation struct {
 }
 ```
 
-The row is written **inside the same transaction** as the file mutation's journal entry ([12 — Storage](12-STORAGE-TRANSACTIONS-RECOVERY.md)); a file edit without a ledger row is a bug, and recovery treats an orphan edit as drift.
+The row is written **inside the same SQLite transaction** as the install's other state rows (install, component, host registration), so state never describes a row that did not commit. The file side is compensated rather than journaled: each write keeps a pre-write backup and registers an LIFO restore (`internal/lifecycle.InstallTxn`), which rolls the config back byte-for-byte when a later step fails. A crash between the file write and the commit is the window neither mechanism closes; recovery treats an orphan edit as drift. A file edit without a ledger row is a bug.
 
 ### 2.1 Relationship to `host_backups`
 
@@ -45,7 +46,7 @@ The row is written **inside the same transaction** as the file mutation's journa
 
 ### 2.2 Image hashes
 
-`PreImageHash`/`PostImageHash` are digests over the **owned structure** (the JSON object / TOML table / mapped node), canonically encoded (RFC 8785 JCS for JSON), not over the whole file. Whole-file hashes are recorded separately by the backup layer and are too coarse to distinguish "our node changed" from "an unrelated node changed".
+`PreImageHash`/`PostImageHash` are digests over the **owned structure** (the JSON object / TOML table / mapped node), canonically encoded — compact key-sorted JSON for JSON structures, the trimmed table block for TOML — not over the whole file. Both sides of any comparison are produced by the same function (`internal/host`), which is the property the decision needs; full RFC 8785 conformance is not claimed. Whole-file hashes are recorded separately by the backup layer and are too coarse to distinguish "our node changed" from "an unrelated node changed".
 
 ---
 

@@ -32,14 +32,17 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | **Phase E** | **Process Supervision, Bridge & Host Adapters** | `WIRED` for hosts; `IMPLEMENTED` for provider runtime | 6 bespoke adapters + 44 generic BridgeTargets (50 total, `ARCH/30`) + 77 skill targets are registered. Provider autostart is inert: the `providers` table is never populated by non-test code (finding `m4`). See [STATUS.md](STATUS.md) §1/§4 |
 | **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | `WIRED` (secrets, mcpclient) / `IMPLEMENTED` (auth) | Dual-profile client, native OS keystores, OAuth PKCE loopback exist; the secrets vault is opened before serving (`WIRED`), but secrets are not injected at provider launch, `mcpclient`'s first production importer is `internal/discover`, and `auth` still has zero production importers — the `AuthBroker` currently has no consumer (finding 99), [STATUS.md](STATUS.md) §1/§4 |
 | **Phase G** | **In-Agent `/marketplace` Panel & Web UI** | `WIRED` for the static web marketplace; panel `WIRED` | The Next.js static export and Bridge tool surface exist; the panel's install action completes for skills and MCP servers. Plugins remain blocked by Phase D. See [STATUS.md](STATUS.md) §1 |
-| **Phase H** | **Release Engineering & Packaging** | `IMPLEMENTED` | Cross-platform builds, npm wrapper, CI checks. `self-update` completes only once a release publishes `litespm-*` assets (packaging P7) |
-| **Phase I** | **Golden Fixtures, Self-Update & Migrations** | `TESTED` for fixtures and migrations; self-update `WIRED` (unsigned) | Fixtures corpus and migration engine (forward apply + downgrade guard) are tested; `self-update` is fail-closed on SHA-256 with rollback. Release signing is not done — see [SECURITY.md](SECURITY.md). Per-row detail: [TODO.md](TODO.md) Phase I |
+| **Phase H** | **Release Engineering & Packaging** | `IMPLEMENTED` | Cross-platform builds, npm wrapper, CI checks, and keyless cosign signing of every release artifact plus a CycloneDX SBOM (`release.yml`). `self-update` completes only once a release publishes `litespm-*` assets (packaging P7) |
+| **Phase I** | **Golden Fixtures, Self-Update & Migrations** | `TESTED` for fixtures and migrations; self-update `WIRED` (signed) | Fixtures corpus and migration engine (forward apply + downgrade guard) are tested; `self-update` is fail-closed on SHA-256 with rollback and verifies the release's keyless signature bundle (required via `LITESPM_REQUIRE_SIGNED_UPDATE=1`). The first signed release is cut on the next `v*` tag — see [SECURITY.md](SECURITY.md). Per-row detail: [TODO.md](TODO.md) Phase I |
 
 **Not yet true of LiteSPM, and not claimed anywhere:** provider autostart, a project manifest +
-lockfile, signed releases or packages, runtime policy enforcement, plugin installation, and any
-isolation level beyond process supervision. (The catalog release tree **is** published — the live
-origin serves it and `catalog sync` succeeds against it; and `request_install` **does** complete an
-agent-driven install for skill and MCP-server listings.)
+lockfile, npm package signatures, plugin installation, and any isolation level beyond process
+supervision. (Release **signing** is implemented — every artifact gets a keyless cosign bundle the
+updater verifies, and the catalog pointer is signed and checked on sync — but no signed release has
+shipped yet; runtime policy **is** now enforced at invocation: `provider.invoke` runs the policy
+engine and ungranted tools fail closed until an interactive `litespm grant`; the catalog release
+tree **is** published — the live origin serves it and `catalog sync` succeeds against it; and
+`request_install` **does** complete an agent-driven install for skill and MCP-server listings.)
 
 ---
 

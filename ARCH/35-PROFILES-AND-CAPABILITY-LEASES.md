@@ -1,6 +1,6 @@
 # Profiles & Capability Leases
 
-Status: **`DESIGNED`.** This document specifies multi-kind runtime profiles, their OCI distribution, the `profile` verb set, and time/scope-bounded capability leases. **No profile model and no lease model exist** ([STATUS.md](../STATUS.md) §4–§5). Do not present either as implemented.
+Status: **`DESIGNED`** for the OCI distribution, the `profile` verb set and runtime integration; the **library layer is `IMPLEMENTED`, not wired**: `internal/profiles` parses and validates profiles, diffs them, and issues/checks/revokes time- and scope-bounded leases with mandatory TTL and schema pinning (tested). Nothing consumes it yet — no `profile` verbs exist, leases are not consulted at the invoke gate, and both remain gated on the runtime invocation registry ([34](34-RUNTIME-INVOCATION-RECEIPTS.md)) per §5 below ([STATUS.md](../STATUS.md) §4–§5). Do not present the verbs or the distribution as implemented.
 
 ---
 

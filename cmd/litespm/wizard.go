@@ -63,7 +63,7 @@ var supportedAgents = []SupportedAgentOption{
 		DisplayName: "OpenCode",
 		AdapterID:   "opencode",
 		Environment: "Open-source CLI (opencode)",
-		ConfigType:  "opencode.json (v1 / v2)",
+		ConfigType:  "opencode.json",
 	},
 }
 

@@ -84,7 +84,7 @@ Select your primary AI Agent Host:
   [3] Grok Build     (Terminal / IDE (grok) - config.toml (TOML))
   [4] Claude Code    (Terminal CLI (claude) - ~/.claude.json (JSON))
   [5] OpenAI Codex   (Terminal CLI (codex) - config.toml (TOML))
-  [6] OpenCode       (Open-source CLI (opencode) - opencode.json (v1 / v2))
+  [6] OpenCode       (Open-source CLI (opencode) - opencode.json)
   [q] Quit
 ```
 

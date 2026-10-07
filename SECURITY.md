@@ -32,33 +32,57 @@ stated plainly.
 | **Bridge shim** | Proxy MCP traffic between an agent and the daemon over stdio | It holds no credentials and makes no network calls of its own |
 | **Daemon** | Supervise provider processes, enforce policy, broker secrets | Single writer to its own database; secrets go through the OS vault (Keychain / DPAPI / Secret Service), never to a config file |
 | **Skill installer** | Copy a `SKILL.md` directory into an agent's skills tree | Refuses symlinks, non-https sources and overwrites; caps a skill at 32 MiB |
-| **Self-update** | Replace its own binary | Fails closed on a missing checksum (see below) |
+| **Self-update** | Replace its own binary | Fails closed on a missing checksum, and verifies the release's keyless signature bundle when the release publishes one (see below) |
 | **Connector executor** (design only) | Not implemented: `internal/connector` was deleted under decision D1 for having zero production importers, and no connector executor ships | The credential-custody design — the agent supplies a connection handle rather than a secret, the target host is pinned by the connector manifest, private/loopback/link-local addresses are refused after DNS resolution, and caller-supplied `Authorization`, `Cookie` and `Proxy-Authorization` headers are stripped — is recorded in [29 — Connector System Design](ARCH/29-CONNECTOR-SYSTEM-DESIGN.md) and carries no shipped guarantee |
 
 ## Supply chain
 
-**Releases are integrity-checked, not signature-verified.** Each release
-publishes `SHA256SUMS.txt` alongside the binaries. The updater verifies the
-downloaded binary against that file and refuses to proceed on a mismatch. The
-npm installer is **fail-closed on every path**: a missing `SHA256SUMS.txt`
-manifest, a missing entry for your platform, an unreadable manifest, or a
-digest mismatch all discard the download, print `INSTALL REFUSED`, and exit
-non-zero — nothing unverified is installed or executed
-(`npm/scripts/install-binary.js`, `verifyDownloadedBinary`). An earlier build
-warned and proceeded unverified when the manifest had no entry for the platform;
-that was removed.
+**Releases are integrity-checked and signature-verified.** Each release
+publishes `SHA256SUMS.txt` alongside the binaries, and the release workflow
+signs every artifact — the binaries, the checksum listing, the web archive —
+with `cosign sign-blob` in keyless mode, publishing a Sigstore bundle beside
+each (`<asset>.sigstore.json`) plus a CycloneDX SBOM of the assets as
+published. The updater verifies the downloaded binary against
+`SHA256SUMS.txt` (fail-closed on a missing checksum, a mismatch, or a
+missing entry — an earlier build skipped verification when the checksum was
+absent and carried a hard-coded bypass string; both were removed) and then
+verifies the bundle against the downloaded bytes:
 
-The honest limit: those checksums travel in the same release as the binaries, so
-they prove the download was not corrupted in transit. They do **not** prove the
-release itself is authentic, because anyone able to publish to the release
-channel could publish matching checksums. Signed releases are the missing piece
-and are not implemented. Until then, the practical mitigation is to build from
-source (`go build ./cmd/litespm`) or pin a commit.
+- a bundle that is published and does not verify **always** aborts;
+- a release that publishes none falls back to checksum-only with a stated
+  note, unless `LITESPM_REQUIRE_SIGNED_UPDATE=1` makes an unsigned release a
+  hard refusal;
+- verification shells out to `cosign verify-blob` and pins the certificate
+  identity to this repository's release workflow on a version tag
+  (`.../release.yml@refs/tags/v...`, issuer
+  `https://token.actions.githubusercontent.com`), so a signature minted by a
+  fork, a branch build, or a different workflow does not verify.
 
-The self-update path fails closed: if the release manifest publishes no checksum
-for your platform, the update is refused rather than applied unverified. This
-was not always true — an earlier build skipped verification when the checksum
-was absent and carried a hard-coded bypass string. Both were removed.
+The npm installer remains **checksum-fail-closed on every path**: a missing
+`SHA256SUMS.txt` manifest, a missing entry for your platform, an unreadable
+manifest, or a digest mismatch all discard the download, print
+`INSTALL REFUSED`, and exit non-zero — nothing unverified is installed or
+executed (`npm/scripts/install-binary.js`, `verifyDownloadedBinary`). It does
+**not** yet verify the signature bundle; that is a known gap, and the honest
+statement of what it proves follows.
+
+The honest limit: checksums travel in the same release as the binaries, so
+they prove the download was not corrupted in transit but not that it is
+authentic. The signature closes that gap only as far as the signing identity
+is trustworthy: the certificate binds artifacts to *this repository's release
+workflow running on a tag*, so someone who compromised only the artifact
+store cannot mint a matching signature — but someone who can edit this
+repository's release workflow can sign whatever that workflow signs. The
+trust root is therefore GitHub plus this repository's write controls. Until
+a signed release has actually shipped (the first one is cut on the next
+`v*` tag), the practical mitigation for the binaries themselves is still to
+build from source (`go build ./cmd/litespm`) or pin a commit.
+
+The catalog pointer is signed the same way: `scripts/deploy-pages.sh` signs
+`/v1/current.json` when a signing identity exists, and `catalog sync`
+verifies the bundle before consuming the pointer — a published-but-invalid
+signature always fails, and `LITESPM_REQUIRE_CATALOG_SIGNATURE=1` refuses an
+origin that publishes none.
 
 `npm install -g litespm` runs a `postinstall` script that downloads the platform
 binary from the GitHub release and verifies it against `SHA256SUMS.txt`; the

@@ -45,9 +45,12 @@ a script.
 - **Who runs it.** The release workflow only (`Compile Release Binaries`, with `VERSION` derived
   from the tag). CI never executes it — only `bash -n` syntax-checks it, so a broken target surfaces
   at tag time, not on a pull request.
-- **Truthfulness gaps.** `SHA256SUMS.txt` is a **hash-only** integrity record: releases are unsigned
-  (no signature/SBOM, [STATUS.md](../STATUS.md) §5). The checksum step is silently skipped if
-  neither `sha256sum` nor `shasum` exists.
+- **Truthfulness gaps.** `SHA256SUMS.txt` generated here is a hash-only record: the release's
+  authenticity comes from the sibling Sigstore bundles the release workflow writes beside each
+  artifact (`cosign sign-blob --bundle`, see [SECURITY.md](../SECURITY.md)); the npm installer
+  checks only the hash. The checksum step in this script is silently skipped if neither
+  `sha256sum` nor `shasum` exists (the release job's `cp` of `SHA256SUMS.txt` then fails the
+  build, so a published release always has one).
 
 ## `deploy-pages.sh` — Cloudflare Pages packaging + leak audit
 

@@ -16,7 +16,12 @@
 >     `catalog sync` against it was verified from a clean data root (5,814 indexed).
 > *   The `_headers` cache policy in §4 **is** implemented — `scripts/deploy-pages.sh` writes it
 >     into the staging directory at deploy time. It is a build artifact under the gitignored
->     `pages-dist/`, so it is absent from the source tree. §4 needs no correction.
+>     `pages-dist/`, so it is absent from the source tree. §4's signature stanza
+>     (`/v1/current.json.sigstore.json`) matches what `deploy-pages.sh` now publishes: when the
+>     deploy runs with a signing identity (CI's OIDC token), the pointer is signed with
+>     `cosign sign-blob --bundle`, and `catalog sync` verifies that bundle before consuming the
+>     pointer (`internal/catalog`, `LITESPM_REQUIRE_CATALOG_SIGNATURE=1` to refuse unsigned
+>     origins). A local deploy without an identity skips signing and says so.
 > *   Ownership: `scripts/build_full_catalog.py` now produces only the dataset
 >     (`web/data/catalog.json`) and the stats in `web/data/release.json`; the served pointer and
 >     release tree have a single writer, `litespm catalog build`. That split (Python = ingestion,
@@ -185,6 +190,12 @@ artifact under the gitignored `pages-dist/`, not a committed source file):
 
 # Pointer file (always revalidate)
 /v1/current.json
+  Cache-Control: public, no-cache, must-revalidate
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff
+
+# Signature bundle for the pointer (revalidate with it; never immutable)
+/v1/current.json.sigstore.json
   Cache-Control: public, no-cache, must-revalidate
   Access-Control-Allow-Origin: *
   X-Content-Type-Options: nosniff
