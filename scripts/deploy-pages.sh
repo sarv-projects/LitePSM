@@ -82,6 +82,16 @@ cat << 'EOF' > "${PAGES_DIR}/_headers"
   Cache-Control: public, no-cache, must-revalidate
   Access-Control-Allow-Origin: *
   X-Content-Type-Options: nosniff
+
+# Site-shaped catalog rows, fetched on the first interaction that needs them.
+# _headers matches the path, not the query, and the site always requests
+# ?v=<datasetDigest> — so the bare URL must not be pinned long either: a
+# short max-age keeps a direct hit from serving last week's rows after a
+# redeploy, while the digest query keeps concurrent fetches self-consistent.
+/data/catalog.json
+  Cache-Control: public, max-age=300, must-revalidate
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff
 EOF
 
 # Every judgement about the finished bundle lives in one script, which CI also

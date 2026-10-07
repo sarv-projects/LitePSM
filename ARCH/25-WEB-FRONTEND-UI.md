@@ -52,21 +52,30 @@ web/
   │       └── Toast.tsx               # Copy-feedback toasts
   └── app/ (App Router, `output: 'export'`, `trailingSlash: true`)
       ├── layout.tsx                  # IBM Plex Sans/Condensed/Mono, site JSON-LD, skip link
-      ├── page.tsx                    # thin wrapper: `next/dynamic` → HomeView
-      ├── HomeView.tsx                # Search-first home with curated rows + catalog grid
-      ├── explore/page.tsx            # wrapper → ExploreView.tsx (power-filter surface: kind/category/agent/verified/sort)
-      ├── package/page.tsx            # wrapper → PackageView.tsx (detail via `/package/?slug=<key>`, slug or id)
-      ├── agents/page.tsx             # wrapper → AgentsView.tsx (supported consumer hosts with readiness)
-      ├── categories/page.tsx         # wrapper → CategoriesView.tsx (category index with per-kind breakdown)
-      └── trending/page.tsx           # wrapper → TrendingView.tsx (coverage/count ranking — counts, not stars)
+      ├── page.tsx                    # Server Component: build-time home slice → HomeRoute → HomeView
+      ├── HomeRoute.tsx / HomeView.tsx # client `dynamic()` half / Search-first home with curated rows + catalog grid
+      ├── explore/page.tsx            # Server Component: facets + one page of rows → ExploreRoute → ExploreView.tsx (power-filter surface: kind/category/agent/verified/sort)
+      ├── package/page.tsx            # Server Component → PackageRoute → PackageView.tsx (detail via `/package/?slug=<key>`, slug or id)
+      ├── agents/page.tsx             # Server Component → AgentsRoute → AgentsView.tsx (supported consumer hosts with readiness)
+      ├── categories/page.tsx         # Server Component → CategoriesRoute → CategoriesView.tsx (category index with per-kind breakdown)
+      ├── trending/page.tsx           # Server Component → TrendingRoute → TrendingView.tsx (coverage/count ranking — counts, not stars)
+      └── data/catalog.json/route.ts  # static export of the site-shaped dataset (byte-identical to web/data/catalog.json)
 
-Each `page.tsx` is a ~15-line client wrapper whose only job is route-level code
-splitting: the `*View` module statically imports `data/catalog.json` (≈2.8 MB),
-so loading it through `next/dynamic` keeps that chunk out of every route's
-synchronous script set — the framework/layout hydrate first, and the catalog
-arrives as one shared async chunk at low fetch priority. `ssr: true` keeps the
-prerendered HTML, and React retains that server HTML across the suspended
-hydration.
+Each `page.tsx` is a **Server Component** that reads `data/catalog.json`
+(≈3.8 MB) at build time and derives exactly the slice its route shows —
+counts, facets, one page of rows — so the dataset itself never enters a
+client chunk; only that slice is serialized into the HTML as props. The view
+loads through a thin client `*Route.tsx` wrapper whose only job is route-level
+code splitting (`next/dynamic`, `ssr: true`). Placing `dynamic()` in the
+Server Component does **not** split — the view is inlined into the route chunk
+(measured: 129 kB First Load) — while the client wrapper keeps every route at
+the 107 kB shared baseline. Rows beyond the prerendered page are fetched at
+runtime from `/data/catalog.json` with `?v=<datasetDigest>` (from
+`web/data/release.json`, so a cached copy cannot disagree with the HTML beside
+it), and only when an interaction needs them: search, filter, sort,
+"Show more", or a `/package/?slug=` deep link. Categories, Agents, Trending
+and a bare `/package/` never fetch it — a first visit downloads the page, not
+rows it has not asked for.
 ```
 
 ---
