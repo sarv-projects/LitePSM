@@ -332,7 +332,17 @@ func runInvoke(args []string) {
 	defer db.Close()
 
 	ctx := context.Background()
-	result, err := discover.Invoke(ctx, db, capabilityID, arguments)
+	// The same policy gate as the daemon's provider.invoke (ARCH/15): without
+	// an engine discover.Invoke refuses every effectful invocation, so the CLI
+	// builds one from configuration and the user's rules. Failing to load the
+	// engine is a refusal, never a bypass.
+	policyEngine, closePolicy, perr := openCLIPolicyEngine(paths.DataRoot)
+	if perr != nil {
+		fmt.Fprintf(os.Stderr, "Invoke refused: %v\n", perr)
+		os.Exit(1)
+	}
+	defer closePolicy()
+	result, err := discover.Invoke(ctx, db, capabilityID, arguments, discover.WithPolicy(policyEngine))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Invoke failed: %v\n", err)
 		os.Exit(1)

@@ -410,15 +410,20 @@ type AuthProfile struct {
 
 // CapabilityGrant represents policy-approved access to a capability.
 type CapabilityGrant struct {
-	GrantID             string     `json:"grantId"`
-	CapabilityID        string     `json:"capabilityId"`
-	SchemaFingerprint   string     `json:"schemaFingerprint"`
-	CASTreeDigest       string     `json:"casTreeDigest,omitempty"`
-	EndpointOrigin      string     `json:"endpointOrigin,omitempty"`
-	ServerVersionDigest string     `json:"serverVersionDigest,omitempty"`
-	Status              string     `json:"status"`
-	ExpiresAt           *time.Time `json:"expiresAt,omitempty"`
-	CreatedAt           time.Time  `json:"createdAt"`
+	GrantID             string `json:"grantId"`
+	CapabilityID        string `json:"capabilityId"`
+	SchemaFingerprint   string `json:"schemaFingerprint"`
+	CASTreeDigest       string `json:"casTreeDigest,omitempty"`
+	EndpointOrigin      string `json:"endpointOrigin,omitempty"`
+	ServerVersionDigest string `json:"serverVersionDigest,omitempty"`
+	Status              string `json:"status"`
+	// GrantedBy is the attribution recorded at first grant. It is immutable
+	// on re-save (state.SaveCapabilityGrant keeps the existing attribution)
+	// and is populated on reads; writers pass it as the Save call's separate
+	// argument.
+	GrantedBy string     `json:"grantedBy,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
 }
 
 // PlanRequest encapsulates the user's install request.

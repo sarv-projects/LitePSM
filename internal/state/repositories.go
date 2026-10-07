@@ -886,7 +886,11 @@ func (db *DB) SaveCapability(ctx context.Context, c *domain.CapabilityRecord) er
 // SaveCapabilityGrant records policy or user authorization for a capability.
 // Grants are append-only authorizations: a re-save of the same grant id never
 // rewrites granted_by/granted_at, so an attacker or a bug cannot backdate or
-// re-attribute an existing authorization. Only status and expiry advance.
+// re-attribute an existing authorization. The identity bindings and
+// status/expiry DO advance — that is what lets a person re-approve a grant
+// after a schema change (rebinding the fingerprint under the original
+// attribution) or expire/revoke it — but the attribution columns are written
+// from the existing row, never from the caller.
 func (db *DB) SaveCapabilityGrant(ctx context.Context, grant *domain.CapabilityGrant, grantedBy string) error {
 	query := `
 	INSERT INTO capability_grants (
@@ -901,8 +905,8 @@ func (db *DB) SaveCapabilityGrant(ctx context.Context, grant *domain.CapabilityG
 		endpoint_origin = excluded.endpoint_origin,
 		server_version_digest = excluded.server_version_digest,
 		status = excluded.status,
-		granted_by = excluded.granted_by,
-		granted_at = excluded.granted_at,
+		granted_by = capability_grants.granted_by,
+		granted_at = capability_grants.granted_at,
 		expires_at = excluded.expires_at;`
 
 	_, err := db.raw.ExecContext(ctx, query,
@@ -964,6 +968,72 @@ func (db *DB) GetActiveGrant(ctx context.Context, capabilityID, schemaFingerprin
 	}
 
 	return &g, nil
+}
+
+// ListCapabilityGrants returns capability grants, optionally filtered by
+// capability id (empty = all), newest first. Status is part of the row: a
+// revoked or expired grant is a record, not a deletion.
+func (db *DB) ListCapabilityGrants(ctx context.Context, capabilityID string) ([]domain.CapabilityGrant, error) {
+	query := `
+	SELECT grant_id, capability_id, schema_fingerprint, cas_tree_digest, endpoint_origin,
+	       server_version_digest, status, granted_by, granted_at, expires_at
+	FROM capability_grants `
+	args := []any{}
+	if capabilityID != "" {
+		query += "WHERE capability_id = ? "
+		args = append(args, capabilityID)
+	}
+	query += "ORDER BY granted_at DESC, grant_id;"
+
+	rows, err := db.raw.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []domain.CapabilityGrant
+	for rows.Next() {
+		var g domain.CapabilityGrant
+		var casDigest, origin, srvVer sql.NullString
+		var exp sql.NullTime
+		if err := rows.Scan(&g.GrantID, &g.CapabilityID, &g.SchemaFingerprint,
+			&casDigest, &origin, &srvVer, &g.Status, &g.GrantedBy, &g.CreatedAt, &exp); err != nil {
+			return nil, err
+		}
+		if casDigest.Valid {
+			g.CASTreeDigest = casDigest.String
+		}
+		if origin.Valid {
+			g.EndpointOrigin = origin.String
+		}
+		if srvVer.Valid {
+			g.ServerVersionDigest = srvVer.String
+		}
+		if exp.Valid {
+			g.ExpiresAt = &exp.Time
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// SetCapabilityGrantStatus advances one grant's status (revoke, expire). The
+// caller has already looked the row up; a status change on a grant that does
+// not exist is an explicit not-found, never a silent success.
+func (db *DB) SetCapabilityGrantStatus(ctx context.Context, grantID, status string) error {
+	res, err := db.raw.ExecContext(ctx,
+		"UPDATE capability_grants SET status = ? WHERE grant_id = ?;", status, grantID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.ErrNotFound("capability_grant", grantID)
+	}
+	return nil
 }
 
 // --- Host Registrations & Backups ---

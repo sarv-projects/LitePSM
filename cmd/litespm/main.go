@@ -86,6 +86,9 @@ func main() {
 	case "approve":
 		runApprove(os.Args[2:])
 
+	case "grant":
+		runGrant(os.Args[2:])
+
 	case "catalog":
 		if len(os.Args) >= 3 {
 			switch os.Args[2] {
@@ -185,6 +188,7 @@ Available Commands:
   skills remove <name>|--all  Remove installed skills recorded in the install ledger
   install remove <installId>  Remove an installed package (nodes you edited are kept)
   restore <installId>|--host  Roll an install back to its exact pre-install bytes (or refuse)
+  grant <capabilityId>        Authorize a tool invocation (interactive; list/revoke subcommands)
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
   self-update [--force]       Check for and apply binary updates
   daemon serve                Start the LiteSPM background supervisor and IPC engine
@@ -2356,10 +2360,19 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		if err := json.Unmarshal(params, &req); err != nil || strings.TrimSpace(req.CapabilityID) == "" {
 			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "capabilityId is required"}
 		}
-		result, err := discover.Invoke(ctx, db, req.CapabilityID, req.Arguments)
+		// The policy gate (ARCH/15): with the engine attached, an ungranted
+		// invocation is refused as "ask" (a grant is required) instead of the
+		// old "no policy engine configured" blanket deny, and a granted one
+		// passes through Tier 3 with schema-drift re-verification. Without
+		// this option discover.Invoke fails closed for every effectful
+		// invocation — the gate existed but was never reachable, so the
+		// marketplace's invoke_capability could never succeed.
+		result, err := discover.Invoke(ctx, db, req.CapabilityID, req.Arguments,
+			discover.WithPolicy(policyEngine))
 		if err != nil {
-			// A tool that is not installed, not discovered, or whose schema
-			// drifted is the caller's problem to fix, not an internal failure.
+			// A tool that is not installed, not discovered, whose schema
+			// drifted, or that policy refused is the caller's problem to fix,
+			// not an internal failure.
 			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
 		}
 		return map[string]any{"output": result.Output, "isError": result.IsError}, nil
