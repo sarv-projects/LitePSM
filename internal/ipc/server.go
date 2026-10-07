@@ -38,6 +38,12 @@ type Server struct {
 	handshakeTimeout time.Duration
 	idleTimeout      time.Duration
 	handlerSem       chan struct{}
+
+	// peerIdentityFn overrides how a connection's peer identity is
+	// established. nil (the production value) uses identityForConn — the
+	// platform credential check. Tests set it before calling Serve to
+	// exercise the refusal path without needing a second OS user.
+	peerIdentityFn func(net.Conn) (PeerIdentity, error)
 }
 
 // Defaults for the per-connection read deadlines and the handler bound.
@@ -80,11 +86,19 @@ func NewServer(daemonVersion, protocolVersion string) *Server {
 			return nil, &RPCError{Code: CodeInvalidParams, Message: "invalid handshake params: clientKind is required"}
 		}
 
-		return &HandshakeResult{
+		result := &HandshakeResult{
 			DaemonVersion:   s.daemonVersion,
 			ProtocolVersion: s.protocolVersion,
 			PID:             os.Getpid(),
-		}, nil
+		}
+		// The connection's peer identity rides on the handler context (set by
+		// handleConnection before the first request is served), so the
+		// handshake can tell the client whether — and how — it was
+		// authenticated instead of staying silent about it.
+		if peer, ok := PeerFromContext(ctx); ok {
+			result.PeerAuth = peer.Status()
+		}
+		return result, nil
 	})
 
 	return s
@@ -178,6 +192,18 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}()
 
 	codec := NewLineDelimitedCodec(conn)
+
+	// Peer authentication runs before the first request is read: a connection
+	// whose uid does not match the daemon's never reaches a handler. An
+	// unverified-but-allowed connection continues with its identity attached
+	// to connCtx below, so handlers and the handshake can see it.
+	peer, err := s.authenticatePeer(conn)
+	if err != nil {
+		s.refusePeer(conn, codec, err)
+		return
+	}
+	connCtx := context.WithValue(s.ctx, peerIdentityKey{}, peer)
+
 	cancelFuncs := make(map[string]context.CancelFunc)
 	var cancelMu sync.Mutex
 
@@ -243,7 +269,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 			s.mu.RLock()
 			hsHandler := s.handlers[req.Method]
 			s.mu.RUnlock()
-			result, rpcErr := hsHandler(s.ctx, req.Params)
+			// connCtx (not s.ctx) carries the peer identity so the handshake
+			// can report it; it still derives from s.ctx, so Stop cancels it.
+			result, rpcErr := hsHandler(connCtx, req.Params)
 			if rpcErr == nil {
 				handshaken = true
 			}
@@ -297,8 +325,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 			continue
 		}
 
-		// Create cancellable context for this request derived from the server lifecycle context
-		reqCtx, cancel := context.WithCancel(s.ctx)
+		// Create cancellable context for this request derived from the
+		// connection context (which itself derives from the server lifecycle
+		// context and carries the peer identity).
+		reqCtx, cancel := context.WithCancel(connCtx)
 		var idKey string
 		if req.ID != nil {
 			idKey = string(*req.ID)
@@ -370,6 +400,50 @@ func (s *Server) handleConnection(conn net.Conn) {
 			_ = conn.SetWriteDeadline(time.Time{})
 		}(req, reqCtx, idKey, cancel)
 	}
+}
+
+// authenticatePeer establishes the identity of the peer behind conn. The
+// production path (peerIdentityFn == nil) asks the platform for kernel peer
+// credentials and applies the same-uid rule; a non-nil error means the
+// connection must be refused without serving anything.
+func (s *Server) authenticatePeer(conn net.Conn) (PeerIdentity, error) {
+	s.mu.RLock()
+	override := s.peerIdentityFn
+	s.mu.RUnlock()
+	if override != nil {
+		return override(conn)
+	}
+	return identityForConn(conn, os.Getuid())
+}
+
+// refusePeer rejects a connection that failed peer authentication. It answers
+// the peer's first request — typically daemon.handshake — with a proper
+// JSON-RPC CodeUnauthorized error so a well-behaved client sees the reason
+// instead of a bare disconnect, then returns; handleConnection's defer closes
+// the connection. A peer that sends nothing is closed by the handshake read
+// deadline rather than pinning the goroutine and descriptor forever.
+func (s *Server) refusePeer(conn net.Conn, codec *LineDelimitedCodec, cause error) {
+	s.mu.RLock()
+	handshakeTimeout := s.handshakeTimeout
+	s.mu.RUnlock()
+
+	_ = conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
+	req, err := codec.ReadRequest()
+	if err != nil || req.ID == nil {
+		// Nothing to answer (silent peer or notifications only): closing the
+		// connection is the refusal.
+		return
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	_ = codec.WriteResponse(&Response{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Error: &RPCError{
+			Code:    CodeUnauthorized,
+			Message: fmt.Sprintf("peer authentication failed: %v", cause),
+		},
+	})
+	_ = conn.SetWriteDeadline(time.Time{})
 }
 
 // Stop gracefully shuts down the server. It is idempotent: only the first call

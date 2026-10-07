@@ -113,6 +113,12 @@ reads it**, so the daemon runs until a signal arrives. Both behaviours remain
     bytes (64 KiB) and `MessageMode: false` — byte-stream framing carrying
     **line-delimited** JSON-RPC (`transport_windows.go:17-19`), not message-mode
     frames.
+*   **Peer authentication:** there is **no in-process peer-identity check** on
+    Windows — the owner-only DACL above is the boundary: the OS rejects a
+    foreign SID's `CreateFile` before `Accept` ever returns. Because this
+    package performs no query of its own, `daemon.handshake` reports
+    `peerAuth.verified: false` with that reason (`transport_windows.go`,
+    `peerCredentials`) rather than claiming a verification it did not perform.
 
 ### 2.2 Linux & macOS Domain Sockets
 *   **Socket Path:** `<RuntimeRoot>/litespm.sock`, where `RuntimeRoot` resolves in
@@ -131,6 +137,32 @@ reads it**, so the daemon runs until a signal arrives. Both behaviours remain
 *   **Permissions:** the containing directory is created `0700` and the socket
     file is `chmod`'d `0600` after bind; any stale socket is unlinked first
     (`internal/ipc/transport_unix.go:13-34`).
+*   **Peer authentication (register item A6 / I1):** directory and socket
+    permissions are no longer the only boundary. After `Accept` and before the
+    first request is read, the server resolves the peer's credentials with an
+    authoritative kernel mechanism and **refuses** the connection when the peer
+    uid differs from `os.Getuid()` — the peer's first request (typically
+    `daemon.handshake`) is answered with `-32001` (`CodeUnauthorized`) naming
+    the mismatch, then the connection is closed without any handler running
+    (`internal/ipc/server.go`, `authenticatePeer`/`refusePeer`):
+    *   **Linux:** `SO_PEERCRED` (`getsockopt(SOL_SOCKET, SO_PEERCRED)`) yields
+        uid/gid/pid as snapshotted by the kernel at connect time — no
+        pid-reuse race (`internal/ipc/transport_linux.go`).
+    *   **macOS:** unix sockets have no `SO_PEERCRED`; `LOCAL_PEERCRED`
+        (`SOL_LOCAL`, the `getpeereid()` path) returns the peer uid, with
+        `LOCAL_PEERPID` + `sysctl(KERN_PROC_PID)` as fallback
+        (`internal/ipc/transport_darwin.go`).
+    *   **Fail-closed rule:** a mechanism that *exists* but errors refuses the
+        connection; only a connection with no mechanism at all is allowed, and
+        then it is marked **unverified with a stated reason** — in-memory
+        `net.Pipe` listeners (no kernel credentials exist), and other unix GOOS
+        where none is wired (`transport_other.go`). Verification is never
+        silently claimed. The outcome rides the handler context
+        (`ipc.PeerFromContext`) and is reported as `peerAuth` in the handshake
+        result (`internal/ipc/peer.go`). Same-uid acceptance over a real unix
+        socket and the refusal rule are covered by
+        `internal/ipc/peer_test.go`; a genuine *cross-uid* connect is not —
+        that needs a second OS user.
 
 ---
 
@@ -177,7 +209,13 @@ The wire types are `HandshakeParams` / `HandshakeResult`
   "result": {
     "daemonVersion": "0.3.0",
     "protocolVersion": "2026-07-28",
-    "pid": 54321
+    "pid": 54321,
+    "peerAuth": {
+      "verified": true,
+      "method": "SO_PEERCRED",
+      "uid": 1000,
+      "pid": 12345
+    }
   }
 }
 ```
@@ -187,7 +225,15 @@ Exact field inventory — nothing else exists:
 | Direction | Fields |
 |---|---|
 | Request params | `clientVersion` (string), `clientKind` (`"cli"` \| `"bridge"`), `hostId` (optional), `pid` (int) |
-| Response result | `daemonVersion`, `protocolVersion`, `pid` |
+| Response result | `daemonVersion`, `protocolVersion`, `pid`, `peerAuth` (object: `verified` (bool), `method`?, `uid` (int, `-1` when unknown), `pid`?, `reason`?) |
+
+*   **`peerAuth` is always present on connections served by this server** and
+    reports peer authentication honestly: `verified: true` with the mechanism
+    and uid on Linux/macOS unix sockets, `verified: false` **with a `reason`**
+    where no credential mechanism exists (in-memory pipes, unimplemented unix
+    GOOS, Windows' DACL-only transport) — see [ARCH/11 §2.2](11-LOCAL-RUNTIME-IPC.md)
+    for the per-platform table. Handlers read the same identity from their
+    context with `ipc.PeerFromContext(ctx)`.
 
 *   **No** `sessionId`, `serverVersion`, `supportedFeatures`,
     `minimumClientVersion`, `protocolVersion`-in-params, or `clientType` fields

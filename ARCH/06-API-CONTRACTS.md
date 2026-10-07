@@ -199,7 +199,13 @@ Field names follow `internal/ipc/protocol.go` (`HandshakeParams`/`HandshakeResul
   "result": {
     "daemonVersion": "0.3.0",
     "protocolVersion": "2026-07-28",
-    "pid": 54321
+    "pid": 54321,
+    "peerAuth": {
+      "verified": true,
+      "method": "SO_PEERCRED",
+      "uid": 1000,
+      "pid": 12345
+    }
   }
 }
 ```
@@ -218,9 +224,17 @@ on that connection. A connection must complete it within 10 s and may then sit i
 handlers run at once; further requests get `-32004` (`CodeRateLimited`). `ipc.Client.Call` performs
 the handshake lazily before its first call (identity set with `SetIdentity`; the bridge shim sets
 `bridge` + its host id), and reports the real build version (`internal/buildinfo.Version`, set from
-the ldflags-injected `main.Version`), not a literal. The handshake gates *protocol order*, not
-identity: the socket/pipe permissions remain the only caller authentication, so "authenticated
-IPC" means local-user-only transport, not a per-caller credential.
+the ldflags-injected `main.Version`), not a literal.
+
+**Peer authentication:** the handshake gates *protocol order*, and its result reports how the
+connection was authenticated. After `Accept`, the server obtains the peer's kernel credentials
+(Linux `SO_PEERCRED`; macOS `LOCAL_PEERCRED`/`LOCAL_PEERPID`) and **refuses** a connection whose
+uid differs from the daemon's — first request answered with `-32001`, then closed — so on those
+platforms `peerAuth.verified` is `true` with the mechanism and uid, not a mere local-user
+assumption. Where no credential mechanism exists (in-memory pipes, unix GOOS without a wired
+mechanism, Windows' owner-only pipe DACL) `peerAuth.verified` is `false` **with the reason**,
+never a silent claim of verification. Socket/pipe permissions remain the outer boundary
+([ARCH/11 §2.2](11-LOCAL-RUNTIME-IPC.md) has the per-platform table).
 
 ### 3.2 Supported IPC Methods (19 application handlers; `daemon.handshake` is §3.1)
 

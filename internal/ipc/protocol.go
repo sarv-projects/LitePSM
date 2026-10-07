@@ -66,6 +66,13 @@ type HandshakeResult struct {
 	DaemonVersion   string `json:"daemonVersion"`
 	ProtocolVersion string `json:"protocolVersion"`
 	PID             int    `json:"pid"`
+	// PeerAuth reports how (or whether) the daemon authenticated this
+	// connection's peer — see PeerAuthStatus. It is always present on
+	// connections served by this server: verified on unix sockets (Linux
+	// SO_PEERCRED, macOS LOCAL_PEERCRED/LOCAL_PEERPID) and explicitly
+	// unverified — with the reason — where no credential mechanism exists.
+	// Additive field: clients that predate it simply ignore it.
+	PeerAuth *PeerAuthStatus `json:"peerAuth,omitempty"`
 }
 
 // CancelParams defines parameters for $/cancelRequest notification.
