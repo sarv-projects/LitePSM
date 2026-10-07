@@ -2,6 +2,11 @@
 
 ## 1. Entry Points and Interactive Workflows
 
+> **Phase-J command surface (`DESIGNED`).** The planned `copy`, `list`,
+> `inventory`, orient commands (`status`/`diff`/`why`/`outdated`) and the
+> `help` redesign are specified in [ARCH/38](38-CLI-PRODUCT-SURFACE.md) and
+> are not implemented; this document covers what ships today.
+
 LiteSPM provides both an interactive terminal interface for humans and a structured programmatic interface for agent hosts.
 
 ```text

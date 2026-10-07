@@ -1,6 +1,6 @@
 # Supported AI Agents & Integration Guide
 
-**LiteSPM** — *The Lightweight Skill & Package Manager for AI Agents*. It connects once to your AI agent host, enabling you to discover, install, update, and monitor MCP servers, skills, and plugins through a single unified interface.
+**LiteSPM** — *the package manager for AI agents*. It connects once to your AI agent host, enabling you to discover, install, update, and monitor MCP servers, skills, and plugins through a single unified interface.
 
 > **State.** Install, invocation, and the catalog release tree are **not** end-to-end today.
 > [STATUS.md](STATUS.md) is the single source of truth for what each subsystem actually does; this

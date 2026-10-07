@@ -1,6 +1,6 @@
 # LiteSPM Market & Client: Technical Architecture & System Specification
 
-**The Lightweight Skill & Package Manager for AI Agents.**
+**The package manager for AI agents.**
 
 LiteSPM is an open-source, provider-neutral package manager, federated catalog, and local control plane for AI agent capabilities: **Plugins, Skills, and MCP (Model Context Protocol) Servers**. 
 

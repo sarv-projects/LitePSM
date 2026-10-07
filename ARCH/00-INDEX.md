@@ -17,7 +17,7 @@ This architecture defines the complete specification for **LiteSPM**, comprising
 
 ## 2. Document Registry
 
-The registry below covers **38 architecture documents — `ARCH/00` through `ARCH/37`** — plus the
+The registry below covers **39 architecture documents — `ARCH/00` through `ARCH/38`** — plus the
 companion operational guides, [STATUS.md](../STATUS.md) and [CHANGELOG.md](../CHANGELOG.md), which
 sit at the repository root. Status columns state the highest honest evidence state per
 [STATUS.md](../STATUS.md); `STATUS.md` wins wherever a row here and that file disagree.
@@ -68,6 +68,7 @@ sit at the repository root. Status columns state the highest honest evidence sta
 | [35 — Profiles & Capability Leases](35-PROFILES-AND-CAPABILITY-LEASES.md) | Multi-kind profiles, OCI distribution, `profile` verbs, capability leases (scope/TTL/credential), auto-revocation, session/task binding | **DESIGNED** |
 | [36 — Enterprise Policy & Audit](36-ENTERPRISE-POLICY-AND-AUDIT.md) | Tighten-only policy hierarchy, `policy explain` provenance, `audit --ci` (text/json/SARIF/CycloneDX/SPDX), advisories/revocation, TUF-style catalog, Sigstore/SLSA provenance, air-gapped bundles | **DESIGNED** |
 | [37 — TUI & Completion](37-TUI-AND-COMPLETION.md) | First-class TUI with zero business logic, tab inventory, staged-plan tray, local dashboard boundary, dynamic shell completion, `why` | **DESIGNED** |
+| [38 — CLI Product Surface: Port, Orient & Help](38-CLI-PRODUCT-SURFACE.md) | `litespm copy` cross-agent porting (canonical IR, plan/approve/verify), `list`/`inventory`, the `help` system, orient commands, profile wiring, plan/apply spine | **DESIGNED** |
 
 ### Companion Operational Guides
 

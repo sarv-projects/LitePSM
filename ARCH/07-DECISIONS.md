@@ -153,3 +153,44 @@ open); the rationale is preserved rather than back-ported into the earlier serie
     *   Read-only substitution requires an explicit, approvable **equivalence declaration** — never name similarity.
 *   **Where:** full rule at [ARCH/15 §5](15-POLICY-APPROVALS.md#5-failure-retry--fallback-policy); runtime constraints at [ARCH/34](34-RUNTIME-INVOCATION-RECEIPTS.md). Adopted from proposal #24 ([ARCH/31 §5](31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#5-adjudication-of-the-60-proposals)).
 *   **Status:** Accepted (as a normative constraint); the runtime that enforces it is `DESIGNED`.
+
+
+## 4. Product-Surface Decisions (D-026 – D-029)
+
+### D-026: Positioning Line and Product-First Landing
+*   **Context:** the headline "The Lightweight Skill & Package Manager for AI Agents" answers *what the implementation is* before it answers *why anyone should care*, and the site's first screen led with a row count ("5,814 capabilities") — data answering "how much do you have" before "why should I care".
+*   **Decision:**
+    *   The product headline is **"The package manager for AI agents."** (supporting: *Discover and manage MCP servers, skills, plugins, integrations and agents from one place.*). The old expansion remains the acronym's origin in ARCH/01, not the marketing line.
+    *   The landing page leads with the user's intent ("Give your AI more abilities." + an intent-first search), never with catalog volume; counts move to a quiet proof line.
+    *   The product is described by four jobs: DISCOVER · INSTALL · PORT · MANAGE.
+*   **Where:** [ARCH/01 §1](01-PRODUCT.md), [ARCH/25 §6](25-WEB-FRONTEND-UI.md), README/AGENTS taglines.
+*   **Status:** Accepted (2026-10-07); web implementation tracked as TODO J002.
+
+### D-027: Three Visual Densities, Not One Page Language
+*   **Context:** every surface spoke the Explore "friendly index" register — tasteful, but it made the homepage feel like a registry browser and the Agents page look like an internal table; brand memorability was near zero.
+*   **Decision:**
+    *   One site, three densities: **DISCOVER** (visual, spacious), **EVALUATE** (rich, evidence-first), **OPERATE** (dense, keyboard-first). Explore is OPERATE and is not to be re-styled beyond tokens/sizes/motion.
+    *   Brand indigo (~`#3157F6`) appears only on marketing surfaces (logo, hero, primary CTAs, focus, active nav); the three kind hues stay semantic; the catalog body stays calm.
+    *   Type roles: Plex Sans = headings/copy, Condensed = dense rows and numeric tables only, Mono = ids/versions/commands/code.
+    *   Dark theme (system/light/dark) with the documented non-black palette; motion scale 120/160/200/240 ms ease-out with `prefers-reduced-motion`; actions ≥44 px on touch.
+    *   The honesty overlay is part of the design: no invented popularity anywhere; curated rows state their selection rule; unverifiable trust claims render as `Discovery only` / `Publisher-declared`.
+*   **Where:** [ARCH/25 §5–§8](25-WEB-FRONTEND-UI.md).
+*   **Status:** Accepted as spec (2026-10-07); implementation in flight (TODO J001–J009).
+
+### D-028: Porting Goes Through One Canonical IR, Never Pairwise Translators
+*   **Context:** moving an MCP server from OpenCode to Codex required a human to understand both schemas, split a `command` array into `command`+`args`, preserve arguments, verify executables and re-write TOML — a package-manager job done by hand. With ~50 bridge targets, pairwise translators would be ~2,450 directed pairs.
+*   **Decision:**
+    *   `litespm copy` normalizes source configs into the existing canonical IR (`host.ServerEntry` + skills records) and lets each target's existing adapter render it: **N readers → one IR → N writers**. No `HostAdapter` interface method is added for porting.
+    *   Porting is plan-first (default output is a plan; `--apply`/TTY approval executes), and its writes go through the normal managed install paths (registration, skills ledger, deployment rows, install transaction) so copies are as reversible and auditable as installs.
+    *   Secrets move as **references/names only**; literal values found in a source config are reported and dropped, never written.
+    *   Verification is a ladder: config read-back and executable resolution ship first; runtime/protocol/capability levels reuse the `internal/discover` probe later — porting grows no process supervisor of its own.
+*   **Where:** [ARCH/38 §5](38-CLI-PRODUCT-SURFACE.md), adapter contract at [ARCH/16 §6](16-HOST-ADAPTERS.md).
+*   **Status:** Accepted; implementation `DESIGNED` (TODO J010).
+
+### D-029: Help Documents Only Shipped Commands
+*   **Context:** a redesigned `help` that lists the target command tree would advertise verbs that do not exist (`list`, `copy`, `sync`, …) — the fastest way for the tool's own onboarding to lie.
+*   **Decision:**
+    *   `help` output is generated from a catalog keyed by the same strings the dispatch switch matches, and `TestHelpCoversEveryDispatchCase` fails when a dispatched command has no help entry. An unbuilt verb therefore cannot appear; a shipped verb cannot ship without help.
+    *   `litespm help` is educational by default (quick start, grouped verbs, real examples, `help concepts` glossary), with `help <command>` detail pages in the ARCH/38 §3 template.
+*   **Where:** [ARCH/38 §3](38-CLI-PRODUCT-SURFACE.md).
+*   **Status:** Accepted; implementation `DESIGNED` (TODO J012).

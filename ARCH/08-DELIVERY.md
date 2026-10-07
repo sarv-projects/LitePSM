@@ -75,7 +75,7 @@ that is not met is **not** met, regardless of how much of the deliverable exists
 
 ### Phase A: Architecture Freeze & Schemas (Prerequisite)
 *   **Deliverables:**
-    *   Author normative LLD specifications `ARCH/10` through `ARCH/37` (the index was `ARCH/10`–`ARCH/24` when this plan was first drafted; `ARCH/25`–`ARCH/31` are contract/status documents and `ARCH/32`–`ARCH/37` are `DESIGNED` addenda).
+    *   Author normative LLD specifications `ARCH/10` through `ARCH/38` (the index was `ARCH/10`–`ARCH/24` when this plan was first drafted; `ARCH/25`–`ARCH/31` are contract/status documents and `ARCH/32`–`ARCH/38` are `DESIGNED` addenda).
     *   Draft 2020-12 JSON Schemas for `listing`, `version`, `source`, `install-plan`, `catalog-release`, `errors` — all six exist under `schemas/`.
     *   Publish hostile archive test fixtures and golden host configuration files (`fixtures/hosts/`, `fixtures/source/`).
 *   **Gate:** all schema validation suites pass; no unresolved architectural questions remain.

@@ -7,7 +7,12 @@
 > command file is written into any host (the one exception is Pi's companion
 > extension, §3.2), and no `/marketplace` hook is registered anywhere.
 > Anything below that describes richer projection or automated slash-command
-> registration is `DESIGNED`.
+> registration is `DESIGNED`. Cross-agent porting (`litespm copy`) is
+`DESIGNED` in [ARCH/38 §5](38-CLI-PRODUCT-SURFACE.md) and deliberately adds
+**no** interface method: it composes the existing reader
+(`ListServerEntriesWithValues`, `DetectPreExistingComponents`) with the
+existing writer (`InstallServerEntry`) through the canonical IR defined in
+§6 below.
 
 ---
 
@@ -376,3 +381,61 @@ Projection of instruction/skill/command components is listed as the "to reach
 the next state" step for host adapters in `STATUS.md` §1; until then, treat any
 doc, wizard string or UI hint promising `/marketplace` registration as a
 description of the target design, not of shipped behaviour.
+
+
+---
+
+## 6. Cross-Agent Porting Contract (`DESIGNED`)
+
+`litespm copy` (ARCH/38 §5) reads one agent's configuration and reproduces it
+in another. This section is what it may rely on from an adapter — and what an
+adapter must never do for it. No `HostAdapter` method is added for this; the
+contract is composed from what §1 already specifies.
+
+### 6.1 Read side (exists)
+
+*   Registered entries: `host.ListServerEntriesWithValues(hostID, scope)`
+    returns each entry with the environment content **as found in the config**.
+*   Pre-existing/native components: each adapter's
+    `DetectPreExistingComponents` (read-only; §2).
+*   The reader must keep distinguishing the two environment forms the
+    canonical `ServerEntry` models:
+    *   `Env` — **literal values** present in the user's file. Porting
+        normalizes these to `Needs`/`dropped`: a literal secret is reported
+        by name and never carried into the IR, let alone written anywhere
+        (ARCH/38 §5.5).
+    *   `EnvNames` — forwarded variable names / references. These are the
+        only environment facts the IR carries.
+
+### 6.2 IR and render side (exists)
+
+The IR is `host.ServerEntry{Name, Command, Args, EnvNames, …}` — the same
+type `InstallServerEntry` consumes, so "translate" means: parse the source
+config into entries, rebuild `ServerEntry`, and hand it to the target's
+normal install path. Shape variation stays data-driven (§1,
+[ARCH/30](30-DATA-DRIVEN-BRIDGE-TARGETS.md)):
+
+```text
+OpenCode  {"type":"local","command":["engram","mcp","--tools=agent,graph"]}
+                         │  read (server-entry spec: ShapeLocalArray)
+                         ▼
+IR        {Command:"engram", Args:["mcp","--tools=agent,graph"]}
+                         │  render (target spec: command string + args array)
+                         ▼
+Codex     command = "engram"
+          args    = ["mcp", "--tools=agent,graph"]
+```
+
+### 6.3 Support check (exists)
+
+An entry is representable on a target iff `entrySpecFor(scope)` resolves for
+that host and the entry's shape matches the spec's field style; otherwise
+porting reports `unsupported` with the reason (never a silent drop, never a
+guess — ARCH/38 §5.7 `LPSM-COPY-002/003`).
+
+### 6.4 Write side (exists, reused unchanged)
+
+Porting writes through `InstallServerEntry` / the skills installer, so it
+inherits the backup, comment/sibling preservation, name-conflict refusal,
+deployment-ledger row and install-transaction semantics that installs already
+have. An adapter must not gain a second, porting-only write path.

@@ -259,7 +259,7 @@ sequenceDiagram
 
 ## 6. Control-Plane Extensions (`DESIGNED`)
 
-[STATUS.md](../STATUS.md) decomposes the product into five working planes — **control**, **catalog & source**, **install**, **provider & invocation runtime**, and **governance & evidence** (plus interfaces & packaging) — and `ARCH/31` proposal #1 keeps that 5-plane decomposition. The next-generation control-plane capabilities live in `ARCH/32`–`ARCH/37`; every one of them is `DESIGNED` and none has code:
+[STATUS.md](../STATUS.md) decomposes the product into five working planes — **control**, **catalog & source**, **install**, **provider & invocation runtime**, and **governance & evidence** (plus interfaces & packaging) — and `ARCH/31` proposal #1 keeps that 5-plane decomposition. The next-generation control-plane capabilities live in `ARCH/32`–`ARCH/38`; every one of them is `DESIGNED` and none has code:
 
 | Plane (STATUS.md) | Extension | Design record | State |
 |---|---|---|---|
@@ -269,5 +269,7 @@ sequenceDiagram
 | Provider & invocation runtime (+ governance leases) | Runtime profiles with OCI distribution; time/scope-bounded capability leases | `ARCH/35` | `DESIGNED` |
 | Governance & evidence | Tighten-only policy hierarchy + `policy explain`, `audit --ci`/SARIF, advisories/quarantine, TUF-style signed catalog, SBOM/Sigstore/SLSA, air-gapped bundles | `ARCH/36` | `DESIGNED` |
 | Interfaces & packaging | TUI, local dashboard, shell completion, `why` | `ARCH/37` | `DESIGNED` |
+| Control + interfaces | Cross-agent porting (`litespm copy` via a canonical IR), `list`/`inventory`, the `help` system, orient commands (`status`/`diff`/`why`/`outdated`) | `ARCH/38` | `DESIGNED` |
+| Control + interfaces | Web product redesign: three visual densities (DISCOVER/EVALUATE/OPERATE), design-system tokens, landing page, Agent Atlas, compare, palette | `ARCH/25` §5–§8 | `DESIGNED` |
 
-Today's control plane — the 12-tool bridge shim, the single-writer daemon, policy/skills gates, `doctor`, `self-update` (SHA-256 only, no signature), host MCP-entry merge, and local catalog search — is `WIRED`; see [STATUS.md](../STATUS.md) §1 for the per-subsystem evidence.
+Today's control plane — the 12-tool bridge shim, the single-writer daemon, policy/skills gates, `doctor`, `self-update` (SHA-256 fail-closed plus keyless signature verification when a release publishes a bundle), host MCP-entry merge, and local catalog search — is `WIRED`; see [STATUS.md](../STATUS.md) §1 for the per-subsystem evidence.
