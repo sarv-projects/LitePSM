@@ -1,6 +1,6 @@
 # Manifest, Lockfile & Interoperability
 
-Status: **`DESIGNED`.** This document specifies the project manifest, the deterministic lockfile, the lock/SBOM/verify verbs, the interop import/export surface, and the canonical identity/alias graph. **Neither `litespm.yml` nor `litespm.lock` exists in the tree; no importer/exporter exists.** See [STATUS.md](../STATUS.md) §5. Do not present any of it as implemented.
+Status: **`WIRED` for §2–§4 (manifest, lockfile, lock verbs, `install --frozen`); `DESIGNED` for §5 interop and §6 identity/alias graph.** `litespm.yml` is authored by hand and parsed by `manifest.Load`; `litespm.lock` is written beside it by `litespm lock`. The verbs and the frozen gate ship in `cmd/litespm/lock.go` with 13 tests (`cmd/litespm/lock_test.go`) covering the §7 scenarios: freeze round-trip from a real local index, byte-identical re-freeze, `--check` clean/hand-edited/missing, stale-manifest refusal, frozen pinning (catalog says 2.0.0, lock pins 1.0.0), not-in-lock/missing-lock refusals, SBOM carrying the lock digest, `--verify` reporting `signature=none result=unavailable`, and flag parsing. **No importer/exporter (§5) and no identity graph (§6) exist.** See [STATUS.md](../STATUS.md) §5. Do not present §5/§6 as implemented.
 
 ---
 
@@ -141,6 +141,8 @@ Field notes:
 | `litespm lock --verify` | Re-verify signatures/provenance/SBOM digests recorded in the lock and report per-entry results. |
 
 `--frozen` MUST NOT silently upgrade, downgrade, add, or remove a package. Any drift is an explicit error (`LPSM-LOCK-DRIFT`), not a repair.
+
+**Implementation note (2026-10-07).** All five verbs ship in `cmd/litespm/lock.go`. The resolver closure reads only the **local synced index** (`catalog sync` cache — zero network in `lock`/`--check`). Known, honestly-reported limits: the `--frozen` artifact-hash/CAS-digest clause awaits artifact digests in the catalog (the gate currently covers lock-side drift: missing, stale, hand-edited, not-in-lock, contradictory `--version`); `--verify` re-verifies the lock digest chain and prints the *recorded* signature/license values as `unavailable`/`NOASSERTION` — it never upgrades them to green; SBOM output carries the lock digest but is not yet validated against the CycloneDX/SPDX JSON Schemas (§4.1).
 
 ### 4.1 SBOM export
 

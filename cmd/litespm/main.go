@@ -89,6 +89,9 @@ func main() {
 	case "grant":
 		runGrant(os.Args[2:])
 
+	case "lock":
+		runLock(context.Background(), os.Args[2:])
+
 	case "catalog":
 		if len(os.Args) >= 3 {
 			switch os.Args[2] {
@@ -189,6 +192,7 @@ Available Commands:
   install remove <installId>  Remove an installed package (nodes you edited are kept)
   restore <installId>|--host  Roll an install back to its exact pre-install bytes (or refuse)
   grant <capabilityId>        Authorize a tool invocation (interactive; list/revoke subcommands)
+  lock [--check|--sbom f|--verify]  Resolve litespm.yml into a deterministic litespm.lock (CI: --check)
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
   self-update [--force]       Check for and apply binary updates
   daemon serve                Start the LiteSPM background supervisor and IPC engine
@@ -940,17 +944,22 @@ type installFlags struct {
 	envNames []string
 	// force replaces an entry of the same name instead of refusing.
 	force bool
+	// frozen installs strictly from litespm.lock: the version comes from the
+	// lock and any lock/manifest drift fails with LPSM-LOCK-DRIFT (ARCH/32 §4).
+	frozen bool
 }
 
 const installUsage = "Usage: litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]\n" +
-	"                     [--host <host-id>]... [--env <VAR>]... [--force]\n\n" +
+	"                     [--host <host-id>]... [--env <VAR>]... [--force] [--frozen]\n\n" +
 	"  --host   register an MCP server with this agent host (repeatable). Default: every\n" +
 	"           host where 'litespm host setup' has been run.\n" +
 	"  --env    forward this environment VARIABLE NAME to the server (repeatable). The\n" +
 	"           host config records a reference such as ${VAR}, never the value, so the\n" +
 	"           secret stays in the environment your agent was started in. Export it\n" +
 	"           before starting the agent; a value in the config is not needed.\n" +
-	"  --force  replace an existing entry with the same name instead of refusing."
+	"  --force  replace an existing entry with the same name instead of refusing.\n" +
+	"  --frozen install strictly from litespm.lock: the version is the locked one, with\n" +
+	"           no resolution; a missing, stale or edited lock fails LPSM-LOCK-DRIFT."
 
 // parseInstallFlags parses `litespm install` arguments strictly: unknown
 // flags, missing flag values, an out-of-range --scope, extra positional
@@ -1002,6 +1011,8 @@ func parseInstallFlags(args []string) (installFlags, error) {
 			flags.envNames = append(flags.envNames, args[i])
 		case "--force", "-f":
 			flags.force = true
+		case "--frozen":
+			flags.frozen = true
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return flags, fmt.Errorf("unknown flag %q", arg)
@@ -1037,6 +1048,25 @@ func runInstall(args []string) {
 	if flags.showHelp {
 		fmt.Println(installUsage)
 		return
+	}
+
+	// --frozen resolves the version from litespm.lock before anything else:
+	// fail closed (LPSM-LOCK-DRIFT) on a missing/stale/edited lock or a
+	// listing the lock does not carry, then pin flags.version to the locked
+	// version so every downstream consumer installs exactly that — no
+	// resolution, no silent add/remove (ARCH/32 §4).
+	if flags.frozen {
+		cwd, werr := os.Getwd()
+		if werr != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: resolve working directory: %v\n", werr)
+			os.Exit(1)
+		}
+		lockedVersion, ferr := frozenVersionFor(cwd, flags.listingID, flags.version)
+		if ferr != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: %v\n", ferr)
+			os.Exit(1)
+		}
+		flags.version = lockedVersion
 	}
 
 	paths, err := config.ResolvePlatformPaths()

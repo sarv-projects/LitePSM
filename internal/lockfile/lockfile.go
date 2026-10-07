@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -142,6 +143,28 @@ func (l *Lock) CheckManifest(m *manifest.Manifest) error {
 		return fmt.Errorf("LPSM-LOCK-DRIFT: manifest changed since lock (lock records %s, manifest is %s); run `litespm lock`", l.ManifestDigest, want)
 	}
 	return l.Verify()
+}
+
+// FindUp locates litespm.lock by walking up from dir, mirroring
+// manifest.FindUp: the lock is committed alongside the manifest, so the
+// manifest's directory is the natural search start and a parent directory may
+// hold a project-wide lock. It returns an error when no lock file exists.
+func FindUp(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	for {
+		p := filepath.Join(abs, LockFileName)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return "", fmt.Errorf("LPSM-LOCK-NOT-FOUND: no %s found from %s", LockFileName, dir)
+		}
+		abs = parent
+	}
 }
 
 // Lookup returns the locked entry for id.
