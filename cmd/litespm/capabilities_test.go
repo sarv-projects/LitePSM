@@ -101,7 +101,7 @@ func TestMCPInstallWritesTheComponentRowFksRequire(t *testing.T) {
 	homeWithBridge(t)
 
 	outcome, err := installMCPFromListing(t.Context(), db, t.TempDir(),
-		mcpListing("mcp:example:needs-component", "needs-component"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime())
+		mcpListing("mcp:example:needs-component", "needs-component"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime(), nil)
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}

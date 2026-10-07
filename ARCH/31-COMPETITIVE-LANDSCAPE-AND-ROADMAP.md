@@ -47,14 +47,18 @@ before this document: the vocabulary did not previously exist.
 
 Method: primary sources only — vendor documentation, vendor repositories, package registries,
 public spec trackers. Marketing pages were read but never used as the sole basis for a capability
-claim. Verified 2026-10-05.
+claim. Verified 2026-10-05; the Microsoft APM and OpenAPM rows were re-verified against primary
+sources on 2026-10-06 and corrected — see §3.4 for what that correction changed.
 
 ### 3.1 Verified as described
 
 | System | Verified capability | Source |
 |---|---|---|
-| **Microsoft APM** | Lockfile with content hashes and deployed-file records; frozen installs; CycloneDX 1.5 / SPDX 2.3 SBOM export; `apm audit --ci` that **replays the install into a scratch location** and diffs expected vs actual (hand-edits, missing integrations, orphaned outputs, hashes, ownership) with SARIF output; tighten-only org policy inheritance; `apm compile -t copilot`; enterprise governance guide | `github.com/microsoft/apm` docs, `apm.lock.yaml`, OpenAPM spec issue #1502 |
-| **Microsoft APM — stated limits** | Microsoft's own docs state its policy is **build-time, not runtime enforcement**; and that it does not do semantic prompt-safety analysis, runtime/model governance, deep inspection of arbitrary MCP command arguments, or OAuth scope governance | APM official documentation |
+| **Microsoft APM** (`github.com/microsoft/apm`, MIT, Python) | Lockfile with content hashes and deployed-file records; frozen installs (`apm install --frozen`); **CycloneDX 1.5 / SPDX 2.3** SBOM export (`apm lock export --format cyclonedx\|spdx`, purl identity, deterministic, credentials scrubbed); `apm audit --ci` that **replays the install into a scratch location** and diffs expected vs actual (hand-edits, missing integrations, orphaned outputs, hashes, ownership) with SARIF output; tighten-only org policy inheritance (`apm-policy.yml`, enterprise → org → repo); hidden-Unicode scanning on every install; enterprise governance guide | `microsoft.github.io/apm` reference docs, `apm.lock.yaml`, OpenAPM v0.1 (see below) |
+| **Microsoft APM — MCP installation** | `apm install --mcp` installs from the **MCP registry** (`api.mcp.github.com`), from stdio argv after `--`, or from a **remote URL**; writes per-harness MCP config through a documented path/key table; **honours `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `HERMES_HOME`**; injects tokens as **target-native references** (`${GITHUB_TOKEN}`, `${env:GITHUB_TOKEN}`) and states plaintext secrets are never written for runtime-resolved targets; blocks **transitive** MCP servers unless declared or trusted; rejects `websockets`/`file://` and requires HTTPS except literal loopback on Codex; `devDependencies.mcp` from a dependency package never reaches the consumer's config | `microsoft.github.io/apm/consumer/install-mcp-servers/` |
+| **Microsoft APM — targets** | GitHub Copilot CLI, Claude Code, Grok Build, Cursor, OpenCode, Codex, Gemini, Windsurf, Kiro, plus Antigravity, Hermes, JetBrains, VS Code and `agent-skills`. Explicitly "vendor-neutral: a sibling registrar can be contributed for any harness" | `microsoft.github.io/apm` targets matrix |
+| **Microsoft APM — stated limits** | Microsoft's own docs state its policy is **build-time, not runtime enforcement** ("runtime behavior is your harness's domain"). `apm compile` compiles `instructions/*.instructions.md` into `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` and per-harness rules trees — it is context compilation, not packaging or MCP handling. **No OAuth scope governance.** Prompt-safety analysis is no longer absent: `apm audit` has an experimental external-scanner integration with an LLM-powered mode (`--external-llm`, requires `OPENAI_API_KEY`, fails closed), so the earlier absolute claim that APM "does no semantic prompt-safety analysis" was stale as of 2026-10-06 | APM official documentation, `reference/cli/audit/` |
+| **OpenAPM v0.1** | **Published and normative**, not a proposal: `microsoft.github.io/apm/specs/openapm-v0.1/` consolidates `apm.yml`, `apm.lock.yaml`, `apm.policy.yml`, the registry HTTP API, dependency-resolution semantics, the primitive type system and the targets matrix into one RFC-2119 document with 87 normative `req-*` statements, inline Draft 2020-12 JSON Schemas and a `CONFORMANCE.md` covering Producer / Consumer / Registry / Governance. The wire contract is explicitly deferred to v0.2. Originated as `microsoft/apm#1502`, closed 2026-05-28 | `microsoft.github.io/apm/specs/openapm-v01/` |
 | **Docker MCP** | Catalog; Gateway as centralized proxy owning server lifecycle/routing/auth; **Profiles**; **Dynamic MCP** exposing `mcp-find`, `mcp-add`, `mcp-config-set`, `mcp-remove`, `mcp-exec`; OCI catalogs; signed server images; SBOM; container isolation; tool allowlists; call tracing; 300+ advertised verified servers | Docker MCP documentation |
 | **AAM** (`agent-package-manager`) | `github.com/spazyCZ/agent-package-manager`; Sigstore/GPG package signing; built-in MCP control server with 29 tools / 9 resources; read-only by default with `--allow-write` to enable mutations; its own registry described as in progress | Project repository |
 | **Vercel Skills** | `vercel-labs/skills`; `skills-lock.json` lockfile; `add`/`remove`/`list`/`find`/`update`/`init` | Project repository, npm |
@@ -82,6 +86,46 @@ was sourced from them, it is re-derived from a verifiable first principle and ma
 | "The repository has no LICENSE" | Was correct. `LICENSE` (Apache-2.0) and `NOTICE` were added during this pass. |
 
 ---
+
+### 3.4 What re-verifying Microsoft APM corrected (2026-10-06)
+
+The first pass recorded APM as a package/governance benchmark and omitted that it
+also ships **end-to-end MCP installation into ~14 harnesses**. That omission was
+not cosmetic: MCP installation into host configs is precisely the lane §7 builds
+in, so the earlier comparison understated the thing we are measured against.
+
+Three specific corrections, each because the earlier text was wrong rather than
+merely incomplete:
+
+*   **APM's MCP surface was absent from the table.** Registry install, remote-URL
+    install, `--transport stdio|http|sse|streamable-http`, `--env`, `--header`,
+    per-harness config writes, `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `COPILOT_HOME`
+    / `HERMES_HOME` handling and target-native token *references*. Our own adapters
+    ignored those environment variables until 2026-10-06, so this was the one row
+    where the competitor was not merely ahead on polish but ahead on function.
+*   **"No semantic prompt-safety analysis" was stale.** APM's `apm audit` now has
+    an experimental LLM-powered external-scanner mode. Experimental and requiring
+    an external tool plus a key, but the absolute claim was no longer true.
+*   **`apm compile -t copilot` was misdescribed** as a packaging/targeting feature.
+    It compiles `instructions/*.instructions.md` into root context files
+    (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) and per-harness rules trees.
+
+What did **not** change, and was independently re-confirmed: the lockfile with
+content hashes and deployed-file records, frozen installs, the exact SBOM formats
+(CycloneDX 1.5 / SPDX 2.3), the scratch-replay audit with SARIF, tighten-only
+policy inheritance, build-time-not-runtime enforcement, and — checked with
+suspicion, because it read as a citation of a specification that does not exist —
+the OpenAPM reference. It is real: `microsoft/apm#1502` is the originating issue,
+and **OpenAPM v0.1 is published as a normative RFC-2119 specification** with
+87 `req-*` statements and Draft 2020-12 schemas. A confusing coincidence worth
+recording so it is not "corrected" later: there is an unrelated `openapm` GitHub
+organisation and an unrelated npm package, both application performance
+monitoring, and neither has anything to do with agent packages.
+
+The strategic consequence is unchanged and, if anything, strengthened: **support
+OpenAPM rather than compete on manifest ergonomics** (§7). A published normative
+spec with conformance classes is a contract to implement against, not a manifest
+to invent against.
 
 ## 4. New defects found in this repository during the comparison
 

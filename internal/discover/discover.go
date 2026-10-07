@@ -26,11 +26,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/envref"
 	"github.com/sarv-projects/litespm/internal/mcpclient"
 	"github.com/sarv-projects/litespm/internal/state"
 )
@@ -44,8 +47,15 @@ type ProviderSpec struct {
 	ComponentName string
 	Command       string
 	Args          []string
-	Env           map[string]string
-	Transport     string
+	// Env is what the host config stores, which for a forwarded variable is a
+	// reference such as `${GITHUB_TOKEN}`, not a value. dial resolves it against
+	// this process's environment, because the host's expansion does not apply
+	// to a server LiteSPM is spawning itself.
+	Env map[string]string
+	// HostID selects the host's own substitution rules when resolving, because a
+	// `${VAR:-fallback}` is expanded by some hosts and left alone by others.
+	HostID    string
+	Transport string
 }
 
 // DiscoveredProvider is what a probe found.
@@ -262,12 +272,34 @@ func dial(ctx context.Context, spec ProviderSpec) (mcpclient.ClientSession, func
 			spec.ComponentName, spec.Transport)
 	}
 	cmd := exec.CommandContext(ctx, spec.Command, spec.Args...)
+	// Inherit this process's environment first, so a key we do not override keeps
+	// the value the user's shell exported.
+	cmd.Env = cmd.Environ()
 	if len(spec.Env) > 0 {
-		env := make([]string, 0, len(spec.Env))
-		for k, v := range spec.Env {
-			env = append(env, k+"="+v)
+		// A name-list host (Codex) stores only the name, so its read-back value
+		// is empty; a reference-host stores the reference text. Both resolve here,
+		// from this process's environment, because the host's own expansion never
+		// runs for a server LiteSPM spawns itself.
+		hostSpec, _ := envref.SpecFor(spec.HostID)
+		lookup := func(k string) (string, bool) { return os.LookupEnv(k) }
+		keys := make([]string, 0, len(spec.Env))
+		for k := range spec.Env {
+			keys = append(keys, k)
 		}
-		cmd.Env = append(cmd.Environ(), env...)
+		sort.Strings(keys)
+		for _, k := range keys {
+			// Only append a value we actually have. A name-list host stores no
+			// value at all (its read-back placeholder is empty), and an unset
+			// reference resolves to its own text; appending either as `NAME=`
+			// would override the real value already inherited from this
+			// environment with an empty one, which is the opposite of what the
+			// user asked for. Leaving the key out keeps the inherited value.
+			resolved, expanded := hostSpec.Resolve(spec.Env[k], lookup)
+			if !expanded && resolved == "" {
+				continue
+			}
+			cmd.Env = append(cmd.Env, k+"="+resolved)
+		}
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

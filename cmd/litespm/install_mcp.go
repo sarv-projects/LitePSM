@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/envref"
 	"github.com/sarv-projects/litespm/internal/host"
 	"github.com/sarv-projects/litespm/internal/state"
 )
@@ -40,11 +41,21 @@ import (
 // The result is an honest stdio registration of what the catalog actually knows,
 // with its limits stated.
 
+// hostEnvSpec pairs a written host with the substitution rules that were applied
+// there, so the CLI can report what each host will actually do with the value.
+type hostEnvSpec struct {
+	HostID string
+	Spec   envref.Spec
+}
+
 // mcpInstallOutcome is what the CLI prints and the daemon returns.
 type mcpInstallOutcome struct {
 	InstallID string
 	Hosts     []*host.EntryInstallResult
 	Entry     host.ServerEntry
+	// EnvSpecs is populated only when the user asked for variables, and only for
+	// hosts whose documented behaviour is known.
+	EnvSpecs []hostEnvSpec
 	// ClaimedTransport is the listing's transport field, kept for the record
 	// only. See the file comment.
 	ClaimedTransport string
@@ -65,6 +76,7 @@ func installMCPFromListing(
 	hosts []string,
 	force bool,
 	runtime *domain.RuntimeDescriptor,
+	envNames []string,
 ) (*mcpInstallOutcome, error) {
 	if listing.Kind != domain.KindMCP {
 		return nil, fmt.Errorf("installMCPFromListing: %s is kind %q, not mcp", listing.ID, listing.Kind)
@@ -98,11 +110,43 @@ func installMCPFromListing(
 				"or pass --host to name one explicitly")
 	}
 
-	entry := host.ServerEntry{Name: name, Command: command, Args: append([]string{}, runtime.Args...)}
+	entry := host.ServerEntry{
+		Name:     name,
+		Command:  command,
+		Args:     append([]string{}, runtime.Args...),
+		EnvNames: append([]string{}, envNames...),
+	}
 	backupDir := filepath.Join(dataRoot, "backups")
 	outcome := &mcpInstallOutcome{
 		Entry:            entry,
 		ClaimedTransport: runtime.Type,
+	}
+
+	// Validate the names, and confirm every target host can express them, BEFORE
+	// any config is touched. Writing the server entry and then failing on the
+	// environment would leave the user with a half-installed server that cannot
+	// start.
+	if err := envref.ValidateNames(entry.EnvNames); err != nil {
+		return nil, err
+	}
+	for _, hostID := range hosts {
+		spec, ok := host.EnvForwarding(hostID)
+		if !ok {
+			if len(entry.EnvNames) > 0 {
+				adapter, _ := host.GetAdapter(hostID)
+				name := hostID
+				if adapter != nil {
+					name = adapter.Descriptor().DisplayName
+				}
+				return nil, fmt.Errorf(
+					"host %q (%s) cannot carry a forwarded environment variable — its MCP entry has no environment field, "+
+						"or no documented spelling for one — so --env would be silently ignored there; "+
+						"install without --env and add the variable to that host's config by hand",
+					name, hostID)
+			}
+			continue
+		}
+		outcome.EnvSpecs = append(outcome.EnvSpecs, hostEnvSpec{HostID: hostID, Spec: spec})
 	}
 
 	// Check every host BEFORE writing any of them, so a collision on the third
@@ -253,10 +297,56 @@ func printMCPInstall(outcome *mcpInstallOutcome) {
 		fmt.Printf("  Note: the catalog lists this server as %q but publishes no endpoint URL, so the\n"+
 			"        local command above is what was registered.\n", outcome.ClaimedTransport)
 	}
-	fmt.Printf("  Note: the catalog publishes no environment variables for this server. If it\n" +
-		"        needs credentials, add them under the same entry name in the host config\n" +
-		"        shown above (for example an \"env\" object next to \"command\").\n")
+	printForwardedEnv(outcome)
 	if len(outcome.Hosts) > 1 {
 		fmt.Printf("  Note: the agent will spawn this server on next start; some agents need a restart.\n")
+	}
+}
+
+// printForwardedEnv reports what was written for each host and what that host
+// will do with it.
+//
+// The caveats are not decoration. Two of the documented behaviours fail without
+// an error — an unset variable becomes an empty string on one host and a silent
+// no-op behind an allowlist on another — so a user told only "registered" would
+// conclude the credential is in place when it is not.
+func printForwardedEnv(outcome *mcpInstallOutcome) {
+	names := outcome.Entry.EnvNames
+	if len(names) == 0 {
+		fmt.Printf("  Note: the catalog publishes no environment variables for this server. If it\n" +
+			"        needs credentials, re-run with --env <VARIABLE_NAME> to forward one.\n")
+		return
+	}
+
+	// Say plainly that no value was written, so nobody goes looking for a secret
+	// in the config and does not find one.
+	sample := ""
+	if m := outcome.EnvSpecs[0].Spec.EnvMap(names); m != nil {
+		for _, n := range envref.SortedNames(names) {
+			if sample != "" {
+				sample += ", "
+			}
+			sample += n + " = " + m[n]
+		}
+	}
+
+	printed := map[string]bool{}
+	for _, hs := range outcome.EnvSpecs {
+		var how string
+		switch hs.Spec.Style {
+		case envref.StyleEnvNameList:
+			how = fmt.Sprintf("%q in %s (this host takes names only, not values)",
+				strings.Join(names, ", "), hs.Spec.NameListField)
+		default:
+			how = fmt.Sprintf("%s under %q", sample, hs.Spec.Field)
+		}
+		fmt.Printf("  • %-12s %s\n", hs.HostID, how)
+		for _, c := range envref.Caveats(hs.Spec, names) {
+			if printed[c] {
+				continue
+			}
+			printed[c] = true
+			fmt.Printf("                %s\n", c)
+		}
 	}
 }

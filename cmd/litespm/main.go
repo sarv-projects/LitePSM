@@ -771,14 +771,22 @@ type installFlags struct {
 	// hosts names the agent hosts to register an MCP server with. Empty means
 	// every host whose LiteSPM bridge verifies as registered.
 	hosts []string
+	// envNames are environment variable NAMES to forward to the server. Names
+	// only, never values: the config gets a reference the host expands, so a
+	// secret never passes through LiteSPM.
+	envNames []string
 	// force replaces an entry of the same name instead of refusing.
 	force bool
 }
 
 const installUsage = "Usage: litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]\n" +
-	"                     [--host <host-id>]... [--force]\n\n" +
+	"                     [--host <host-id>]... [--env <VAR>]... [--force]\n\n" +
 	"  --host   register an MCP server with this agent host (repeatable). Default: every\n" +
 	"           host where 'litespm host setup' has been run.\n" +
+	"  --env    forward this environment VARIABLE NAME to the server (repeatable). The\n" +
+	"           host config records a reference such as ${VAR}, never the value, so the\n" +
+	"           secret stays in the environment your agent was started in. Export it\n" +
+	"           before starting the agent; a value in the config is not needed.\n" +
 	"  --force  replace an existing entry with the same name instead of refusing."
 
 // parseInstallFlags parses `litespm install` arguments strictly: unknown
@@ -823,6 +831,12 @@ func parseInstallFlags(args []string) (installFlags, error) {
 			}
 			i++
 			flags.hosts = append(flags.hosts, args[i])
+		case "--env":
+			if i+1 >= len(args) {
+				return flags, fmt.Errorf("flag %s requires a value", arg)
+			}
+			i++
+			flags.envNames = append(flags.envNames, args[i])
 		case "--force", "-f":
 			flags.force = true
 		default:
@@ -914,7 +928,7 @@ func runInstall(args []string) {
 			fmt.Fprintf(os.Stderr, "Install failed: %v\n", domain.ErrArtifactUnavailable(flags.listingID, runtimeErr.Error()))
 			os.Exit(1)
 		}
-		outcome, err := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(flags.version), flags.scope, flags.hosts, flags.force, runtime)
+		outcome, err := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(flags.version), flags.scope, flags.hosts, flags.force, runtime, flags.envNames)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
 			os.Exit(1)
@@ -1781,7 +1795,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 				if rerr != nil {
 					return nil, installRPCError(domain.ErrArtifactUnavailable(listingID, rerr.Error()))
 				}
-				outcome, ierr := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(version), scope, nil, false, runtime)
+				outcome, ierr := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(version), scope, nil, false, runtime, nil)
 				if ierr != nil {
 					return nil, installRPCError(ierr)
 				}

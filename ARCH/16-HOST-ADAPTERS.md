@@ -198,6 +198,56 @@ member. The rules are uniform across all 50 adapters:
     content and validity are preserved. Guarantees are pinned by
     `internal/host/json_splice_test.go` and the `host remove` round-trip tests.
 
+#### 3.7.3 Forwarding environment variables (`--env <NAME>`)
+
+`litespm install <mcp-id> --env <VARIABLE_NAME>` records that a server needs a
+variable. It takes **names only, never values**: the host config receives a
+reference the host expands at spawn time, so a credential never passes through
+LiteSPM at all — not into a backup, not into the install ledger, not into a config
+file, and not into a shell history, because it was never accepted on the command
+line.
+
+This cannot be one constant. The hosts that document substitution each spell it
+differently, one names the field differently, one has no substitution at all, and
+three differ in what they do when the variable is unset. Writing the wrong form
+produces an entry that looks configured and fails only at first launch. The
+verified matrix is data in `internal/envref`, and each row carries the vendor URL
+it was read from.
+
+| host | field | reference written | unset behaviour |
+|---|---|---|---|
+| `claude-code`, `github-copilot`, `gemini-cli`, `kiro-cli`, `pi-agent`, `grok-build` | `env` | `${NAME}` | differs — see below |
+| `cursor`, `cline` | `env` | `${env:NAME}` | `cline` passes the literal text through |
+| `opencode` | **`environment`** | **`{env:NAME}`** (no `$`) | not documented |
+| `codex` | **`env_vars`** (name list) | *none — the name itself* | not forwarded when absent from the parent environment |
+
+*   **Codex is a different mechanism, not a different spelling.** Its `env` table
+    is documented as copied into the subprocess *as-is*, so a `${NAME}` written
+    there reaches the child as that literal text and is used as the credential.
+    Codex forwards by **name** through a separate `env_vars` list instead, which is
+    what LiteSPM writes.
+*   **Three silent failures are reported at install time, not buried here.**
+    Gemini substitutes an **empty string** for an unset variable (the server then
+    starts and answers unauthenticated); Kiro **refuses to expand** any name absent
+    from its `mcp.approvedEnvVars` allowlist, leaving the reference as written; and
+    `claude-code` / `cline` pass the reference's literal text through. `litespm`
+    prints the applicable caveat per host after registering the entry.
+*   **An unverified host is refused.** `internal/envref` has no row for a host
+    without documented behaviour, and `--env` fails before any config is touched
+    rather than writing a reference on an assumption.
+*   **Two readers, one reference.** The host expands it when the agent spawns the
+    server; `litespm capabilities refresh` expands it itself when *it* spawns the
+    server, because the host's expansion does not apply to a process LiteSPM
+    starts. That resolver handles only the four forms LiteSPM emits — deliberately
+    not `{file:/path}` (Windsurf, OpenCode) or `!command` (Pi), which are
+    documented by their hosts and are **never** resolved here, since honouring
+    them during a probe would turn discovering an installed server into a local
+    file-read and command-execution primitive. A value that is not a whole-value
+    reference is passed through untouched, so a hand-written literal keeps working.
+*   **Names are validated** (`[A-Za-z_][A-Za-z0-9_]*`, no duplicates) before any
+    write, so a typo fails at the command line rather than as a reference that can
+    never resolve.
+
 ---
 
 ## 4. In-Agent `/marketplace` Experience & Capability Browser

@@ -155,6 +155,19 @@ Interop is bidirectional where a foreign format is lossless enough; otherwise it
 | Foreign format | Direction | Mapping notes |
 |---|---|---|
 | OpenAPM `apm.yml` / `apm.lock.yaml` | import + export | Deps → `requires`; content hashes → `artifact.sha256`/`treeDigest`; deployed-file records → `projections`. Export is lossy for LiteSPM-only fields and must say so. |
+
+**Pin against the specification, not the CLI.** OpenAPM v0.1 is published as a
+normative RFC-2119 document (`microsoft.github.io/apm/specs/openapm-v01/`) with 87
+`req-*` statements, inline Draft 2020-12 JSON Schemas and a `CONFORMANCE.md`
+split into Producer / Consumer / Registry / Governance classes — verified
+2026-10-06. The docs pages that describe these formats are explicitly *not*
+normative. So the importer should validate `apm.yml` against the specification's
+`manifest-v0.1.schema.json` and identify the contract by its `$id`, rather than
+reverse-engineering the shapes from whatever the CLI currently emits: the
+specification's own wire contract is deferred to v0.2, and a version pinned to a
+working CLI draft rather than to the spec will drift the moment the CLI catches
+up. The conformance classes also give the roadmap something checkable — a LiteSPM
+exporter can state which classes it satisfies instead of claiming interop.
 | Vercel `skills-lock.json` | import + export | Skill entries → `id` of the form `skill:…`; version/ref → `resolved`; no effect/permission data exists in that format. |
 | Agent Plugins `plugin.json` | import (+ export) | `plugin.json` + `skills/` + `mcp.json` → one `plugin` capability with `skill`/`mcp` components. No trust or install semantics are imported. |
 | Claude / Codex plugins (`.claude-plugin/`, `.agents/plugins/`) | import (+ export) | Marketplace manifests map to the existing `ClaudeMarketplaceAdapter` / `CodexMarketplaceAdapter` shapes. `command` sources are rejected on import. |

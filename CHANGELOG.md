@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An installed MCP server can be given a credential without the credential ever touching LiteSPM.**
+  `litespm install <mcp-id> --env <VARIABLE_NAME>` (repeatable) records that a server needs a variable. It takes **names only, never values**: the host config
+  receives a reference the host expands at spawn time, so the secret stays in the environment your agent was started in and never enters a config file, a backup, the
+  install ledger or a shell history. This could not be one constant, so the behaviour is verified per-host data in `internal/envref`, each row carrying the vendor URL
+  it was read from: `${NAME}` for Claude Code, Copilot CLI, Gemini CLI, Kiro, Pi and Grok Build; `${env:NAME}` for Cursor and Cline; `{env:NAME}` under the differently
+  named `environment` key for OpenCode; and **Codex forwards by name** through a separate `env_vars` list, because its `env` table is documented as copied into the
+  subprocess as-is — a reference written there would reach the child as the literal text of that reference and be used as the credential. A host with no documented
+  behaviour is refused before any config is touched rather than written on an assumption.
+
+  Three documented behaviours fail *silently*, so the install reports them per host instead of leaving them in a design note: Gemini substitutes an **empty string**
+  for an unset variable, leaving the server starting and answering unauthenticated; Kiro **refuses to expand** a name absent from its `mcp.approvedEnvVars` allowlist,
+  leaving the reference as written; and Claude Code and Cline pass the reference's literal text through. `litespm capabilities refresh` is the second reader of the same
+  reference — it expands it itself when it spawns the server, because the host's expansion does not apply to a process LiteSPM starts — and deliberately refuses to
+  resolve the two forms some hosts also document, `{file:/path}` and `!command`, since honouring them during a probe would turn discovering an installed server into
+  a local file-read and command-execution primitive. Verified end to end 2026-10-06: install → refresh → invoke returned the resolved value on both a reference host
+  and the name-list host, and an unset variable reported `<unset>` rather than being blanked over or passed through literally.
+
 - **Installed MCP servers are discoverable and callable.** Installing a server wrote a config entry and stopped there: nothing knew what the server
   could do, so `capabilities.search`, `capabilities.describe` and `provider.invoke` answered `-32601` with the reason "no capability rows are persisted".
   `internal/discover` closes that chain — it spawns a configured host's registered server, probes its tools through `mcpclient`, writes `providers` and
@@ -134,6 +151,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entry into it necessarily added a line; content and validity are preserved.
 
 ### Fixed
+
+- **Reading an installed MCP server back from a TOML host config returned no arguments at all.** The parser tried to unquote a whole array (`["-y", "demo"]`) as if it were a
+  single string literal, which can never succeed, so `args` silently came back empty and every server installed for Codex or Grok Build would have been probed with
+  no arguments — a failure that looks like a broken server rather than a broken reader. Arrays are now split quote-aware (an argument may legitimately contain a
+  comma), the same reader now also recovers `env` tables and `env_vars` name lists, and the behaviour is pinned by `TestTOMLArgsAndEnvReadBack`.
 
 - **CI now judges the deploy bundle with the deploy's own checks.** `scripts/deploy-pages.sh` was referenced by no workflow, so its packaging — and
   the leak audit and digest verification inside it — only ever ran on the machine doing the deploying. Both judgements moved into

@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/envref"
 )
 
 // ServerEntry is one MCP server registration as it will appear in a host config.
@@ -40,7 +41,15 @@ type ServerEntry struct {
 	Name    string
 	Command string
 	Args    []string
-	Env     map[string]string
+	// Env holds environment values found in an EXISTING config, as literal
+	// key/value pairs. It is populated on read-back and is never written from an
+	// install: an install states variable NAMES (EnvNames) and the config gets a
+	// reference, so a secret never passes through LiteSPM at all.
+	Env map[string]string
+	// EnvNames are the variables the user asked to forward. The reference text is
+	// built per host at write time, because no two hosts spell it the same way and
+	// one host takes no value whatsoever (see internal/envref).
+	EnvNames []string
 }
 
 // EntryInstallOptions controls a single host write.
@@ -70,6 +79,13 @@ type entrySpec struct {
 	Format  ConfigFormat
 	// Shape decides how the entry itself is expressed.
 	Shape EntryShape
+	// EnvRef is the host's documented environment-forwarding behaviour. A zero
+	// value means no verified behaviour, which is why entrySpecFor records
+	// whether it found one at all rather than assuming every host looks alike.
+	EnvRef envref.Spec
+	// HasEnvRef distinguishes "no verified row for this host" from a row that
+	// happens to be empty.
+	HasEnvRef bool
 }
 
 // entrySpecFor resolves the per-host entry shape. Data-driven targets already
@@ -77,17 +93,26 @@ type entrySpec struct {
 // removal specs that describe the same containers.
 func entrySpecFor(adapter HostAdapter) (entrySpec, bool) {
 	id := strings.ToLower(adapter.Descriptor().HostID)
-	if g, ok := adapter.(*GenericAdapter); ok {
-		return entrySpec{
+	var base entrySpec
+	switch g := adapter.(type) {
+	case *GenericAdapter:
+		base = entrySpec{
 			KeyPath: g.Target.keyPathFor(false),
 			Format:  g.Target.Format,
 			Shape:   g.Target.Shape,
-		}, true
+		}
+	default:
+		spec, ok := bespokeEntrySpecs[id]
+		if !ok {
+			return entrySpec{}, false
+		}
+		base = spec
 	}
-	if spec, ok := bespokeEntrySpecs[id]; ok {
-		return spec, true
+	if s, ok := envref.SpecFor(id); ok {
+		base.EnvRef = s
+		base.HasEnvRef = true
 	}
-	return entrySpec{}, false
+	return base, true
 }
 
 // bespokeEntrySpecs covers the six hand-written adapters, which do not expose a
@@ -112,12 +137,12 @@ func (s entrySpec) entryValue(e ServerEntry) any {
 	switch s.Shape {
 	case ShapeLocalArray:
 		argv := append([]string{e.Command}, e.Args...)
-		return map[string]any{"type": "local", "command": argv}
+		out := map[string]any{"type": "local", "command": argv}
+		s.addEnvFields(out, e)
+		return out
 	case ShapeStdioTyped:
 		out := map[string]any{"type": "stdio", "command": e.Command, "args": e.Args}
-		if len(e.Env) > 0 {
-			out["env"] = e.Env
-		}
+		s.addEnvFields(out, e)
 		return out
 	case ShapeCommandString:
 		parts := append([]string{quoteCommandArg(e.Command)}, e.Args...)
@@ -127,10 +152,53 @@ func (s entrySpec) entryValue(e ServerEntry) any {
 		if len(e.Args) > 0 {
 			out["args"] = e.Args
 		}
-		if len(e.Env) > 0 {
-			out["env"] = e.Env
-		}
+		s.addEnvFields(out, e)
 		return out
+	}
+}
+
+// addEnvFields writes the forwarded variables into an entry object, in whichever
+// shape the host documents.
+//
+// The two shapes are not variants of one mechanism. A reference-host gets an
+// environment object whose values are references; a name-list host gets a
+// separate array of names and stores no value at all, because it has no
+// substitution to offer and would otherwise forward the reference's literal text
+// as if it were the credential.
+// EnvForwarding reports whether a host can express forwarded variables at all,
+// and returns its verified rules when it can.
+//
+// Two different things make a host unable, and they are reported separately
+// because the user's next step differs. A host whose entry shape is a bare
+// command string cannot carry an environment object no matter what syntax is
+// used, so accepting `--env` there would write an entry that looks credentialed
+// and is not. A host with no row in internal/envref has a shape that could hold
+// one but no documented spelling to put in it. Both are refusals, not warnings.
+func EnvForwarding(hostID string) (envref.Spec, bool) {
+	adapter, err := GetAdapter(hostID)
+	if err != nil {
+		return envref.Spec{}, false
+	}
+	spec, ok := entrySpecFor(adapter)
+	if !ok {
+		return envref.Spec{}, false
+	}
+	if !spec.HasEnvRef {
+		return envref.Spec{}, false
+	}
+	if spec.Shape == ShapeCommandString {
+		return envref.Spec{}, false
+	}
+	return spec.EnvRef, true
+}
+
+func (s entrySpec) addEnvFields(out map[string]any, e ServerEntry) {
+	if len(e.EnvNames) > 0 && s.HasEnvRef && s.EnvRef.Style == envref.StyleEnvNameList {
+		out[s.EnvRef.NameListField] = envref.SortedNames(e.EnvNames)
+		return
+	}
+	if m := s.EnvRef.EnvMap(e.EnvNames); len(m) > 0 {
+		out[s.EnvRef.Field] = m
 	}
 }
 
@@ -145,15 +213,22 @@ func (s entrySpec) tomlEntryBlock(name string, e ServerEntry) string {
 	if len(quoted) > 0 {
 		fmt.Fprintf(&b, "args = [%s]\n", strings.Join(quoted, ", "))
 	}
-	if len(e.Env) > 0 {
-		keys := make([]string, 0, len(e.Env))
-		for k := range e.Env {
+	if len(e.EnvNames) > 0 && s.HasEnvRef && s.EnvRef.Style == envref.StyleEnvNameList {
+		// A name-list host takes no value, so there is nothing to quote.
+		names := make([]string, 0, len(e.EnvNames))
+		for _, n := range envref.SortedNames(e.EnvNames) {
+			names = append(names, fmt.Sprintf("%q", n))
+		}
+		fmt.Fprintf(&b, "%s = [%s]\n", s.EnvRef.NameListField, strings.Join(names, ", "))
+	} else if m := s.EnvRef.EnvMap(e.EnvNames); len(m) > 0 {
+		keys := make([]string, 0, len(m))
+		for k := range m {
 			keys = append(keys, k)
 		}
 		// Deterministic order: a config that reorders itself on every install is
 		// unreviewable in a diff.
 		sortStrings(keys)
-		fmt.Fprintf(&b, "env = { %s }\n", joinTOMLPairs(keys, e.Env))
+		fmt.Fprintf(&b, "%s = { %s }\n", s.EnvRef.Field, joinTOMLPairs(keys, m))
 	}
 	return b.String()
 }
@@ -172,6 +247,63 @@ func joinTOMLPairs(keys []string, env map[string]string) string {
 		parts = append(parts, fmt.Sprintf("%q = %q", k, env[k]))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// parseTOMLStringArray reads a TOML array of quoted strings, such as
+// `["-y", "demo"]` or `["GITHUB_TOKEN"]`.
+//
+// It does not use strconv.Unquote on the whole value: that expects a single Go
+// string literal and can never succeed on an array, so an array read that way
+// silently yields nothing. Splitting has to be quote-aware, because an argument
+// may itself contain a comma.
+func parseTOMLStringArray(value string) []string {
+	body := strings.TrimSpace(value)
+	if !strings.HasPrefix(body, "[") || !strings.HasSuffix(body, "]") {
+		return nil
+	}
+	var out []string
+	for _, item := range splitTOMLPairs(body[1 : len(body)-1]) {
+		if s, err := strconv.Unquote(item); err == nil {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// splitTOMLPairs splits the body of an inline table or an array into its
+// comma-separated items.
+//
+// It tracks quoting rather than splitting on commas, because a reference or a
+// hand-written value may legitimately contain one and cutting mid-value would
+// produce keys that do not exist and silently drop the variable.
+func splitTOMLPairs(body string) []string {
+	var out []string
+	var cur strings.Builder
+	inQuote, escaped := false, false
+	for _, r := range body {
+		switch {
+		case escaped:
+			cur.WriteRune(r)
+			escaped = false
+		case r == '\\' && inQuote:
+			cur.WriteRune(r)
+			escaped = true
+		case r == '"':
+			inQuote = !inQuote
+			cur.WriteRune(r)
+		case r == ',' && !inQuote:
+			if s := strings.TrimSpace(cur.String()); s != "" {
+				out = append(out, s)
+			}
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if s := strings.TrimSpace(cur.String()); s != "" {
+		out = append(out, s)
+	}
+	return out
 }
 
 // ValidateServerEntryName rejects names a host could not store or a user could
@@ -349,10 +481,14 @@ func lookupInMap(root map[string]any, keyPath []string) map[string]any {
 // recovers the command to run without the catalog: the config the user can see
 // is the single source of truth for what is installed.
 type HostServerEntry struct {
-	Name      string
-	Command   string
-	Args      []string
+	Name    string
+	Command string
+	Args    []string
+	// Env is what the config actually stores, which is a reference on a
+	// host that substitutes one and empty on a name-list host that stores no
+	// value. Either way it is a name to resolve, never a secret to read.
 	Env       map[string]string
+	EnvNames  []string
 	Transport string
 	ListingID string
 }
@@ -418,11 +554,34 @@ func ListServerEntriesWithValues(ctx context.Context, hostID string, scope domai
 					}
 				}
 			}
-			if env, ok := m["env"].(map[string]any); ok {
-				entry.Env = map[string]string{}
-				for k, v := range env {
-					if s, ok := v.(string); ok {
-						entry.Env[k] = s
+			// Read every key this host could have used, not just `env`: OpenCode
+			// names it `environment`, and a name-list host stores names in an
+			// array with no value at all. Missing either form here means the probe
+			// would spawn the server without the variable the user forwarded.
+			for _, field := range []string{"env", "environment"} {
+				if env, ok := m[field].(map[string]any); ok {
+					if entry.Env == nil {
+						entry.Env = map[string]string{}
+					}
+					for k, v := range env {
+						if s, ok := v.(string); ok {
+							entry.Env[k] = s
+						}
+					}
+				}
+			}
+			if names, ok := m[spec.EnvRef.NameListField].([]any); ok && spec.HasEnvRef {
+				if entry.Env == nil {
+					entry.Env = map[string]string{}
+				}
+				for _, item := range names {
+					if n, ok := item.(string); ok {
+						// The value is not in the config; record the name so the
+						// probe resolves it from this process's environment.
+						entry.EnvNames = append(entry.EnvNames, n)
+						if _, seen := entry.Env[n]; !seen {
+							entry.Env[n] = ""
+						}
 					}
 				}
 			}
@@ -480,11 +639,42 @@ func tomlServerEntries(spec entrySpec, content string) []HostServerEntry {
 				current.Command = unquoted
 			}
 		case "args":
-			if unquoted, err := strconv.Unquote("[" + strings.Trim(value, "[]") + "]"); err == nil {
-				for _, item := range strings.Split(unquoted, ",") {
-					if s, err := strconv.Unquote(strings.TrimSpace(item)); err == nil {
-						current.Args = append(current.Args, s)
-					}
+			current.Args = parseTOMLStringArray(value)
+		case "env":
+			// `env = { "NAME" = "value" }`. The value is a reference on a
+			// substitution host and a literal on one the user hand-edited; either
+			// way the caller resolves it, so it is preserved as written.
+			inner := strings.TrimSpace(strings.Trim(value, "{}"))
+			if inner == "" {
+				break
+			}
+			if current.Env == nil {
+				current.Env = map[string]string{}
+			}
+			for _, pair := range splitTOMLPairs(inner) {
+				k, v, ok := strings.Cut(pair, "=")
+				if !ok {
+					continue
+				}
+				key, err1 := strconv.Unquote(strings.TrimSpace(k))
+				val, err2 := strconv.Unquote(strings.TrimSpace(v))
+				if err1 == nil && err2 == nil {
+					current.Env[key] = val
+				}
+			}
+		case spec.EnvRef.NameListField:
+			// A name-list host stores names and no values. Record the names so the
+			// probe can resolve them from the environment it runs in.
+			if spec.EnvRef.NameListField == "" {
+				break
+			}
+			for _, n := range parseTOMLStringArray(value) {
+				current.EnvNames = append(current.EnvNames, n)
+				if current.Env == nil {
+					current.Env = map[string]string{}
+				}
+				if _, seen := current.Env[n]; !seen {
+					current.Env[n] = ""
 				}
 			}
 		}

@@ -186,6 +186,7 @@ func installedMCPServers(ctx context.Context, db *state.DB, client *catalog.Clie
 				Command:       entry.Command,
 				Args:          entry.Args,
 				Env:           entry.Env,
+				HostID:        hostID,
 				Transport:     entry.Transport,
 			})
 		}

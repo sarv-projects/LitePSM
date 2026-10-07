@@ -49,7 +49,7 @@ func TestInstallMCPFromListingRegistersWithConfiguredHosts(t *testing.T) {
 	_, configPath := homeWithBridge(t)
 
 	outcome, err := installMCPFromListing(context.Background(), db, dataRoot,
-		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime())
+		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime(), nil)
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestInstallMCPFromListingRefusesCollisions(t *testing.T) {
 	}
 
 	_, err = installMCPFromListing(context.Background(), db, dataRoot,
-		mcpListing("mcp:example:demo-mcp", "mine"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime())
+		mcpListing("mcp:example:demo-mcp", "mine"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime(), nil)
 	if err == nil {
 		t.Fatal("install overwrote an entry the user already had")
 	}
@@ -114,7 +114,7 @@ func TestInstallMCPFromListingRefusesWithoutAnyConfiguredHost(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	_, err := installMCPFromListing(context.Background(), db, t.TempDir(),
-		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime())
+		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime(), nil)
 	if err == nil {
 		t.Fatal("install proceeded with no host configured")
 	}
@@ -128,7 +128,7 @@ func TestInstallMCPFromListingRefusesWhenNoCommandIsPublished(t *testing.T) {
 	homeWithBridge(t)
 
 	_, err := installMCPFromListing(context.Background(), db, t.TempDir(),
-		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, nil, false, nil)
+		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, nil, false, nil, nil)
 	if err == nil {
 		t.Fatal("install proceeded with no runtime descriptor")
 	}
