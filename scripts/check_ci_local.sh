@@ -2,11 +2,12 @@
 # check_ci_local.sh — run the .github/workflows/ci.yml stages on a local
 # Linux or macOS machine, in CI order, with the same commands.
 #
-# Why this exists: the Ubuntu CI job has been red without a locally
-# reproducible cause, and the job log needs admin access to fetch. Until that
-# log is readable, every CI stage must be reproducible on the developer's
+# Why this exists: every CI stage must be reproducible on the developer's
 # machine with one command, so "works on my machine" and "works in CI" are the
-# same claim again.
+# same claim again. (Historical note: the jobs behind this script were red for
+# weeks as "non-reproducible flakes" — they were environment-assumption tests
+# plus a Windows-only catalog persistence bug, root-caused and fixed on
+# 2026-10-07; job logs are fetchable with `gh run view <id> --log-failed`.)
 #
 # Usage:
 #   scripts/check_ci_local.sh          # static checks + generated-data gates + go test -race
