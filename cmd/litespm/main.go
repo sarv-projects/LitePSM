@@ -92,6 +92,11 @@ func main() {
 	case "lock":
 		runLock(context.Background(), os.Args[2:])
 
+	case "copy":
+		if code := runCopy(os.Args[2:]); code != 0 {
+			os.Exit(code)
+		}
+
 	case "catalog":
 		if len(os.Args) >= 3 {
 			switch os.Args[2] {
@@ -193,6 +198,7 @@ Available Commands:
   restore <installId>|--host  Roll an install back to its exact pre-install bytes (or refuse)
   grant <capabilityId>        Authorize a tool invocation (interactive; list/revoke subcommands)
   lock [--check|--sbom f|--verify]  Resolve litespm.yml into a deterministic litespm.lock (CI: --check)
+  copy --from <a> --to <b>   Port an agent's MCP servers & skills to another agent (plan first; --apply)
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
   self-update [--force]       Check for and apply binary updates
   daemon serve                Start the LiteSPM background supervisor and IPC engine
