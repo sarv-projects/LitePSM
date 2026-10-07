@@ -21,6 +21,13 @@ func ListenIPC(endpoint string) (net.Listener, error) {
 
 	listener, err := net.Listen("unix", endpoint)
 	if err != nil {
+		// sockaddr_un.sun_path is 104 bytes including the NUL on macOS/BSD
+		// and 108 on Linux; an over-long path otherwise surfaces as a bare
+		// "bind: invalid argument" with no hint about the real cause.
+		if len(endpoint) > 103 {
+			return nil, fmt.Errorf("failed to listen on unix socket %s: %w (path is %d bytes; the sockaddr_un limit is ~104 — shorten XDG_RUNTIME_DIR or TMPDIR)",
+				endpoint, err, len(endpoint))
+		}
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", endpoint, err)
 	}
 

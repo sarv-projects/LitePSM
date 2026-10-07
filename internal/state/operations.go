@@ -302,6 +302,15 @@ func (db *DB) recoverOperation(ctx context.Context, op *OperationRecord, staging
 
 	switch op.State {
 	case "created", "resolving", "awaiting_approval", "approved", "fetching", "staging":
+		// The staging root must be a directory when it exists. On Windows,
+		// os.RemoveAll of "<file>/<op>" reports path-not-found, which maps to
+		// "nothing to clean" and silently rolls the operation back while
+		// leaving the misconfigured root in place; on Unix it fails with
+		// ENOTDIR. Checking the root itself makes the classification identical
+		// everywhere and keeps a broken staging root from passing recovery.
+		if fi, err := os.Lstat(stagingRoot); err == nil && !fi.IsDir() {
+			return "", fmt.Errorf("staging root %s is not a directory; cannot roll back %s", stagingRoot, op.OperationID)
+		}
 		if err := os.RemoveAll(stagingPath); err != nil {
 			return "", fmt.Errorf("failed to remove staging directory %s: %w", stagingPath, err)
 		}

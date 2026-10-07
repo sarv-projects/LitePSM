@@ -118,6 +118,9 @@ func TestGrokBuildTOMLUsesBraceReference(t *testing.T) {
 func TestEnvEntryReadsBackIntact(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// resolveHomeDir prefers USERPROFILE on Windows; without pinning it the
+	// install writes the runner's real home instead of the sandbox.
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	path := filepath.Join(home, ".claude.json")
 	installEnvInto(t, "claude-code", "GITHUB_TOKEN", path)
@@ -171,6 +174,8 @@ func TestCodexNameListReadsBackAsResolvableName(t *testing.T) {
 func TestNoEnvNamesWritesNoEnvField(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// USERPROFILE: resolveHomeDir prefers it on Windows (see the sibling test).
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	path := filepath.Join(home, ".claude.json")
 	adapter, err := GetAdapter("claude-code")

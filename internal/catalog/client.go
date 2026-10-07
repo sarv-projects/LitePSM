@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -773,7 +774,17 @@ func writeAtomicFile(path string, data []byte, perm os.FileMode) error {
 }
 
 // fsyncParentDir fsyncs a directory so a just-completed rename is durable.
+//
+// On Windows this is a no-op by necessity, not by choice: FlushFileBuffers on
+// a directory handle fails with ERROR_ACCESS_DENIED, so the POSIX pattern has
+// no equivalent there. NTFS metadata durability does not depend on it the way
+// ext4/APFS ordering does, and failing the whole sync over an unprovable
+// durability nicety would break every catalog sync on Windows (it did — every
+// persist died with "Access is denied").
 func fsyncParentDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	f, err := os.Open(dir)
 	if err != nil {
 		return err

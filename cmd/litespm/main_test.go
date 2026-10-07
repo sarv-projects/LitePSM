@@ -771,7 +771,18 @@ func TestHostApplySetup_RealBehavior(t *testing.T) {
 
 	t.Run("applies to a sandboxed home", func(t *testing.T) {
 		home := t.TempDir()
+		// Full home sandbox: the adapter resolves through $HOME on Unix but
+		// prefers $USERPROFILE on Windows, and through $XDG_CONFIG_HOME (or
+		// $OPENCODE_CONFIG_DIR) for the config directory on every OS — the
+		// runner images export real values for several of these, so pinning
+		// HOME alone let the test read (and write) the runner's actual home.
 		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+		t.Setenv("OPENCODE_CONFIG_DIR", "")
+		t.Setenv("CLINE_MCP_SETTINGS_PATH", "")
+		t.Setenv("CLINE_DATA_DIR", "")
 
 		var resp struct {
 			HostID     string `json:"hostId"`

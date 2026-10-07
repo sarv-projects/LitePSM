@@ -82,6 +82,16 @@ func ApplyRepairPlan(ctx context.Context, plan *RepairPlan, paths *config.Platfo
 			}
 
 			stagingPath := paths.StagingPath()
+			// Same guard as startup recovery: a staging path that exists but
+			// is not a directory is a broken root, not "nothing to clean".
+			// (On Windows os.ReadDir of a file can report an empty success,
+			// which would silently swallow the misconfiguration.)
+			if fi, err := os.Lstat(stagingPath); err == nil && !fi.IsDir() {
+				action.Applied = false
+				action.Error = fmt.Sprintf("staging path %s exists but is not a directory", stagingPath)
+				failures = append(failures, fmt.Errorf("clean_staging: %s", action.Error))
+				continue
+			}
 			entries, err := os.ReadDir(stagingPath)
 			if err != nil {
 				if os.IsNotExist(err) {

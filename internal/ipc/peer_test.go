@@ -135,6 +135,11 @@ func TestPeerAuthenticationAcceptsSameUIDOverUnixSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("windows named pipes have no unix peer credentials; the DACL path is transport_windows.go")
 	}
+	// t.TempDir() lands under $TMPDIR. macOS's sockaddr_un.sun_path limit is
+	// 104 bytes and this test's long name overflows it under the runner's
+	// deep /var/folders tree, so pin a short base (Linux caps at 108 — same
+	// class of failure waiting to happen).
+	t.Setenv("TMPDIR", "/tmp")
 
 	handlerIdentity := make(chan PeerIdentity, 1)
 	handlerOK := make(chan bool, 1)

@@ -184,8 +184,13 @@ func TestDoctor_DiskCheckReportsMeasuredFreeSpace(t *testing.T) {
 // The directories check must observe, not act: a diagnostic that silently
 // creates what it was asked about can never report it missing.
 func TestDoctor_DirectoriesCheckIsReadOnly(t *testing.T) {
-	engine, _, paths := newTestEngine(t)
+	engine, db, paths := newTestEngine(t)
 
+	// Close the database before deleting its directory: Windows refuses to
+	// delete open files, and the check under test only reads paths.
+	if err := db.Close(); err != nil {
+		t.Fatalf("close state db: %v", err)
+	}
 	if err := os.RemoveAll(paths.DataRoot); err != nil {
 		t.Fatalf("RemoveAll failed: %v", err)
 	}
