@@ -26,7 +26,10 @@ func dispatchLiterals(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("read main.go: %v", err)
 	}
-	text := string(src)
+	// Normalize CRLF before token work: Git for Windows checks out text with
+	// core.autocrlf=true, and an unquoted case token ending in \r is a syntax
+	// error. The dispatch parser must behave identically on every platform.
+	text := strings.ReplaceAll(string(src), "\r\n", "\n")
 	start := strings.Index(text, "func main()")
 	end := strings.Index(text, "func printUsage()")
 	if start < 0 || end < 0 || end < start {

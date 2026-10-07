@@ -7,3 +7,7 @@ fixtures/** -text
 # The published /v1 release tree is digest-chained (pointer -> manifest ->
 # files); conversion would invalidate the chain on a Windows checkout.
 web/public/v1/** -text
+# Go sources are read back by tests that lex tokens out of the working tree
+# (e.g. help_test.go parses the dispatch switch in main.go); an LF checkout
+# must be identical on every platform, so pin the eol over core.autocrlf.
+*.go text eol=lf
