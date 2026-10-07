@@ -181,6 +181,26 @@ with exact technical labels one level deeper, secrets move as references and nev
 
 ---
 
+## Phase K: Sources & Supply-Chain Truth
+
+Closes the "not live yet" gaps named in the source inventory (2026-10-07): every source the
+product claims must actually fetch, every row must carry provenance, and the interop/advisory
+surface must stop being paper-only.
+
+| ID | Deliverable | Owner | Acceptance | Status |
+|---|---|---|---|---|
+| **LPSM-K001** | Official MCP Registry API fetched in production by the Python producer (paginated through `obtain()`, snapshots committed, offline replay) — closes "the MCP Registry API is not fetched in production" | [ARCH/03](ARCH/03-CATALOG-SOURCES.md), [ARCH/27](ARCH/27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md) | registry rows present with correct namespace; rebuild without `--refresh` replays from snapshots and succeeds | `IN_PROGRESS` |
+| **LPSM-K002** | Per-row provenance: every `web/data/catalog.json` row carries `source` (the `domain.SourceID` it was ingested from) | [ARCH/10](ARCH/10-DOMAIN-MODEL.md), [ARCH/25](ARCH/25-WEB-FRONTEND-UI.md) | field present on all 5,8xx rows; web build unchanged (First Load ≤110 kB); dataset contract test updated | `IN_PROGRESS` |
+| **LPSM-K003** | `feed:mcpservers-org` first real fetch recorded (code-wired in `313670f`, zero snapshots since) | [ARCH/03](ARCH/03-CATALOG-SOURCES.md) | ≥1 snapshot recorded with a real status; failures surfaced in `failures.jsonl`, never fabricated rows | `IN_PROGRESS` |
+| **LPSM-K004** | Snapshot lifecycle normalized: `partial` → `healthy` completion runs after a successful build (138 skills.sh records stuck `partial`) | C1 snapshot layer, [ARCH/03](ARCH/03-CATALOG-SOURCES.md) | re-running the build promotes completed records; `snapshot_store` self-test still passes | `IN_PROGRESS` |
+| **LPSM-K005** | Interop importers (ARCH/32 §5): `litespm import` for skills-lock.json, MCP `server.json`, Claude/Codex marketplace manifests (+ `plugin.json` if the spec is pinnable) — untrusted-input parsing, plan preview before any write, import-only for v1 | [ARCH/32 §5](ARCH/32-MANIFEST-LOCK-INTEROP.md) | fixtures parse to the right IR; preview required before write; oversized/path-traversal inputs rejected; `go test ./...` green | `IN_PROGRESS` |
+| **LPSM-K006** | Signed advisory/revocation feed actually fetched and verified by the client ([ARCH/36 §3](ARCH/36-ENTERPRISE-POLICY-AND-AUDIT.md)) | ARCH/36 | unsigned or bad-signature advisories rejected; fetch goes through the snapshot-obtain path | `DESIGNED` |
+| **LPSM-K007** | TUF-style signed catalog root ([ARCH/36 §4](ARCH/36-ENTERPRISE-POLICY-AND-AUDIT.md)) | ARCH/36 | root/metadata verified before `catalog sync` accepts a release tree | `DESIGNED` |
+| **LPSM-K008** | npm/PyPI as first-class discovery sources ([ARCH/27](ARCH/27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md) rows 3–4) | ARCH/27 | rows carry npm/PyPI provenance; selection rule stated; no popularity invented | `DESIGNED` |
+| **LPSM-K009** | Go-authoritative pipeline (C2): `catalogbuild` becomes the production builder — **reverses D4, requires a recorded ADR first** | [ARCH/03](ARCH/03-CATALOG-SOURCES.md), [ARCH/07](ARCH/07-DECISIONS.md) | ADR recorded; builder parity proven against the Python output before cutover | `GATED` |
+
+---
+
 ## Overhaul backlog (next-phase work)
 
 Everything below is `DESIGNED` or unwired today. Owner documents are `ARCH/32`–`ARCH/37` (new,
