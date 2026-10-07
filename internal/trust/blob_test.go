@@ -115,6 +115,10 @@ func TestDefaultBlobIdentityRegexp(t *testing.T) {
 	matches := []string{
 		"https://github.com/sarv-projects/LiteSPM/.github/workflows/release.yml@refs/tags/v0.3.0",
 		"https://github.com/sarv-projects/LiteSPM/.github/workflows/release.yml@refs/tags/v1.2.3-rc.1",
+		// GitHub's OIDC claim may normalize the repo case differently from
+		// the clone URL; repo names are case-insensitively unique, so this
+		// cannot be a different repository.
+		"https://github.com/sarv-projects/litespm/.github/workflows/release.yml@refs/tags/v0.3.0",
 	}
 	misses := []string{
 		// A fork's workflow, same tag name.

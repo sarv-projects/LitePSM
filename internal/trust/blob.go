@@ -28,9 +28,13 @@ const (
 	DefaultBundleSuffix = ".sigstore.json"
 
 	// DefaultBlobIdentityRegexp pins the certificate SAN to this
-	// repository's release workflow on a release tag. Forks, mirrors and PR
-	// runs produce different SANs and therefore do not verify — by design.
-	DefaultBlobIdentityRegexp = `^https://github\.com/sarv-projects/LiteSPM/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+[^/]*$`
+	// repository's release workflow on a release tag. Case-insensitive on
+	// purpose: GitHub's OIDC workflow_ref claim can differ in case from the
+	// clone URL, and repository names are unique case-insensitively on
+	// GitHub, so (?i) cannot admit a different repository — only case drift
+	// of this one. Forks, mirrors and PR runs produce different SANs and
+	// therefore do not verify — by design.
+	DefaultBlobIdentityRegexp = `(?i)^https://github\.com/sarv-projects/LiteSPM/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+[^/]*$`
 
 	// DefaultBlobIssuer is the OIDC issuer that signs GitHub Actions'
 	// federated identity.
