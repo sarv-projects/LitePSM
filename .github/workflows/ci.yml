@@ -112,6 +112,12 @@ jobs:
   build-web:
     name: Build Next.js Static Export
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # cosign's keyless flow mints a Fulcio certificate from this workflow's
+      # OIDC token, which requires id-token: write. Without it the deploy
+      # script skips signing (and says so).
+      id-token: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -123,6 +129,12 @@ jobs:
         with:
           go-version: '1.26'
           cache: true
+
+      # deploy-pages.sh signs /v1/current.json when a signing identity exists;
+      # the OIDC token is that identity (cosign keyless). Fork PRs receive no
+      # token, and the script's skip branch covers them.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

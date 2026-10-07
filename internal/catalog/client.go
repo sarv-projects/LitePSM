@@ -15,6 +15,7 @@ import (
 
 	"github.com/sarv-projects/litespm/internal/catalogbuild"
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/trust"
 )
 
 // SyncResult details the outcome of a catalog synchronization check.
@@ -28,10 +29,13 @@ type SyncResult struct {
 // Client manages downloading, verifying, caching, and searching static catalog releases.
 //
 // Trust notes (see ARCH/36 §4): releases are digest-pinned (SHA-256 pointer →
-// manifest → files) but UNSIGNED today — there is no TUF root/timestamp/
-// snapshot/signature envelope, so this client can detect tampering and
-// rollback/equivocation but cannot authenticate the publisher. Signed
-// releases are DESIGNED, not shipped.
+// manifest → files), so this client detects tampering and rollback/
+// equivocation. Publisher authenticity comes from the Sigstore bundle the
+// deploy publishes beside /v1/current.json (keyless, identity = this
+// repository's release workflow): verified when present, always fatal when
+// present-but-invalid, and absent-with-a-stated-fallback when the origin
+// predates signing — unless LITESPM_REQUIRE_CATALOG_SIGNATURE=1. A full
+// TUF root/timestamp/snapshot envelope remains DESIGNED, not shipped.
 type Client struct {
 	baseURL          string
 	cacheDir         string
@@ -41,6 +45,12 @@ type Client struct {
 	currentSequence  int
 	currentDigest    string
 	mu               sync.RWMutex
+
+	// bundleVerifier checks the Sigstore bundle the deploy publishes beside
+	// /v1/current.json (B3). A nil field selects trust.BlobVerifier with the
+	// release workflow's default identity; tests inject verdicts here rather
+	// than stubbing a global.
+	bundleVerifier *trust.BlobVerifier
 }
 
 // maxCatalogBodyBytes bounds every catalog HTTP body (ARCH/03 §5: 16 MiB per
@@ -259,6 +269,125 @@ func validateCurrent(current *catalogbuild.CurrentPointer) error {
 func (c *Client) FetchCurrent(ctx context.Context) (*catalogbuild.CurrentPointer, error) {
 	current, _, err := c.fetchCurrent(ctx)
 	return current, err
+}
+
+// verifyCurrentSignature checks the origin's Sigstore bundle over the bytes
+// just fetched for /v1/current.json.
+//
+// Failure semantics (B3):
+//   - a bundle that is published and does not verify ALWAYS fails — that is
+//     the attack signal;
+//   - an origin that publishes no bundle may proceed on the digest chain
+//     alone (TLS + rollback/equivocation guards still apply), stated in the
+//     docs rather than silently passed as "verified";
+//   - LITESPM_REQUIRE_CATALOG_SIGNATURE=1 makes absence, unreachability, or
+//     an unavailable verifier (cosign not installed) a hard refusal.
+func (c *Client) verifyCurrentSignature(ctx context.Context, currentRaw []byte) error {
+	required := catalogSignatureRequired()
+	bundleURL := fmt.Sprintf("%s/v1/current.json%s", c.baseURL, trust.DefaultBundleSuffix)
+
+	bundle, present, err := c.fetchSignatureBundle(ctx, bundleURL)
+	if err != nil {
+		// The signature could not be fetched while the pointer could: the
+		// origin is behaving inconsistently. Unrequired mode continues on
+		// the digest chain; required mode fails closed.
+		if required {
+			return fmt.Errorf("catalog signature required but %s could not be fetched: %w", bundleURL, err)
+		}
+		return nil
+	}
+	if !present {
+		if required {
+			return fmt.Errorf("catalog signature required but %s is not published by this origin; refusing unsigned catalog sync", bundleURL)
+		}
+		return nil
+	}
+
+	// Verify the pointer bytes against the bundle on disk (cosign reads
+	// files). A scratch directory keeps the cache dir clean of them.
+	scratch, err := os.MkdirTemp("", "litespm-catalog-verify-*")
+	if err != nil {
+		if required {
+			return fmt.Errorf("prepare signature verification: %w", err)
+		}
+		return nil
+	}
+	defer func() { _ = os.RemoveAll(scratch) }()
+
+	pointerPath := filepath.Join(scratch, "current.json")
+	bundlePath := filepath.Join(scratch, "current.json"+trust.DefaultBundleSuffix)
+	if err := os.WriteFile(pointerPath, currentRaw, 0o600); err != nil {
+		if required {
+			return fmt.Errorf("stage catalog pointer for verification: %w", err)
+		}
+		return nil
+	}
+	if err := os.WriteFile(bundlePath, bundle, 0o600); err != nil {
+		if required {
+			return fmt.Errorf("stage catalog signature for verification: %w", err)
+		}
+		return nil
+	}
+
+	v := c.bundleVerifier
+	if v == nil {
+		v = &trust.BlobVerifier{}
+	}
+	verdict := v.VerifyBundle(ctx, pointerPath, bundlePath)
+	switch verdict.Result {
+	case trust.ResultVerified:
+		return nil
+	case trust.ResultFailed:
+		// Always fatal, required or not.
+		return fmt.Errorf("catalog signature verification FAILED for /v1/current.json: %s — refusing to sync", verdict.Detail)
+	default: // unavailable
+		if required {
+			return fmt.Errorf("catalog signature verification unavailable (%s) and LITESPM_REQUIRE_CATALOG_SIGNATURE is set; refusing unsigned catalog sync", verdict.Detail)
+		}
+		return nil
+	}
+}
+
+// fetchSignatureBundle retrieves the origin's bundle for the pointer.
+// 404/410 means "not published" (present=false); any other non-200 is an
+// error the caller decides how to treat.
+func (c *Client) fetchSignatureBundle(ctx context.Context, bundleURL string) ([]byte, bool, error) {
+	if err := checkCatalogURL(bundleURL); err != nil {
+		return nil, false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bundleURL, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		body, err := readCatalogBody(resp.Body)
+		if err != nil {
+			return nil, false, err
+		}
+		return body, true, nil
+	case http.StatusNotFound, http.StatusGone:
+		return nil, false, nil
+	default:
+		return nil, false, fmt.Errorf("server returned status %d for %s", resp.StatusCode, bundleURL)
+	}
+}
+
+// catalogSignatureRequired reports whether the operator demanded signed
+// catalog syncs. An unrecognized value is "not required": a typo must not
+// brick sync, while a published-but-invalid signature still always fails.
+func catalogSignatureRequired() bool {
+	switch strings.TrimSpace(strings.ToLower(os.Getenv("LITESPM_REQUIRE_CATALOG_SIGNATURE"))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
 }
 
 // fetchCurrent fetches the pointer and retains the served bytes.
@@ -492,6 +621,15 @@ func (c *Client) RuntimeForListing(listingID, version string) (*domain.RuntimeDe
 func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 	current, currentRaw, err := c.fetchCurrent(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	// B3: authenticate the trust anchor before consuming any of it. The
+	// digest chain below (pointer → manifest → files) proves integrity FROM
+	// the pointer down; this signature proves who published the pointer
+	// itself. It runs before the rollback/equivocation checks so a forged
+	// pointer is rejected as forged first, not merely as stale.
+	if err := c.verifyCurrentSignature(ctx, currentRaw); err != nil {
 		return nil, err
 	}
 

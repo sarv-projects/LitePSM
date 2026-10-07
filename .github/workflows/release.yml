@@ -7,7 +7,9 @@ on:
 
 permissions:
   contents: write
-  # `npm publish --provenance` attests the tarball against this workflow run.
+  # Two consumers of this OIDC token: `npm publish --provenance` attests the
+  # tarball against this workflow run, and `cosign sign-blob` mints the
+  # keyless (Fulcio) certificates that sign every release artifact.
   id-token: write
 
 concurrency:
@@ -52,6 +54,44 @@ jobs:
           mkdir -p release-assets
           cp dist/litespm-* dist/SHA256SUMS.txt release-assets/
           tar -czf release-assets/litespm-web-static.tar.gz -C web/out .
+
+      # Keyless Sigstore signing: every published artifact — binaries, the
+      # checksum listing, the web archive — gets a short-lived Fulcio
+      # certificate bound to THIS workflow run (identity:
+      # https://github.com/<owner>/<repo>/.github/workflows/release.yml@refs/tags/<tag>,
+      # issuer: https://token.actions.githubusercontent.com). That gives
+      # `litespm self-update` a signer identity to check instead of a bare
+      # SHA-256 shipped in the same channel as the binary it protects.
+      # No long-lived signing key exists to rotate or leak.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign release artifacts (cosign keyless)
+        run: |
+          set -euo pipefail
+          cd release-assets
+          for f in litespm-* SHA256SUMS.txt; do
+            case "$f" in *.sigstore.json) continue ;; esac
+            [ -f "$f" ] || continue
+            echo "signing $f"
+            # One self-contained bundle per artifact: signature, Fulcio
+            # certificate, and transparency-log proof. Verification is
+            # `cosign verify-blob --bundle <file>.sigstore.json` (see
+            # internal/trust and `litespm self-update`).
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+
+      # A CycloneDX SBOM of the assets exactly as published, uploaded with
+      # them so the artifact list is inspectable without trusting the release
+      # notes. (A second, lockfile-derived SBOM path exists in
+      # internal/trust for `litespm.lock` consumers.)
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: release-assets
+          format: cyclonedx
+          output-file: release-assets/litespm-sbom.cdx.json
+          upload-artifact: false
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

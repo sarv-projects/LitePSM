@@ -41,6 +41,25 @@ go run ./cmd/litespm catalog build \
     --out "${PAGES_DIR}" \
     --prev web/public/v1/current.json
 
+# Sign the trust anchor. /v1/current.json is what every client verifies its
+# release chain against, so it is the one file whose AUTHENTICITY matters:
+# the digest chain (manifest/listings/versions) proves integrity from the
+# pointer down, and this signature proves who published the pointer.
+#
+# Signing runs only where a real signing identity exists — CI's OIDC token
+# (ACTIONS_ID_TOKEN_REQUEST_URL) for cosign's keyless flow. A local run has
+# none and says so rather than producing a signature nobody can verify.
+# Clients check it when present (internal/catalog) and require it with
+# LITESPM_REQUIRE_CATALOG_SIGNATURE=1.
+if command -v cosign >/dev/null 2>&1 && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+    echo "● Signing /v1/current.json (cosign keyless)..."
+    cosign sign-blob --yes \
+        --bundle "${PAGES_DIR}/v1/current.json.sigstore.json" \
+        "${PAGES_DIR}/v1/current.json"
+else
+    echo "● Skipping catalog pointer signature (cosign or OIDC identity unavailable in this environment)"
+fi
+
 echo "● Writing Cloudflare Pages _headers..."
 # ARCH/18 §4: the CDN caches /v1/releases/* immutably and /v1/current.json is
 # the only mutable part. CORS is open (the catalog is public data) and
@@ -54,6 +73,12 @@ cat << 'EOF' > "${PAGES_DIR}/_headers"
 
 # Pointer file (always revalidate)
 /v1/current.json
+  Cache-Control: public, no-cache, must-revalidate
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff
+
+# Signature bundle for the pointer (revalidate with it; never immutable)
+/v1/current.json.sigstore.json
   Cache-Control: public, no-cache, must-revalidate
   Access-Control-Allow-Origin: *
   X-Content-Type-Options: nosniff

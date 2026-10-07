@@ -36,6 +36,7 @@ import (
 	"github.com/sarv-projects/litespm/internal/secrets"
 	"github.com/sarv-projects/litespm/internal/skills"
 	"github.com/sarv-projects/litespm/internal/state"
+	"github.com/sarv-projects/litespm/internal/trust"
 	"github.com/sarv-projects/litespm/internal/update"
 )
 
@@ -328,6 +329,20 @@ func runSelfUpdate(args []string) {
 		os.Exit(1)
 	}
 
+	// Signature verification (R3/B2): the checksum proves the download is
+	// intact, and it ships in the same release as the binary — so it cannot
+	// answer "who produced this". The Sigstore bundle can: release.yml signs
+	// every asset with its OIDC identity (keyless), and the certificate SAN
+	// pins the signer to this repository's release workflow on a v-tag ref.
+	// A bundle that exists but does not verify always aborts. A release that
+	// publishes no bundle (pre-signing) may proceed with a stated
+	// checksum-only fallback — unless LITESPM_REQUIRE_SIGNED_UPDATE=1 makes
+	// authenticity mandatory.
+	if err := verifyDownloadedUpdate(ctx, u, info, binName, payload, stagingDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Update aborted: %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println("Verifying SHA-256 checksum and applying atomic update...")
 	if err := u.ApplyUpdate(ctx, payload, expectedChecksum, execPath, stagingDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Self-update failed: %v\n", err)
@@ -352,6 +367,73 @@ func releaseDownloadTarget(info *update.ReleaseInfo, binName string) (downloadUR
 		return "", "", fmt.Errorf("release %s publishes no SHA-256 checksum for %s", info.Version, binName)
 	}
 	return downloadURL, checksum, nil
+}
+
+// verifyDownloadedUpdate checks the release's Sigstore bundle for the target
+// binary against the bytes just downloaded, before they can be installed.
+//
+// Failure semantics are deliberately asymmetric: a bundle that is published
+// and does not verify is always fatal (that is the attack signal); a release
+// that publishes no bundle at all is a stated checksum-only fallback, which
+// LITESPM_REQUIRE_SIGNED_UPDATE=1 turns into a hard refusal.
+func verifyDownloadedUpdate(ctx context.Context, u *update.Updater, info *update.ReleaseInfo, binName string, payload []byte, stagingDir string) error {
+	if info == nil {
+		return fmt.Errorf("no release information to verify against")
+	}
+	bundleURL := strings.TrimSpace(info.BundleURLs[binName+trust.DefaultBundleSuffix])
+	required := signedUpdateRequired()
+	if bundleURL == "" {
+		if required {
+			return fmt.Errorf("release %s publishes no signature bundle for %s and LITESPM_REQUIRE_SIGNED_UPDATE is set; refusing an unverified self-update", info.Version, binName)
+		}
+		fmt.Println("Note: this release predates signed artifacts; verifying the SHA-256 checksum only.")
+		return nil
+	}
+	bundle, err := u.FetchAsset(ctx, bundleURL)
+	if err != nil {
+		// The release DID publish a signature and it could not be fetched:
+		// authenticity is unestablished, so the update does not proceed.
+		return fmt.Errorf("release %s publishes a signature bundle for %s but it could not be fetched: %w", info.Version, binName, err)
+	}
+	if err := os.MkdirAll(stagingDir, 0o700); err != nil {
+		return fmt.Errorf("prepare staging for signature verification: %w", err)
+	}
+	payloadPath := filepath.Join(stagingDir, binName+".download")
+	bundlePath := filepath.Join(stagingDir, binName+trust.DefaultBundleSuffix)
+	if err := os.WriteFile(payloadPath, payload, 0600); err != nil {
+		return fmt.Errorf("stage downloaded binary for verification: %w", err)
+	}
+	defer func() { _ = os.Remove(payloadPath) }()
+	if err := os.WriteFile(bundlePath, bundle, 0600); err != nil {
+		return fmt.Errorf("stage signature bundle for verification: %w", err)
+	}
+	defer func() { _ = os.Remove(bundlePath) }()
+
+	verdict := (trust.BlobVerifier{}).VerifyBundle(ctx, payloadPath, bundlePath)
+	switch verdict.Result {
+	case trust.ResultVerified:
+		fmt.Println("Signature verified (keyless: this repository's release workflow on a v-tag).")
+		return nil
+	case trust.ResultFailed:
+		return fmt.Errorf("signature verification FAILED for %s: %s — the downloaded bytes do not match the release's signing identity; refusing to install them", binName, verdict.Detail)
+	default: // unavailable
+		if required {
+			return fmt.Errorf("signature verification unavailable (%s) and LITESPM_REQUIRE_SIGNED_UPDATE is set; refusing an unverified self-update", verdict.Detail)
+		}
+		fmt.Printf("Warning: signature verification unavailable (%s); falling back to checksum-only verification.\n", verdict.Detail)
+		return nil
+	}
+}
+
+// signedUpdateRequired reports whether the operator demanded signed updates.
+// An unrecognized value is "not required": a typo must not brick self-update,
+// while the honest note above still tells the user what was checked.
+func signedUpdateRequired() bool {
+	switch strings.TrimSpace(strings.ToLower(os.Getenv("LITESPM_REQUIRE_SIGNED_UPDATE"))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
 }
 
 // readBounded reads at most limit bytes and refuses an oversized payload rather

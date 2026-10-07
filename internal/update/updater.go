@@ -39,6 +39,7 @@ import (
 
 	"github.com/sarv-projects/litespm/internal/domain"
 	"github.com/sarv-projects/litespm/internal/resolver"
+	"github.com/sarv-projects/litespm/internal/trust"
 )
 
 const (
@@ -174,6 +175,7 @@ func (u *Updater) CheckForUpdateWithOptions(ctx context.Context, currentVersion 
 		PublishedAt:     manifest.PublishedAt,
 		ChecksumsSHA256: map[string]string{},
 		DownloadURLs:    map[string]string{},
+		BundleURLs:      map[string]string{},
 	}
 	if info.ReleaseURL == "" {
 		info.ReleaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/v%s", DefaultReleaseRepository, latestVersion)
@@ -190,6 +192,15 @@ func (u *Updater) CheckForUpdateWithOptions(ctx context.Context, currentVersion 
 			info.DownloadURLs[targetBin] = asset.BrowserDownloadURL
 		case checksumManifestAsset:
 			sumsURL = asset.BrowserDownloadURL
+		default:
+			// `<asset>.sigstore.json` — the keyless signature bundle
+			// release.yml publishes beside each artifact it signs.
+			if strings.HasSuffix(asset.Name, trust.DefaultBundleSuffix) {
+				if err := validateHTTPSURL(asset.BrowserDownloadURL); err != nil {
+					return nil, nil, fmt.Errorf("release asset %q has an insecure download URL: %w", asset.Name, err)
+				}
+				info.BundleURLs[asset.Name] = asset.BrowserDownloadURL
+			}
 		}
 	}
 
@@ -254,6 +265,13 @@ func (u *Updater) fetch(ctx context.Context, rawURL string, limit int64) ([]byte
 		return nil, fmt.Errorf("response from %s exceeds the %d byte limit", rawURL, limit)
 	}
 	return data, nil
+}
+
+// FetchAsset downloads one release asset (a signature bundle, for example)
+// under the same bounded, HTTPS-only rules as every other read this package
+// performs.
+func (u *Updater) FetchAsset(ctx context.Context, rawURL string) ([]byte, error) {
+	return u.fetch(ctx, rawURL, u.maxChecksumBytes)
 }
 
 // validateHTTPSURL refuses any URL that is not an https URL with a host.

@@ -254,10 +254,21 @@ func TestReleasePathContractPinsDocumentedLayout(t *testing.T) {
 	// Serve ONLY the documented tree. Anything else 404s, exactly like the live
 	// origin and the deploy allowlist.
 	var requested []string
+	documentedOptional := map[string]bool{
+		// Documented alongside /v1/current.json: deploy-pages.sh publishes
+		// it when a signing identity exists, and an origin without one
+		// serves 404. Requesting it is contract; publishing it is not.
+		"/v1/current.json.sigstore.json": true,
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested = append(requested, r.URL.Path)
 		data, ok := compiled.Files[strings.TrimPrefix(r.URL.Path, "/")]
 		if !ok {
+			if documentedOptional[r.URL.Path] {
+				// The unsigned-origin case of a documented path.
+				http.NotFound(w, r)
+				return
+			}
 			t.Errorf("client requested undocumented path %q (not served by the documented layout)", r.URL.Path)
 			http.NotFound(w, r)
 			return
