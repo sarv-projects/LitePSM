@@ -53,10 +53,10 @@ Highest honest state per phase, with the subsystem rows that back it in [STATUS.
 | A — Architecture Freeze & Schemas | `DESIGNED` | `ARCH/00`–`ARCH/37` exist; the specification is written, not verified |
 | B — Foundations, Storage & IPC | `TESTED` | `domain` / `state` / `ipc` tests bind; no independent falsification pass yet (STATUS §1) |
 | C — Static Catalog & Discovery | `SHIPPED` for the compiler, `catalog build` and `catalog sync` | the release tree is published and `catalog sync` was verified against the live origin (2026-10-05, release `rel-2026-10-05-01`); shards/`index.json` remain `DESIGNED` (STATUS §2) |
-| D — Extraction, Resolver & Skills | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | skills install end to end through `/marketplace`; `install.execute` still has no artifact source for MCP/plugin (STATUS §3) |
+| D — Extraction, Resolver & Skills | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | skills and MCP servers install end to end through `/marketplace`; `install.execute` still has no artifact source for plugins (STATUS §3) |
 | E — Supervision, Bridge & Hosts | `WIRED` for hosts; `IMPLEMENTED` for provider runtime | `providers` table never populated by non-test code → autostart inert (STATUS §4) |
-| F — MCP profiles, Secrets & OAuth | `WIRED` (secrets) / `IMPLEMENTED` (mcpclient, auth) | `mcpclient` and `auth` have zero production importers (STATUS §1, §4) |
-| G — Marketplace, `/marketplace`, wizard | `WIRED` for read tools and the web marketplace | `request_install` completes for skills; MCP/plugin need artifact ingestion; five bridge tools answer `-32601` (STATUS §3, §4) |
+| F — MCP profiles, Secrets & OAuth | `WIRED` (secrets, mcpclient) / `IMPLEMENTED` (auth) | `mcpclient`'s first production importer is `internal/discover`; `auth` still has zero production importers (STATUS §1, §4) |
+| G — Marketplace, `/marketplace`, wizard | `WIRED` for read tools and the web marketplace | `request_install` completes for skills and MCP servers; plugins need artifact ingestion; two bridge tools (`get_invocation`, `cancel_invocation`) answer `-32601` (STATUS §3, §4) |
 | H — Build, Conformance & Packaging | `IMPLEMENTED` | npm wrapper warns and proceeds on a missing checksum entry; `LICENSE`/`NOTICE` are listed in the npm `files` allowlist and staged by `release.yml` before publish, but no publish has occurred yet (STATUS §1) |
 | I — Fixtures, Self-Update & Migrations | `WIRED` (self-update) / `TESTED` (state) | self-update verifies SHA-256 only — **no signature check** (STATUS §1) |
 
@@ -116,7 +116,7 @@ that is not met is **not** met, regardless of how much of the deliverable exists
 *   **Current state:** traversal/symlink/case-collision/size rejections are exercised by unit tests
     and rollback is recovery-tested (`TESTED`), but the zip-bomb half of the gate depends on the
     absent ratio check, and archive-kind installs have no artifact source to abort: skills install
-    end to end (STATUS §3), MCP/plugin still cannot.
+    end to end (STATUS §3), plugin installs still cannot.
 
 ### Phase E: Process Supervision, Bridge Shim & Host Adapters
 *   **Deliverables:**
@@ -131,7 +131,7 @@ that is not met is **not** met, regardless of how much of the deliverable exists
 
 ### Phase F: MCP Protocol Profiles, Secrets & OAuth
 *   **Deliverables:**
-    *   `internal/mcpclient`: dual-protocol client (2026-07-28 Streamable HTTP; 2025-11-25 legacy) — `IMPLEMENTED`, zero production importers (STATUS §4).
+    *   `internal/mcpclient`: dual-protocol client (2026-07-28 Streamable HTTP; 2025-11-25 legacy) — `WIRED`; its first production importer is `internal/discover` (STATUS §4).
     *   Capability schema fingerprinting and drift invalidation — `IMPLEMENTED`, unreachable until grant rows are written ([ARCH/05 §5](05-SECURITY.md#5-capability-schema-drift-defense)).
     *   `internal/secrets`: native OS keystore backends (DPAPI `master.key`, macOS Keychain, `secret-tool`), fail-closed open — `WIRED` (STATUS §1).
     *   `internal/auth`: OAuth 2.0 PKCE loopback broker — `IMPLEMENTED`, zero production importers (STATUS §4).

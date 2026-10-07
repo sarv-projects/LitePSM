@@ -123,7 +123,9 @@ func newHarnessWith(t *testing.T, extra []*domain.Listing) *harness {
 	supervisor := provider.NewSupervisor()
 
 	server := ipc.NewServer("test-daemon", ProtocolVersion)
-	registerCoreHandlers(server, db, catClient, engine, paths, store, supervisor)
+	// nil config → the secure compiled policy defaults, exactly as a daemon
+	// with unreadable configuration would run.
+	registerCoreHandlers(server, db, catClient, engine, paths, store, supervisor, policyDefaultsFrom(nil))
 
 	listener := newPipeListener()
 	serveDone := make(chan error, 1)
@@ -229,6 +231,11 @@ func TestNewPlanID(t *testing.T) {
 }
 
 func TestPreparePlan_PersistsVerifiedPlan(t *testing.T) {
+	// The plan declares the install scope's target hosts, which are read from
+	// the machine's own agent config files; pin every variable the adapters
+	// consult to an empty temp home so the assertions below describe the plan
+	// and never this machine's setup.
+	pinHostScanHome(t)
 	h := newHarness(t)
 	ctx := context.Background()
 
@@ -256,8 +263,21 @@ func TestPreparePlan_PersistsVerifiedPlan(t *testing.T) {
 	if plan.Resolved.Artifacts == nil || len(plan.Resolved.Artifacts) != 0 {
 		t.Errorf("catalog index carries no artifact pointers; expected an empty (non-nil) artifacts list, got %+v", plan.Resolved.Artifacts)
 	}
+	// This harness has no registered bridge host (pinned empty home) and no
+	// published version record (no transport to declare), so the derived
+	// effects are exactly the install itself.
 	if len(plan.Effects) != 1 || plan.Effects[0] != "package.install" {
 		t.Errorf("unexpected effects: %+v", plan.Effects)
+	}
+	if len(plan.HostChanges) != 0 {
+		t.Errorf("no target host, but the plan declares host changes: %+v", plan.HostChanges)
+	}
+	if plan.RequestedAccess != nil {
+		t.Errorf("nothing declared, but the plan requests access: %+v", plan.RequestedAccess)
+	}
+	// Nothing observed this machine's runtimes, so the plan may not claim any.
+	if len(plan.Preconditions.RuntimesFound) != 0 || len(plan.Preconditions.FilesystemPaths) != 0 {
+		t.Errorf("preconditions must stay empty when nothing was observed: %+v", plan.Preconditions)
 	}
 	if plan.Approval.Decision != "" || plan.Approval.ApprovalID != "" {
 		t.Errorf("prepare_plan must not pre-record an approval decision: %+v", plan.Approval)

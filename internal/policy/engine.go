@@ -259,13 +259,78 @@ func (r DenyRule) matches(input PolicyInput) (matchedEffect CanonicalEffect, ok 
 type Engine struct {
 	db        *state.DB
 	denyRules []DenyRule
+	defaults  Defaults
 }
 
-// NewEngine creates a new policy engine instance.
+// Policy gate levels carried by Defaults.DefaultLevel (config.PolicyConfig's
+// default_level / LITESPM_POLICY_DEFAULT_LEVEL).
+const (
+	// LevelAskOnce asks for an effectful operation and then lets an active
+	// capability grant answer the next one — the compiled default.
+	LevelAskOnce = "ask_once"
+	// LevelAlwaysAsk never auto-allows: even an active capability grant is
+	// re-submitted for approval. Strictly more conservative than ask_once.
+	LevelAlwaysAsk = "always_ask"
+	// LevelTrustCurated trusts the curated catalog for plain package
+	// install/update operations: the ask gate is skipped for them because the
+	// release tree is digest-pinned and the install engine re-verifies artifact
+	// digests unconditionally. It never relaxes a deny — invariants, user deny
+	// rules and grant integrity re-verification all still apply — and it never
+	// covers dangerous effects (filesystem, process, network), which still ask.
+	LevelTrustCurated = "trust_curated"
+)
+
+// Defaults is the operator configuration the engine is built with
+// (config.PolicyConfig, applied at the construction sites in cmd/litespm).
+type Defaults struct {
+	// DefaultLevel selects the ask gate: one of LevelAskOnce, LevelAlwaysAsk,
+	// LevelTrustCurated. An unrecognized value is normalized to LevelAskOnce —
+	// the documented default — so a typo can never become a more permissive
+	// gate than the compiled baseline.
+	DefaultLevel string
+	// EnforceSignatures is the fail-closed switch for re-verifying an active
+	// capability grant against its recorded bindings (schema fingerprint, CAS
+	// tree digest, endpoint origin, server version) before the grant can
+	// auto-allow. true (the default) keeps those checks; false honors the
+	// grant without re-verification. There is no publisher-signature envelope
+	// today (ARCH/36 §4), so this is the artifact-verification gate the engine
+	// actually has — catalog releases are digest-pinned regardless (§4 of the
+	// same document), which is not togglable and not what this controls.
+	EnforceSignatures bool
+}
+
+// SecureDefaults is the configuration NewEngine uses when the caller supplies
+// none: the compiled baseline (ask once, integrity re-verification on).
+func SecureDefaults() Defaults {
+	return Defaults{DefaultLevel: LevelAskOnce, EnforceSignatures: true}
+}
+
+// normalizeDefaults resolves a partially-filled Defaults to a complete,
+// interpretable one.
+func normalizeDefaults(d Defaults) Defaults {
+	switch d.DefaultLevel {
+	case LevelAskOnce, LevelAlwaysAsk, LevelTrustCurated:
+	default:
+		d.DefaultLevel = LevelAskOnce
+	}
+	return d
+}
+
+// NewEngine creates a new policy engine instance with the secure defaults.
 func NewEngine(db *state.DB, denyRules []DenyRule) *Engine {
+	return NewEngineWithDefaults(db, denyRules, SecureDefaults())
+}
+
+// NewEngineWithDefaults creates an engine governed by the operator's
+// configured policy defaults. Callers pass config.PolicyConfig; a zero
+// Defaults is normalized (unknown level → ask_once) but EnforceSignatures is
+// taken as given, so callers must use config's defaults rather than a zero
+// value when they mean "on".
+func NewEngineWithDefaults(db *state.DB, denyRules []DenyRule, defaults Defaults) *Engine {
 	return &Engine{
 		db:        db,
 		denyRules: denyRules,
+		defaults:  normalizeDefaults(defaults),
 	}
 }
 
@@ -383,6 +448,17 @@ func (e *Engine) Evaluate(ctx context.Context, input PolicyInput) PolicyDecision
 	}
 
 	if hasDangerousEffects || input.Operation == "install" || input.Operation == "update" {
+		// trust_curated relaxes exactly one thing: the ask gate for a plain
+		// package install/update with no dangerous effect. Anything that
+		// touches the filesystem, spawns a process or reaches the network
+		// still asks, and nothing here can turn a Tier 1/2 deny into an allow.
+		if e.defaults.DefaultLevel == LevelTrustCurated && !hasDangerousEffects {
+			return PolicyDecision{
+				Decision:    DecisionAllow,
+				ReasonCodes: []string{"TRUST_CURATED_GATE"},
+				Detail:      "curated-catalog install/update trusted by policy level trust_curated; artifact digests are still verified by the install engine",
+			}
+		}
 		channel := domain.ApprovalInteractiveCLI
 		if input.Actor == "agent" {
 			channel = domain.ApprovalAgentBridge
@@ -442,43 +518,66 @@ func (e *Engine) checkCapabilityGrant(ctx context.Context, input PolicyInput) (P
 			continue
 		}
 
-		// Check 1: Schema Drift Invalidation
-		if expectedFP != input.SchemaFingerprint {
-			return PolicyDecision{
-				Decision:    DecisionDeny,
-				ReasonCodes: []string{"LPSM-PROVIDER-SCHEMA-DRIFT"},
-				Detail:      fmt.Sprintf("Schema drift detected for capability %s: prior grant invalidated", input.CapabilityID),
-			}, false
+		// Integrity re-verification of the grant is the engine's fail-closed
+		// "unverified artifact" gate and is governed by EnforceSignatures (on
+		// by default). With it off the operator has opted out of re-checking
+		// the grant's recorded bindings; the grant row itself and every tier
+		// above and below this one are unaffected.
+		if e.defaults.EnforceSignatures {
+			// Check 1: Schema Drift Invalidation
+			if expectedFP != input.SchemaFingerprint {
+				return PolicyDecision{
+					Decision:    DecisionDeny,
+					ReasonCodes: []string{"LPSM-PROVIDER-SCHEMA-DRIFT"},
+					Detail:      fmt.Sprintf("Schema drift detected for capability %s: prior grant invalidated", input.CapabilityID),
+				}, false
+			}
+
+			// Check 2: Local CAS Code Drift Invalidation
+			if input.CASTreeDigest != "" && casDigest.Valid && casDigest.String != input.CASTreeDigest {
+				return PolicyDecision{
+					Decision:    DecisionDeny,
+					ReasonCodes: []string{"LPSM-PROVIDER-CODE-DRIFT"},
+					Detail:      fmt.Sprintf("Underlying CAS code modified for capability %s: prior grant invalidated", input.CapabilityID),
+				}, false
+			}
+
+			// Check 3: Remote Endpoint Origin Drift Invalidation
+			if input.EndpointOrigin != "" && endpointOrigin.Valid && endpointOrigin.String != input.EndpointOrigin {
+				return PolicyDecision{
+					Decision:    DecisionDeny,
+					ReasonCodes: []string{"LPSM-PROVIDER-ENDPOINT-DRIFT"},
+					Detail:      fmt.Sprintf("Remote endpoint origin changed to %s: prior grant invalidated", input.EndpointOrigin),
+				}, false
+			}
+
+			// Check 4: Remote Server Version Drift Invalidation
+			if input.ServerVersionDigest != "" && serverVer.Valid && serverVer.String != input.ServerVersionDigest {
+				return PolicyDecision{
+					Decision:    DecisionDeny,
+					ReasonCodes: []string{"LPSM-PROVIDER-CODE-DRIFT"},
+					Detail:      fmt.Sprintf("Remote server version changed for capability %s: prior grant invalidated", input.CapabilityID),
+				}, false
+			}
 		}
 
-		// Check 2: Local CAS Code Drift Invalidation
-		if input.CASTreeDigest != "" && casDigest.Valid && casDigest.String != input.CASTreeDigest {
+		// All integrity bindings match (or re-verification was switched off).
+		// A grant is exactly the "asked once before" record, so ask_once and
+		// trust_curated honor it, while always_ask re-submits it for approval
+		// instead of auto-allowing.
+		if e.defaults.DefaultLevel == LevelAlwaysAsk {
+			channel := domain.ApprovalInteractiveCLI
+			if input.Actor == "agent" {
+				channel = domain.ApprovalAgentBridge
+			}
 			return PolicyDecision{
-				Decision:    DecisionDeny,
-				ReasonCodes: []string{"LPSM-PROVIDER-CODE-DRIFT"},
-				Detail:      fmt.Sprintf("Underlying CAS code modified for capability %s: prior grant invalidated", input.CapabilityID),
-			}, false
+				Decision:        DecisionAsk,
+				ReasonCodes:     []string{"ALWAYS_ASK_LEVEL"},
+				MatchedRuleIDs:  []string{grantID},
+				RequiredChannel: channel,
+				Detail:          "policy level always_ask requires approval even with an active capability grant",
+			}, true
 		}
-
-		// Check 3: Remote Endpoint Origin Drift Invalidation
-		if input.EndpointOrigin != "" && endpointOrigin.Valid && endpointOrigin.String != input.EndpointOrigin {
-			return PolicyDecision{
-				Decision:    DecisionDeny,
-				ReasonCodes: []string{"LPSM-PROVIDER-ENDPOINT-DRIFT"},
-				Detail:      fmt.Sprintf("Remote endpoint origin changed to %s: prior grant invalidated", input.EndpointOrigin),
-			}, false
-		}
-
-		// Check 4: Remote Server Version Drift Invalidation
-		if input.ServerVersionDigest != "" && serverVer.Valid && serverVer.String != input.ServerVersionDigest {
-			return PolicyDecision{
-				Decision:    DecisionDeny,
-				ReasonCodes: []string{"LPSM-PROVIDER-CODE-DRIFT"},
-				Detail:      fmt.Sprintf("Remote server version changed for capability %s: prior grant invalidated", input.CapabilityID),
-			}, false
-		}
-
-		// All identity bindings match!
 		return PolicyDecision{
 			Decision:       DecisionAllow,
 			ReasonCodes:    []string{"ACTIVE_CAPABILITY_GRANT"},

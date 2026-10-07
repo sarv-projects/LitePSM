@@ -361,7 +361,7 @@ any of these is to be built** — the proposal set explicitly says so, and the t
 | `internal/catalog/search.go` | lexical tiers + a dormant verification bonus (`security_audited` +10, `signature_verified` +5) that no adapter can produce | Separate, individually sortable dimensions — relevance, publisher trust, compatibility, freshness, security findings, originality, reliability. Never one magic score (#44) |
 | `internal/doctor` | diagnostics + `--repair`; already runs a synthetic secret canary round-trip | Add security-scan findings, deployment-ownership drift, and three-way conflict detection to the repair plan |
 | `internal/skills` | atomic update + rollback + dry-run + provenance (finding 118) | Add lockfile import/export and a skill-level diff (#17) |
-| `internal/provider` | start/stop/probe real; `invoke`/`get`/`cancel` return explicit `-32601` | Real dispatch, deadlines, cancellation, concurrency limits, backpressure (#23) |
+| `internal/provider` | start/stop/probe and a synchronous `invoke` are real (`discover.Invoke`); `get`/`cancel` return explicit `-32601` | Async registry with deadlines, cancellation, concurrency limits, backpressure (#23) |
 | `internal/host` backups | `host_backups` = pre-edit file snapshots | Keep as a safety net, but make the deployment ledger authoritative for ownership (#9) |
 | `cmd/litespm` | 13 top-level commands | Add `plan`, `apply`, `diff`, `why`, `policy`, `audit`, `adopt` as the features above land — not as a bulk rename (#48) |
 | `ARCH/27` support matrix | 8 types × sources, with honest gaps | Re-baseline once the identity graph (#13) exists; it currently cannot express "same package, two sources" |

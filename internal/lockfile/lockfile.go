@@ -30,35 +30,35 @@ const LockFileName = "litespm.lock"
 
 // Signature schemes.
 const (
-	SchemeNone          = "none"
-	ResultUnavailable   = "unavailable"
-	ResultVerified      = "verified"
-	ResultFailed        = "failed"
-	LicenseNoAssertion  = "NOASSERTION"
+	SchemeNone         = "none"
+	ResultUnavailable  = "unavailable"
+	ResultVerified     = "verified"
+	ResultFailed       = "failed"
+	LicenseNoAssertion = "NOASSERTION"
 )
 
 // LockedEntry is one resolved capability, mirroring ARCH/32 §3.
 type LockedEntry struct {
-	ID             string   `json:"id"`
-	Components     []string `json:"components,omitempty"`
-	SourceIdentity string   `json:"sourceIdentity,omitempty"`
-	SourceURL      string   `json:"sourceUrl,omitempty"`
-	Constraint     string   `json:"constraint,omitempty"`
-	Version        string   `json:"version"`
-	Commit         string   `json:"commit,omitempty"`
-	ArtifactType   string   `json:"artifactType,omitempty"`
-	ArtifactLocator string  `json:"artifactLocator,omitempty"`
-	ArtifactSHA256 string   `json:"artifactSha256,omitempty"`
-	ArtifactSize   int64    `json:"artifactSize,omitempty"`
-	TreeDigest     string   `json:"treeDigest,omitempty"`
-	PublisherName  string   `json:"publisherName,omitempty"`
-	SignatureScheme string  `json:"signatureScheme"`
-	SignatureResult string  `json:"signatureResult"`
-	License        string   `json:"license"`
-	Transport      string   `json:"transport,omitempty"`
-	PolicyDigest   string   `json:"policyDigest,omitempty"`
-	PlanDigest     string   `json:"planDigest,omitempty"`
-	Targets        []string `json:"targets,omitempty"`
+	ID              string   `json:"id"`
+	Components      []string `json:"components,omitempty"`
+	SourceIdentity  string   `json:"sourceIdentity,omitempty"`
+	SourceURL       string   `json:"sourceUrl,omitempty"`
+	Constraint      string   `json:"constraint,omitempty"`
+	Version         string   `json:"version"`
+	Commit          string   `json:"commit,omitempty"`
+	ArtifactType    string   `json:"artifactType,omitempty"`
+	ArtifactLocator string   `json:"artifactLocator,omitempty"`
+	ArtifactSHA256  string   `json:"artifactSha256,omitempty"`
+	ArtifactSize    int64    `json:"artifactSize,omitempty"`
+	TreeDigest      string   `json:"treeDigest,omitempty"`
+	PublisherName   string   `json:"publisherName,omitempty"`
+	SignatureScheme string   `json:"signatureScheme"`
+	SignatureResult string   `json:"signatureResult"`
+	License         string   `json:"license"`
+	Transport       string   `json:"transport,omitempty"`
+	PolicyDigest    string   `json:"policyDigest,omitempty"`
+	PlanDigest      string   `json:"planDigest,omitempty"`
+	Targets         []string `json:"targets,omitempty"`
 }
 
 // Lock is the parsed lockfile.

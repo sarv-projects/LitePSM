@@ -193,10 +193,11 @@ type InstallRecord struct {
 ```
 **Written in production:** yes — `CommitInstallOperation` persists the record and
 its `InstallComponentRecord` (`internal/install/engine.go:462` →
-`internal/state/repositories.go:343`). No production path reaches this writer
-today: no archive artifact source is supplied, so MCP/plugin installs fail
-closed (`LPSM-ARTIFACT-UNAVAILABLE`). Skill installs are recorded as ordinary
-`InstallRecord` rows through the skills ledger path ([STATUS.md](../STATUS.md) §3).
+`internal/state/repositories.go:343`). That writer is reached only when an
+archive/tree source is supplied, and no production path supplies one: plugin
+installs fail closed (`LPSM-ARTIFACT-UNAVAILABLE`). Skill installs are recorded
+as ordinary `InstallRecord` rows through the skills ledger path and MCP servers
+through host-config registration ([STATUS.md](../STATUS.md) §3).
 
 ### 2.6 HostRegistrationRecord
 Tracks integration bindings injected into agent host configurations:
@@ -343,4 +344,4 @@ Computed by `ComputeSchemaFingerprint(jsonSchema []byte)` (`internal/domain/cano
 ```text
 schemaFingerprint = "sha256:" + hex( SHA-256( JCS( tool.InputSchema ) ) )
 ```
-If an upstream server alters its parameter types, adds required parameters, or modifies property descriptions, `schemaFingerprint` changes immediately. The value is what `CapabilityGrant.SchemaFingerprint` binds to (§2.8) and what `mcpclient.FingerprintSchema` / `DetectDrift` recompute (`internal/mcpclient/probe.go:20,67`); drift detection is `IMPLEMENTED` with zero production importers ([STATUS.md](../STATUS.md) §4).
+If an upstream server alters its parameter types, adds required parameters, or modifies property descriptions, `schemaFingerprint` changes immediately. The value is what `CapabilityGrant.SchemaFingerprint` binds to (§2.8) and what `mcpclient.FingerprintSchema` / `DetectDrift` recompute (`internal/mcpclient/probe.go:20,67`); drift detection is `WIRED` — `internal/discover.Invoke` re-probes the server and refuses a call whose fingerprint no longer matches what was discovered ([STATUS.md](../STATUS.md) §4) — while the *grant* half (invalidating a stored `CapabilityGrant`) is `IMPLEMENTED`, because `SaveCapabilityGrant` has no non-test caller.

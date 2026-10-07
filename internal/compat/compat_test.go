@@ -20,7 +20,7 @@ func TestTestedVerifies(t *testing.T) {
 	err := s.Add(Record{
 		HostID: "codex", OS: "linux", PackageID: "mcp:x:y:z",
 		Outcome: OutcomePass, Evidence: EvidenceTested,
-		TestRef:   "test/e2e_host_test.go#TestCodexProbe",
+		TestRef:    "test/e2e_host_test.go#TestCodexProbe",
 		ObservedAt: time.Now().UTC(),
 	})
 	if err != nil {

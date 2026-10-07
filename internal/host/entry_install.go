@@ -103,6 +103,25 @@ func entrySpecFor(adapter HostAdapter) (entrySpec, bool) {
 	return entrySpecForScope(adapter, domain.ScopeUser)
 }
 
+// EntryLayout exposes the server-entry container key path and entry shape for
+// any registered adapter — user scope, the same spec InstallServerEntry writes
+// with. keyPath is dotted ("mcpServers", "mcp", "amp.mcpServers"); ok is false
+// when the registry declares no layout for the host, which callers must treat
+// as "fall back to the format's conventional default", never as an empty path.
+//
+// scripts/gen_hosts_ts.go emits this into web/data/hosts.json, which is what
+// web/lib/hosts.ts imports, so the site can no longer disagree with the
+// binary: it used to hard-code the six hand-written adapters and had OpenCode
+// wrong (a two-level `mcp.servers` path that no OpenCode release reads —
+// servers are direct members of `mcp`, see opencode.go).
+func EntryLayout(adapter HostAdapter) (keyPath string, shape string, ok bool) {
+	spec, ok := entrySpecFor(adapter)
+	if !ok || len(spec.KeyPath) == 0 {
+		return "", "", false
+	}
+	return strings.Join(spec.KeyPath, "."), string(spec.Shape), true
+}
+
 // entrySpecForScope is entrySpecFor with the install scope honoured. Hosts
 // whose user and project containers differ (fx reads `mcp` in the user file
 // and `mcpServers` in a project `.mcp.json`) must be written at the key the

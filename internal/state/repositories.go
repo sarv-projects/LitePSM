@@ -3,19 +3,41 @@ package state
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
 )
 
+func cryptoRandRead(b []byte) (int, error) {
+	return rand.Read(b)
+}
+
+// hostEntryFingerprint computes the S5 entry fingerprint: sha256 over the
+// current config file bytes when the file is readable, falling back to a
+// digest of host|entryKey|configPath so every registration carries a real
+// content-bound value instead of a constant.
+func hostEntryFingerprint(configPath, entryKey, hostID string) string {
+	if data, err := os.ReadFile(configPath); err == nil {
+		sum := sha256.Sum256(data)
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256([]byte(hostID + "|" + entryKey + "|" + configPath))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
 // --- Plans ---
 
 // SavePlan saves an InstallPlan record to SQLite.
+// Re-saving a plan id is an upsert that preserves the original created_at:
+// the row is content-addressed by planHash, so a re-save refreshes the hash
+// and expiry without rewriting history.
 func (db *DB) SavePlan(ctx context.Context, plan *domain.InstallPlan) error {
 	planJSON, err := json.Marshal(plan)
 	if err != nil {
@@ -322,7 +344,7 @@ func (db *DB) saveInstallExec(ctx context.Context, ex execer, rec *domain.Instal
 		rec.ListingID,
 		kind,
 		rec.Version,
-		"",
+		rec.ImmutableRef,
 		rec.TreeDigest,
 		rec.InstallPath,
 		string(rec.Scope),
@@ -355,22 +377,24 @@ func installKindColumn(k domain.ListingKind) (string, error) {
 // GetInstall retrieves an installation record by InstallID.
 func (db *DB) GetInstall(ctx context.Context, installID string) (*domain.InstallRecord, error) {
 	query := `
-	SELECT install_id, listing_id, kind, version, tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at
+	SELECT install_id, listing_id, kind, version, COALESCE(immutable_ref, ''), tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at
 	FROM installs
 	WHERE install_id = ?;`
 
 	var rec domain.InstallRecord
-	var scopeStr, wsID, pRoot sql.NullString
-	var enabledInt int
 	var kindStr string
+	var scopeStr, wsID, pRoot sql.NullString
+	var immutableRef, installPath sql.NullString
+	var enabledInt int
 
 	err := db.raw.QueryRowContext(ctx, query, installID).Scan(
 		&rec.InstallID,
 		&rec.ListingID,
 		&kindStr,
 		&rec.Version,
+		&immutableRef,
 		&rec.TreeDigest,
-		&rec.InstallPath,
+		&installPath,
 		&scopeStr,
 		&wsID,
 		&pRoot,
@@ -387,6 +411,12 @@ func (db *DB) GetInstall(ctx context.Context, installID string) (*domain.Install
 
 	rec.Kind = domain.ListingKind(kindStr)
 	rec.Scope = domain.InstallScope(scopeStr.String)
+	if immutableRef.Valid {
+		rec.ImmutableRef = immutableRef.String
+	}
+	if installPath.Valid {
+		rec.InstallPath = installPath.String
+	}
 	if wsID.Valid {
 		rec.WorkspaceID = wsID.String
 	}
@@ -408,10 +438,10 @@ func (db *DB) ListInstalls(ctx context.Context, scope domain.InstallScope, works
 	var args []any
 
 	if scope == domain.ScopeProject {
-		query = `SELECT install_id, listing_id, kind, version, tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'project' AND workspace_id = ? ORDER BY installed_at DESC;`
+		query = `SELECT install_id, listing_id, kind, version, COALESCE(immutable_ref, ''), tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'project' AND workspace_id = ? ORDER BY installed_at DESC;`
 		args = append(args, workspaceID)
 	} else {
-		query = `SELECT install_id, listing_id, kind, version, tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'user' ORDER BY installed_at DESC;`
+		query = `SELECT install_id, listing_id, kind, version, COALESCE(immutable_ref, ''), tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'user' ORDER BY installed_at DESC;`
 	}
 
 	rows, err := db.raw.QueryContext(ctx, query, args...)
@@ -423,17 +453,19 @@ func (db *DB) ListInstalls(ctx context.Context, scope domain.InstallScope, works
 	var list []*domain.InstallRecord
 	for rows.Next() {
 		var rec domain.InstallRecord
-		var scopeStr, wsID, pRoot sql.NullString
-		var enabledInt int
 		var kindStr string
+		var scopeStr, wsID, pRoot sql.NullString
+		var immutableRef, installPath sql.NullString
+		var enabledInt int
 
 		if err := rows.Scan(
 			&rec.InstallID,
 			&rec.ListingID,
 			&kindStr,
 			&rec.Version,
+			&immutableRef,
 			&rec.TreeDigest,
-			&rec.InstallPath,
+			&installPath,
 			&scopeStr,
 			&wsID,
 			&pRoot,
@@ -446,6 +478,12 @@ func (db *DB) ListInstalls(ctx context.Context, scope domain.InstallScope, works
 
 		rec.Kind = domain.ListingKind(kindStr)
 		rec.Scope = domain.InstallScope(scopeStr.String)
+		if immutableRef.Valid {
+			rec.ImmutableRef = immutableRef.String
+		}
+		if installPath.Valid {
+			rec.InstallPath = installPath.String
+		}
 		if wsID.Valid {
 			rec.WorkspaceID = wsID.String
 		}
@@ -521,13 +559,15 @@ func (db *DB) GetInstallComponent(ctx context.Context, componentID string) (*dom
 	var (
 		rec     domain.InstallComponentRecord
 		enabled int
+		kindStr string
 	)
-	if err := row.Scan(&rec.ComponentID, &rec.InstallID, &rec.Kind, &rec.ComponentName, &rec.Path, &enabled); err != nil {
+	if err := row.Scan(&rec.ComponentID, &rec.InstallID, &kindStr, &rec.ComponentName, &rec.Path, &enabled); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound("install_component", componentID)
 		}
 		return nil, err
 	}
+	rec.Kind = domain.ComponentKind(kindStr)
 	if enabled == 1 {
 		rec.Status = string(domain.InstallActive)
 	}
@@ -820,6 +860,8 @@ func (db *DB) ListCapabilities(ctx context.Context, providerID string) ([]domain
 }
 
 // SaveCapability stores a tool schema and fingerprint.
+// Re-discovery upserts without resetting lifecycle: the original
+// discovered_at is preserved so drift windows stay measurable.
 func (db *DB) SaveCapability(ctx context.Context, c *domain.CapabilityRecord) error {
 	query := `
 	INSERT INTO capabilities (capability_id, provider_id, native_name, title, description, schema_fingerprint, input_schema_json, discovered_at, status)
@@ -848,6 +890,9 @@ func (db *DB) SaveCapability(ctx context.Context, c *domain.CapabilityRecord) er
 }
 
 // SaveCapabilityGrant records policy or user authorization for a capability.
+// Grants are append-only authorizations: a re-save of the same grant id never
+// rewrites granted_by/granted_at, so an attacker or a bug cannot backdate or
+// re-attribute an existing authorization. Only status and expiry advance.
 func (db *DB) SaveCapabilityGrant(ctx context.Context, grant *domain.CapabilityGrant, grantedBy string) error {
 	query := `
 	INSERT INTO capability_grants (
@@ -983,6 +1028,7 @@ func (db *DB) SaveHostBackup(ctx context.Context, backupID, hostID string, scope
 // --- Auth Profiles ---
 
 // SaveAuthProfile stores an authentication profile.
+// Re-saving preserves the original created_at so credential rotation stays auditable.
 func (db *DB) SaveAuthProfile(ctx context.Context, prof *domain.AuthProfile) error {
 	query := `
 	INSERT INTO auth_profiles (profile_id, provider_id, profile_type, secret_ref, status, metadata_json, created_at, updated_at)
@@ -1036,6 +1082,18 @@ func (db *DB) GetAuthProfile(ctx context.Context, profileID string) (*domain.Aut
 }
 
 // --- Audit Events ---
+
+// newAuditEventID mints a collision-resistant audit event id (S7). The old
+// evt_<unixnano> collided under concurrent writers in the same nanosecond;
+// 128 bits of crypto randomness make a collision computationally infeasible,
+// with a nanosecond fallback only when the RNG itself fails.
+func newAuditEventID() string {
+	var b [16]byte
+	if _, err := cryptoRandRead(b[:]); err == nil {
+		return fmt.Sprintf("evt_%x", b)
+	}
+	return fmt.Sprintf("evt_%d_%x", time.Now().UnixNano(), time.Now().UnixNano())
+}
 
 // RecordAuditEvent writes an immutable audit log entry.
 func (db *DB) RecordAuditEvent(ctx context.Context, actor, action, targetRef, decision, approvalID, opID, outcome, metadataJSON string) error {

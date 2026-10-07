@@ -74,9 +74,14 @@ func skillHarness(t *testing.T) (*harness, string, string) {
 
 func preparePlan(t *testing.T, h *harness, listingID string) domain.InstallPlan {
 	t.Helper()
+	return preparePlanScoped(t, h, listingID, "user")
+}
+
+func preparePlanScoped(t *testing.T, h *harness, listingID, scope string) domain.InstallPlan {
+	t.Helper()
 	var plan domain.InstallPlan
 	if err := h.client.Call(context.Background(), "resolver.prepare_plan", map[string]any{
-		"id": listingID, "version": "1.0.0", "scope": "user",
+		"id": listingID, "version": "1.0.0", "scope": scope,
 	}, &plan); err != nil {
 		t.Fatalf("prepare_plan: %v", err)
 	}
@@ -142,8 +147,16 @@ func TestInstallExecute_NonHumanApprovalRefused(t *testing.T) {
 // An approval is bound to the plan it was granted for.
 func TestInstallExecute_ApprovalBoundToPlan(t *testing.T) {
 	h, listingID, home := skillHarness(t)
+	// planB must be execution-distinct from planA: ComputePlanHash is
+	// deliberately invariant to planId/createdAt, so two content-identical
+	// plans are the same approval subject. A different target scope gives the
+	// second plan a different hash — which is exactly what an approval for
+	// planA must not authorize.
 	planA := preparePlan(t, h, listingID)
-	planB := preparePlan(t, h, listingID)
+	planB := preparePlanScoped(t, h, listingID, "project")
+	if planA.PlanHash == planB.PlanHash {
+		t.Fatal("test setup: distinct plans must hash differently")
+	}
 	approvalForA := approvePlanAsHuman(t, h.db, &planA)
 
 	var raw json.RawMessage

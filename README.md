@@ -28,18 +28,18 @@ It eliminates the need to manually configure, update, and manage capabilities ac
 | **Phase A** | **Architecture Freeze & LLD Specifications** | `DESIGNED` | `ARCH/00`–`ARCH/37` exist. `ARCH/24` is an aspirational inventory, not a compiled one; `ARCH/18` specifies an output tree (`index.json`, `shards/`, `items/`) that the compiler does not emit (those outputs are labelled `DESIGNED`) |
 | **Phase B** | **Foundations, Storage & Local IPC** | `TESTED` | `internal/domain`, `internal/config`, `internal/state` (SQLite WAL, 22 tables), `internal/ipc` (named pipes / Unix sockets). Contract tests bind; see [STATUS.md](STATUS.md) §1 |
 | **Phase C** | **Static Catalog & Discovery Plane** | `SHIPPED` | `internal/catalogbuild` + `litespm catalog build` are `TESTED` (real-dataset + end-to-end build→serve→sync→search tests); the release tree **is published** and `litespm catalog sync` was verified against the live origin from a clean data root (2026-10-05: release `rel-2026-10-05-01`, 5,814 indexed). `ARCH/18` §1–§2's `index.json`/`shards`/`items` remain un-emitted (shards are `DESIGNED`) |
-| **Phase D** | **Safe Extraction & Skill Store** | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | `internal/resolver` and `internal/skills` are reached from production paths and `internal/artifact` is test-covered ([STATUS.md](STATUS.md) §1/§3); skills install end to end (verified against the live catalog). The archive engine still has no artifact source for MCP/plugin — [ARCH/31 §4.1](ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#41-the-agent-facing-install-path-cannot-complete--wired-is-false) |
+| **Phase D** | **Safe Extraction & Skill Store** | `WIRED` (resolver, skills); `IMPLEMENTED` (install engine); `TESTED` (artifact) | `internal/resolver` and `internal/skills` are reached from production paths and `internal/artifact` is test-covered ([STATUS.md](STATUS.md) §1/§3); skills and MCP servers install end to end (verified against the live catalog). Only **plugins** still need an artifact source — [ARCH/31 §4.1](ARCH/31-COMPETITIVE-LANDSCAPE-AND-ROADMAP.md#41-the-agent-facing-install-path-cannot-complete--wired-is-false) |
 | **Phase E** | **Process Supervision, Bridge & Host Adapters** | `WIRED` for hosts; `IMPLEMENTED` for provider runtime | 6 bespoke adapters + 44 generic BridgeTargets (50 total, `ARCH/30`) + 77 skill targets are registered. Provider autostart is inert: the `providers` table is never populated by non-test code (finding `m4`). See [STATUS.md](STATUS.md) §1/§4 |
-| **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | `WIRED` (secrets) / `IMPLEMENTED` (mcpclient, auth) | Dual-profile client, native OS keystores, OAuth PKCE loopback exist; the secrets vault is opened before serving (`WIRED`), but secrets are not injected at provider launch and `mcpclient` / `auth` have zero production importers — the `AuthBroker` currently has no consumer (finding 99), [STATUS.md](STATUS.md) §1/§4 |
-| **Phase G** | **In-Agent `/marketplace` Panel & Web UI** | `WIRED` for the static web marketplace; panel `WIRED` except install | The Next.js static export and Bridge tool surface exist; the panel's install action is blocked by Phase D. See [STATUS.md](STATUS.md) §1 |
+| **Phase F** | **MCP Protocol Dual-Profile, Secrets & OAuth** | `WIRED` (secrets, mcpclient) / `IMPLEMENTED` (auth) | Dual-profile client, native OS keystores, OAuth PKCE loopback exist; the secrets vault is opened before serving (`WIRED`), but secrets are not injected at provider launch, `mcpclient`'s first production importer is `internal/discover`, and `auth` still has zero production importers — the `AuthBroker` currently has no consumer (finding 99), [STATUS.md](STATUS.md) §1/§4 |
+| **Phase G** | **In-Agent `/marketplace` Panel & Web UI** | `WIRED` for the static web marketplace; panel `WIRED` | The Next.js static export and Bridge tool surface exist; the panel's install action completes for skills and MCP servers. Plugins remain blocked by Phase D. See [STATUS.md](STATUS.md) §1 |
 | **Phase H** | **Release Engineering & Packaging** | `IMPLEMENTED` | Cross-platform builds, npm wrapper, CI checks. `self-update` completes only once a release publishes `litespm-*` assets (packaging P7) |
 | **Phase I** | **Golden Fixtures, Self-Update & Migrations** | `TESTED` for fixtures and migrations; self-update `WIRED` (unsigned) | Fixtures corpus and migration engine (forward apply + downgrade guard) are tested; `self-update` is fail-closed on SHA-256 with rollback. Release signing is not done — see [SECURITY.md](SECURITY.md). Per-row detail: [TODO.md](TODO.md) Phase I |
 
-**Not yet true of LiteSPM, and not claimed anywhere:** an
-end-to-end agent-driven install, provider autostart, a project manifest + lockfile, signed releases
-or packages, runtime policy enforcement, and any isolation level beyond process supervision.
-(The catalog release tree **is** published — the live origin serves it and `catalog sync`
-succeeds against it.)
+**Not yet true of LiteSPM, and not claimed anywhere:** provider autostart, a project manifest +
+lockfile, signed releases or packages, runtime policy enforcement, plugin installation, and any
+isolation level beyond process supervision. (The catalog release tree **is** published — the live
+origin serves it and `catalog sync` succeeds against it; and `request_install` **does** complete an
+agent-driven install for skill and MCP-server listings.)
 
 ---
 
@@ -60,7 +60,7 @@ LiteSPM bifurcates system responsibilities between an untrusted public discovery
     │  └── /v1/releases/<release-id>/ (Immutable manifests, listings,         │
     │      versions — immutable, byte-reproducible; shards are DESIGNED)      │
     └────────────────────────────────────┬────────────────────────────────────┘
-                                         │ HTTPS (Read-only, ETag-cached)
+                                         │ HTTPS (read-only)
 ═════════════════════════════════════════╪══════════════════════════════════════════
                                  LOCAL CONTROL PLANE
                       (Isolated to User Workstation & OS User)
@@ -75,8 +75,8 @@ LiteSPM bifurcates system responsibilities between an untrusted public discovery
     └──────┬──────┘   └──────┬──────┘   └──────┬──────┘            │
            │                 │                 │                   │
            └─────────────────┼─────────────────┴───────────────────┘
-                             │ Local Authenticated IPC
-                             │ (Windows: Named Pipe with DACL / Unix: Domain Socket 0600)
+                             │ Local IPC (OS-level ACLs only:
+                             │ Windows: Named Pipe DACL / Unix: Domain Socket 0600)
                              ▼
     ┌─────────────────────────────────────────────────────────────────────────┐
     │                           LiteSPM Daemon                                │
@@ -113,7 +113,7 @@ LiteSPM bifurcates system responsibilities between an untrusted public discovery
 *   **What it is:** A background service running per OS user account.
 *   **Responsibilities:**
     *   **Sole SQLite Writer:** Exclusively holds SQLite write locks in WAL mode, serializing all mutations (installs, updates, approvals, config edits).
-    *   **Process Supervisor:** Manages child provider processes. On Windows, child processes are attached to Windows Job Objects configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. On Linux/macOS, processes run in dedicated process groups controlled by an internal supervisor watchdog holding a control pipe (`PR_SET_PDEATHSIG` on Linux) to guarantee zero orphans.
+    *   **Process Supervisor:** Manages child provider processes. On Windows, child processes are attached to Windows Job Objects configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. On Linux/macOS, processes run in dedicated process groups controlled by an internal supervisor watchdog holding a control pipe (`PR_SET_PDEATHSIG` on Linux). **Orphan reaping is not guaranteed on every platform:** on macOS/BSD the watchdog is an in-process goroutine, so a daemon that is SIGKILLed or crashes dies with it and leaves the child running — a provider can be orphaned there when the daemon dies abnormally (`internal/provider/pdeathsig_other.go`), and a provider that double-forks escapes its process group entirely. Graceful shutdown (`Terminate`/`StopAll`) is the supported path.
     *   **Policy Authority:** Evaluates tool invocation permissions and verifies cryptographic `planHash` values against human approvals.
     *   **Secret Broker:** Interfaces with native OS vaults (`secret-tool`, `/usr/bin/security`, DPAPI — [ARCH/19 §2](ARCH/19-SECRETS-OAUTH.md#2-platform-specific-secret-vault-backends)). Splicing a stored secret into a provider's environment at launch is `IMPLEMENTED`, **not `WIRED`**: `ResolveLaunchSecrets` has no production caller ([STATUS.md](STATUS.md) §1).
 
@@ -204,13 +204,20 @@ render the installed view as a table. Tool-by-tool state is in [STATUS.md](STATU
 *   **Discovery (`search_catalog`, `get_extension`):** resolve against the daemon over real catalog
     data (`catalog.search` / `catalog.get_item`).
 *   **Plan (`prepare_install`):** resolves a real plan (`resolver.prepare_plan`).
-*   **Install (`request_install`):** reaches `install.execute`. Skill listings install their real
-    files; MCP/plugin listings fail closed with `LPSM-ARTIFACT-UNAVAILABLE` because the catalog
-    carries no artifact locator for them — [STATUS.md](STATUS.md) §3.
+*   **Install (`request_install`):** reaches `install.execute`, which is gated by
+    `install_authz.go`: the request must name a persisted, hash-verified plan **and** carry an
+    approval a human recorded for that exact plan hash (`litespm approve <plan-id>`). With both
+    present, **skill listings install their real files and MCP-server listings register the server
+    in each target host's config**; plugin listings alone still fail closed with
+    `LPSM-ARTIFACT-UNAVAILABLE` because the catalog carries no artifact locator for them —
+    [STATUS.md](STATUS.md) §3.
 *   **Skills (`load_skill`, `read_skill_resource`):** resolve against real skill data.
 *   **Capabilities & invocation (`search_capabilities`, `describe_capability`,
-    `invoke_capability`, `get_invocation`, `cancel_invocation`):** return an explicit `-32601`
-    "not implemented" because no capability index, invocation registry, or provider rows exist.
+    `invoke_capability`):** resolve over discovered capability rows through `internal/discover`
+    (probe → `capabilities` row → invoke, refusing on schema drift). Only
+    **`get_invocation` and `cancel_invocation`** still return an explicit `-32601`
+    "not implemented", because the asynchronous invocation registry they need is ARCH/34
+    (`DESIGNED`).
 
 **Installed view (`list_installed`).** The daemon returns ledger-backed installs plus
 **read-only** components detected in the host's own config file. LiteSPM does **not** health-check
@@ -218,31 +225,39 @@ installed capabilities, so no ready/needs-auth/stopped light is asserted: unobse
 as `— Unknown`. External components are detected; there is **no `Adopt` action** — the label is
 rendered by the panel, but no adopt handler or tool exists (it is `DESIGNED`).
 
-### 3.5 Capability Schema-Drift & Identity Protection (`IMPLEMENTED`, not `WIRED`)
+### 3.5 Capability Schema-Drift & Identity Protection (`WIRED` for the drift gate, `IMPLEMENTED` for grants)
 *   Upon tool discovery, LiteSPM generates a SHA-256 fingerprint of the tool's input JSON Schema (`schemaFingerprint`).
 *   User approvals are designed to bind cryptographically to strong identity tuples:
     *   **Local Stdio:** `(capability_id, schemaFingerprint, casTreeDigest)`
     *   **Remote HTTP:** `(capability_id, schemaFingerprint, endpointOrigin, serverVersionDigest)`
 *   If an upstream provider modifies its schema upon reconnection, or if local code or remote endpoints change, LiteSPM invalidates the grant (`status: "changed"`), blocking unapproved execution until re-reviewed.
 
-**Honest limit:** the `capability_grants` and `capabilities` writers have no non-test caller, and the
-invocation path returns `-32601`, so no grant is persisted or enforced at runtime yet. This is
-`IMPLEMENTED` (types and fingerprinting exist), not `WIRED`. See [STATUS.md](STATUS.md) §4.
+**Honest limit:** the *check* half is real — `internal/discover` re-probes the server before every
+call and refuses one whose fingerprint no longer matches what was discovered, and the policy engine
+is evaluated before the server is spawned (`WIRED`). The *grant* half is not: `SaveCapabilityGrant`
+has no non-test caller, so no `CapabilityGrant` row is ever written and therefore none can be
+invalidated — `status: "changed"` is a state nothing yet produces. The `capabilities` and
+`providers` writers **do** have a production caller now (`internal/discover`). See
+[STATUS.md](STATUS.md) §4.
 
 ---
 
 ## 4. Supported Agent Ecosystem
 
-| Agent Host | Interface / Environment | Configuration Format | Default Location |
-|---|---|---|---|
-| **Cline** | VS Code Extension | JSON (`cline_mcp_settings.json`) | Windows: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\`<br>macOS: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/`<br>Linux: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/`<br>Cline CLI (not managed): `~/.cline/data/settings/cline_mcp_settings.json` |
-| **Pi Agent** | Terminal Coding Agent (`pi`) | JSON (`mcp.json` / `config.json`) + TS Extension | Unix: `~/.pi/agent/mcp.json`<br>Windows: `%USERPROFILE%\.pi\agent\mcp.json`<br>Project: `.pi/mcp.json` (trust-gated)<br>Legacy fallback: `~/.pi/config.json` / `~/.pi/mcp.json` |
-| **Grok Build** | Terminal / IDE (`grok`) [id: `grok-build`] | TOML (`config.toml`) | Unix: `~/.grok/config.toml`<br>Windows: `%USERPROFILE%\.grok\config.toml`<br>Project: `.grok/config.toml`<br>Legacy fallback: `%APPDATA%\Grok\config.toml` |
-| **Claude Code** | Terminal CLI (`claude`) | JSON (`~/.claude.json`) | Unix: `~/.claude.json`<br>Windows: `%USERPROFILE%\.claude.json`<br>Project: `.mcp.json` in project root (local scope entry in `~/.claude.json`)<br>Host-side: `CLAUDE_CONFIG_DIR` overrides the config directory **for Claude Code itself**; LiteSPM's adapter does not read it (`ARCH/16` §3.4) |
-| **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | Unix: `~/.codex/config.toml`<br>Windows: `%USERPROFILE%\.codex\config.toml`<br>Project: `.codex/config.toml`<br>Legacy fallback: `%APPDATA%\Codex\config.toml`; host-side: `$CODEX_HOME` overrides the directory **for Codex itself**, but the LiteSPM adapter does not honour it (`ARCH/16` §3.5) |
-| **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.json` - v1 `mcp` / v2 `mcp.servers`) | Unix: `~/.config/opencode/opencode.json`<br>Windows: `%USERPROFILE%\.config\opencode\opencode.json`<br>Project: `opencode.json` or `.opencode/`<br>Legacy fallback: `%APPDATA%\OpenCode\opencode.json` |
+Where LiteSPM actually reads and writes — verified against the adapters, not against marketing
+pages. Every bespoke `DetectConfig` is **user-scope only**: it ignores the `scope` argument, so the
+host-documented project paths below are *not* scanned (`ARCH/16` §3).
 
-LiteSPM registers exactly one `litespm` bridge entry per host (`litespm bridge stdio --host <agent-id>`); individual capabilities are resolved by the daemon at runtime, and OpenCode local entries require `"type": "local"` with a combined string-array `"command"`.
+| Agent Host | Interface / Environment | Configuration Format | LiteSPM target (and what else exists) |
+|---|---|---|---|
+| **Cline** | VS Code Extension (and the Cline CLI / JetBrains clients) | JSON (`cline_mcp_settings.json`) | **Current default:** `~/.cline/data/settings/cline_mcp_settings.json` (created when nothing exists yet), relocated by `CLINE_MCP_SETTINGS_PATH` or `CLINE_DATA_DIR`. **Legacy, probed last:** the VS Code `globalStorage` path (`%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\`, `~/Library/Application Support/Code/User/globalStorage/…`, `~/.config/Code/User/globalStorage/…`, plus `Code - Insiders`) — current Cline reads it only in a one-shot migration, so it is a read-only fallback for an un-migrated client (`internal/host/cline.go`) |
+| **Pi Agent** | Terminal Coding Agent (`pi`) | JSON (`mcp.json`) + TS Extension | `~/.pi/agent/mcp.json`, relocated by `PI_CODING_AGENT_DIR`; the bridge is written under the `mcpServers` key — the only container Pi reads. `.pi/mcp.json` is host-documented but the adapter never scans it, and the former `~/.pi/config.json` / `~/.pi/mcp.json` fallbacks were **removed**: no Pi release reads them (`internal/host/piagent.go`) |
+| **Grok Build** | Terminal / IDE (`grok`) [id: `grok-build`] | TOML (`config.toml`) | `$GROK_HOME/config.toml` (default `~/.grok/config.toml`; Windows `%USERPROFILE%\.grok\config.toml`). The `%APPDATA%\Grok\config.toml` fallback was **removed** — it appears in no xAI documentation (`internal/host/grokbuild.go`). Project `.grok/config.toml` is host-documented; the adapter does not scan it |
+| **Claude Code** | Terminal CLI (`claude`) | JSON (`~/.claude.json`) | `~/.claude.json` unconditionally (`%USERPROFILE%\.claude.json` on Windows). `CLAUDE_CONFIG_DIR`, the project `.mcp.json`, and the per-project local entry inside `~/.claude.json` are host-documented locations LiteSPM does **not** read or write (`ARCH/16` §3.4) |
+| **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`; Windows `%USERPROFILE%\.codex\config.toml`). The adapter **does** honour `$CODEX_HOME`. The `%APPDATA%\Codex\config.toml` fallback was **removed** — it appears in no OpenAI documentation (`internal/host/codex.go`). Project `.codex/config.toml` is host-documented; the adapter does not scan it |
+| **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.jsonc` preferred, else `opencode.json`) | `$OPENCODE_CONFIG_DIR/{opencode.jsonc,opencode.json}` when that variable is set, otherwise `$XDG_CONFIG_HOME/opencode/` (default `~/.config/opencode/`), `.jsonc` first — on every OS, because OpenCode resolves the directory through xdg-basedir. Project scope and `%APPDATA%\OpenCode\opencode.json` are **not** read by any release and are no longer probed |
+
+LiteSPM registers exactly one `litespm` bridge entry per host (`litespm bridge stdio --host <agent-id>`); individual capabilities are resolved by the daemon at runtime. OpenCode has **one** documented layout — servers are direct members of the `mcp` object — so the entry is `{"mcp": {"litespm": {"type": "local", "command": ["litespm", "bridge", "stdio", "--host", "opencode"]}}}` (a combined string-array `command`); the nested `mcp.servers` shape earlier revisions wrote is pruned when empty because OpenCode rejects a member that is not a server definition.
 
 ---
 
@@ -268,14 +283,14 @@ LiteSPM registers exactly one `litespm` bridge entry per host (`litespm bridge s
   │       ├── skills_remove.go                          # `skills remove/list` ledger-backed removal
   │       └── skills_policy.go                          # skills policy hook (deny rules → installed skills)
   │
-  ├── internal/ (21 packages)
+  ├── internal/ (38 packages; the 21 listed below are the `ARCH/24` inventory)
   │   ├── domain/                                       # Pure domain models, canonical IDs, RFC 8785 JCS, errors
   │   ├── config/                                       # Platform paths (%LOCALAPPDATA%, XDG, runtimes) & config
   │   ├── state/                                        # SQLite WAL engine (22 tables), safe CAS rollback journal
-  │   ├── ipc/                                          # Local authenticated IPC (Named Pipes DACL / Unix 0600)
+  │   ├── ipc/                                          # Local IPC gated by OS-level ACLs (Named Pipe DACL / Unix socket 0600)
   │   ├── source/                                       # Upstream adapters (MCP Registry, Skills, Claude/Codex/Cursor/Grok, ACP)
   │   ├── catalogbuild/                                 # Deterministic release compiler & manifest generator
-  │   ├── catalog/                                      # Catalog client, HTTP sync, ETag cache & lexical search
+  │   ├── catalog/                                      # Catalog client, HTTP sync, digest verification & lexical search
   │   ├── artifact/                                     # Safe archive extraction (256 MiB/1 GiB/case-fold limits)
   │   ├── resolver/                                     # Pure DFS resolver + semver constraints
   │   ├── install/                                      # Atomic CAS staging + SQLite commit
@@ -328,7 +343,7 @@ LiteSPM registers exactly one `litespm` bridge entry per host (`litespm bridge s
       ├── 21-TESTING-CONFORMANCE.md                     # Test pyramid, crash injection & canary scans
       ├── 22-PLATFORM-RELEASE-MIGRATIONS.md             # Cross-compilation & DB migrations
       ├── 23-SCHEMAS-EXAMPLES.md                        # Schema fixtures & examples
-      ├── 24-FUNCTION-INVENTORY.md                      # Aspirational function map (21 packages; §21 verified)
+      ├── 24-FUNCTION-INVENTORY.md                      # Aspirational function map (21 of the 38 packages; §21 verified)
       ├── 25-WEB-FRONTEND-UI.md                         # Web marketplace frontend inspired by mcpmarket.com
       ├── 26-ECOSYSTEM-IA-PACKAGE-MODEL.md              # Neutral Package/Capability model, 8-type taxonomy, honesty rule
       ├── 27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md        # Status snapshot per type/source with code evidence
@@ -352,7 +367,8 @@ litespm setup | init                     same as `litespm`
 litespm version                          version + protocol + build target
 litespm search <query>                   search the local catalog index
 litespm install <id> [--version <v>] [--scope user|project] [--workspace <id>]
-                                         NOTE: skills install for real; MCP/plugin need artifact wiring (STATUS.md)
+                                         records a plan + human approval; skills and MCP servers
+                                         install, plugins need artifact wiring (STATUS.md)
 litespm uninstall [--dry-run]            remove the bridge entry from every host config
 litespm catalog sync                     fetch the release pointer (live origin — STATUS.md §2)
 litespm daemon serve                     start the supervisor + IPC engine
@@ -438,7 +454,11 @@ which matter for a project that writes into other people's agent configuration f
     master key is protected by `secret-tool` (Linux Secret Service), `/usr/bin/security` (macOS
     Keychain), or Windows DPAPI; there is no WinCred binding ([ARCH/19 §2](ARCH/19-SECRETS-OAUTH.md#2-platform-specific-secret-vault-backends)).
     No secret is written to the state database, to any config file, to a log, or to the hosted
-    catalog. Synthetic canary tests assert this in CI. An MCP server process receives a scoped
+    catalog. `test/canary_test.go` (run by `go test ./...` on every CI OS) plants synthetic
+    canaries through the real secret-store and launch-resolution paths, then scans the state
+    database, its WAL/SHM sidecars, every file under the data and config roots, and the supervisor
+    log buffer for them — it does not scan production logs or the hosted catalog. An MCP server
+    process receives a scoped
     credential only when a launch actually supplies one (launch-time injection is `IMPLEMENTED`,
     not `WIRED` — [STATUS.md](STATUS.md) §1); a future brokered connector never hands its token to
     the agent ([ARCH/29](ARCH/29-CONNECTOR-SYSTEM-DESIGN.md)).

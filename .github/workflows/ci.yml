@@ -73,6 +73,17 @@ jobs:
             --prev web/public/v1/current.json
           go run ./cmd/litespm catalog build --verify "${{ runner.temp }}/release-check"
 
+      # web/lib/hosts.ts and the two JSON registries it imports are emitted
+      # from the compiled-in Go host adapters (scripts/gen_hosts_ts.go). An
+      # adapter edit that is not regenerated shows up as a stale compatibility
+      # matrix on the public site and as snippets that disagree with what the
+      # binary actually writes, so the generator is re-run here and the tree
+      # must come back byte-identical.
+      - name: Verify Generated Host Data Is Current
+        run: |
+          go run scripts/gen_hosts_ts.go
+          git diff --exit-code -- web/data/hosts.json web/data/skill-targets.json web/lib/hosts.ts
+
   test-go:
     name: Test Go Engine (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

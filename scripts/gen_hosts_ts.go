@@ -60,15 +60,20 @@ func main() {
 		}
 		if g, ok := a.(*host.GenericAdapter); ok {
 			row.Generic = true
-			row.KeyPath = strings.Join(g.Target.UserKey, ".")
-			if row.KeyPath == "" {
-				row.KeyPath = strings.Join(g.Target.ProjectKey, ".")
-			}
-			row.Shape = string(g.Target.Shape)
 			row.DocsURL = g.Target.DocsURL
 			if g.Target.UserPath == nil {
 				row.Projected = true
 			}
+		}
+		// The container key path and entry shape come from the registry for
+		// EVERY adapter, the six hand-written ones included (host.EntryLayout
+		// resolves bespokeEntrySpecs for those). The web UI used to hard-code
+		// those six — and had OpenCode wrong, emitting a two-level
+		// `mcp.servers` path no OpenCode release reads — so the drift is
+		// removed at the source instead of being patched in TypeScript.
+		if keyPath, shape, ok := host.EntryLayout(a); ok {
+			row.KeyPath = keyPath
+			row.Shape = shape
 		}
 		if p, err := a.DetectConfig(ctx, domain.ScopeUser); err == nil && p != "" {
 			row.UserPath = tidyPath(p)

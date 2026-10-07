@@ -230,14 +230,15 @@ func authorizeHumanInstall(ctx context.Context, db *state.DB, catClient *catalog
 }
 
 // newPolicyEngine builds the policy engine with its real tiers: capability
-// grants from the state database and the user's deny rules from the data root.
-// A deny-rules file that exists but cannot be read fails closed.
-func newPolicyEngine(db *state.DB, dataRoot string) (*policy.Engine, error) {
+// grants from the state database, the user's deny rules from the data root,
+// and the operator's configured policy defaults (default level + signature
+// enforcement). A deny-rules file that exists but cannot be read fails closed.
+func newPolicyEngine(db *state.DB, dataRoot string, defaults policy.Defaults) (*policy.Engine, error) {
 	rules, err := policy.LoadDenyRules(dataRoot + string(os.PathSeparator) + policy.DenyRulesFile)
 	if err != nil {
 		return nil, err
 	}
-	return policy.NewEngine(db, rules), nil
+	return policy.NewEngineWithDefaults(db, rules, defaults), nil
 }
 
 // openCLIPolicyEngine is newPolicyEngine for CLI commands that do not already
@@ -248,7 +249,10 @@ func openCLIPolicyEngine(dataRoot string) (*policy.Engine, func(), error) {
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("open state database for the policy engine: %w", err)
 	}
-	eng, err := newPolicyEngine(db, dataRoot)
+	// The engine's defaults come from the same configuration the rest of the
+	// command reads, including the invoking project's .litespm/config.toml.
+	cfg, _ := config.LoadCurrentConfig()
+	eng, err := newPolicyEngine(db, dataRoot, policyDefaultsFrom(cfg))
 	if err != nil {
 		_ = db.Close()
 		return nil, func() {}, err

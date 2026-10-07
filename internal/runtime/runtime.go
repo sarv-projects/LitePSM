@@ -139,7 +139,7 @@ func (PythonAdapter) Plan(_ context.Context, spec Spec) (Launch, error) {
 // closed instead of executing from the working directory.
 type NativeAdapter struct{}
 
-func (NativeAdapter) Kind() Kind { return KindNative }
+func (NativeAdapter) Kind() Kind                       { return KindNative }
 func (NativeAdapter) Available(_ context.Context) bool { return true }
 func (NativeAdapter) Plan(_ context.Context, spec Spec) (Launch, error) {
 	if strings.TrimSpace(spec.Command) == "" {
@@ -200,7 +200,7 @@ func PlanOCI(spec Spec, allowUnpinned bool) (Launch, error) {
 // endpoint origin allow-list check happens at invoke time.
 type RemoteAdapter struct{}
 
-func (RemoteAdapter) Kind() Kind { return KindRemote }
+func (RemoteAdapter) Kind() Kind                       { return KindRemote }
 func (RemoteAdapter) Available(_ context.Context) bool { return true }
 func (RemoteAdapter) Plan(_ context.Context, spec Spec) (Launch, error) {
 	if strings.TrimSpace(spec.Endpoint) == "" {

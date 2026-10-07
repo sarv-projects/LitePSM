@@ -19,6 +19,10 @@ import (
 // refuses to answer anything until it has received `notifications/initialized`.
 // A client that skips that notification connects, initializes, and then hangs —
 // which is precisely the bug this fixture exists to catch.
+//
+// The binary is built hermetically into this test's own TempDir on every call:
+// a fixed /tmp path is not portable (Windows has no /tmp and needs a .exe
+// suffix), is not hermetic across parallel packages, and can go stale.
 func buildStrictMCPServer(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

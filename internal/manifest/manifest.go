@@ -50,12 +50,12 @@ type Policy struct {
 
 // Manifest is the parsed project manifest.
 type Manifest struct {
-	SchemaVersion int      `json:"schemaVersion"`
-	ProjectName   string   `json:"projectName"`
-	DefaultScope  string   `json:"defaultScope"`
+	SchemaVersion int       `json:"schemaVersion"`
+	ProjectName   string    `json:"projectName"`
+	DefaultScope  string    `json:"defaultScope"`
 	Requires      []Require `json:"requires"`
-	Policy        Policy   `json:"policy,omitempty"`
-	LockRequired  bool     `json:"lockRequired"`
+	Policy        Policy    `json:"policy,omitempty"`
+	LockRequired  bool      `json:"lockRequired"`
 	// SourcePath records which file the manifest was loaded from.
 	SourcePath string `json:"-"`
 }

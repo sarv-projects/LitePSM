@@ -1,0 +1,841 @@
+- generic [active] [ref=f4e1]:
+  - link "Skip to content" [ref=f4e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f4e3]:
+    - banner [ref=f4e4]:
+      - generic [ref=f4e5]:
+        - link "LiteSPM Market home" [ref=f4e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f4e11]: LiteSPM Market
+        - navigation "Primary" [ref=f4e12]:
+          - link "Explore" [ref=f4e13] [cursor=pointer]:
+            - /url: /explore/
+          - link "Agents" [ref=f4e14] [cursor=pointer]:
+            - /url: /agents/
+          - link "Categories" [ref=f4e15] [cursor=pointer]:
+            - /url: /categories/
+          - link "Coverage" [ref=f4e16] [cursor=pointer]:
+            - /url: /trending/
+    - main [ref=f4e17]:
+      - generic [ref=f4e18]:
+        - generic [ref=f4e19]:
+          - heading "Explore" [level=1] [ref=f4e20]
+          - paragraph [ref=f4e21]: 5,825 entries · 63 categories · 86 hosts
+        - generic [ref=f4e23]:
+          - generic [ref=f4e24]: Search the capability catalog by name, summary, publisher, category, runtime or transport
+          - generic [ref=f4e25]:
+            - searchbox "Search the capability catalog by name, summary, publisher, category, runtime or transport" [ref=f4e29]
+            - generic [ref=f4e30]: /
+        - generic [ref=f4e31]:
+          - group "Capability kind" [ref=f4e32]:
+            - button "All types" [pressed] [ref=f4e33] [cursor=pointer]
+            - button "MCP Server" [ref=f4e34] [cursor=pointer]
+            - button "Agent Skill" [ref=f4e36] [cursor=pointer]
+            - button "Plugin" [ref=f4e38] [cursor=pointer]
+          - generic [ref=f4e40]:
+            - text: Category
+            - combobox "Category" [ref=f4e41]:
+              - option "All categories" [selected]
+              - option "Developer Tools (1034)"
+              - option "Finance & Crypto (445)"
+              - option "TypeScript Skills (444)"
+              - option "Productivity & Workflow (367)"
+              - option "Knowledge & Memory (327)"
+              - option "Search & Retrieval (299)"
+              - option "Official Skills by (285)"
+              - option "Community Skills (268)"
+              - option "Security & Testing (263)"
+              - option "Other Tools and Integrations (186)"
+              - option "Databases (184)"
+              - option "Communication (163)"
+              - option "Cloud Infrastructure (144)"
+              - option "Multimedia (124)"
+              - option "Monitoring (114)"
+              - option "Browser Automation (103)"
+              - option "Plugins & Toolkits (99)"
+              - option "Art & Culture (88)"
+              - option "Gaming (67)"
+              - option "Social Media (62)"
+              - option "Location Services (57)"
+              - option "Travel & Transportation (56)"
+              - option "Data Platforms (47)"
+              - option "Biology, Medicine and Bioinformatics (46)"
+              - option "Sports (44)"
+              - option "Data Science Tools (43)"
+              - option "Python Skills (40)"
+              - option "E-Commerce (39)"
+              - option "Legal (34)"
+              - option "NET Skills (28)"
+              - option "Command Line (26)"
+              - option "Java Skills (25)"
+              - option "Code Execution (21)"
+              - option "Frameworks (20)"
+              - option "Embedded System (19)"
+              - option "Customer Data Platforms (18)"
+              - option "Delivery (18)"
+              - option "Education & Research (17)"
+              - option "Product Management (17)"
+              - option "Support & Service Management (14)"
+              - option "Agreements & Coordination (13)"
+              - option "Real Estate (13)"
+              - option "Spirituality & Esoterica (11)"
+              - option "Core Skills (9)"
+              - option "Data Visualization (9)"
+              - option "Environment & Nature (8)"
+              - option "Text-to-Speech (8)"
+              - option "Rust Skills (7)"
+              - option "end to end RAG platforms (6)"
+              - option "Translation Services (6)"
+              - option "Conversational AI (5)"
+              - option "Cryptography (5)"
+              - option "Industrial & IoT (5)"
+              - option "Health & Wellness (4)"
+              - option "Podcasts (4)"
+              - option "Data & Analytics (3)"
+              - option "Speech-to-Text (3)"
+              - option "Accessibility (2)"
+              - option "Aerospace & Astrodynamics (2)"
+              - option "Identity (2)"
+              - option "math (2)"
+              - option "Security Notice (2)"
+              - option "Business & Operations (1)"
+          - generic [ref=f4e42]:
+            - text: Works with
+            - combobox "Works with" [ref=f4e43]:
+              - option "Any agent" [selected]
+              - option "Cursor (5286)"
+              - option "AiderDesk (5187)"
+              - option "Amp (5187)"
+              - option "Antigravity (5187)"
+              - option "Antigravity CLI (5187)"
+              - option "AstrBot (5187)"
+              - option "Augment (5187)"
+              - option "Code Studio (5187)"
+              - option "CodeArts Agent (5187)"
+              - option "CodeBuddy (5187)"
+              - option "Command Code (5187)"
+              - option "Cortex Code (5187)"
+              - option "Crush (5187)"
+              - option "Deep Agents (5187)"
+              - option "Droid (5187)"
+              - option "Firebender (5187)"
+              - option "ForgeCode (5187)"
+              - option "fx (5187)"
+              - option "Gemini CLI (5187)"
+              - option "IBM Bob (5187)"
+              - option "iFlow CLI (5187)"
+              - option "Jazz (5187)"
+              - option "Junie (5187)"
+              - option "Kilo Code (5187)"
+              - option "Kimchi (5187)"
+              - option "Kimi Code CLI (5187)"
+              - option "Kiro CLI (5187)"
+              - option "Kode (5187)"
+              - option "Neovate (5187)"
+              - option "Ona (5187)"
+              - option "OpenHands (5187)"
+              - option "Pochi (5187)"
+              - option "Posit Assistant (5187)"
+              - option "Qoder (5187)"
+              - option "Qoder CN (5187)"
+              - option "Qwen Code (5187)"
+              - option "Roo Code (5187)"
+              - option "Rovo Dev (5187)"
+              - option "Tabnine CLI (5187)"
+              - option "ZCode (5187)"
+              - option "Zed (5187)"
+              - option "Claude Code CLI (4079)"
+              - option "Cline (VS Code Extension) (4079)"
+              - option "Devin (4079)"
+              - option "GitHub Copilot CLI (4079)"
+              - option "Grok Build (xAI Dev Tool) (4079)"
+              - option "Mux (Xum) (4079)"
+              - option "OpenAI Codex CLI (4079)"
+              - option "OpenCode CLI (4079)"
+              - option "Pi Agent (Terminal Agent) (4079)"
+              - option "Claude Code (1551)"
+              - option "Codex (1173)"
+              - option "Grok Build (1139)"
+              - option "AdaL (1108)"
+              - option "Autohand Code CLI (1108)"
+              - option "Cline (1108)"
+              - option "Codemaker (1108)"
+              - option "Continue (1108)"
+              - option "Devin for Terminal (1108)"
+              - option "Dexto (1108)"
+              - option "Eve (1108)"
+              - option "GitHub Copilot (1108)"
+              - option "Goose (1108)"
+              - option "Hermes Agent (1108)"
+              - option "inference.sh (1108)"
+              - option "Lingma (1108)"
+              - option "Loaf (1108)"
+              - option "MCPJam (1108)"
+              - option "minimax Code (1108)"
+              - option "Mistral Vibe (1108)"
+              - option "Moxby (1108)"
+              - option "Mux (1108)"
+              - option "OpenClaw (1108)"
+              - option "OpenCode (1108)"
+              - option "Pi Agent (1108)"
+              - option "PromptScript (1108)"
+              - option "Reasonix (1108)"
+              - option "Replit (1108)"
+              - option "Sarvam Code (1108)"
+              - option "Terramind (1108)"
+              - option "Tinycloud (1108)"
+              - option "Trae (1108)"
+              - option "Trae CN (1108)"
+              - option "Windsurf (1108)"
+              - option "Zencoder (1108)"
+              - option "Zenflow (1108)"
+          - generic [ref=f4e44]:
+            - checkbox "Vendor-listed publishers only" [ref=f4e45]
+            - text: Vendor-listed publishers only
+      - generic [ref=f4e47]:
+        - generic [ref=f4e48]:
+          - generic [ref=f4e49]:
+            - heading "All capabilities" [level=2] [ref=f4e50]
+            - generic [ref=f4e51]: 5,825 entries
+          - generic [ref=f4e52]:
+            - generic [ref=f4e53]: Sort
+            - combobox "Sort" [ref=f4e54]:
+              - option "Index order" [selected]
+              - option "Name"
+              - option "Publisher"
+        - link "42crunch-api-security-testing. Plugin. by Anthropic. Automate API security directly in Claude Code with 42Crunch - automatically audit OpenAPI specs, detect vulnerabilities aligned with OWASP API Security risks (including BOLA/BFLA), and apply AI-powered fixes. Designed for AI-assisted development workflows, it provides continuous guardrails through an audit->scan->remediate->validate loop, ensuring APIs meet enterprise security standards before deployment." [ref=f4e55] [cursor=pointer]:
+          - /url: /package/?slug=claude-42crunch-api-security-testing
+          - generic [ref=f4e57]: A
+          - generic [ref=f4e58]:
+            - generic [ref=f4e59]: 42crunch-api-security-testing
+            - generic [ref=f4e60]: Automate API security directly in Claude Code with 42Crunch - automatically audit OpenAPI specs, detect vulnerabilities aligned with OWASP API Security risks (including BOLA/BFLA), and apply AI-powered fixes. Designed for AI-assisted development workflows, it provides continuous guardrails through an audit->scan->remediate->validate loop, ensuring APIs meet enterprise security standards before deployment.
+            - generic [ref=f4e61]:
+              - generic [ref=f4e62]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e63]: vendor-listed
+              - generic [ref=f4e66]: plugin
+              - generic [ref=f4e67]: ·Security & Testing
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e69]: 1/86 hosts
+        - link "academy-guide. Plugin. by Anthropic. Recommends relevant Claude Academy courses, tutorials, and use cases when users ask how to use Claude" [ref=f4e70] [cursor=pointer]:
+          - /url: /package/?slug=askills-academy-guide
+          - generic [ref=f4e72]: A
+          - generic [ref=f4e73]:
+            - generic [ref=f4e74]: academy-guide
+            - generic [ref=f4e75]: Recommends relevant Claude Academy courses, tutorials, and use cases when users ask how to use Claude
+            - generic [ref=f4e76]:
+              - generic [ref=f4e77]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e78]: vendor-listed
+              - generic [ref=f4e81]: plugin
+              - generic [ref=f4e82]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e84]: 1/86 hosts
+        - link "ActiveCampaign. Plugin. by Anthropic. Marketing automation, CRM, and email marketing powered by ActiveCampaign. Manage contacts, campaigns, automations, deals, and get AI-powered marketing insights — all from Claude." [ref=f4e85] [cursor=pointer]:
+          - /url: /package/?slug=claude-activecampaign
+          - generic [ref=f4e87]: A
+          - generic [ref=f4e88]:
+            - generic [ref=f4e89]: ActiveCampaign
+            - generic [ref=f4e90]: Marketing automation, CRM, and email marketing powered by ActiveCampaign. Manage contacts, campaigns, automations, deals, and get AI-powered marketing insights — all from Claude.
+            - generic [ref=f4e91]:
+              - generic [ref=f4e92]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e93]: vendor-listed
+              - generic [ref=f4e96]: plugin
+              - generic [ref=f4e97]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e99]: 1/86 hosts
+        - link "ActiveCampaign. Plugin. by Anthropic. Marketing automation, CRM, and email marketing powered by ActiveCampaign. Manage contacts, campaigns, automations, deals, and get AI-powered marketing insights — all from Claude." [ref=f4e100] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-activecampaign
+          - generic [ref=f4e102]: A
+          - generic [ref=f4e103]:
+            - generic [ref=f4e104]: ActiveCampaign
+            - generic [ref=f4e105]: Marketing automation, CRM, and email marketing powered by ActiveCampaign. Manage contacts, campaigns, automations, deals, and get AI-powered marketing insights — all from Claude.
+            - generic [ref=f4e106]:
+              - generic [ref=f4e107]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e108]: vendor-listed
+              - generic [ref=f4e111]: plugin
+              - generic [ref=f4e112]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e114]: 1/86 hosts
+        - link "Adobe. Plugin. by Anthropic. Brings together Adobe Creative Cloud tools for images, vectors, design, and video. Edit multiple assets at once, adapt for different platforms, and complete multi-step creative workflows for polished results." [ref=f4e115] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-adobe-for-creativity
+          - generic [ref=f4e117]: A
+          - generic [ref=f4e118]:
+            - generic [ref=f4e119]: Adobe
+            - generic [ref=f4e120]: Brings together Adobe Creative Cloud tools for images, vectors, design, and video. Edit multiple assets at once, adapt for different platforms, and complete multi-step creative workflows for polished results.
+            - generic [ref=f4e121]:
+              - generic [ref=f4e122]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e123]: vendor-listed
+              - generic [ref=f4e126]: plugin
+              - generic [ref=f4e127]: ·Multimedia
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e129]: 1/86 hosts
+        - link "adobe. Plugin. by OpenAI. Official Codex plugin (Multimedia)." [ref=f4e130] [cursor=pointer]:
+          - /url: /package/?slug=codex-adobe
+          - generic [ref=f4e132]: O
+          - generic [ref=f4e133]:
+            - generic [ref=f4e134]: adobe
+            - generic [ref=f4e135]: Official Codex plugin (Multimedia).
+            - generic [ref=f4e136]:
+              - generic [ref=f4e137]: OpenAI
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e138]: vendor-listed
+              - generic [ref=f4e141]: plugin
+              - generic [ref=f4e142]: ·Multimedia
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e144]: 1/86 hosts
+        - link "adobe-for-creativity. Plugin. by Anthropic. Harness Adobe's creative AI-powered tools to edit images, automate design workflows, and bring creative visions to life — from background removal to vectorization and professional retouching." [ref=f4e145] [cursor=pointer]:
+          - /url: /package/?slug=claude-adobe-for-creativity
+          - generic [ref=f4e147]: A
+          - generic [ref=f4e148]:
+            - generic [ref=f4e149]: adobe-for-creativity
+            - generic [ref=f4e150]: Harness Adobe's creative AI-powered tools to edit images, automate design workflows, and bring creative visions to life — from background removal to vectorization and professional retouching.
+            - generic [ref=f4e151]:
+              - generic [ref=f4e152]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e153]: vendor-listed
+              - generic [ref=f4e156]: plugin
+              - generic [ref=f4e157]: ·Multimedia
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e159]: 1/86 hosts
+        - link "Adspirer. Plugin. by Anthropic. Cross-platform ad management for Google Ads, Meta Ads, TikTok Ads, and LinkedIn Ads. 91 tools for keyword research, campaign creation, performance analysis, and budget optimization." [ref=f4e160] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-adspirer-ads-agent
+          - generic [ref=f4e162]: A
+          - generic [ref=f4e163]:
+            - generic [ref=f4e164]: Adspirer
+            - generic [ref=f4e165]: Cross-platform ad management for Google Ads, Meta Ads, TikTok Ads, and LinkedIn Ads. 91 tools for keyword research, campaign creation, performance analysis, and budget optimization.
+            - generic [ref=f4e166]:
+              - generic [ref=f4e167]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e168]: vendor-listed
+              - generic [ref=f4e171]: plugin
+              - generic [ref=f4e172]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e174]: 1/86 hosts
+        - link "advisor. Plugin. by Cursor. Consult a stronger model before major decisions, when stuck, and before declaring done." [ref=f4e175] [cursor=pointer]:
+          - /url: /package/?slug=cursor-advisor
+          - generic [ref=f4e177]: C
+          - generic [ref=f4e178]:
+            - generic [ref=f4e179]: advisor
+            - generic [ref=f4e180]: Consult a stronger model before major decisions, when stuck, and before declaring done.
+            - generic [ref=f4e181]:
+              - generic [ref=f4e182]: Cursor
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e183]: vendor-listed
+              - generic [ref=f4e186]: plugin
+              - generic [ref=f4e187]: ·Plugins & Toolkits
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e189]: 1/86 hosts
+        - link "agent-compatibility. Plugin. by Cursor. CLI-backed repo compatibility scans plus agents that audit startup, validation, and docs against reality." [ref=f4e190] [cursor=pointer]:
+          - /url: /package/?slug=cursor-agent-compatibility
+          - generic [ref=f4e192]: C
+          - generic [ref=f4e193]:
+            - generic [ref=f4e194]: agent-compatibility
+            - generic [ref=f4e195]: CLI-backed repo compatibility scans plus agents that audit startup, validation, and docs against reality.
+            - generic [ref=f4e196]:
+              - generic [ref=f4e197]: Cursor
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e198]: vendor-listed
+              - generic [ref=f4e201]: plugin
+              - generic [ref=f4e202]: ·Plugins & Toolkits
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e204]: 1/86 hosts
+        - link "agent-sdk-dev. Plugin. by Anthropic. Development kit for working with the Claude Agent SDK" [ref=f4e205] [cursor=pointer]:
+          - /url: /package/?slug=claude-agent-sdk-dev
+          - generic [ref=f4e207]: A
+          - generic [ref=f4e208]:
+            - generic [ref=f4e209]: agent-sdk-dev
+            - generic [ref=f4e210]: Development kit for working with the Claude Agent SDK
+            - generic [ref=f4e211]:
+              - generic [ref=f4e212]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e213]: vendor-listed
+              - generic [ref=f4e216]: plugin
+              - generic [ref=f4e217]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e219]: 1/86 hosts
+        - link "agentforce-adlc. Plugin. by Anthropic. Agentforce Agent Development Life Cycle — author, discover, scaffold, deploy, test, and optimize .agent files" [ref=f4e220] [cursor=pointer]:
+          - /url: /package/?slug=claude-agentforce-adlc
+          - generic [ref=f4e222]: A
+          - generic [ref=f4e223]:
+            - generic [ref=f4e224]: agentforce-adlc
+            - generic [ref=f4e225]: Agentforce Agent Development Life Cycle — author, discover, scaffold, deploy, test, and optimize .agent files
+            - generic [ref=f4e226]:
+              - generic [ref=f4e227]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e228]: vendor-listed
+              - generic [ref=f4e231]: plugin
+              - generic [ref=f4e232]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e234]: 1/86 hosts
+        - link "ahrefs. Plugin. by Cursor. Research keywords, backlinks, rankings, and site health." [ref=f4e235] [cursor=pointer]:
+          - /url: /package/?slug=cursor-ahrefs
+          - generic [ref=f4e237]: C
+          - generic [ref=f4e238]:
+            - generic [ref=f4e239]: ahrefs
+            - generic [ref=f4e240]: Research keywords, backlinks, rankings, and site health.
+            - generic [ref=f4e241]:
+              - generic [ref=f4e242]: Cursor
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e243]: vendor-listed
+              - generic [ref=f4e246]: plugin
+              - generic [ref=f4e247]: ·Plugins & Toolkits
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e249]: 1/86 hosts
+        - link "AI-Firstify. Plugin. by Anthropic. AI-first project auditor and re-engineer based on the 9 design principles and 7 design patterns from the TechWolf AI-First Bootcamp" [ref=f4e250] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-ai-firstify
+          - generic [ref=f4e252]: A
+          - generic [ref=f4e253]:
+            - generic [ref=f4e254]: AI-Firstify
+            - generic [ref=f4e255]: AI-first project auditor and re-engineer based on the 9 design principles and 7 design patterns from the TechWolf AI-First Bootcamp
+            - generic [ref=f4e256]:
+              - generic [ref=f4e257]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e258]: vendor-listed
+              - generic [ref=f4e261]: plugin
+              - generic [ref=f4e262]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e264]: 1/86 hosts
+        - link "ai-plugins. Plugin. by Anthropic. Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain" [ref=f4e265] [cursor=pointer]:
+          - /url: /package/?slug=claude-ai-plugins
+          - generic [ref=f4e267]: A
+          - generic [ref=f4e268]:
+            - generic [ref=f4e269]: ai-plugins
+            - generic [ref=f4e270]: Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain
+            - generic [ref=f4e271]:
+              - generic [ref=f4e272]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e273]: vendor-listed
+              - generic [ref=f4e276]: plugin
+              - generic [ref=f4e277]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e279]: 1/86 hosts
+        - link "aikido. Plugin. by Anthropic. Aikido Security scanning for Claude Code — SAST, secrets, and IaC vulnerability detection powered by the Aikido MCP server." [ref=f4e280] [cursor=pointer]:
+          - /url: /package/?slug=claude-aikido
+          - generic [ref=f4e282]: A
+          - generic [ref=f4e283]:
+            - generic [ref=f4e284]: aikido
+            - generic [ref=f4e285]: Aikido Security scanning for Claude Code — SAST, secrets, and IaC vulnerability detection powered by the Aikido MCP server.
+            - generic [ref=f4e286]:
+              - generic [ref=f4e287]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e288]: vendor-listed
+              - generic [ref=f4e291]: plugin
+              - generic [ref=f4e292]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e294]: 1/86 hosts
+        - 'link "airtable. Plugin. by Anthropic. Airtable is the database and operations layer for your agents — whether running product, marketing, sales, ops, HR, or a custom business app. It combines structured data with multiplayer visual surfaces (grid, kanban, calendar, gallery, timeline) humans and agents share — plus sync integrations to Jira, Salesforce, Zendesk, Google Drive, Databricks, and the rest of your stack, all backed by enterprise governance. This plugin makes Claude fluent in Airtable: creating bases and schema, working with records, and sharing UI for collaboration. Bundles the official Airtable MCP server." [ref=f4e295] [cursor=pointer]':
+          - /url: /package/?slug=claude-airtable
+          - generic [ref=f4e297]: A
+          - generic [ref=f4e298]:
+            - generic [ref=f4e299]: airtable
+            - generic [ref=f4e300]: "Airtable is the database and operations layer for your agents — whether running product, marketing, sales, ops, HR, or a custom business app. It combines structured data with multiplayer visual surfaces (grid, kanban, calendar, gallery, timeline) humans and agents share — plus sync integrations to Jira, Salesforce, Zendesk, Google Drive, Databricks, and the rest of your stack, all backed by enterprise governance. This plugin makes Claude fluent in Airtable: creating bases and schema, working with records, and sharing UI for collaboration. Bundles the official Airtable MCP server."
+            - generic [ref=f4e301]:
+              - generic [ref=f4e302]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e303]: vendor-listed
+              - generic [ref=f4e306]: plugin
+              - generic [ref=f4e307]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e309]: 1/86 hosts
+        - 'link "airtable. Plugin. by Anthropic. Airtable is the database and operations layer for your agents — whether running product, marketing, sales, ops, HR, or a custom business app. It combines structured data with multiplayer visual surfaces (grid, kanban, calendar, gallery, timeline) humans and agents share — plus sync integrations to Jira, Salesforce, Zendesk, Google Drive, and Databricks. Makes Claude fluent in Airtable: bases and schema, records, and collaboration UI. Bundles the official Airtable MCP server." [ref=f4e310] [cursor=pointer]':
+          - /url: /package/?slug=knowledge-airtable
+          - generic [ref=f4e312]: A
+          - generic [ref=f4e313]:
+            - generic [ref=f4e314]: airtable
+            - generic [ref=f4e315]: "Airtable is the database and operations layer for your agents — whether running product, marketing, sales, ops, HR, or a custom business app. It combines structured data with multiplayer visual surfaces (grid, kanban, calendar, gallery, timeline) humans and agents share — plus sync integrations to Jira, Salesforce, Zendesk, Google Drive, and Databricks. Makes Claude fluent in Airtable: bases and schema, records, and collaboration UI. Bundles the official Airtable MCP server."
+            - generic [ref=f4e316]:
+              - generic [ref=f4e317]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e318]: vendor-listed
+              - generic [ref=f4e321]: plugin
+              - generic [ref=f4e322]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e324]: 1/86 hosts
+        - link "airtable. Plugin. by OpenAI. Official Codex plugin (Productivity & Workflow)." [ref=f4e325] [cursor=pointer]:
+          - /url: /package/?slug=codex-airtable
+          - generic [ref=f4e327]: O
+          - generic [ref=f4e328]:
+            - generic [ref=f4e329]: airtable
+            - generic [ref=f4e330]: Official Codex plugin (Productivity & Workflow).
+            - generic [ref=f4e331]:
+              - generic [ref=f4e332]: OpenAI
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e333]: vendor-listed
+              - generic [ref=f4e336]: plugin
+              - generic [ref=f4e337]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e339]: 1/86 hosts
+        - link "Airwallex. Plugin. by Anthropic. Bring Airwallex's global financial infrastructure to Claude. Orchestrate actions across your account in plain language, e.g., set up invoices from a PO, onboard suppliers from invoices, and check current cash position across currencies. AgentOS bundles pre-built finance Skills with MCP servers. A public CLI connects your agent to Airwallex's capabilities." [ref=f4e340] [cursor=pointer]:
+          - /url: /package/?slug=claude-airwallex-agentos
+          - generic [ref=f4e342]: A
+          - generic [ref=f4e343]:
+            - generic [ref=f4e344]: Airwallex
+            - generic [ref=f4e345]: Bring Airwallex's global financial infrastructure to Claude. Orchestrate actions across your account in plain language, e.g., set up invoices from a PO, onboard suppliers from invoices, and check current cash position across currencies. AgentOS bundles pre-built finance Skills with MCP servers. A public CLI connects your agent to Airwallex's capabilities.
+            - generic [ref=f4e346]:
+              - generic [ref=f4e347]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e348]: vendor-listed
+              - generic [ref=f4e351]: plugin
+              - generic [ref=f4e352]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e354]: 1/86 hosts
+        - link "Airwallex. Plugin. by Anthropic. Bring Airwallex's global financial infrastructure to Claude. Orchestrate actions across your account in plain language, e.g., set up invoices from a PO, onboard suppliers from invoices, and check current cash position across currencies. AgentOS bundles pre-built finance Skills with MCP servers. A public CLI connects your agent to Airwallex's capabilities." [ref=f4e355] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-airwallex-agentos
+          - generic [ref=f4e357]: A
+          - generic [ref=f4e358]:
+            - generic [ref=f4e359]: Airwallex
+            - generic [ref=f4e360]: Bring Airwallex's global financial infrastructure to Claude. Orchestrate actions across your account in plain language, e.g., set up invoices from a PO, onboard suppliers from invoices, and check current cash position across currencies. AgentOS bundles pre-built finance Skills with MCP servers. A public CLI connects your agent to Airwallex's capabilities.
+            - generic [ref=f4e361]:
+              - generic [ref=f4e362]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e363]: vendor-listed
+              - generic [ref=f4e366]: plugin
+              - generic [ref=f4e367]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e369]: 1/86 hosts
+        - 'link "airwallex-dev. Plugin. by Anthropic. Build Airwallex payment integrations in your own codebase. Generates the checkout, card-element, onboarding, and subscription-billing code for an Airwallex integration and wires it into your project: Hosted Payment Page, Drop-in and Split Card elements, connected-account KYC onboarding, and Billing Hosted Checkout for subscriptions and card-saving. Also plans card-on-file merchant-initiated flows for AI providers such as top-ups and auto-recharge." [ref=f4e370] [cursor=pointer]':
+          - /url: /package/?slug=claude-airwallex-dev
+          - generic [ref=f4e372]: A
+          - generic [ref=f4e373]:
+            - generic [ref=f4e374]: airwallex-dev
+            - generic [ref=f4e375]: "Build Airwallex payment integrations in your own codebase. Generates the checkout, card-element, onboarding, and subscription-billing code for an Airwallex integration and wires it into your project: Hosted Payment Page, Drop-in and Split Card elements, connected-account KYC onboarding, and Billing Hosted Checkout for subscriptions and card-saving. Also plans card-on-file merchant-initiated flows for AI providers such as top-ups and auto-recharge."
+            - generic [ref=f4e376]:
+              - generic [ref=f4e377]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e378]: vendor-listed
+              - generic [ref=f4e381]: plugin
+              - generic [ref=f4e382]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e384]: 1/86 hosts
+        - link "aiven. Plugin. by Anthropic. Easily deploy managed PostgreSQL (pg), Kafka, OpenSearch, Clickhouse and other databases, streaming and apps. Free tier available, up and running in minutes." [ref=f4e385] [cursor=pointer]:
+          - /url: /package/?slug=claude-aiven
+          - generic [ref=f4e387]: A
+          - generic [ref=f4e388]:
+            - generic [ref=f4e389]: aiven
+            - generic [ref=f4e390]: Easily deploy managed PostgreSQL (pg), Kafka, OpenSearch, Clickhouse and other databases, streaming and apps. Free tier available, up and running in minutes.
+            - generic [ref=f4e391]:
+              - generic [ref=f4e392]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e393]: vendor-listed
+              - generic [ref=f4e396]: plugin
+              - generic [ref=f4e397]: ·Databases
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e399]: 1/86 hosts
+        - link "alloydb. Plugin. by Anthropic. Create, connect, and interact with an AlloyDB for PostgreSQL database and data." [ref=f4e400] [cursor=pointer]:
+          - /url: /package/?slug=claude-alloydb
+          - generic [ref=f4e402]: A
+          - generic [ref=f4e403]:
+            - generic [ref=f4e404]: alloydb
+            - generic [ref=f4e405]: Create, connect, and interact with an AlloyDB for PostgreSQL database and data.
+            - generic [ref=f4e406]:
+              - generic [ref=f4e407]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e408]: vendor-listed
+              - generic [ref=f4e411]: plugin
+              - generic [ref=f4e412]: ·Databases
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e414]: 1/86 hosts
+        - link "alloydb-omni. Plugin. by Anthropic. Create, connect, and interact with an AlloyDB Omni database and data." [ref=f4e415] [cursor=pointer]:
+          - /url: /package/?slug=claude-alloydb-omni
+          - generic [ref=f4e417]: A
+          - generic [ref=f4e418]:
+            - generic [ref=f4e419]: alloydb-omni
+            - generic [ref=f4e420]: Create, connect, and interact with an AlloyDB Omni database and data.
+            - generic [ref=f4e421]:
+              - generic [ref=f4e422]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e423]: vendor-listed
+              - generic [ref=f4e426]: plugin
+              - generic [ref=f4e427]: ·Databases
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e429]: 1/86 hosts
+        - link "altimate-code. Plugin. by Anthropic. Delegates dbt and warehouse work to altimate-code, a specialized CLI agent with 100+ purpose-built data tools (SQL analysis, column-level lineage, dbt build/test/run, warehouse profiling, FinOps, connectivity to Snowflake, BigQuery, Redshift, Databricks, Postgres, MySQL, DuckDB)." [ref=f4e430] [cursor=pointer]:
+          - /url: /package/?slug=claude-altimate-code
+          - generic [ref=f4e432]: A
+          - generic [ref=f4e433]:
+            - generic [ref=f4e434]: altimate-code
+            - generic [ref=f4e435]: Delegates dbt and warehouse work to altimate-code, a specialized CLI agent with 100+ purpose-built data tools (SQL analysis, column-level lineage, dbt build/test/run, warehouse profiling, FinOps, connectivity to Snowflake, BigQuery, Redshift, Databricks, Postgres, MySQL, DuckDB).
+            - generic [ref=f4e436]:
+              - generic [ref=f4e437]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e438]: vendor-listed
+              - generic [ref=f4e441]: plugin
+              - generic [ref=f4e442]: ·Databases
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e444]: 1/86 hosts
+        - link "Amazon Selling Partner. Plugin. by Anthropic. Connect your Amazon Seller Central account to Claude. Ask about sales, inventory, and listing performance and get recommendations grounded in your own data, then review and approve every listing, inventory or FBA action before it runs. Bundles the Amazon Selling Partner MCP server (Seller Central OAuth on first use). Currently in beta." [ref=f4e445] [cursor=pointer]:
+          - /url: /package/?slug=claude-amazon-selling-partner
+          - generic [ref=f4e447]: A
+          - generic [ref=f4e448]:
+            - generic [ref=f4e449]: Amazon Selling Partner
+            - generic [ref=f4e450]: Connect your Amazon Seller Central account to Claude. Ask about sales, inventory, and listing performance and get recommendations grounded in your own data, then review and approve every listing, inventory or FBA action before it runs. Bundles the Amazon Selling Partner MCP server (Seller Central OAuth on first use). Currently in beta.
+            - generic [ref=f4e451]:
+              - generic [ref=f4e452]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e453]: vendor-listed
+              - generic [ref=f4e456]: plugin
+              - generic [ref=f4e457]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e459]: 1/86 hosts
+        - link "Amazon Selling Partner. Plugin. by Anthropic. Connect your Amazon Seller Central account to Claude. Ask about sales, inventory, and listing performance and get recommendations grounded in your own data, then review and approve every listing, inventory or FBA action before it runs. Bundles the Amazon Selling Partner MCP server (Seller Central OAuth on first use). Currently in beta." [ref=f4e460] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-amazon-selling-partner
+          - generic [ref=f4e462]: A
+          - generic [ref=f4e463]:
+            - generic [ref=f4e464]: Amazon Selling Partner
+            - generic [ref=f4e465]: Connect your Amazon Seller Central account to Claude. Ask about sales, inventory, and listing performance and get recommendations grounded in your own data, then review and approve every listing, inventory or FBA action before it runs. Bundles the Amazon Selling Partner MCP server (Seller Central OAuth on first use). Currently in beta.
+            - generic [ref=f4e466]:
+              - generic [ref=f4e467]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e468]: vendor-listed
+              - generic [ref=f4e471]: plugin
+              - generic [ref=f4e472]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e474]: 1/86 hosts
+        - link "amazon-location-service. Plugin. by Anthropic. Guide developers through adding maps, places search, geocoding, routing, and other geospatial features with Amazon Location Service, including authentication setup, SDK integration, and best practices." [ref=f4e475] [cursor=pointer]:
+          - /url: /package/?slug=claude-amazon-location-service
+          - generic [ref=f4e477]: A
+          - generic [ref=f4e478]:
+            - generic [ref=f4e479]: amazon-location-service
+            - generic [ref=f4e480]: Guide developers through adding maps, places search, geocoding, routing, and other geospatial features with Amazon Location Service, including authentication setup, SDK integration, and best practices.
+            - generic [ref=f4e481]:
+              - generic [ref=f4e482]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e483]: vendor-listed
+              - generic [ref=f4e486]: plugin
+              - generic [ref=f4e487]: ·Location Services
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e489]: 1/86 hosts
+        - 'link "amd-skills. Plugin. by Anthropic. AMD''s verified Agent Skills in one plugin: route image/audio through local AI on Ryzen AI, serve LLMs on AMD Instinct GPUs with vLLM, optimize inference throughput with Hyperloom, and analyze GPU kernel and PyTorch trace performance." [ref=f4e490] [cursor=pointer]':
+          - /url: /package/?slug=claude-amd-skills
+          - generic [ref=f4e492]: A
+          - generic [ref=f4e493]:
+            - generic [ref=f4e494]: amd-skills
+            - generic [ref=f4e495]: "AMD's verified Agent Skills in one plugin: route image/audio through local AI on Ryzen AI, serve LLMs on AMD Instinct GPUs with vLLM, optimize inference throughput with Hyperloom, and analyze GPU kernel and PyTorch trace performance."
+            - generic [ref=f4e496]:
+              - generic [ref=f4e497]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e498]: vendor-listed
+              - generic [ref=f4e501]: plugin
+              - generic [ref=f4e502]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e504]: 1/86 hosts
+        - link "amplemarket. Plugin. by Cursor. Search people and companies, enrich leads, run sequences." [ref=f4e505] [cursor=pointer]:
+          - /url: /package/?slug=cursor-amplemarket
+          - generic [ref=f4e507]: C
+          - generic [ref=f4e508]:
+            - generic [ref=f4e509]: amplemarket
+            - generic [ref=f4e510]: Search people and companies, enrich leads, run sequences.
+            - generic [ref=f4e511]:
+              - generic [ref=f4e512]: Cursor
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e513]: vendor-listed
+              - generic [ref=f4e516]: plugin
+              - generic [ref=f4e517]: ·Plugins & Toolkits
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e519]: 1/86 hosts
+        - link "amplitude. Plugin. by Anthropic. Use Amplitude as an expert analyst — instrument Amplitude, discover product opportunities, analyze charts, create dashboards, manage experiments, and understand users and accounts." [ref=f4e520] [cursor=pointer]:
+          - /url: /package/?slug=claude-amplitude
+          - generic [ref=f4e522]: A
+          - generic [ref=f4e523]:
+            - generic [ref=f4e524]: amplitude
+            - generic [ref=f4e525]: Use Amplitude as an expert analyst — instrument Amplitude, discover product opportunities, analyze charts, create dashboards, manage experiments, and understand users and accounts.
+            - generic [ref=f4e526]:
+              - generic [ref=f4e527]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e528]: vendor-listed
+              - generic [ref=f4e531]: plugin
+              - generic [ref=f4e532]: ·Monitoring
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e534]: 1/86 hosts
+        - link "apollo. Plugin. by Anthropic. Prospect, enrich leads, load outreach sequences, and query sales analytics with Apollo.io — one-click MCP server integration for Claude Code and Cowork." [ref=f4e535] [cursor=pointer]:
+          - /url: /package/?slug=claude-apollo
+          - generic [ref=f4e537]: A
+          - generic [ref=f4e538]:
+            - generic [ref=f4e539]: apollo
+            - generic [ref=f4e540]: Prospect, enrich leads, load outreach sequences, and query sales analytics with Apollo.io — one-click MCP server integration for Claude Code and Cowork.
+            - generic [ref=f4e541]:
+              - generic [ref=f4e542]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e543]: vendor-listed
+              - generic [ref=f4e546]: plugin
+              - generic [ref=f4e547]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e549]: 1/86 hosts
+        - link "apollo-skills. Plugin. by Anthropic. Apollo GraphQL agent skills for Claude Code — Apollo Client, Server, Federation, Connectors, Router, Rover CLI, iOS, Kotlin, and the Apollo MCP server. Covers schema design, query optimization, and GraphQL best practices." [ref=f4e550] [cursor=pointer]:
+          - /url: /package/?slug=claude-apollo-skills
+          - generic [ref=f4e552]: A
+          - generic [ref=f4e553]:
+            - generic [ref=f4e554]: apollo-skills
+            - generic [ref=f4e555]: Apollo GraphQL agent skills for Claude Code — Apollo Client, Server, Federation, Connectors, Router, Rover CLI, iOS, Kotlin, and the Apollo MCP server. Covers schema design, query optimization, and GraphQL best practices.
+            - generic [ref=f4e556]:
+              - generic [ref=f4e557]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e558]: vendor-listed
+              - generic [ref=f4e561]: plugin
+              - generic [ref=f4e562]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e564]: 1/86 hosts
+        - link "Apollo.io. Plugin. by Anthropic. Prospect, enrich leads, and load outreach sequences with Apollo.io — one-click MCP server integration for Claude Code and Cowork." [ref=f4e565] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-apollo
+          - generic [ref=f4e567]: A
+          - generic [ref=f4e568]:
+            - generic [ref=f4e569]: Apollo.io
+            - generic [ref=f4e570]: Prospect, enrich leads, and load outreach sequences with Apollo.io — one-click MCP server integration for Claude Code and Cowork.
+            - generic [ref=f4e571]:
+              - generic [ref=f4e572]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e573]: vendor-listed
+              - generic [ref=f4e576]: plugin
+              - generic [ref=f4e577]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e579]: 1/86 hosts
+        - link "appwrite. Plugin. by Anthropic. Appwrite tools for Claude Code, including SDK skills, Appwrite MCP servers, and deployment commands." [ref=f4e580] [cursor=pointer]:
+          - /url: /package/?slug=claude-appwrite
+          - generic [ref=f4e582]: A
+          - generic [ref=f4e583]:
+            - generic [ref=f4e584]: appwrite
+            - generic [ref=f4e585]: Appwrite tools for Claude Code, including SDK skills, Appwrite MCP servers, and deployment commands.
+            - generic [ref=f4e586]:
+              - generic [ref=f4e587]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e588]: vendor-listed
+              - generic [ref=f4e591]: plugin
+              - generic [ref=f4e592]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e594]: 1/86 hosts
+        - link "asana. Plugin. by Anthropic. Asana project management integration. Connects Claude Code to Asana's V2 MCP server to create and manage tasks, search projects, update assignments, and track progress. Requires a one-time Asana OAuth app setup — run /asana-setup after installing." [ref=f4e595] [cursor=pointer]:
+          - /url: /package/?slug=claude-asana
+          - generic [ref=f4e597]: A
+          - generic [ref=f4e598]:
+            - generic [ref=f4e599]: asana
+            - generic [ref=f4e600]: Asana project management integration. Connects Claude Code to Asana's V2 MCP server to create and manage tasks, search projects, update assignments, and track progress. Requires a one-time Asana OAuth app setup — run /asana-setup after installing.
+            - generic [ref=f4e601]:
+              - generic [ref=f4e602]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e603]: vendor-listed
+              - generic [ref=f4e606]: plugin
+              - generic [ref=f4e607]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e609]: 1/86 hosts
+        - link "ashby. Plugin. by Cursor. Search candidates, prep interviews, and manage pipeline tasks." [ref=f4e610] [cursor=pointer]:
+          - /url: /package/?slug=cursor-ashby
+          - generic [ref=f4e612]: C
+          - generic [ref=f4e613]:
+            - generic [ref=f4e614]: ashby
+            - generic [ref=f4e615]: Search candidates, prep interviews, and manage pipeline tasks.
+            - generic [ref=f4e616]:
+              - generic [ref=f4e617]: Cursor
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e618]: vendor-listed
+              - generic [ref=f4e621]: plugin
+              - generic [ref=f4e622]: ·Plugins & Toolkits
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e624]: 1/86 hosts
+        - link "astronomer-data-agents. Plugin. by Anthropic. Data engineering for Apache Airflow and Astronomer. Author DAGs with best practices, debug pipeline failures, trace data lineage, profile tables, migrate Airflow 2 to 3, and manage local and cloud deployments." [ref=f4e625] [cursor=pointer]:
+          - /url: /package/?slug=claude-astronomer-data-agents
+          - generic [ref=f4e627]: A
+          - generic [ref=f4e628]:
+            - generic [ref=f4e629]: astronomer-data-agents
+            - generic [ref=f4e630]: Data engineering for Apache Airflow and Astronomer. Author DAGs with best practices, debug pipeline failures, trace data lineage, profile tables, migrate Airflow 2 to 3, and manage local and cloud deployments.
+            - generic [ref=f4e631]:
+              - generic [ref=f4e632]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e633]: vendor-listed
+              - generic [ref=f4e636]: plugin
+              - generic [ref=f4e637]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e639]: 1/86 hosts
+        - link "atlan. Plugin. by Anthropic. Atlan data catalog plugin for Claude Code. Search, explore, govern, and manage your data assets through natural language. Powered by the Atlan MCP server with semantic search, lineage traversal, glossary management, data quality rules, and more." [ref=f4e640] [cursor=pointer]:
+          - /url: /package/?slug=claude-atlan
+          - generic [ref=f4e642]: A
+          - generic [ref=f4e643]:
+            - generic [ref=f4e644]: atlan
+            - generic [ref=f4e645]: Atlan data catalog plugin for Claude Code. Search, explore, govern, and manage your data assets through natural language. Powered by the Atlan MCP server with semantic search, lineage traversal, glossary management, data quality rules, and more.
+            - generic [ref=f4e646]:
+              - generic [ref=f4e647]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e648]: vendor-listed
+              - generic [ref=f4e651]: plugin
+              - generic [ref=f4e652]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e654]: 1/86 hosts
+        - link "Atlan. Plugin. by Anthropic. Atlan data catalog plugin for Claude Code. Search, explore, govern, and manage your data assets through natural language. Powered by the Atlan MCP server with semantic search, lineage traversal, glossary management, data quality rules, and more." [ref=f4e655] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-atlan
+          - generic [ref=f4e657]: A
+          - generic [ref=f4e658]:
+            - generic [ref=f4e659]: Atlan
+            - generic [ref=f4e660]: Atlan data catalog plugin for Claude Code. Search, explore, govern, and manage your data assets through natural language. Powered by the Atlan MCP server with semantic search, lineage traversal, glossary management, data quality rules, and more.
+            - generic [ref=f4e661]:
+              - generic [ref=f4e662]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e663]: vendor-listed
+              - generic [ref=f4e666]: plugin
+              - generic [ref=f4e667]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e669]: 1/86 hosts
+        - link "atlassian. Plugin. by Anthropic. Connect to Atlassian products including Jira and Confluence. Search and create issues, access documentation, manage sprints, and integrate your development workflow with Atlassian's collaboration tools." [ref=f4e670] [cursor=pointer]:
+          - /url: /package/?slug=claude-atlassian
+          - generic [ref=f4e672]: A
+          - generic [ref=f4e673]:
+            - generic [ref=f4e674]: atlassian
+            - generic [ref=f4e675]: Connect to Atlassian products including Jira and Confluence. Search and create issues, access documentation, manage sprints, and integrate your development workflow with Atlassian's collaboration tools.
+            - generic [ref=f4e676]:
+              - generic [ref=f4e677]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e678]: vendor-listed
+              - generic [ref=f4e681]: plugin
+              - generic [ref=f4e682]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e684]: 1/86 hosts
+        - link "atlassian-rovo. Plugin. by OpenAI. Official Codex plugin (Productivity & Workflow)." [ref=f4e685] [cursor=pointer]:
+          - /url: /package/?slug=codex-atlassian-rovo
+          - generic [ref=f4e687]: O
+          - generic [ref=f4e688]:
+            - generic [ref=f4e689]: atlassian-rovo
+            - generic [ref=f4e690]: Official Codex plugin (Productivity & Workflow).
+            - generic [ref=f4e691]:
+              - generic [ref=f4e692]: OpenAI
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e693]: vendor-listed
+              - generic [ref=f4e696]: plugin
+              - generic [ref=f4e697]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e699]: 1/86 hosts
+        - 'link "atlassian-twg-cli. Plugin. by Anthropic. Teamwork Graph CLI is Atlassian''s agent-first interface to your entire work context: Jira issues, Confluence pages, Bitbucket PRs, along with your connected third-party data sources. Purpose-built for coding agents like Claude Code (terminal or desktop), and powered by Atlassian''s context graph. Try: \"draft a Jira issue from this PR and link it to the epic.\" Using Claude Code in the browser? Install the Atlassian Rovo MCP plugin instead. Run /twg-setup after install to connect Atlassian Teamwork Graph CLI to Claude Code." [ref=f4e700] [cursor=pointer]':
+          - /url: /package/?slug=claude-atlassian-twg-cli
+          - generic [ref=f4e702]: A
+          - generic [ref=f4e703]:
+            - generic [ref=f4e704]: atlassian-twg-cli
+            - generic [ref=f4e705]: "Teamwork Graph CLI is Atlassian's agent-first interface to your entire work context: Jira issues, Confluence pages, Bitbucket PRs, along with your connected third-party data sources. Purpose-built for coding agents like Claude Code (terminal or desktop), and powered by Atlassian's context graph. Try: \"draft a Jira issue from this PR and link it to the epic.\" Using Claude Code in the browser? Install the Atlassian Rovo MCP plugin instead. Run /twg-setup after install to connect Atlassian Teamwork Graph CLI to Claude Code."
+            - generic [ref=f4e706]:
+              - generic [ref=f4e707]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e708]: vendor-listed
+              - generic [ref=f4e711]: plugin
+              - generic [ref=f4e712]: ·Productivity & Workflow
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e714]: 1/86 hosts
+        - link "atomic-agents. Plugin. by Anthropic. Comprehensive development workflow for building AI agents with the Atomic Agents framework. Includes specialized agents for schema design, architecture planning, code review, and tool development. Features guided workflows, progressive-disclosure skills, and best practice validation." [ref=f4e715] [cursor=pointer]:
+          - /url: /package/?slug=claude-atomic-agents
+          - generic [ref=f4e717]: A
+          - generic [ref=f4e718]:
+            - generic [ref=f4e719]: atomic-agents
+            - generic [ref=f4e720]: Comprehensive development workflow for building AI agents with the Atomic Agents framework. Includes specialized agents for schema design, architecture planning, code review, and tool development. Features guided workflows, progressive-disclosure skills, and best practice validation.
+            - generic [ref=f4e721]:
+              - generic [ref=f4e722]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e723]: vendor-listed
+              - generic [ref=f4e726]: plugin
+              - generic [ref=f4e727]: ·Developer Tools
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e729]: 1/86 hosts
+        - link "attio. Plugin. by Cursor. Search and update CRM records, lists, notes, and tasks." [ref=f4e730] [cursor=pointer]:
+          - /url: /package/?slug=cursor-attio
+          - generic [ref=f4e732]: C
+          - generic [ref=f4e733]:
+            - generic [ref=f4e734]: attio
+            - generic [ref=f4e735]: Search and update CRM records, lists, notes, and tasks.
+            - generic [ref=f4e736]:
+              - generic [ref=f4e737]: Cursor
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e738]: vendor-listed
+              - generic [ref=f4e741]: plugin
+              - generic [ref=f4e742]: ·Plugins & Toolkits
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e744]: 1/86 hosts
+        - link "auth0. Plugin. by Anthropic. Enterprise-grade auth, easy to implement. Add login, SSO, MFA, and access control to any app with framework-aware guidance." [ref=f4e745] [cursor=pointer]:
+          - /url: /package/?slug=claude-auth0
+          - generic [ref=f4e747]: A
+          - generic [ref=f4e748]:
+            - generic [ref=f4e749]: auth0
+            - generic [ref=f4e750]: Enterprise-grade auth, easy to implement. Add login, SSO, MFA, and access control to any app with framework-aware guidance.
+            - generic [ref=f4e751]:
+              - generic [ref=f4e752]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e753]: vendor-listed
+              - generic [ref=f4e756]: plugin
+              - generic [ref=f4e757]: ·Security & Testing
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e759]: 1/86 hosts
+        - link "Auth0. Plugin. by Anthropic. Essential Auth0 skills including quickstarts, migration from other providers, and Multi-Factor Authentication (MFA)." [ref=f4e760] [cursor=pointer]:
+          - /url: /package/?slug=knowledge-auth0
+          - generic [ref=f4e762]: A
+          - generic [ref=f4e763]:
+            - generic [ref=f4e764]: Auth0
+            - generic [ref=f4e765]: Essential Auth0 skills including quickstarts, migration from other providers, and Multi-Factor Authentication (MFA).
+            - generic [ref=f4e766]:
+              - generic [ref=f4e767]: Anthropic
+              - generic "Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it." [ref=f4e768]: vendor-listed
+              - generic [ref=f4e771]: plugin
+              - generic [ref=f4e772]: ·Security & Testing
+          - generic "Declares compatibility with 1 of the 86 agent hosts named in this catalog. Publisher-declared, not a test result." [ref=f4e774]: 1/86 hosts
+        - generic [ref=f4e775]:
+          - button "Show 48 more" [ref=f4e776] [cursor=pointer]
+          - generic [ref=f4e777]: 48 of 5,825
+    - contentinfo [ref=f4e778]:
+      - generic [ref=f4e779]:
+        - generic [ref=f4e780]:
+          - paragraph [ref=f4e781]: LiteSPM Market
+          - paragraph [ref=f4e782]: One bridge entry per agent, installed once. The catalog is a snapshot of named upstream sources, and everything here is resolved locally by the LiteSPM daemon.
+        - generic [ref=f4e783]:
+          - heading "Indexed" [level=2] [ref=f4e784]
+          - list [ref=f4e785]:
+            - listitem [ref=f4e786]:
+              - link "Explore" [ref=f4e787] [cursor=pointer]:
+                - /url: /explore/
+            - listitem [ref=f4e788]:
+              - link "Categories" [ref=f4e789] [cursor=pointer]:
+                - /url: /categories/
+            - listitem [ref=f4e790]:
+              - link "Agent hosts" [ref=f4e791] [cursor=pointer]:
+                - /url: /agents/
+            - listitem [ref=f4e792]:
+              - link "Coverage" [ref=f4e793] [cursor=pointer]:
+                - /url: /trending/
+            - listitem [ref=f4e794]:
+              - link "/v1/current.json" [ref=f4e795] [cursor=pointer]:
+                - /url: /v1/current.json
+        - generic [ref=f4e796]:
+          - heading "What the numbers mean" [level=2] [ref=f4e797]
+          - list [ref=f4e798]:
+            - listitem [ref=f4e799]:
+              - strong [ref=f4e800]: No popularity figures are published.
+              - text: The upstream sources do not expose machine-readable star or install counts, so the catalog shows none rather than an estimate.
+            - listitem [ref=f4e801]:
+              - generic [ref=f4e802]: "0"
+              - text: agent hosts have compiled-in config adapters. Every one lists the documentation it was verified against.
+            - listitem [ref=f4e803]: "Publisher “vendor-listed” means the row came from that publisher’s own marketplace manifest; no registry verified the publisher and this project did not audit it. Rows from third-party awesome-lists are discovery-only: no version or launch command was proven."
+      - generic [ref=f4e805]:
+        - generic [ref=f4e806]:
+          - generic [ref=f4e807]:
+            - definition [ref=f4e808]:
+              - generic [ref=f4e809]: "0"
+            - term [ref=f4e810]: capabilities
+          - generic [ref=f4e811]:
+            - definition [ref=f4e812]:
+              - generic [ref=f4e813]: "0"
+            - term [ref=f4e814]: MCP
+          - generic [ref=f4e815]:
+            - definition [ref=f4e816]:
+              - generic [ref=f4e817]: "0"
+            - term [ref=f4e818]: skills
+          - generic [ref=f4e819]:
+            - definition [ref=f4e820]:
+              - generic [ref=f4e821]: "0"
+            - term [ref=f4e822]: plugins
+        - generic [ref=f4e823]:
+          - paragraph [ref=f4e824]: Open source. No analytics, no cookies, no install telemetry.
+          - link "GitHub repository" [ref=f4e825] [cursor=pointer]:
+            - /url: https://github.com/sarv-projects/LiteSPM
+  - status
+  - alert [ref=f4e826]

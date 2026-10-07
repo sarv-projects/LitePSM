@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/state"
 )
 
 func TestParseCapabilityFlags(t *testing.T) {
@@ -105,7 +106,10 @@ func TestMCPInstallWritesTheComponentRowFksRequire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	row, err := db.GetInstallComponent(t.Context(), outcome.InstallID)
+	// The component id is deliberately distinct from the install id (several
+	// components can share one install), so the row is keyed by its derived id.
+	componentID := state.ComponentIDFor(outcome.InstallID, domain.ComponentMCPProvider, "needs-component")
+	row, err := db.GetInstallComponent(t.Context(), componentID)
 	if err != nil {
 		t.Fatalf("install component row missing: %v", err)
 	}

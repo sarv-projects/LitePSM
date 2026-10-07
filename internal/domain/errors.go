@@ -356,6 +356,47 @@ func ErrEgressBlocked(target, reason string) *LPSMError {
 	}
 }
 
+// ErrCatalogRollback reports that the remote pointer moved backwards: its
+// sequence is older than the locally cached release. Accepting it would
+// re-install superseded metadata (rollback/freeze attack), so sync fails
+// closed and keeps the local cache. See ARCH/36 §4 (TUF-style trust path:
+// sequence monotonicity is the rollback defense until signed timestamp
+// metadata exists; releases are SHA-256 verified but unsigned today).
+func ErrCatalogRollback(localSeq, remoteSeq int, localRelease, remoteRelease string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-CATALOG-ROLLBACK",
+		Message:   fmt.Sprintf("catalog rollback refused: remote sequence %d (%s) is older than local sequence %d (%s)", remoteSeq, remoteRelease, localSeq, localRelease),
+		Category:  "LPSM-CATALOG",
+		Retryable: false,
+		Details: map[string]any{
+			"localSequence":  localSeq,
+			"remoteSequence": remoteSeq,
+			"localRelease":   localRelease,
+			"remoteRelease":  remoteRelease,
+		},
+	}
+}
+
+// ErrCatalogEquivocation reports that two different releases claim the same
+// sequence number: the remote pointer advances nothing but names different
+// bytes (different release id or manifest digest). At most one release may
+// own a sequence number, so sync fails closed instead of picking one.
+func ErrCatalogEquivocation(sequence int, localRelease, remoteRelease, localDigest, remoteDigest string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-CATALOG-EQUIVOCATION",
+		Message:   fmt.Sprintf("catalog equivocation refused: sequence %d names both %s and %s", sequence, localRelease, remoteRelease),
+		Category:  "LPSM-CATALOG",
+		Retryable: false,
+		Details: map[string]any{
+			"sequence":      sequence,
+			"localRelease":  localRelease,
+			"remoteRelease": remoteRelease,
+			"localDigest":   localDigest,
+			"remoteDigest":  remoteDigest,
+		},
+	}
+}
+
 func ErrHostConfigNotFound(hostID, searchedPaths string) *LPSMError {
 	return &LPSMError{
 		Code:      "LPSM-HOST-CONFIG-NOT-FOUND",

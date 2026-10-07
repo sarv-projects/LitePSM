@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/artifact"
@@ -132,6 +133,13 @@ func (e *Engine) RunChecks(ctx context.Context) *DoctorReport {
 	}
 }
 
+// checkDirectories verifies the DATA_ROOT / CONFIG_ROOT / RUNTIME_ROOT layout.
+//
+// It is deliberately READ-ONLY: a diagnostic must observe the system, never
+// change it, or `doctor` and `doctor --repair` stop being distinguishable and a
+// report can no longer tell the user what was actually broken. Directories are
+// (re)created by the `repair_dirs` action (`--repair`) or by the daemon at
+// startup — never by this check.
 func (e *Engine) checkDirectories() CheckResult {
 	if e.paths == nil {
 		return CheckResult{
@@ -142,14 +150,51 @@ func (e *Engine) checkDirectories() CheckResult {
 		}
 	}
 
-	err := e.paths.EnsureDirectories()
-	if err != nil {
+	roots := []struct {
+		label string
+		path  string
+	}{
+		{"DATA_ROOT", e.paths.DataRoot},
+		{"CONFIG_ROOT", e.paths.ConfigRoot},
+		{"RUNTIME_ROOT", e.paths.RuntimeRoot},
+	}
+
+	var missing []string
+	for _, root := range roots {
+		if root.path == "" {
+			continue
+		}
+		info, err := os.Stat(root.path)
+		switch {
+		case os.IsNotExist(err):
+			missing = append(missing, fmt.Sprintf("%s (%s does not exist)", root.label, root.path))
+		case err != nil:
+			return CheckResult{
+				ID:             "check_dirs",
+				Name:           "Directory Permissions & Structure",
+				Status:         StatusFail,
+				Message:        fmt.Sprintf("cannot stat %s (%s): %v", root.label, root.path, err),
+				Recommendation: "Check file system permissions on DATA_ROOT and CONFIG_ROOT.",
+			}
+		case !info.IsDir():
+			return CheckResult{
+				ID:             "check_dirs",
+				Name:           "Directory Permissions & Structure",
+				Status:         StatusFail,
+				Message:        fmt.Sprintf("%s is not a directory: %s", root.label, root.path),
+				Recommendation: fmt.Sprintf("Move %s aside so it can be recreated as a directory.", root.path),
+			}
+		}
+	}
+
+	if len(missing) > 0 {
 		return CheckResult{
 			ID:             "check_dirs",
 			Name:           "Directory Permissions & Structure",
 			Status:         StatusFail,
-			Message:        fmt.Sprintf("directory initialization failed: %v", err),
-			Recommendation: "Check file system permissions on DATA_ROOT and CONFIG_ROOT.",
+			Message:        fmt.Sprintf("%d required director%s missing: %s", len(missing), plural(len(missing)), strings.Join(missing, "; ")),
+			Recommendation: "Run `litespm doctor --repair` to create the hierarchy, or start the daemon once.",
+			Details:        map[string]any{"missing": missing},
 		}
 	}
 
@@ -157,8 +202,17 @@ func (e *Engine) checkDirectories() CheckResult {
 		ID:      "check_dirs",
 		Name:    "Directory Permissions & Structure",
 		Status:  StatusPass,
-		Message: fmt.Sprintf("directories verified in %s", e.paths.DataRoot),
+		Message: fmt.Sprintf("directories verified (read-only check) in %s", e.paths.DataRoot),
 	}
+}
+
+// plural is the minimal suffix helper for check messages; kept local so the
+// package does not grow a strings utility for one call site.
+func plural(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
 }
 
 func (e *Engine) checkDatabase(ctx context.Context) CheckResult {
@@ -194,11 +248,38 @@ func (e *Engine) checkDatabase(ctx context.Context) CheckResult {
 		}
 	}
 
+	// Measure the journal mode rather than asserting it. The connection string
+	// asks for WAL (`internal/state/db.go`), but "WAL mode active" is a claim
+	// about the database as it is open right now, so read it back.
+	var journalMode string
+	if err := e.db.Raw().QueryRowContext(ctx, "PRAGMA journal_mode;").Scan(&journalMode); err != nil {
+		return CheckResult{
+			ID:             "check_db",
+			Name:           "SQLite State Database Integrity",
+			Status:         StatusWarn,
+			Message:        fmt.Sprintf("integrity check ok but journal_mode could not be read: %v", err),
+			Recommendation: "Inspect state.db permissions; the database may have been opened by another process.",
+		}
+	}
+
+	if !strings.EqualFold(journalMode, "wal") {
+		return CheckResult{
+			ID:      "check_db",
+			Name:    "SQLite State Database Integrity",
+			Status:  StatusWarn,
+			Message: fmt.Sprintf("relational tables verified (PRAGMA integrity_check ok), but journal_mode is %q, not wal", journalMode),
+			Details: map[string]any{"journalMode": journalMode},
+			Recommendation: "Restart the daemon so the database is reopened with journal_mode=WAL; " +
+				"a rollback-journaled database gives up the concurrent-reader guarantee the design assumes.",
+		}
+	}
+
 	return CheckResult{
 		ID:      "check_db",
 		Name:    "SQLite State Database Integrity",
 		Status:  StatusPass,
-		Message: "relational tables verified (PRAGMA integrity_check ok, WAL mode active)",
+		Message: fmt.Sprintf("relational tables verified (PRAGMA integrity_check ok, journal_mode=%s measured)", journalMode),
+		Details: map[string]any{"journalMode": journalMode},
 	}
 }
 
@@ -532,7 +613,17 @@ func (e *Engine) checkHostRegistrations(ctx context.Context) CheckResult {
 
 	msg := fmt.Sprintf("%d registered agent hosts detected", readyCount)
 	if readyCount == 0 {
-		msg = "no host configurations registered yet (run 'litespm' to connect an agent)"
+		// Nothing is connected yet. That is a state to fix, not a state to
+		// congratulate: an all-green report that says "0 hosts" would tell the
+		// reader nothing is wrong when the product is not set up at all.
+		return CheckResult{
+			ID:             "check_hosts",
+			Name:           "Agent Host Registrations",
+			Status:         StatusWarn,
+			Message:        "no host configurations registered yet (run `litespm` to connect an agent)",
+			Details:        map[string]any{"totalDetected": len(verifications), "readyCount": 0},
+			Recommendation: "Run `litespm` and pick an agent to register the bridge entry.",
+		}
 	}
 
 	return CheckResult{
@@ -602,16 +693,22 @@ func (e *Engine) checkRuntimes() CheckResult {
 		runtimesFound = append(runtimesFound, "npx")
 	}
 
-	msg := fmt.Sprintf("detected: %s", filepath.Join(runtimesFound...))
 	if len(runtimesFound) == 0 {
-		msg = "no standard scripting runtimes detected in PATH"
+		return CheckResult{
+			ID:             "check_runtimes",
+			Name:           "Provider Runtimes Environment",
+			Status:         StatusWarn,
+			Message:        "no standard scripting runtimes detected in PATH (Node.js npx, Python, uvx)",
+			Details:        map[string]any{"runtimes": runtimesFound},
+			Recommendation: "Install Node.js and/or Python if you intend to run MCP servers that need them; binary providers are unaffected.",
+		}
 	}
 
 	return CheckResult{
 		ID:      "check_runtimes",
 		Name:    "Provider Runtimes Environment",
 		Status:  StatusPass,
-		Message: msg,
+		Message: fmt.Sprintf("detected: %s", strings.Join(runtimesFound, ", ")),
 		Details: map[string]any{
 			"runtimes": runtimesFound,
 		},

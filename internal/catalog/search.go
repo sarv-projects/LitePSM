@@ -115,6 +115,41 @@ func (idx *SearchIndex) IndexListings(listings []*domain.Listing) {
 	}
 }
 
+// Replace atomically swaps the entire index contents. Sync builds a fresh
+// index from the verified release and swaps it in, so listings withdrawn
+// upstream disappear locally instead of lingering via merge-retain.
+func (idx *SearchIndex) Replace(listings []*domain.Listing, versions []*domain.VersionRecord) {
+	freshListings := make(map[string]*domain.Listing, len(listings))
+	for _, l := range listings {
+		if l != nil && l.ID != "" {
+			freshListings[l.ID] = l
+		}
+	}
+	freshVersions := make(map[string][]*domain.VersionRecord)
+	for _, rec := range versions {
+		if rec == nil || rec.ListingID == "" {
+			continue
+		}
+		cur := freshVersions[rec.ListingID]
+		replaced := false
+		for i, prior := range cur {
+			if prior.Version == rec.Version {
+				cur[i] = rec
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			cur = append(cur, rec)
+		}
+		freshVersions[rec.ListingID] = cur
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	idx.listings = freshListings
+	idx.versions = freshVersions
+}
+
 // Get retrieves a listing by its canonical ID.
 func (idx *SearchIndex) Get(id string) (*domain.Listing, bool) {
 	idx.mu.RLock()

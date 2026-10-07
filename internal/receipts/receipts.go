@@ -64,17 +64,17 @@ type Invocation struct {
 	InvocationID string    `json:"invocationId"`
 	CapabilityID string    `json:"capabilityId"`
 	State        string    `json:"state"`
-	Cancelled   bool      `json:"cancelled,omitempty"`
-	Receipt     *Receipt  `json:"receipt,omitempty"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	Cancelled    bool      `json:"cancelled,omitempty"`
+	Receipt      *Receipt  `json:"receipt,omitempty"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // Store is a durable invocation registry + receipt chain.
 type Store struct {
-	mu        sync.Mutex
-	path      string
-	invocs    map[string]*Invocation
-	lastHash  map[string]string // provider instance -> last receipt hash
+	mu       sync.Mutex
+	path     string
+	invocs   map[string]*Invocation
+	lastHash map[string]string // provider instance -> last receipt hash
 }
 
 // Open creates or replays the store at path. An empty path means
@@ -121,15 +121,15 @@ func (s *Store) Record(capabilityID, providerInstance, outcome string, started, 
 	defer s.mu.Unlock()
 	id := nextID()
 	r := &Receipt{
-		InvocationID:      id,
-		CapabilityID:      capabilityID,
-		ProviderInstance:  providerInstance,
-		Outcome:           outcome,
-		StartedAt:         started.UTC(),
-		EndedAt:           ended.UTC(),
-		InputDigest:       inputDigest,
-		OutputDigest:      outputDigest,
-		PrevReceiptHash:   s.lastHash[providerInstance],
+		InvocationID:     id,
+		CapabilityID:     capabilityID,
+		ProviderInstance: providerInstance,
+		Outcome:          outcome,
+		StartedAt:        started.UTC(),
+		EndedAt:          ended.UTC(),
+		InputDigest:      inputDigest,
+		OutputDigest:     outputDigest,
+		PrevReceiptHash:  s.lastHash[providerInstance],
 	}
 	r.ReceiptHash = hashReceipt(r)
 	inv := &Invocation{

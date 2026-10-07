@@ -32,9 +32,9 @@ required = true
 func stubResolver(id, constraint string) (LockedEntry, error) {
 	_ = constraint
 	return LockedEntry{
-		ID:            id,
-		Version:       "1.4.2",
-		ArtifactType:  "oci",
+		ID:              id,
+		Version:         "1.4.2",
+		ArtifactType:    "oci",
 		ArtifactLocator: "ghcr.io/example/postgres-mcp@sha256:abc",
 		ArtifactSHA256:  "sha256:" + strings.Repeat("a", 64),
 		TreeDigest:      "sha256:" + strings.Repeat("b", 64),

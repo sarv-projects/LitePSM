@@ -1,0 +1,372 @@
+- generic [active] [ref=f5e1]:
+  - link "Skip to content" [ref=f5e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f5e3]:
+    - banner [ref=f5e4]:
+      - generic [ref=f5e5]:
+        - link "LiteSPM Market home" [ref=f5e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f5e11]: LiteSPM Market
+        - navigation "Primary" [ref=f5e12]:
+          - link "Explore" [ref=f5e13] [cursor=pointer]:
+            - /url: /explore/
+          - link "Agents" [ref=f5e14] [cursor=pointer]:
+            - /url: /agents/
+          - link "Categories" [ref=f5e15] [cursor=pointer]:
+            - /url: /categories/
+          - link "Coverage" [ref=f5e16] [cursor=pointer]:
+            - /url: /trending/
+    - main [ref=f5e17]:
+      - generic [ref=f5e18]:
+        - heading "Coverage" [level=1] [ref=f5e19]
+        - paragraph [ref=f5e20]: 5,825 entries · counted, not estimated
+      - paragraph [ref=f5e21]: "These boards describe the shape of the snapshot: how many entries each source, publisher, category and agent host accounts for. Nothing here is ranked by popularity. LiteSPM publishes no star, download or install figures, because the upstream sources do not expose them — an earlier build of this site estimated them, and that was wrong."
+      - generic [ref=f5e22]:
+        - generic [ref=f5e23]:
+          - generic [ref=f5e25]:
+            - heading "By capability kind" [level=2] [ref=f5e26]
+            - paragraph [ref=f5e27]: Three kinds are in the v1 taxonomy.
+          - list [ref=f5e28]:
+            - listitem [ref=f5e29]:
+              - generic [ref=f5e30]:
+                - generic [ref=f5e31]: "01"
+                - generic [ref=f5e32]: MCP Server
+                - generic [ref=f5e36]: 4,079
+            - listitem [ref=f5e37]:
+              - generic [ref=f5e38]:
+                - generic [ref=f5e39]: "02"
+                - generic [ref=f5e40]: Agent Skill
+                - generic [ref=f5e44]: 1,108
+            - listitem [ref=f5e45]:
+              - generic [ref=f5e46]:
+                - generic [ref=f5e47]: "03"
+                - generic [ref=f5e48]: Plugin
+                - generic [ref=f5e52]: "638"
+        - generic [ref=f5e53]:
+          - generic [ref=f5e55]:
+            - heading "Agent hosts by declared coverage" [level=2] [ref=f5e56]
+            - paragraph [ref=f5e57]: How many entries list each host as compatible. Publisher-declared, not a test result.
+          - list [ref=f5e58]:
+            - listitem [ref=f5e59]:
+              - generic [ref=f5e60]:
+                - generic [ref=f5e61]: "01"
+                - generic [ref=f5e62]: Cursor
+                - generic [ref=f5e66]: 5,286
+            - listitem [ref=f5e67]:
+              - generic [ref=f5e68]:
+                - generic [ref=f5e69]: "02"
+                - generic [ref=f5e70]: AiderDesk
+                - generic [ref=f5e74]: 5,187
+            - listitem [ref=f5e75]:
+              - generic [ref=f5e76]:
+                - generic [ref=f5e77]: "03"
+                - generic [ref=f5e78]: Amp
+                - generic [ref=f5e82]: 5,187
+            - listitem [ref=f5e83]:
+              - generic [ref=f5e84]:
+                - generic [ref=f5e85]: "04"
+                - generic [ref=f5e86]: Antigravity
+                - generic [ref=f5e90]: 5,187
+            - listitem [ref=f5e91]:
+              - generic [ref=f5e92]:
+                - generic [ref=f5e93]: "05"
+                - generic [ref=f5e94]: Antigravity CLI
+                - generic [ref=f5e98]: 5,187
+            - listitem [ref=f5e99]:
+              - generic [ref=f5e100]:
+                - generic [ref=f5e101]: "06"
+                - generic [ref=f5e102]: AstrBot
+                - generic [ref=f5e106]: 5,187
+            - listitem [ref=f5e107]:
+              - generic [ref=f5e108]:
+                - generic [ref=f5e109]: "07"
+                - generic [ref=f5e110]: Augment
+                - generic [ref=f5e114]: 5,187
+            - listitem [ref=f5e115]:
+              - generic [ref=f5e116]:
+                - generic [ref=f5e117]: "08"
+                - generic [ref=f5e118]: Code Studio
+                - generic [ref=f5e122]: 5,187
+            - listitem [ref=f5e123]:
+              - generic [ref=f5e124]:
+                - generic [ref=f5e125]: "09"
+                - generic [ref=f5e126]: CodeArts Agent
+                - generic [ref=f5e130]: 5,187
+            - listitem [ref=f5e131]:
+              - generic [ref=f5e132]:
+                - generic [ref=f5e133]: "10"
+                - generic [ref=f5e134]: CodeBuddy
+                - generic [ref=f5e138]: 5,187
+            - listitem [ref=f5e139]:
+              - generic [ref=f5e140]:
+                - generic [ref=f5e141]: "11"
+                - generic [ref=f5e142]: Command Code
+                - generic [ref=f5e146]: 5,187
+            - listitem [ref=f5e147]:
+              - generic [ref=f5e148]:
+                - generic [ref=f5e149]: "12"
+                - generic [ref=f5e150]: Cortex Code
+                - generic [ref=f5e154]: 5,187
+            - listitem [ref=f5e155]:
+              - generic [ref=f5e156]:
+                - generic [ref=f5e157]: "13"
+                - generic [ref=f5e158]: Crush
+                - generic [ref=f5e162]: 5,187
+            - listitem [ref=f5e163]:
+              - generic [ref=f5e164]:
+                - generic [ref=f5e165]: "14"
+                - generic [ref=f5e166]: Deep Agents
+                - generic [ref=f5e170]: 5,187
+            - listitem [ref=f5e171]:
+              - generic [ref=f5e172]:
+                - generic [ref=f5e173]: "15"
+                - generic [ref=f5e174]: Droid
+                - generic [ref=f5e178]: 5,187
+        - generic [ref=f5e179]:
+          - generic [ref=f5e181]:
+            - heading "Categories by entry count" [level=2] [ref=f5e182]
+            - paragraph [ref=f5e183]: Normalised from the category string each source publishes.
+          - list [ref=f5e184]:
+            - listitem [ref=f5e185]:
+              - link "01 Developer Tools 1,034" [ref=f5e186] [cursor=pointer]:
+                - /url: /explore/?category=Developer%20Tools
+                - generic [ref=f5e187]: "01"
+                - generic [ref=f5e188]: Developer Tools
+                - generic [ref=f5e192]: 1,034
+            - listitem [ref=f5e193]:
+              - link "02 Finance & Crypto 445" [ref=f5e194] [cursor=pointer]:
+                - /url: /explore/?category=Finance%20%26%20Crypto
+                - generic [ref=f5e195]: "02"
+                - generic [ref=f5e196]: Finance & Crypto
+                - generic [ref=f5e200]: "445"
+            - listitem [ref=f5e201]:
+              - link "03 TypeScript Skills 444" [ref=f5e202] [cursor=pointer]:
+                - /url: /explore/?category=TypeScript%20Skills
+                - generic [ref=f5e203]: "03"
+                - generic [ref=f5e204]: TypeScript Skills
+                - generic [ref=f5e208]: "444"
+            - listitem [ref=f5e209]:
+              - link "04 Productivity & Workflow 367" [ref=f5e210] [cursor=pointer]:
+                - /url: /explore/?category=Productivity%20%26%20Workflow
+                - generic [ref=f5e211]: "04"
+                - generic [ref=f5e212]: Productivity & Workflow
+                - generic [ref=f5e216]: "367"
+            - listitem [ref=f5e217]:
+              - link "05 Knowledge & Memory 327" [ref=f5e218] [cursor=pointer]:
+                - /url: /explore/?category=Knowledge%20%26%20Memory
+                - generic [ref=f5e219]: "05"
+                - generic [ref=f5e220]: Knowledge & Memory
+                - generic [ref=f5e224]: "327"
+            - listitem [ref=f5e225]:
+              - link "06 Search & Retrieval 299" [ref=f5e226] [cursor=pointer]:
+                - /url: /explore/?category=Search%20%26%20Retrieval
+                - generic [ref=f5e227]: "06"
+                - generic [ref=f5e228]: Search & Retrieval
+                - generic [ref=f5e232]: "299"
+            - listitem [ref=f5e233]:
+              - link "07 Official Skills by 285" [ref=f5e234] [cursor=pointer]:
+                - /url: /explore/?category=Official%20Skills%20by
+                - generic [ref=f5e235]: "07"
+                - generic [ref=f5e236]: Official Skills by
+                - generic [ref=f5e240]: "285"
+            - listitem [ref=f5e241]:
+              - link "08 Community Skills 268" [ref=f5e242] [cursor=pointer]:
+                - /url: /explore/?category=Community%20Skills
+                - generic [ref=f5e243]: "08"
+                - generic [ref=f5e244]: Community Skills
+                - generic [ref=f5e248]: "268"
+            - listitem [ref=f5e249]:
+              - link "09 Security & Testing 263" [ref=f5e250] [cursor=pointer]:
+                - /url: /explore/?category=Security%20%26%20Testing
+                - generic [ref=f5e251]: "09"
+                - generic [ref=f5e252]: Security & Testing
+                - generic [ref=f5e256]: "263"
+            - listitem [ref=f5e257]:
+              - link "10 Other Tools and Integrations 186" [ref=f5e258] [cursor=pointer]:
+                - /url: /explore/?category=Other%20Tools%20and%20Integrations
+                - generic [ref=f5e259]: "10"
+                - generic [ref=f5e260]: Other Tools and Integrations
+                - generic [ref=f5e264]: "186"
+            - listitem [ref=f5e265]:
+              - link "11 Databases 184" [ref=f5e266] [cursor=pointer]:
+                - /url: /explore/?category=Databases
+                - generic [ref=f5e267]: "11"
+                - generic [ref=f5e268]: Databases
+                - generic [ref=f5e272]: "184"
+            - listitem [ref=f5e273]:
+              - link "12 Communication 163" [ref=f5e274] [cursor=pointer]:
+                - /url: /explore/?category=Communication
+                - generic [ref=f5e275]: "12"
+                - generic [ref=f5e276]: Communication
+                - generic [ref=f5e280]: "163"
+            - listitem [ref=f5e281]:
+              - link "13 Cloud Infrastructure 144" [ref=f5e282] [cursor=pointer]:
+                - /url: /explore/?category=Cloud%20Infrastructure
+                - generic [ref=f5e283]: "13"
+                - generic [ref=f5e284]: Cloud Infrastructure
+                - generic [ref=f5e288]: "144"
+            - listitem [ref=f5e289]:
+              - link "14 Multimedia 124" [ref=f5e290] [cursor=pointer]:
+                - /url: /explore/?category=Multimedia
+                - generic [ref=f5e291]: "14"
+                - generic [ref=f5e292]: Multimedia
+                - generic [ref=f5e296]: "124"
+            - listitem [ref=f5e297]:
+              - link "15 Monitoring 114" [ref=f5e298] [cursor=pointer]:
+                - /url: /explore/?category=Monitoring
+                - generic [ref=f5e299]: "15"
+                - generic [ref=f5e300]: Monitoring
+                - generic [ref=f5e304]: "114"
+        - generic [ref=f5e305]:
+          - generic [ref=f5e307]:
+            - heading "Publishers by entries shipped" [level=2] [ref=f5e308]
+            - paragraph [ref=f5e309]: Count of entries, not stars.
+          - list [ref=f5e310]:
+            - listitem [ref=f5e311]:
+              - link "01 Anthropic 443" [ref=f5e312] [cursor=pointer]:
+                - /url: /explore/?q=Anthropic
+                - generic [ref=f5e313]: "01"
+                - generic [ref=f5e314]: Anthropic
+                - generic [ref=f5e318]: "443"
+            - listitem [ref=f5e319]:
+              - link "02 microsoft 136" [ref=f5e320] [cursor=pointer]:
+                - /url: /explore/?q=microsoft
+                - generic [ref=f5e321]: "02"
+                - generic [ref=f5e322]: microsoft
+                - generic [ref=f5e326]: "136"
+            - listitem [ref=f5e327]:
+              - link "03 Cursor 99" [ref=f5e328] [cursor=pointer]:
+                - /url: /explore/?q=Cursor
+                - generic [ref=f5e329]: "03"
+                - generic [ref=f5e330]: Cursor
+                - generic [ref=f5e334]: "99"
+            - listitem [ref=f5e335]:
+              - link "04 OpenAI 65" [ref=f5e336] [cursor=pointer]:
+                - /url: /explore/?q=OpenAI
+                - generic [ref=f5e337]: "04"
+                - generic [ref=f5e338]: OpenAI
+                - generic [ref=f5e342]: "65"
+            - listitem [ref=f5e343]:
+              - link "05 phuryn 65" [ref=f5e344] [cursor=pointer]:
+                - /url: /explore/?q=phuryn
+                - generic [ref=f5e345]: "05"
+                - generic [ref=f5e346]: phuryn
+                - generic [ref=f5e350]: "65"
+            - listitem [ref=f5e351]:
+              - link "06 kukapay 56" [ref=f5e352] [cursor=pointer]:
+                - /url: /explore/?q=kukapay
+                - generic [ref=f5e353]: "06"
+                - generic [ref=f5e354]: kukapay
+                - generic [ref=f5e358]: "56"
+            - listitem [ref=f5e359]:
+              - link "07 testmu-ai 49" [ref=f5e360] [cursor=pointer]:
+                - /url: /explore/?q=testmu-ai
+                - generic [ref=f5e361]: "07"
+                - generic [ref=f5e362]: testmu-ai
+                - generic [ref=f5e366]: "49"
+            - listitem [ref=f5e367]:
+              - link "08 deanpeters 46" [ref=f5e368] [cursor=pointer]:
+                - /url: /explore/?q=deanpeters
+                - generic [ref=f5e369]: "08"
+                - generic [ref=f5e370]: deanpeters
+                - generic [ref=f5e374]: "46"
+            - listitem [ref=f5e375]:
+              - link "09 openai 42" [ref=f5e376] [cursor=pointer]:
+                - /url: /explore/?q=openai
+                - generic [ref=f5e377]: "09"
+                - generic [ref=f5e378]: openai
+                - generic [ref=f5e382]: "42"
+            - listitem [ref=f5e383]:
+              - link "10 coreyhaines31 31" [ref=f5e384] [cursor=pointer]:
+                - /url: /explore/?q=coreyhaines31
+                - generic [ref=f5e385]: "10"
+                - generic [ref=f5e386]: coreyhaines31
+                - generic [ref=f5e390]: "31"
+            - listitem [ref=f5e391]:
+              - link "11 xAI 31" [ref=f5e392] [cursor=pointer]:
+                - /url: /explore/?q=xAI
+                - generic [ref=f5e393]: "11"
+                - generic [ref=f5e394]: xAI
+                - generic [ref=f5e398]: "31"
+            - listitem [ref=f5e399]:
+              - link "12 getsentry 29" [ref=f5e400] [cursor=pointer]:
+                - /url: /explore/?q=getsentry
+                - generic [ref=f5e401]: "12"
+                - generic [ref=f5e402]: getsentry
+                - generic [ref=f5e406]: "29"
+            - listitem [ref=f5e407]:
+              - link "13 garrytan 27" [ref=f5e408] [cursor=pointer]:
+                - /url: /explore/?q=garrytan
+                - generic [ref=f5e409]: "13"
+                - generic [ref=f5e410]: garrytan
+                - generic [ref=f5e414]: "27"
+            - listitem [ref=f5e415]:
+              - link "14 flutter 22" [ref=f5e416] [cursor=pointer]:
+                - /url: /explore/?q=flutter
+                - generic [ref=f5e417]: "14"
+                - generic [ref=f5e418]: flutter
+                - generic [ref=f5e422]: "22"
+            - listitem [ref=f5e423]:
+              - link "15 trailofbits 21" [ref=f5e424] [cursor=pointer]:
+                - /url: /explore/?q=trailofbits
+                - generic [ref=f5e425]: "15"
+                - generic [ref=f5e426]: trailofbits
+                - generic [ref=f5e430]: "21"
+      - paragraph [ref=f5e431]: Sources for this snapshot are listed in the repository under internal/source. Each capability links back to the upstream page it was read from.
+    - contentinfo [ref=f5e432]:
+      - generic [ref=f5e433]:
+        - generic [ref=f5e434]:
+          - paragraph [ref=f5e435]: LiteSPM Market
+          - paragraph [ref=f5e436]: One bridge entry per agent, installed once. The catalog is a snapshot of named upstream sources, and everything here is resolved locally by the LiteSPM daemon.
+        - generic [ref=f5e437]:
+          - heading "Indexed" [level=2] [ref=f5e438]
+          - list [ref=f5e439]:
+            - listitem [ref=f5e440]:
+              - link "Explore" [ref=f5e441] [cursor=pointer]:
+                - /url: /explore/
+            - listitem [ref=f5e442]:
+              - link "Categories" [ref=f5e443] [cursor=pointer]:
+                - /url: /categories/
+            - listitem [ref=f5e444]:
+              - link "Agent hosts" [ref=f5e445] [cursor=pointer]:
+                - /url: /agents/
+            - listitem [ref=f5e446]:
+              - link "Coverage" [ref=f5e447] [cursor=pointer]:
+                - /url: /trending/
+            - listitem [ref=f5e448]:
+              - link "/v1/current.json" [ref=f5e449] [cursor=pointer]:
+                - /url: /v1/current.json
+        - generic [ref=f5e450]:
+          - heading "What the numbers mean" [level=2] [ref=f5e451]
+          - list [ref=f5e452]:
+            - listitem [ref=f5e453]:
+              - strong [ref=f5e454]: No popularity figures are published.
+              - text: The upstream sources do not expose machine-readable star or install counts, so the catalog shows none rather than an estimate.
+            - listitem [ref=f5e455]:
+              - generic [ref=f5e456]: "0"
+              - text: agent hosts have compiled-in config adapters. Every one lists the documentation it was verified against.
+            - listitem [ref=f5e457]: "Publisher “vendor-listed” means the row came from that publisher’s own marketplace manifest; no registry verified the publisher and this project did not audit it. Rows from third-party awesome-lists are discovery-only: no version or launch command was proven."
+      - generic [ref=f5e459]:
+        - generic [ref=f5e460]:
+          - generic [ref=f5e461]:
+            - definition [ref=f5e462]:
+              - generic [ref=f5e463]: "0"
+            - term [ref=f5e464]: capabilities
+          - generic [ref=f5e465]:
+            - definition [ref=f5e466]:
+              - generic [ref=f5e467]: "0"
+            - term [ref=f5e468]: MCP
+          - generic [ref=f5e469]:
+            - definition [ref=f5e470]:
+              - generic [ref=f5e471]: "0"
+            - term [ref=f5e472]: skills
+          - generic [ref=f5e473]:
+            - definition [ref=f5e474]:
+              - generic [ref=f5e475]: "0"
+            - term [ref=f5e476]: plugins
+        - generic [ref=f5e477]:
+          - paragraph [ref=f5e478]: Open source. No analytics, no cookies, no install telemetry.
+          - link "GitHub repository" [ref=f5e479] [cursor=pointer]:
+            - /url: https://github.com/sarv-projects/LiteSPM
+  - status
+  - alert [ref=f5e480]

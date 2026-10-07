@@ -74,7 +74,7 @@ For supported agents, LiteSPM configures a single Bridge entry per host. Subsequ
 
 ### D-013: Split Bridge Architecture (Stateless Shims)
 *   **Context:** Host agents expect an MCP stdio server.
-*   **Decision:** The host-facing Bridge executable is a lightweight, stateless shim. It handles stdio JSON-RPC framing and forwards all state, discovery, and execution requests over authenticated local IPC to the Daemon.
+*   **Decision:** The host-facing Bridge executable is a lightweight, stateless shim. It handles stdio JSON-RPC framing and forwards all state, discovery, and execution requests over local IPC (reachable only through OS-level ACLs — a Windows Named Pipe DACL or a `0600` Unix socket; there is no peer-authentication handshake) to the Daemon.
 *   **Status:** Accepted. Standalone (daemon-less) mode fails closed instead of fabricating results (`internal/bridge/shim.go:274-280`).
 
 ### D-014: Statically Linked Native Adapters in v1
@@ -97,7 +97,7 @@ For supported agents, LiteSPM configures a single Bridge entry per host. Subsequ
 *   **Decision:** LiteSPM hand-rolls MCP JSON-RPC 2.0 (`internal/ipc`, `internal/bridge`, `internal/mcpclient`; no external MCP SDK in `go.mod`) and explicitly tests two named protocol profiles:
     1.  **Modern Profile:** 2026-07-28 stateless architecture with Streamable HTTP and header mirroring (`Mcp-Method`).
     2.  **Legacy Profile:** 2025-11-25 stateful initialization for backwards compatibility.
-*   **Status:** Accepted for `internal/ipc` and `internal/bridge` (`TESTED`). `internal/mcpclient` implements both profiles but has **zero production importers** (`IMPLEMENTED`) — see [STATUS.md](../STATUS.md) §4.
+*   **Status:** Accepted for `internal/ipc` and `internal/bridge` (`TESTED`). `internal/mcpclient` implements both profiles and is `WIRED` through `internal/discover` (stdio profile) — see [STATUS.md](../STATUS.md) §4.
 
 ### D-018: TUF Metadata Framework for Future Signed Releases
 *   **Context:** Ad-hoc cryptographic signing schemes are vulnerable to rollback and freeze attacks.

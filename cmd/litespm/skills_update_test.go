@@ -34,7 +34,10 @@ func installTestSkill(t *testing.T, dataRoot, name, scope, body string) string {
 	}
 	src := filepath.Join(t.TempDir(), name)
 	writeTestSkill(t, src, name, body)
-	dst := filepath.Join(t.TempDir(), name)
+	// Real installs always land in a `skills` directory (agents.go joins
+	// home/<agent>/skills/<name>); confineDest refuses any other layout, so
+	// the fixture must mirror production or removal is rightly refused.
+	dst := filepath.Join(t.TempDir(), "skills", name)
 	if _, err := skills.NewInstaller(ledger, nil).Install(context.Background(), skills.InstallRequest{
 		Op:     skills.InstallOp{SkillName: name, FromDir: src, ToDir: dst, HostLabel: "opencode"},
 		Source: skills.SkillSource{Display: "owner/repo"},

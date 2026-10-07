@@ -100,14 +100,21 @@ function deriveCounts(listings: Listing[]) {
 }
 
 /**
- * Fetch /v1/current.json for live counts. Falls back to data-derived counts and
- * reports status so the UI never shows a fake "live" indicator when offline.
+ * Read `/v1/current.json` and report where the numbers on screen came from.
+ *
+ * The initial state is **`loading`**, not `ready`: the bundled manifest proves
+ * what this build shipped, it does not prove the origin still serves it. Until
+ * the fetch answers, the UI says "checking" rather than showing a "Live" badge
+ * that has checked nothing — and it falls back to `offline`, with the bundled
+ * snapshot, when the request fails. The `data` payload is the bundled manifest
+ * from the first render either way, so the counts are never a zero placeholder.
  */
 export function useTelemetry(listings: Listing[]): TelemetryState {
   const derived = useMemo(() => deriveCounts(listings), [listings]);
-  // Seed from the bundled manifest so server-rendered html carries real facts.
+  // Seed from the bundled manifest so server-rendered html carries real facts,
+  // but with an unverified status: the numbers are known, the liveness is not.
   const [state, setState] = useState<TelemetryState>(() => ({
-    status: "ready",
+    status: "loading",
     data: bundledTelemetry(),
   }));
 
@@ -141,7 +148,13 @@ export function useTelemetry(listings: Listing[]): TelemetryState {
       })
       .catch(() => {
         if (cancelled) return;
-        setState({ status: "offline", data: { itemCount: derived.all, counts: derived } });
+        // Offline: the bundled snapshot is what is on screen. Keep its release
+        // stamp (the build really shipped it) and its own item count, and say
+        // `offline` instead of pretending the origin answered.
+        setState({
+          status: "offline",
+          data: { ...bundledTelemetry(), itemCount: derived.all, counts: derived },
+        });
       });
     return () => {
       cancelled = true;

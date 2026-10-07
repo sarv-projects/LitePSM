@@ -18,10 +18,6 @@ jobs:
   build-and-release:
     name: Build & Publish Release
     runs-on: ubuntu-latest
-    env:
-      # Set the NPM_TOKEN repository secret to enable the npm publish step.
-      # Unset, the release is still built and published to GitHub.
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -54,7 +50,7 @@ jobs:
       - name: Package Release Archives
         run: |
           mkdir -p release-assets
-          cp dist/* release-assets/
+          cp dist/litespm-* dist/SHA256SUMS.txt release-assets/
           tar -czf release-assets/litespm-web-static.tar.gz -C web/out .
 
       - name: Create GitHub Release
@@ -84,10 +80,22 @@ jobs:
       # Deliberately after the GitHub release: the npm postinstall fetches the
       # v<version> assets, so publishing before they exist would ship a package
       # whose binary download 404s.
+      #
+      # NODE_AUTH_TOKEN is scoped to this step only: a job-level env would
+      # expose the token to every preceding step (build, test, packaging).
+      # Set the NPM_TOKEN repository secret to enable this step. Unset, the
+      # release is still built and published to GitHub.
       - name: Publish npm package
-        if: env.NODE_AUTH_TOKEN != ''
+        if: ${{ secrets.NPM_TOKEN != '' }}
         working-directory: ./npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           printf '//registry.npmjs.org/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" > .npmrc
           npm publish --provenance --access public
-          rm -f .npmrc
+
+      # The token file must not survive the job regardless of outcome:
+      # a failed publish must not leave .npmrc on disk for a later step.
+      - name: Remove npm auth token
+        if: always()
+        run: rm -f npm/.npmrc

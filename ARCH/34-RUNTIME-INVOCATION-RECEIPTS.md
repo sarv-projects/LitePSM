@@ -2,7 +2,7 @@
 
 Status: **`DESIGNED`.** This document specifies the capability registry, the real invocation handlers, the invocation engine (deadlines, cancellation, concurrency, backpressure, restart, schema-drift, redaction), provider health and circuit breaking, bounded output, tamper-evident receipts, and cross-provider fallback rules. **No invocation registry, no capability registry, and no receipt store exist** ([STATUS.md](../STATUS.md) §4). Do not present the engine below as implemented.
 
-**Reality today:** `internal/provider` start/stop/probe is `WIRED`, but the `providers` and `capabilities` tables are never populated by non-test code. `provider.invoke`, `invocation.get`, and `invocation.cancel` — and their Bridge counterparts `invoke_capability`, `get_invocation`, `cancel_invocation` — are `IMPLEMENTED` but return JSON-RPC `-32601` with explicit reasons; no invocation registry exists ([STATUS.md](../STATUS.md) §4). Do not present any of the engine below as implemented.
+**Reality today:** `internal/provider` start/stop/probe is `WIRED`, and `internal/discover` now writes real `providers` and `capabilities` rows and invokes a tool synchronously — so `provider.invoke` / Bridge `invoke_capability` **resolve**. `invocation.get` and `invocation.cancel` (and Bridge `get_invocation` / `cancel_invocation`) remain `IMPLEMENTED` but return JSON-RPC `-32601` with an explicit reason: no asynchronous invocation registry exists ([STATUS.md](../STATUS.md) §4). Do not present any of the engine below as implemented.
 
 ---
 

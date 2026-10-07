@@ -1,0 +1,553 @@
+- generic [active] [ref=f3e1]:
+  - link "Skip to content" [ref=f3e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f3e3]:
+    - banner [ref=f3e4]:
+      - generic [ref=f3e5]:
+        - link "LiteSPM Market home" [ref=f3e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f3e11]: LiteSPM Market
+        - navigation "Primary" [ref=f3e12]:
+          - link "Explore" [ref=f3e13] [cursor=pointer]:
+            - /url: /explore/
+          - link "Agents" [ref=f3e14] [cursor=pointer]:
+            - /url: /agents/
+          - link "Categories" [ref=f3e15] [cursor=pointer]:
+            - /url: /categories/
+          - link "Coverage" [ref=f3e16] [cursor=pointer]:
+            - /url: /trending/
+    - main [ref=f3e17]:
+      - generic [ref=f3e18]:
+        - heading "Categories" [level=1] [ref=f3e19]
+        - paragraph [ref=f3e20]: 63 categories across 5,825 entries
+      - paragraph [ref=f3e21]: Categories are the upstream registry’s own labels, not a curated taxonomy, so a few of them describe a language or a collection rather than a domain. The bar shows each category’s share of the largest one.
+      - generic [ref=f3e22]:
+        - heading "All categories with entry counts" [level=2] [ref=f3e23]
+        - generic [ref=f3e24]:
+          - generic [ref=f3e25]: Category
+          - generic [ref=f3e26]: Entries
+          - generic [ref=f3e27]: Kind mix
+          - generic [ref=f3e28]: Share of the largest category
+      - list [ref=f3e29]:
+        - listitem [ref=f3e30]:
+          - link "Developer Tools 1,034 795 239 100%" [ref=f3e31] [cursor=pointer]:
+            - /url: /explore/?category=Developer%20Tools
+            - generic [ref=f3e32]: Developer Tools
+            - generic [ref=f3e33]: 1,034
+            - generic [ref=f3e34]:
+              - generic "795 mcp servers" [ref=f3e35]: "795"
+              - generic "239 plugins" [ref=f3e38]: "239"
+            - generic [ref=f3e41]: 100%
+        - listitem [ref=f3e45]:
+          - link "Finance & Crypto 445 432 13 43%" [ref=f3e46] [cursor=pointer]:
+            - /url: /explore/?category=Finance%20%26%20Crypto
+            - generic [ref=f3e47]: Finance & Crypto
+            - generic [ref=f3e48]: "445"
+            - generic [ref=f3e49]:
+              - generic "432 mcp servers" [ref=f3e50]: "432"
+              - generic "13 plugins" [ref=f3e53]: "13"
+            - generic [ref=f3e56]: 43%
+        - listitem [ref=f3e60]:
+          - link "TypeScript Skills 444 444 43%" [ref=f3e61] [cursor=pointer]:
+            - /url: /explore/?category=TypeScript%20Skills
+            - generic [ref=f3e62]: TypeScript Skills
+            - generic [ref=f3e63]: "444"
+            - generic "444 agent skills" [ref=f3e65]: "444"
+            - generic [ref=f3e68]: 43%
+        - listitem [ref=f3e72]:
+          - link "Productivity & Workflow 367 246 121 35%" [ref=f3e73] [cursor=pointer]:
+            - /url: /explore/?category=Productivity%20%26%20Workflow
+            - generic [ref=f3e74]: Productivity & Workflow
+            - generic [ref=f3e75]: "367"
+            - generic [ref=f3e76]:
+              - generic "246 mcp servers" [ref=f3e77]: "246"
+              - generic "121 plugins" [ref=f3e80]: "121"
+            - generic [ref=f3e83]: 35%
+        - listitem [ref=f3e87]:
+          - link "Knowledge & Memory 327 327 32%" [ref=f3e88] [cursor=pointer]:
+            - /url: /explore/?category=Knowledge%20%26%20Memory
+            - generic [ref=f3e89]: Knowledge & Memory
+            - generic [ref=f3e90]: "327"
+            - generic "327 mcp servers" [ref=f3e92]: "327"
+            - generic [ref=f3e95]: 32%
+        - listitem [ref=f3e99]:
+          - link "Search & Retrieval 299 294 5 29%" [ref=f3e100] [cursor=pointer]:
+            - /url: /explore/?category=Search%20%26%20Retrieval
+            - generic [ref=f3e101]: Search & Retrieval
+            - generic [ref=f3e102]: "299"
+            - generic [ref=f3e103]:
+              - generic "294 mcp servers" [ref=f3e104]: "294"
+              - generic "5 plugins" [ref=f3e107]: "5"
+            - generic [ref=f3e110]: 29%
+        - listitem [ref=f3e114]:
+          - link "Official Skills by 285 285 28%" [ref=f3e115] [cursor=pointer]:
+            - /url: /explore/?category=Official%20Skills%20by
+            - generic [ref=f3e116]: Official Skills by
+            - generic [ref=f3e117]: "285"
+            - generic "285 agent skills" [ref=f3e119]: "285"
+            - generic [ref=f3e122]: 28%
+        - listitem [ref=f3e126]:
+          - link "Community Skills 268 268 26%" [ref=f3e127] [cursor=pointer]:
+            - /url: /explore/?category=Community%20Skills
+            - generic [ref=f3e128]: Community Skills
+            - generic [ref=f3e129]: "268"
+            - generic "268 agent skills" [ref=f3e131]: "268"
+            - generic [ref=f3e134]: 26%
+        - listitem [ref=f3e138]:
+          - link "Security & Testing 263 236 27 25%" [ref=f3e139] [cursor=pointer]:
+            - /url: /explore/?category=Security%20%26%20Testing
+            - generic [ref=f3e140]: Security & Testing
+            - generic [ref=f3e141]: "263"
+            - generic [ref=f3e142]:
+              - generic "236 mcp servers" [ref=f3e143]: "236"
+              - generic "27 plugins" [ref=f3e146]: "27"
+            - generic [ref=f3e149]: 25%
+        - listitem [ref=f3e153]:
+          - link "Other Tools and Integrations 186 186 18%" [ref=f3e154] [cursor=pointer]:
+            - /url: /explore/?category=Other%20Tools%20and%20Integrations
+            - generic [ref=f3e155]: Other Tools and Integrations
+            - generic [ref=f3e156]: "186"
+            - generic "186 mcp servers" [ref=f3e158]: "186"
+            - generic [ref=f3e161]: 18%
+        - listitem [ref=f3e165]:
+          - link "Databases 184 137 47 18%" [ref=f3e166] [cursor=pointer]:
+            - /url: /explore/?category=Databases
+            - generic [ref=f3e167]: Databases
+            - generic [ref=f3e168]: "184"
+            - generic [ref=f3e169]:
+              - generic "137 mcp servers" [ref=f3e170]: "137"
+              - generic "47 plugins" [ref=f3e173]: "47"
+            - generic [ref=f3e176]: 18%
+        - listitem [ref=f3e180]:
+          - link "Communication 163 158 5 16%" [ref=f3e181] [cursor=pointer]:
+            - /url: /explore/?category=Communication
+            - generic [ref=f3e182]: Communication
+            - generic [ref=f3e183]: "163"
+            - generic [ref=f3e184]:
+              - generic "158 mcp servers" [ref=f3e185]: "158"
+              - generic "5 plugins" [ref=f3e188]: "5"
+            - generic [ref=f3e191]: 16%
+        - listitem [ref=f3e195]:
+          - link "Cloud Infrastructure 144 128 16 14%" [ref=f3e196] [cursor=pointer]:
+            - /url: /explore/?category=Cloud%20Infrastructure
+            - generic [ref=f3e197]: Cloud Infrastructure
+            - generic [ref=f3e198]: "144"
+            - generic [ref=f3e199]:
+              - generic "128 mcp servers" [ref=f3e200]: "128"
+              - generic "16 plugins" [ref=f3e203]: "16"
+            - generic [ref=f3e206]: 14%
+        - listitem [ref=f3e210]:
+          - link "Multimedia 124 103 21 12%" [ref=f3e211] [cursor=pointer]:
+            - /url: /explore/?category=Multimedia
+            - generic [ref=f3e212]: Multimedia
+            - generic [ref=f3e213]: "124"
+            - generic [ref=f3e214]:
+              - generic "103 mcp servers" [ref=f3e215]: "103"
+              - generic "21 plugins" [ref=f3e218]: "21"
+            - generic [ref=f3e221]: 12%
+        - listitem [ref=f3e225]:
+          - link "Monitoring 114 81 33 11%" [ref=f3e226] [cursor=pointer]:
+            - /url: /explore/?category=Monitoring
+            - generic [ref=f3e227]: Monitoring
+            - generic [ref=f3e228]: "114"
+            - generic [ref=f3e229]:
+              - generic "81 mcp servers" [ref=f3e230]: "81"
+              - generic "33 plugins" [ref=f3e233]: "33"
+            - generic [ref=f3e236]: 11%
+        - listitem [ref=f3e240]:
+          - link "Browser Automation 103 103 10%" [ref=f3e241] [cursor=pointer]:
+            - /url: /explore/?category=Browser%20Automation
+            - generic [ref=f3e242]: Browser Automation
+            - generic [ref=f3e243]: "103"
+            - generic "103 mcp servers" [ref=f3e245]: "103"
+            - generic [ref=f3e248]: 10%
+        - listitem [ref=f3e252]:
+          - link "Plugins & Toolkits 99 99 10%" [ref=f3e253] [cursor=pointer]:
+            - /url: /explore/?category=Plugins%20%26%20Toolkits
+            - generic [ref=f3e254]: Plugins & Toolkits
+            - generic [ref=f3e255]: "99"
+            - generic "99 plugins" [ref=f3e257]: "99"
+            - generic [ref=f3e260]: 10%
+        - listitem [ref=f3e264]:
+          - link "Art & Culture 88 88 9%" [ref=f3e265] [cursor=pointer]:
+            - /url: /explore/?category=Art%20%26%20Culture
+            - generic [ref=f3e266]: Art & Culture
+            - generic [ref=f3e267]: "88"
+            - generic "88 mcp servers" [ref=f3e269]: "88"
+            - generic [ref=f3e272]: 9%
+        - listitem [ref=f3e276]:
+          - link "Gaming 67 67 6%" [ref=f3e277] [cursor=pointer]:
+            - /url: /explore/?category=Gaming
+            - generic [ref=f3e278]: Gaming
+            - generic [ref=f3e279]: "67"
+            - generic "67 mcp servers" [ref=f3e281]: "67"
+            - generic [ref=f3e284]: 6%
+        - listitem [ref=f3e288]:
+          - link "Social Media 62 62 6%" [ref=f3e289] [cursor=pointer]:
+            - /url: /explore/?category=Social%20Media
+            - generic [ref=f3e290]: Social Media
+            - generic [ref=f3e291]: "62"
+            - generic "62 mcp servers" [ref=f3e293]: "62"
+            - generic [ref=f3e296]: 6%
+        - listitem [ref=f3e300]:
+          - link "Location Services 57 55 2 6%" [ref=f3e301] [cursor=pointer]:
+            - /url: /explore/?category=Location%20Services
+            - generic [ref=f3e302]: Location Services
+            - generic [ref=f3e303]: "57"
+            - generic [ref=f3e304]:
+              - generic "55 mcp servers" [ref=f3e305]: "55"
+              - generic "2 plugins" [ref=f3e308]: "2"
+            - generic [ref=f3e311]: 6%
+        - listitem [ref=f3e315]:
+          - link "Travel & Transportation 56 56 5%" [ref=f3e316] [cursor=pointer]:
+            - /url: /explore/?category=Travel%20%26%20Transportation
+            - generic [ref=f3e317]: Travel & Transportation
+            - generic [ref=f3e318]: "56"
+            - generic "56 mcp servers" [ref=f3e320]: "56"
+            - generic [ref=f3e323]: 5%
+        - listitem [ref=f3e327]:
+          - link "Data Platforms 47 47 5%" [ref=f3e328] [cursor=pointer]:
+            - /url: /explore/?category=Data%20Platforms
+            - generic [ref=f3e329]: Data Platforms
+            - generic [ref=f3e330]: "47"
+            - generic "47 mcp servers" [ref=f3e332]: "47"
+            - generic [ref=f3e335]: 5%
+        - listitem [ref=f3e339]:
+          - link "Biology, Medicine and Bioinformatics 46 46 4%" [ref=f3e340] [cursor=pointer]:
+            - /url: /explore/?category=Biology%2C%20Medicine%20and%20Bioinformatics
+            - generic [ref=f3e341]: Biology, Medicine and Bioinformatics
+            - generic [ref=f3e342]: "46"
+            - generic "46 mcp servers" [ref=f3e344]: "46"
+            - generic [ref=f3e347]: 4%
+        - listitem [ref=f3e351]:
+          - link "Sports 44 44 4%" [ref=f3e352] [cursor=pointer]:
+            - /url: /explore/?category=Sports
+            - generic [ref=f3e353]: Sports
+            - generic [ref=f3e354]: "44"
+            - generic "44 mcp servers" [ref=f3e356]: "44"
+            - generic [ref=f3e359]: 4%
+        - listitem [ref=f3e363]:
+          - link "Data Science Tools 43 43 4%" [ref=f3e364] [cursor=pointer]:
+            - /url: /explore/?category=Data%20Science%20Tools
+            - generic [ref=f3e365]: Data Science Tools
+            - generic [ref=f3e366]: "43"
+            - generic "43 mcp servers" [ref=f3e368]: "43"
+            - generic [ref=f3e371]: 4%
+        - listitem [ref=f3e375]:
+          - link "Python Skills 40 40 4%" [ref=f3e376] [cursor=pointer]:
+            - /url: /explore/?category=Python%20Skills
+            - generic [ref=f3e377]: Python Skills
+            - generic [ref=f3e378]: "40"
+            - generic "40 agent skills" [ref=f3e380]: "40"
+            - generic [ref=f3e383]: 4%
+        - listitem [ref=f3e387]:
+          - link "E-Commerce 39 39 4%" [ref=f3e388] [cursor=pointer]:
+            - /url: /explore/?category=E-Commerce
+            - generic [ref=f3e389]: E-Commerce
+            - generic [ref=f3e390]: "39"
+            - generic "39 mcp servers" [ref=f3e392]: "39"
+            - generic [ref=f3e395]: 4%
+        - listitem [ref=f3e399]:
+          - link "Legal 34 34 3%" [ref=f3e400] [cursor=pointer]:
+            - /url: /explore/?category=Legal
+            - generic [ref=f3e401]: Legal
+            - generic [ref=f3e402]: "34"
+            - generic "34 mcp servers" [ref=f3e404]: "34"
+            - generic [ref=f3e407]: 3%
+        - listitem [ref=f3e411]:
+          - link "NET Skills 28 28 3%" [ref=f3e412] [cursor=pointer]:
+            - /url: /explore/?category=NET%20Skills
+            - generic [ref=f3e413]: NET Skills
+            - generic [ref=f3e414]: "28"
+            - generic "28 agent skills" [ref=f3e416]: "28"
+            - generic [ref=f3e419]: 3%
+        - listitem [ref=f3e423]:
+          - link "Command Line 26 26 3%" [ref=f3e424] [cursor=pointer]:
+            - /url: /explore/?category=Command%20Line
+            - generic [ref=f3e425]: Command Line
+            - generic [ref=f3e426]: "26"
+            - generic "26 mcp servers" [ref=f3e428]: "26"
+            - generic [ref=f3e431]: 3%
+        - listitem [ref=f3e435]:
+          - link "Java Skills 25 25 2%" [ref=f3e436] [cursor=pointer]:
+            - /url: /explore/?category=Java%20Skills
+            - generic [ref=f3e437]: Java Skills
+            - generic [ref=f3e438]: "25"
+            - generic "25 agent skills" [ref=f3e440]: "25"
+            - generic [ref=f3e443]: 2%
+        - listitem [ref=f3e447]:
+          - link "Code Execution 21 21 2%" [ref=f3e448] [cursor=pointer]:
+            - /url: /explore/?category=Code%20Execution
+            - generic [ref=f3e449]: Code Execution
+            - generic [ref=f3e450]: "21"
+            - generic "21 mcp servers" [ref=f3e452]: "21"
+            - generic [ref=f3e455]: 2%
+        - listitem [ref=f3e459]:
+          - link "Frameworks 20 20 2%" [ref=f3e460] [cursor=pointer]:
+            - /url: /explore/?category=Frameworks
+            - generic [ref=f3e461]: Frameworks
+            - generic [ref=f3e462]: "20"
+            - generic "20 mcp servers" [ref=f3e464]: "20"
+            - generic [ref=f3e467]: 2%
+        - listitem [ref=f3e471]:
+          - link "Embedded System 19 19 2%" [ref=f3e472] [cursor=pointer]:
+            - /url: /explore/?category=Embedded%20System
+            - generic [ref=f3e473]: Embedded System
+            - generic [ref=f3e474]: "19"
+            - generic "19 mcp servers" [ref=f3e476]: "19"
+            - generic [ref=f3e479]: 2%
+        - listitem [ref=f3e483]:
+          - link "Customer Data Platforms 18 18 2%" [ref=f3e484] [cursor=pointer]:
+            - /url: /explore/?category=Customer%20Data%20Platforms
+            - generic [ref=f3e485]: Customer Data Platforms
+            - generic [ref=f3e486]: "18"
+            - generic "18 mcp servers" [ref=f3e488]: "18"
+            - generic [ref=f3e491]: 2%
+        - listitem [ref=f3e495]:
+          - link "Delivery 18 18 2%" [ref=f3e496] [cursor=pointer]:
+            - /url: /explore/?category=Delivery
+            - generic [ref=f3e497]: Delivery
+            - generic [ref=f3e498]: "18"
+            - generic "18 mcp servers" [ref=f3e500]: "18"
+            - generic [ref=f3e503]: 2%
+        - listitem [ref=f3e507]:
+          - link "Education & Research 17 13 4 2%" [ref=f3e508] [cursor=pointer]:
+            - /url: /explore/?category=Education%20%26%20Research
+            - generic [ref=f3e509]: Education & Research
+            - generic [ref=f3e510]: "17"
+            - generic [ref=f3e511]:
+              - generic "13 mcp servers" [ref=f3e512]: "13"
+              - generic "4 plugins" [ref=f3e515]: "4"
+            - generic [ref=f3e518]: 2%
+        - listitem [ref=f3e522]:
+          - link "Product Management 17 17 2%" [ref=f3e523] [cursor=pointer]:
+            - /url: /explore/?category=Product%20Management
+            - generic [ref=f3e524]: Product Management
+            - generic [ref=f3e525]: "17"
+            - generic "17 mcp servers" [ref=f3e527]: "17"
+            - generic [ref=f3e530]: 2%
+        - listitem [ref=f3e534]:
+          - link "Support & Service Management 14 14 1%" [ref=f3e535] [cursor=pointer]:
+            - /url: /explore/?category=Support%20%26%20Service%20Management
+            - generic [ref=f3e536]: Support & Service Management
+            - generic [ref=f3e537]: "14"
+            - generic "14 mcp servers" [ref=f3e539]: "14"
+            - generic [ref=f3e542]: 1%
+        - listitem [ref=f3e546]:
+          - link "Agreements & Coordination 13 13 1%" [ref=f3e547] [cursor=pointer]:
+            - /url: /explore/?category=Agreements%20%26%20Coordination
+            - generic [ref=f3e548]: Agreements & Coordination
+            - generic [ref=f3e549]: "13"
+            - generic "13 mcp servers" [ref=f3e551]: "13"
+            - generic [ref=f3e554]: 1%
+        - listitem [ref=f3e558]:
+          - link "Real Estate 13 13 1%" [ref=f3e559] [cursor=pointer]:
+            - /url: /explore/?category=Real%20Estate
+            - generic [ref=f3e560]: Real Estate
+            - generic [ref=f3e561]: "13"
+            - generic "13 mcp servers" [ref=f3e563]: "13"
+            - generic [ref=f3e566]: 1%
+        - listitem [ref=f3e570]:
+          - link "Spirituality & Esoterica 11 11 1%" [ref=f3e571] [cursor=pointer]:
+            - /url: /explore/?category=Spirituality%20%26%20Esoterica
+            - generic [ref=f3e572]: Spirituality & Esoterica
+            - generic [ref=f3e573]: "11"
+            - generic "11 mcp servers" [ref=f3e575]: "11"
+            - generic [ref=f3e578]: 1%
+        - listitem [ref=f3e582]:
+          - link "Core Skills 9 9 1%" [ref=f3e583] [cursor=pointer]:
+            - /url: /explore/?category=Core%20Skills
+            - generic [ref=f3e584]: Core Skills
+            - generic [ref=f3e585]: "9"
+            - generic "9 agent skills" [ref=f3e587]: "9"
+            - generic [ref=f3e590]: 1%
+        - listitem [ref=f3e594]:
+          - link "Data Visualization 9 9 1%" [ref=f3e595] [cursor=pointer]:
+            - /url: /explore/?category=Data%20Visualization
+            - generic [ref=f3e596]: Data Visualization
+            - generic [ref=f3e597]: "9"
+            - generic "9 mcp servers" [ref=f3e599]: "9"
+            - generic [ref=f3e602]: 1%
+        - listitem [ref=f3e606]:
+          - link "Environment & Nature 8 8 1%" [ref=f3e607] [cursor=pointer]:
+            - /url: /explore/?category=Environment%20%26%20Nature
+            - generic [ref=f3e608]: Environment & Nature
+            - generic [ref=f3e609]: "8"
+            - generic "8 mcp servers" [ref=f3e611]: "8"
+            - generic [ref=f3e614]: 1%
+        - listitem [ref=f3e618]:
+          - link "Text-to-Speech 8 8 1%" [ref=f3e619] [cursor=pointer]:
+            - /url: /explore/?category=Text-to-Speech
+            - generic [ref=f3e620]: Text-to-Speech
+            - generic [ref=f3e621]: "8"
+            - generic "8 mcp servers" [ref=f3e623]: "8"
+            - generic [ref=f3e626]: 1%
+        - listitem [ref=f3e630]:
+          - link "Rust Skills 7 7 1%" [ref=f3e631] [cursor=pointer]:
+            - /url: /explore/?category=Rust%20Skills
+            - generic [ref=f3e632]: Rust Skills
+            - generic [ref=f3e633]: "7"
+            - generic "7 agent skills" [ref=f3e635]: "7"
+            - generic [ref=f3e638]: 1%
+        - listitem [ref=f3e642]:
+          - link "end to end RAG platforms 6 6 1%" [ref=f3e643] [cursor=pointer]:
+            - /url: /explore/?category=end%20to%20end%20RAG%20platforms
+            - generic [ref=f3e644]: end to end RAG platforms
+            - generic [ref=f3e645]: "6"
+            - generic "6 mcp servers" [ref=f3e647]: "6"
+            - generic [ref=f3e650]: 1%
+        - listitem [ref=f3e654]:
+          - link "Translation Services 6 6 1%" [ref=f3e655] [cursor=pointer]:
+            - /url: /explore/?category=Translation%20Services
+            - generic [ref=f3e656]: Translation Services
+            - generic [ref=f3e657]: "6"
+            - generic "6 mcp servers" [ref=f3e659]: "6"
+            - generic [ref=f3e662]: 1%
+        - listitem [ref=f3e666]:
+          - link "Conversational AI 5 5 0%" [ref=f3e667] [cursor=pointer]:
+            - /url: /explore/?category=Conversational%20AI
+            - generic [ref=f3e668]: Conversational AI
+            - generic [ref=f3e669]: "5"
+            - generic "5 mcp servers" [ref=f3e671]: "5"
+            - generic [ref=f3e674]: 0%
+        - listitem [ref=f3e678]:
+          - link "Cryptography 5 5 0%" [ref=f3e679] [cursor=pointer]:
+            - /url: /explore/?category=Cryptography
+            - generic [ref=f3e680]: Cryptography
+            - generic [ref=f3e681]: "5"
+            - generic "5 mcp servers" [ref=f3e683]: "5"
+            - generic [ref=f3e686]: 0%
+        - listitem [ref=f3e690]:
+          - link "Industrial & IoT 5 5 0%" [ref=f3e691] [cursor=pointer]:
+            - /url: /explore/?category=Industrial%20%26%20IoT
+            - generic [ref=f3e692]: Industrial & IoT
+            - generic [ref=f3e693]: "5"
+            - generic "5 mcp servers" [ref=f3e695]: "5"
+            - generic [ref=f3e698]: 0%
+        - listitem [ref=f3e702]:
+          - link "Health & Wellness 4 4 0%" [ref=f3e703] [cursor=pointer]:
+            - /url: /explore/?category=Health%20%26%20Wellness
+            - generic [ref=f3e704]: Health & Wellness
+            - generic [ref=f3e705]: "4"
+            - generic "4 mcp servers" [ref=f3e707]: "4"
+            - generic [ref=f3e710]: 0%
+        - listitem [ref=f3e714]:
+          - link "Podcasts 4 4 0%" [ref=f3e715] [cursor=pointer]:
+            - /url: /explore/?category=Podcasts
+            - generic [ref=f3e716]: Podcasts
+            - generic [ref=f3e717]: "4"
+            - generic "4 mcp servers" [ref=f3e719]: "4"
+            - generic [ref=f3e722]: 0%
+        - listitem [ref=f3e726]:
+          - link "Data & Analytics 3 3 0%" [ref=f3e727] [cursor=pointer]:
+            - /url: /explore/?category=Data%20%26%20Analytics
+            - generic [ref=f3e728]: Data & Analytics
+            - generic [ref=f3e729]: "3"
+            - generic "3 plugins" [ref=f3e731]: "3"
+            - generic [ref=f3e734]: 0%
+        - listitem [ref=f3e738]:
+          - link "Speech-to-Text 3 3 0%" [ref=f3e739] [cursor=pointer]:
+            - /url: /explore/?category=Speech-to-Text
+            - generic [ref=f3e740]: Speech-to-Text
+            - generic [ref=f3e741]: "3"
+            - generic "3 mcp servers" [ref=f3e743]: "3"
+            - generic [ref=f3e746]: 0%
+        - listitem [ref=f3e750]:
+          - link "Accessibility 2 2 0%" [ref=f3e751] [cursor=pointer]:
+            - /url: /explore/?category=Accessibility
+            - generic [ref=f3e752]: Accessibility
+            - generic [ref=f3e753]: "2"
+            - generic "2 mcp servers" [ref=f3e755]: "2"
+            - generic [ref=f3e758]: 0%
+        - listitem [ref=f3e762]:
+          - link "Aerospace & Astrodynamics 2 2 0%" [ref=f3e763] [cursor=pointer]:
+            - /url: /explore/?category=Aerospace%20%26%20Astrodynamics
+            - generic [ref=f3e764]: Aerospace & Astrodynamics
+            - generic [ref=f3e765]: "2"
+            - generic "2 mcp servers" [ref=f3e767]: "2"
+            - generic [ref=f3e770]: 0%
+        - listitem [ref=f3e774]:
+          - link "Identity 2 2 0%" [ref=f3e775] [cursor=pointer]:
+            - /url: /explore/?category=Identity
+            - generic [ref=f3e776]: Identity
+            - generic [ref=f3e777]: "2"
+            - generic "2 mcp servers" [ref=f3e779]: "2"
+            - generic [ref=f3e782]: 0%
+        - listitem [ref=f3e786]:
+          - link "math 2 2 0%" [ref=f3e787] [cursor=pointer]:
+            - /url: /explore/?category=math
+            - generic [ref=f3e788]: math
+            - generic [ref=f3e789]: "2"
+            - generic "2 plugins" [ref=f3e791]: "2"
+            - generic [ref=f3e794]: 0%
+        - listitem [ref=f3e798]:
+          - link "Security Notice 2 2 0%" [ref=f3e799] [cursor=pointer]:
+            - /url: /explore/?category=Security%20Notice
+            - generic [ref=f3e800]: Security Notice
+            - generic [ref=f3e801]: "2"
+            - generic "2 agent skills" [ref=f3e803]: "2"
+            - generic [ref=f3e806]: 0%
+        - listitem [ref=f3e810]:
+          - link "Business & Operations 1 1 0%" [ref=f3e811] [cursor=pointer]:
+            - /url: /explore/?category=Business%20%26%20Operations
+            - generic [ref=f3e812]: Business & Operations
+            - generic [ref=f3e813]: "1"
+            - generic "1 plugin" [ref=f3e815]: "1"
+            - generic [ref=f3e818]: 0%
+    - contentinfo [ref=f3e822]:
+      - generic [ref=f3e823]:
+        - generic [ref=f3e824]:
+          - paragraph [ref=f3e825]: LiteSPM Market
+          - paragraph [ref=f3e826]: One bridge entry per agent, installed once. The catalog is a snapshot of named upstream sources, and everything here is resolved locally by the LiteSPM daemon.
+        - generic [ref=f3e827]:
+          - heading "Indexed" [level=2] [ref=f3e828]
+          - list [ref=f3e829]:
+            - listitem [ref=f3e830]:
+              - link "Explore" [ref=f3e831] [cursor=pointer]:
+                - /url: /explore/
+            - listitem [ref=f3e832]:
+              - link "Categories" [ref=f3e833] [cursor=pointer]:
+                - /url: /categories/
+            - listitem [ref=f3e834]:
+              - link "Agent hosts" [ref=f3e835] [cursor=pointer]:
+                - /url: /agents/
+            - listitem [ref=f3e836]:
+              - link "Coverage" [ref=f3e837] [cursor=pointer]:
+                - /url: /trending/
+            - listitem [ref=f3e838]:
+              - link "/v1/current.json" [ref=f3e839] [cursor=pointer]:
+                - /url: /v1/current.json
+        - generic [ref=f3e840]:
+          - heading "What the numbers mean" [level=2] [ref=f3e841]
+          - list [ref=f3e842]:
+            - listitem [ref=f3e843]:
+              - strong [ref=f3e844]: No popularity figures are published.
+              - text: The upstream sources do not expose machine-readable star or install counts, so the catalog shows none rather than an estimate.
+            - listitem [ref=f3e845]:
+              - generic [ref=f3e846]: "0"
+              - text: agent hosts have compiled-in config adapters. Every one lists the documentation it was verified against.
+            - listitem [ref=f3e847]: "Publisher “vendor-listed” means the row came from that publisher’s own marketplace manifest; no registry verified the publisher and this project did not audit it. Rows from third-party awesome-lists are discovery-only: no version or launch command was proven."
+      - generic [ref=f3e849]:
+        - generic [ref=f3e850]:
+          - generic [ref=f3e851]:
+            - definition [ref=f3e852]:
+              - generic [ref=f3e853]: "0"
+            - term [ref=f3e854]: capabilities
+          - generic [ref=f3e855]:
+            - definition [ref=f3e856]:
+              - generic [ref=f3e857]: "0"
+            - term [ref=f3e858]: MCP
+          - generic [ref=f3e859]:
+            - definition [ref=f3e860]:
+              - generic [ref=f3e861]: "0"
+            - term [ref=f3e862]: skills
+          - generic [ref=f3e863]:
+            - definition [ref=f3e864]:
+              - generic [ref=f3e865]: "0"
+            - term [ref=f3e866]: plugins
+        - generic [ref=f3e867]:
+          - paragraph [ref=f3e868]: Open source. No analytics, no cookies, no install telemetry.
+          - link "GitHub repository" [ref=f3e869] [cursor=pointer]:
+            - /url: https://github.com/sarv-projects/LiteSPM
+  - status
+  - alert [ref=f3e870]

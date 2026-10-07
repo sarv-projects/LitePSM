@@ -258,7 +258,8 @@ func (a *GenericAdapter) VerifySetup(ctx context.Context) (*HostVerification, er
 	}
 	keyPath := a.Target.keyPathFor(false)
 	if a.Target.Format == FormatTOML {
-		registered := strings.Contains(string(data), a.Target.tomlTable())
+		// Comment-aware: a commented-out table is not a registration.
+		registered := tomlTableRegistered(string(data), a.Target.tomlTable())
 		return a.verification(configPath, registered), nil
 	}
 	root, err := parseConfigJSON(a.Target, data)

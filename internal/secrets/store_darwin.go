@@ -3,6 +3,7 @@
 package secrets
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -34,7 +35,11 @@ func getOrGenerateDarwinMasterKey() ([]byte, error) {
 	}
 
 	hexKey := hex.EncodeToString(key)
-	cmdStore := exec.Command("/usr/bin/security", "add-generic-password", "-U", "-s", "litespm", "-a", "master-key", "-w", hexKey)
+	// E5: never pass the key as an argv word (visible in `ps`). Like the
+	// Linux backend, pipe it on stdin: `security ... -w` with no value reads
+	// the password from stdin.
+	cmdStore := exec.Command("/usr/bin/security", "add-generic-password", "-U", "-s", "litespm", "-a", "master-key", "-w")
+	cmdStore.Stdin = bytes.NewReader([]byte(hexKey))
 	if err := cmdStore.Run(); err != nil {
 		return nil, domain.ErrAuthVaultUnavailable(fmt.Sprintf("failed to store vault master key in macOS Keychain: %v", err))
 	}

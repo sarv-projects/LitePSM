@@ -35,7 +35,7 @@ type Mutation struct {
 	// replaced ("" when the locator did not exist). Uninstall restores it.
 	PriorEntry string
 	Detached   bool
-	CreatedAt     time.Time
+	CreatedAt  time.Time
 }
 
 // ReconcileOutcome is the ARCH/33 §4 decision for one owned locator.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,12 @@ type SyncResult struct {
 }
 
 // Client manages downloading, verifying, caching, and searching static catalog releases.
+//
+// Trust notes (see ARCH/36 §4): releases are digest-pinned (SHA-256 pointer →
+// manifest → files) but UNSIGNED today — there is no TUF root/timestamp/
+// snapshot/signature envelope, so this client can detect tampering and
+// rollback/equivocation but cannot authenticate the publisher. Signed
+// releases are DESIGNED, not shipped.
 type Client struct {
 	baseURL          string
 	cacheDir         string
@@ -32,13 +39,36 @@ type Client struct {
 	index            *SearchIndex
 	currentReleaseID string
 	currentSequence  int
+	currentDigest    string
 	mu               sync.RWMutex
 }
 
-// NewClient creates a new catalog client.
+// maxCatalogBodyBytes bounds every catalog HTTP body (ARCH/03 §5: 16 MiB per
+// metadata response). Oversized bodies are refused, never truncated.
+const maxCatalogBodyBytes = 16 << 20
+
+// defaultCatalogTimeout bounds one catalog HTTP exchange when no timeout is
+// configured. It matches config.DefaultConfig's Network.Timeout, so a caller
+// that never looks at configuration still gets the documented 30s.
+const defaultCatalogTimeout = 30 * time.Second
+
+// NewClient creates a new catalog client with the default request timeout.
 func NewClient(baseURL, cacheDir string, httpClient *http.Client) *Client {
+	return NewClientWithTimeout(baseURL, cacheDir, 0, httpClient)
+}
+
+// NewClientWithTimeout creates a new catalog client whose transport is bounded
+// by timeout — config.Network.Timeout (LITESPM_NETWORK_TIMEOUT_SEC) at the
+// call sites that read configuration. timeout <= 0 selects
+// defaultCatalogTimeout, so an unset knob cannot disable the bound. The
+// timeout applies to the client LiteSPM builds; a caller-supplied httpClient
+// owns its own timeout but still gets the redirect policy below when it has
+// none of its own.
+func NewClientWithTimeout(baseURL, cacheDir string, timeout time.Duration, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = secureCatalogHTTPClient(timeout)
+	} else if httpClient.CheckRedirect == nil {
+		httpClient.CheckRedirect = catalogCheckRedirect
 	}
 	c := &Client{
 		baseURL:    baseURL,
@@ -49,6 +79,80 @@ func NewClient(baseURL, cacheDir string, httpClient *http.Client) *Client {
 	// Try loading cached release on startup
 	_ = c.LoadFromCache()
 	return c
+}
+
+// secureCatalogHTTPClient builds the default catalog transport: a bounded
+// timeout, at most 3 redirects, no https→http downgrade (ARCH/03 §5).
+func secureCatalogHTTPClient(timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = defaultCatalogTimeout
+	}
+	return &http.Client{
+		Timeout:       timeout,
+		CheckRedirect: catalogCheckRedirect,
+	}
+}
+
+// catalogCheckRedirect caps the chain at 3 hops and refuses a downgrade from
+// https to http. Identical-origin is not required (CDN edges move), but a
+// downgrade is never a CDN move — it is a strip.
+func catalogCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 3 {
+		return fmt.Errorf("catalog redirect chain exceeds 3 hops")
+	}
+	if len(via) > 0 {
+		prev := via[len(via)-1].URL.Scheme
+		if prev == "https" && req.URL.Scheme != "https" {
+			return fmt.Errorf("refusing catalog redirect downgrade from https to %s", req.URL.Scheme)
+		}
+	}
+	return nil
+}
+
+// checkCatalogURL enforces https-only for non-loopback hosts. Loopback http
+// (127.0.0.0/8, ::1, localhost) stays allowed so hermetic httptest servers
+// keep working; everything else must be https.
+func checkCatalogURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return domain.ErrEgressBlocked(raw, fmt.Sprintf("unparseable catalog URL: %v", err))
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	if u.Scheme == "http" && isCatalogLoopbackHost(u.Hostname()) {
+		return nil
+	}
+	return domain.ErrEgressBlocked(raw, fmt.Sprintf("catalog fetches require https (got %q)", u.Scheme))
+}
+
+// isCatalogLoopbackHost reports loopback/test hosts where plain http is
+// acceptable (httptest binds 127.0.0.1; never a production origin).
+func isCatalogLoopbackHost(host string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "localhost" || h == "::1" {
+		return true
+	}
+	if strings.HasPrefix(h, "127.") {
+		return true
+	}
+	if strings.HasPrefix(h, "[::1") {
+		return true
+	}
+	return false
+}
+
+// readCatalogBody reads at most maxCatalogBodyBytes+1 and refuses oversized
+// payloads instead of truncating them into corrupt JSON.
+func readCatalogBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, maxCatalogBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxCatalogBodyBytes {
+		return nil, fmt.Errorf("catalog response exceeds the %d byte limit", maxCatalogBodyBytes)
+	}
+	return data, nil
 }
 
 // LoadFromCache loads existing cached catalog files from disk into the in-memory search index.
@@ -125,10 +229,10 @@ func (c *Client) LoadFromCache() error {
 		}
 	}
 
-	c.index.IndexListings(listings)
-	c.index.IndexVersions(versions)
+	c.index.Replace(listings, versions)
 	c.currentReleaseID = current.ReleaseID
 	c.currentSequence = current.Sequence
+	c.currentDigest = current.ManifestDigest
 
 	return nil
 }
@@ -159,8 +263,11 @@ func (c *Client) FetchCurrent(ctx context.Context) (*catalogbuild.CurrentPointer
 
 // fetchCurrent fetches the pointer and retains the served bytes.
 func (c *Client) fetchCurrent(ctx context.Context) (*catalogbuild.CurrentPointer, []byte, error) {
-	url := fmt.Sprintf("%s/v1/current.json", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	fetchURL := fmt.Sprintf("%s/v1/current.json", c.baseURL)
+	if err := checkCatalogURL(fetchURL); err != nil {
+		return nil, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -172,10 +279,10 @@ func (c *Client) fetchCurrent(ctx context.Context) (*catalogbuild.CurrentPointer
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("server returned status %d for %s", resp.StatusCode, url)
+		return nil, nil, fmt.Errorf("server returned status %d for %s", resp.StatusCode, fetchURL)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readCatalogBody(resp.Body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -203,8 +310,11 @@ func (c *Client) fetchManifest(ctx context.Context, releaseID string) (*catalogb
 	if err := domain.ValidateReleaseID(releaseID); err != nil {
 		return nil, nil, fmt.Errorf("refusing to fetch manifest for unsafe release id: %w", err)
 	}
-	url := fmt.Sprintf("%s/v1/releases/%s/manifest.json", c.baseURL, releaseID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	fetchURL := fmt.Sprintf("%s/v1/releases/%s/manifest.json", c.baseURL, releaseID)
+	if err := checkCatalogURL(fetchURL); err != nil {
+		return nil, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,7 +329,7 @@ func (c *Client) fetchManifest(ctx context.Context, releaseID string) (*catalogb
 		return nil, nil, fmt.Errorf("failed to fetch manifest: status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readCatalogBody(resp.Body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -249,8 +359,11 @@ func (c *Client) fetchListings(ctx context.Context, releaseID string, manifest *
 	if err := domain.ValidateReleaseID(releaseID); err != nil {
 		return nil, nil, fmt.Errorf("refusing to fetch listings for unsafe release id: %w", err)
 	}
-	url := fmt.Sprintf("%s/v1/releases/%s/listings.json", c.baseURL, releaseID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	fetchURL := fmt.Sprintf("%s/v1/releases/%s/listings.json", c.baseURL, releaseID)
+	if err := checkCatalogURL(fetchURL); err != nil {
+		return nil, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -265,7 +378,7 @@ func (c *Client) fetchListings(ctx context.Context, releaseID string, manifest *
 		return nil, nil, fmt.Errorf("failed to download listings.json: status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readCatalogBody(resp.Body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -304,8 +417,11 @@ func (c *Client) fetchVersions(ctx context.Context, releaseID string, manifest *
 	if err := domain.ValidateReleaseID(releaseID); err != nil {
 		return nil, nil, fmt.Errorf("refusing to fetch versions for unsafe release id: %w", err)
 	}
-	url := fmt.Sprintf("%s/v1/releases/%s/versions.json", c.baseURL, releaseID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	fetchURL := fmt.Sprintf("%s/v1/releases/%s/versions.json", c.baseURL, releaseID)
+	if err := checkCatalogURL(fetchURL); err != nil {
+		return nil, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -317,7 +433,7 @@ func (c *Client) fetchVersions(ctx context.Context, releaseID string, manifest *
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("failed to download versions.json: status %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := readCatalogBody(resp.Body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -381,16 +497,29 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 
 	c.mu.RLock()
 	localSeq := c.currentSequence
+	localRelease := c.currentReleaseID
+	localDigest := c.currentDigest
 	c.mu.RUnlock()
 
-	// If local cache is already up-to-date
-	if current.Sequence <= localSeq && localSeq > 0 {
-		return &SyncResult{
-			ReleaseID: current.ReleaseID,
-			Sequence:  current.Sequence,
-			ItemCount: c.index.Count(),
-			Updated:   false,
-		}, nil
+	// C1: sequence monotonicity. A remote pointer that moves backwards is a
+	// rollback (freeze/downgrade); a remote pointer that reuses our sequence
+	// number for different bytes is an equivocation. Both fail closed and
+	// leave the cache untouched. Only an identical pointer is a no-op.
+	if localSeq > 0 {
+		switch {
+		case current.Sequence < localSeq:
+			return nil, domain.ErrCatalogRollback(localSeq, current.Sequence, localRelease, current.ReleaseID)
+		case current.Sequence == localSeq:
+			if current.ReleaseID == localRelease && current.ManifestDigest == localDigest {
+				return &SyncResult{
+					ReleaseID: current.ReleaseID,
+					Sequence:  current.Sequence,
+					ItemCount: c.index.Count(),
+					Updated:   false,
+				}, nil
+			}
+			return nil, domain.ErrCatalogEquivocation(current.Sequence, localRelease, current.ReleaseID, localDigest, current.ManifestDigest)
+		}
 	}
 
 	// Download manifest; the served bytes are retained because the pointer's
@@ -429,7 +558,9 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 
 		// Served bytes are persisted verbatim so the cache mirrors the origin
 		// byte for byte and LoadFromCache's digest checks verify against the
-		// same manifest the pointer anchored. The pointer goes last: it is the
+		// same manifest the pointer anchored. C4: each file lands via
+		// temp+fsync+rename+fsync(parent), so a crash can never leave a
+		// half-written manifest in place. The pointer goes last: it is the
 		// commit marker LoadFromCache reads first, so an interrupted sync
 		// leaves the previous cache as the consistent state.
 		for _, w := range []struct {
@@ -441,18 +572,21 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 			{filepath.Join(releaseDir, "versions.json"), versionsRaw},
 			{filepath.Join(c.cacheDir, "v1", "current.json"), currentRaw},
 		} {
-			if err := os.WriteFile(w.path, w.data, 0644); err != nil {
+			if err := writeAtomicFile(w.path, w.data, 0644); err != nil {
 				return nil, fmt.Errorf("persist catalog cache (%s): %w", w.path, err)
 			}
 		}
 	}
 
-	// Update in-memory index
+	// C2: update the in-memory index by atomic swap. The release was fully
+	// verified above, so build nothing incrementally: a fresh index replaces
+	// the old one, and listings withdrawn upstream disappear locally instead
+	// of lingering via merge-retain.
 	c.mu.Lock()
-	c.index.IndexListings(listings)
-	c.index.IndexVersions(versions)
+	c.index.Replace(listings, versions)
 	c.currentReleaseID = current.ReleaseID
 	c.currentSequence = current.Sequence
+	c.currentDigest = current.ManifestDigest
 	c.mu.Unlock()
 
 	return &SyncResult{
@@ -461,6 +595,53 @@ func (c *Client) Sync(ctx context.Context) (*SyncResult, error) {
 		ItemCount: len(listings),
 		Updated:   true,
 	}, nil
+}
+
+// writeAtomicFile persists data via temp+fsync+rename+fsync(parent): the
+// temp file is created in the destination directory (same filesystem),
+// fsynced, renamed over the target, and the parent directory is fsynced so
+// the rename itself is durable. A crash can leave the temp behind but never a
+// half-written target.
+func writeAtomicFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup on failure; a surviving temp is harmless.
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	return fsyncParentDir(dir)
+}
+
+// fsyncParentDir fsyncs a directory so a just-completed rename is durable.
+func fsyncParentDir(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
 }
 
 // IndexListings indexes listings directly into the client's search index.

@@ -18,21 +18,23 @@ Worker static-assets deployment (`wrangler.toml`); the origin the client default
 | Path | Emitted by | Read by | State |
 |---|---|---|---|
 | `/v1/current.json` | `scripts/build_full_catalog.py` (deployed producer) and `internal/catalogbuild.CompileRelease` (`compiler.go:172`) | `catalog.Client.FetchCurrent` (`internal/catalog/client.go:93`) | Served: **200** |
-| `/v1/releases/{id}/manifest.json` | `catalogbuild` (`compiler.go:150`) | `catalog.Client.FetchManifest` (`client.go:124`) | **Not published**: live 404 |
-| `/v1/releases/{id}/listings.json` | `catalogbuild` (`compiler.go:101`) | `catalog.Client.FetchListings` (`client.go:160`), digest-verified against the manifest (`client.go:153-189`) | **Not published**: live 404 |
-| `/v1/releases/{id}/versions.json` | `catalogbuild` (`compiler.go:117`) | no client fetch | Emitted by the compiler only; unpublished |
+| `/v1/releases/{id}/manifest.json` | `catalogbuild` (`compiler.go:150`) | `catalog.Client.FetchManifest` (`client.go:302`) | Served: **200** |
+| `/v1/releases/{id}/listings.json` | `catalogbuild` (`compiler.go:101`) | `catalog.Client.FetchListings` (`client.go:346`), digest-verified against the manifest | Served: **200** |
+| `/v1/releases/{id}/versions.json` | `catalogbuild` (`compiler.go:117`) | `catalog.Client.FetchVersions` (`client.go:407`), digest-verified against the manifest — the only place a listing's launch line is published | Served: **200** |
 | `/v1/releases/{id}/metadata.json` | — | — | **`DESIGNED`** (ARCH/18 §2); compiler does not emit it |
 | `/v1/releases/{id}/index.json` | — | — | **`DESIGNED`** (ARCH/18 §1–§2); not emitted |
 | `/v1/releases/{id}/shards/{kind}/{cat}.json` | — | — | **`DESIGNED`** (ARCH/18 §1–§2); not emitted |
 | `/v1/releases/{id}/items/{encoded-id}.json` | — | — | **`DESIGNED`** (ARCH/18 §1–§2); not emitted |
 
-`litespm catalog sync` reads exactly the first three paths in order (`internal/catalog/client.go:92-193`).
+`litespm catalog sync` reads the first four paths in order (`internal/catalog/client.go`,
+`Sync` → `fetchCurrent` → `fetchManifest` → `fetchListings` → `fetchVersions`).
 Against the live origin it succeeds today (probe 2026-10-05):
 
 ```text
 200  /v1/current.json
 200  /v1/releases/rel-2026-10-05-01/manifest.json
 200  /v1/releases/rel-2026-10-05-01/listings.json
+200  /v1/releases/rel-2026-10-05-01/versions.json
 ```
 
 So the sync path is `SHIPPED` ([STATUS.md](../STATUS.md) §2,
@@ -42,7 +44,8 @@ What the current code reads and writes is the `/v1/releases/<id>/{manifest,listi
 layout — `internal/catalog/client.go` and `internal/catalogbuild/compiler.go` agree on it, and
 `TestReleasePathContractPinsDocumentedLayout` (`internal/catalog/catalog_test.go:217`) pins both the
 builder's emitted keys and the client's requested paths to that layout while rejecting the
-un-namespaced `releases/<id>/…` form. What is missing is a **published** tree, not a client path.
+un-namespaced `releases/<id>/…` form. What is still missing is `index.json`/`shards/`/`items/`
+(`ARCH/18` §1–§2, `DESIGNED`) — not a published tree or a client path.
 
 ### 1.2 Active Release Pointer (`/v1/current.json`)
 
@@ -230,13 +233,13 @@ Status column = highest honest state per [STATUS.md](../STATUS.md) §1/§4.
 | `catalog.search` | Queries the local catalog index with filters and limits | Resolves (`:1286`); empty until `catalog sync` succeeds |
 | `catalog.get_item` | Retrieves full listing metadata and version history | Resolves (`:1340`) |
 | `resolver.prepare_plan` | Pure dependency resolution producing an `InstallPlan`, persisted with `planHash` | Resolves (`:1359`) |
-| `install.execute` | Submits approval and begins transactional execution | Resolves **for skill listings** (`main.go` routes `kind=skill` through the skills ledger); MCP/plugin return `LPSM-ARTIFACT-UNAVAILABLE` (no artifact source; `internal/install/engine.go:204-207`) |
+| `install.execute` | Submits approval and begins transactional execution | Resolves **for skill and MCP listings** (`main.go` routes `kind=skill` through the skills ledger and `kind=mcp` through host-config registration, both behind the plan + approval gate in `install_authz.go`); only plugins return `LPSM-ARTIFACT-UNAVAILABLE` (no artifact source; `internal/install/engine.go:204-207`) |
 | `install.remove` | Safe removal and unreferenced CAS pruning | Resolves (`:1444`) |
 | `skills.list` | Returns progressive-disclosure skill index for installed trees | Resolves (`:1467`) |
 | `skills.load_body` | Retrieves progressive `SKILL.md` body on demand | Resolves (`:1522`) |
 | `skills.read_resource` | Reads bounded skill supporting resource | Resolves (`:1573`) |
-| `capabilities.search` | Searches capability/tool names across providers | **`-32601`** — "not wired yet; use `catalog.search`" (`:1628-1633`) |
-| `capabilities.describe` | Inspects capability schema, effects, and status | **`-32601`** (`:1637-1642`) |
+| `capabilities.search` | Searches capability/tool names across providers | Resolves (`main.go:2089`) — over the tools discovered on this machine |
+| `capabilities.describe` | Inspects capability schema, effects, and status | Resolves (`main.go:2135`) — real input schema, fingerprint and provider command |
 | `provider.probe` | Reports the supervisor's real view of one provider | Resolves (`:1648`); nothing tracks a provider in practice (no non-test provider rows) |
 | `provider.invoke` | Policy-evaluated tool execution | Resolves — calls a discovered capability through `internal/discover`; synchronous per §4, and refuses when the tool's schema has drifted since discovery |
 | `invocation.get` | Retrieves invocation status | **`-32601`** — the asynchronous registry is ARCH/34, still `DESIGNED` |
@@ -290,14 +293,17 @@ Dispatch status (per [STATUS.md](../STATUS.md) §1/§4):
 
 *   **Resolve:** `search_catalog` (`shim.go:282`), `get_extension` (`:305`), `prepare_install`
     (`:323`), `list_installed` (`:359`), `load_skill` (`:404`), `read_skill_resource` (`:433`).
-*   **Resolve but only complete for skills:** `request_install` (`shim.go:341`) forwards to
-    `install.execute`; for `kind=skill` it installs real files through the skills ledger. For
-    MCP/plugin it supplies no `ArchiveSource`/`TreeSource` and returns `LPSM-ARTIFACT-UNAVAILABLE`
-    (`internal/install/engine.go:204-207`). **An agent can install skills through `/marketplace`
-    today; MCP/plugin installs cannot complete until an artifact source exists.**
-*   **Daemon answers `-32601`:** `search_capabilities` (`:370`), `describe_capability` (`:388`),
-    `invoke_capability` (`:452`), `get_invocation` (`:475`), `cancel_invocation` (`:491`) — the
-    shim forwards, the daemon rejects with the reasons in §3.2.
+*   **Resolves, but only two kinds complete:** `request_install` (`shim.go:341`) forwards to
+    `install.execute`, which is gated by `install_authz.go` (a persisted, hash-verified plan plus a
+    human approval recorded for that plan's hash). With both present, `kind=skill` installs real
+    files through the skills ledger and `kind=mcp` registers the server in each target host's
+    config. Only `kind=plugin` still supplies no `ArchiveSource`/`TreeSource` and returns
+    `LPSM-ARTIFACT-UNAVAILABLE` (`internal/install/engine.go:204-207`). **An agent can install
+    skills and MCP servers through `/marketplace` today; plugin installs cannot complete until an
+    artifact source exists.**
+*   **Daemon answers `-32601`:** `get_invocation` (`invocation.get`) and `cancel_invocation`
+    (`invocation.cancel`) only — the shim forwards, the daemon rejects with the reasons in §3.2,
+    because the asynchronous registry they name is `ARCH/34` (`DESIGNED`).
 *   **Standalone (no daemon) mode:** every tool fails closed with an explicit error rather than
     fabricating results (`internal/bridge/shim.go:274-280`).
 
@@ -305,11 +311,13 @@ Two behavioural rules survive any status change:
 
 *   **Progressive Disclosure:** tools return minimal structured tokens; skill bodies and capability
     schemas load only on request.
-*   **Fail-Closed Invocations:** the gate that fails an unapproved or schema-drifted tool closed
-    and requests approval lives in the policy engine — see
-    [ARCH/05 §5](05-SECURITY.md#5-capability-schema-drift-defense) for that (currently unreachable,
-    `IMPLEMENTED`) check. `invoke_capability` itself does not reach it yet: the daemon answers
-    `-32601` for every invocation today (§3.2).
+*   **Fail-Closed Invocations:** `invoke_capability` → `provider.invoke` → `discover.Invoke`
+    evaluates the policy engine before the server is spawned and again against the freshly probed
+    fingerprint before the tool is called, and re-computes the tool's schema fingerprint first: a
+    schema that changed since discovery is refused outright ("re-run discovery before invoking
+    it"), never called (`internal/discover/discover.go:358-373`). The grant-based invalidation half
+    of [ARCH/05 §5](05-SECURITY.md#5-capability-schema-drift-defense) is still `IMPLEMENTED`, not
+    reached: `SaveCapabilityGrant` has no non-test caller, so no grant exists to invalidate.
 
 ---
 

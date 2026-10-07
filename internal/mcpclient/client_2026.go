@@ -7,11 +7,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 )
 
-// StreamableHTTPClient implements the MCP 2026-07-28 modern stateless profile over Streamable HTTP.
+// StreamableHTTPClient implements the MCP 2026-07-28 modern stateless profile
+// over Streamable HTTP.
+//
+// 2026-07-28 notes (SEP-2567 sessions removed, SEP-2575 handshake removed):
+//   - No `initialize` handshake and NO `Mcp-Session-Id` header on any request.
+//     Sessions were removed at the protocol layer; every request is
+//     self-contained. A server that mints a session id is speaking the older
+//     (2025-03-26 / 2025-11-25) profile — use LegacyClient for that.
+//   - Every POST carries the protocol version twice: in the
+//     `MCP-Protocol-Version` header AND in the body `_meta.protocolVersion`.
+//     The two MUST match; a mismatch is a hard error, never a fallback.
+//   - Every POST carries `Accept: application/json, text/event-stream` so a
+//     stateless server may answer with plain JSON or an SSE stream.
 type StreamableHTTPClient struct {
 	endpoint   string
 	headers    map[string]string
@@ -60,8 +73,9 @@ func (c *StreamableHTTPClient) sendRequest(ctx context.Context, method string, p
 		paramsRaw = pBytes
 	}
 
+	version := string(ProtocolModern2026)
 	meta := &RequestMeta{
-		ProtocolVersion: string(ProtocolModern2026),
+		ProtocolVersion: version,
 		ClientInfo:      c.clientInfo,
 		Capabilities:    DefaultClientCaps(),
 	}
@@ -84,19 +98,33 @@ func (c *StreamableHTTPClient) sendRequest(ctx context.Context, method string, p
 		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 
-	// Standard content type
+	// Standard content type plus the mandatory dual Accept: a 2026-07-28
+	// server may answer with plain JSON or upgrade the POST response to an
+	// SSE stream.
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json, text/event-stream")
 
-	// MCP 2026-07-28 Header Mirroring
+	// MCP 2026-07-28 header mirroring. MCP-Protocol-Version MUST match the
+	// body _meta.protocolVersion on every POST.
+	httpReq.Header.Set("MCP-Protocol-Version", version)
 	httpReq.Header.Set("Mcp-Method", method)
 	if toolName != "" {
 		httpReq.Header.Set("Mcp-Name", toolName)
 	}
-	httpReq.Header.Set("Mcp-Protocol-Version", string(ProtocolModern2026))
 
-	// User-provided headers (e.g. Auth tokens)
+	// User-provided headers (e.g. Auth tokens) must not be able to downgrade
+	// the protocol version or Accept contract.
 	for k, v := range c.headers {
+		lk := strings.ToLower(strings.TrimSpace(k))
+		if lk == "mcp-protocol-version" || lk == "accept" {
+			continue
+		}
 		httpReq.Header.Set(k, v)
+	}
+
+	// Defensive header/body match: the header we just set must equal _meta.
+	if hv := httpReq.Header.Get("MCP-Protocol-Version"); hv != meta.ProtocolVersion {
+		return nil, fmt.Errorf("MCP header/body version mismatch: header %q vs _meta %q", hv, meta.ProtocolVersion)
 	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -110,21 +138,82 @@ func (c *StreamableHTTPClient) sendRequest(ctx context.Context, method string, p
 		return nil, fmt.Errorf("http error %d: %s", httpResp.StatusCode, string(respBody))
 	}
 
+	// A strict server echoes the negotiated version. When it does, it MUST
+	// match what we sent; a version disagreement is a protocol error, not
+	// something to silently accept.
+	if rv := httpResp.Header.Get("MCP-Protocol-Version"); rv != "" && rv != version {
+		return nil, fmt.Errorf("MCP protocol version mismatch: sent %q but server answered %q", version, rv)
+	}
+
 	respData, err := io.ReadAll(io.LimitReader(httpResp.Body, 16*1024*1024))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var rpcResp JSONRPCResponse
-	if err := json.Unmarshal(respData, &rpcResp); err != nil {
-		return nil, fmt.Errorf("failed to decode JSON-RPC response: %w", err)
+	rpcResp, err := decodeStreamableResponse(respData, httpResp.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, err
 	}
 
 	if rpcResp.Error != nil {
 		return nil, rpcResp.Error
 	}
 
-	return &rpcResp, nil
+	return rpcResp, nil
+}
+
+// decodeStreamableResponse decodes a POST response that may be plain JSON or
+// an SSE stream (Content-Type: text/event-stream). For SSE, each `data:` line
+// carries one JSON-RPC message; the last complete message wins.
+func decodeStreamableResponse(data []byte, contentType string) (*JSONRPCResponse, error) {
+	if !strings.Contains(strings.ToLower(contentType), "text/event-stream") {
+		// Fast path: plain JSON. Fall back to SSE scanning when the body
+		// looks like an event stream even without the content type.
+		var rpcResp JSONRPCResponse
+		if err := json.Unmarshal(data, &rpcResp); err == nil {
+			return &rpcResp, nil
+		}
+		if bytes.Contains(data, []byte("data:")) {
+			return decodeSSEPayload(data)
+		}
+		var rpcResp2 JSONRPCResponse
+		if err := json.Unmarshal(data, &rpcResp2); err != nil {
+			return nil, fmt.Errorf("failed to decode JSON-RPC response: %w", err)
+		}
+		return &rpcResp2, nil
+	}
+	return decodeSSEPayload(data)
+}
+
+func decodeSSEPayload(data []byte) (*JSONRPCResponse, error) {
+	var last *JSONRPCResponse
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "event:") || strings.HasPrefix(line, "retry:") || strings.HasPrefix(line, "id:") {
+			continue
+		}
+		payload := line
+		if strings.HasPrefix(line, "data:") {
+			payload = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		}
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var candidate JSONRPCResponse
+		if err := json.Unmarshal([]byte(payload), &candidate); err != nil {
+			continue
+		}
+		// Accept the first message with an id or an error; notifications
+		// without ids are skipped.
+		if candidate.ID != nil || candidate.Error != nil {
+			c := candidate
+			last = &c
+		}
+	}
+	if last == nil {
+		return nil, fmt.Errorf("SSE stream contained no JSON-RPC response")
+	}
+	return last, nil
 }
 
 // ListTools queries the provider for available tools in modern stateless mode.
@@ -172,7 +261,8 @@ func (c *StreamableHTTPClient) SubscribeToListChanges(ctx context.Context, ch ch
 	return err
 }
 
-// CloseSession terminates the client session.
+// CloseSession terminates the client session. Stateless 2026-07-28 has no
+// session to close; this is a no-op for interface symmetry.
 func (c *StreamableHTTPClient) CloseSession() error {
 	return nil
 }

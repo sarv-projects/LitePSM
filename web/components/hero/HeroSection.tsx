@@ -31,7 +31,14 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
   const [copied, setCopied] = React.useState(false);
 
   const parts = React.useMemo(() => kindBreakdown(items), [items]);
-  const age = relativeAge(data.createdAt);
+  // `relativeAge` reads Date.now(), so computing it during render would give the
+  // prerendered HTML and the client's first render two different answers
+  // ("yesterday" vs "today") and trip a hydration mismatch. It is therefore
+  // measured after mount; the server renders no age at all.
+  const [age, setAge] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setAge(relativeAge(data.createdAt));
+  }, [data.createdAt]);
   const digest = shortDigest(data.manifestDigest);
 
   const onCopy = async () => {
@@ -107,9 +114,13 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
 }
 
 /**
- * Friendly live status indicator. Reassures users that the catalog is
- * actively synced and verified, without cluttering the UI with raw cryptographic
- * hashes or sequence numbers.
+ * Release stamp for the catalog pointer.
+ *
+ * It only says "Live catalog" once `/v1/current.json` has actually been fetched
+ * and answered; until then — and on the prerendered HTML, where no fetch has
+ * happened — it says so plainly. Nothing here is a heartbeat or a fabricated
+ * liveness signal: the dot marks a completed request, and `offline` says the
+ * bundled snapshot is what you are looking at.
  */
 function ReleaseStamp({
   status,
@@ -140,7 +151,7 @@ function ReleaseStamp({
       {status === "loading" && (
         <span className="flex items-center gap-1.5 text-ink-3 text-[11px]">
           <span className="h-2 w-2 animate-pulse rounded-full bg-ink-3/40" aria-hidden="true" />
-          Checking updates…
+          Checking release…
         </span>
       )}
 

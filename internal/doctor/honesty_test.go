@@ -180,3 +180,97 @@ func TestDoctor_DiskCheckReportsMeasuredFreeSpace(t *testing.T) {
 		t.Errorf("canned disk message returned: %q", got.Message)
 	}
 }
+
+// The directories check must observe, not act: a diagnostic that silently
+// creates what it was asked about can never report it missing.
+func TestDoctor_DirectoriesCheckIsReadOnly(t *testing.T) {
+	engine, _, paths := newTestEngine(t)
+
+	if err := os.RemoveAll(paths.DataRoot); err != nil {
+		t.Fatalf("RemoveAll failed: %v", err)
+	}
+	if _, err := os.Stat(paths.DataRoot); !os.IsNotExist(err) {
+		t.Fatalf("precondition: DataRoot should be gone, got %v", err)
+	}
+
+	got := engine.checkDirectories()
+	if got.Status != StatusFail {
+		t.Fatalf("missing DATA_ROOT: expected fail, got %s (%s)", got.Status, got.Message)
+	}
+	if !strings.Contains(got.Message, "DATA_ROOT") {
+		t.Errorf("expected the missing root to be named, got %q", got.Message)
+	}
+	if _, err := os.Stat(paths.DataRoot); !os.IsNotExist(err) {
+		t.Errorf("the check recreated DATA_ROOT (%v) — it must not mutate the system", err)
+	}
+	if got.Recommendation == "" {
+		t.Error("a failing directory check must say how to fix it")
+	}
+}
+
+// The database check must read journal_mode back rather than asserting WAL in
+// the pass message.
+func TestDoctor_DBCheckMeasuresJournalMode(t *testing.T) {
+	engine, _, _ := newTestEngine(t)
+
+	got := engine.checkDatabase(context.Background())
+	if got.Status != StatusPass {
+		t.Fatalf("expected pass on a healthy database, got %s (%s)", got.Status, got.Message)
+	}
+	mode, ok := got.Details["journalMode"].(string)
+	if !ok {
+		t.Fatalf("expected a measured journalMode detail, got %#v", got.Details["journalMode"])
+	}
+	if mode == "" {
+		t.Fatal("journalMode detail is empty — nothing was measured")
+	}
+	if !strings.Contains(got.Message, "journal_mode="+mode) {
+		t.Errorf("message does not report the measured journal mode: %q", got.Message)
+	}
+	if strings.Contains(got.Message, "WAL mode active") {
+		t.Errorf("canned WAL claim returned: %q", got.Message)
+	}
+}
+
+// With no scripting runtime on PATH the runtimes check must warn, not pass.
+func TestDoctor_RuntimesCheckWarnsWhenNoneFound(t *testing.T) {
+	empty := t.TempDir()
+	t.Setenv("PATH", empty)
+
+	engine, _, _ := newTestEngine(t)
+	got := engine.checkRuntimes()
+	if got.Status != StatusWarn {
+		t.Fatalf("no runtimes on PATH: expected warn, got %s (%s)", got.Status, got.Message)
+	}
+	if r, ok := got.Details["runtimes"].([]string); !ok || len(r) != 0 {
+		t.Errorf("expected an empty runtimes detail, got %#v", got.Details["runtimes"])
+	}
+}
+
+// With no agent configured, the host-registration check must warn: "0 hosts"
+// green-lit the product's own not-installed state.
+func TestDoctor_HostRegistrationsWarnWhenNoneRegistered(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	for _, v := range []string{
+		"CLINE_MCP_SETTINGS_PATH", "CLINE_DATA_DIR", "PI_CODING_AGENT_DIR",
+		"OPENCODE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME",
+	} {
+		t.Setenv(v, "")
+	}
+
+	engine, _, _ := newTestEngine(t)
+	got := engine.checkHostRegistrations(context.Background())
+	if got.Status == StatusPass {
+		t.Fatalf("no hosts registered: expected warn, got pass (%q)", got.Message)
+	}
+	if ready, ok := got.Details["readyCount"].(int); !ok || ready != 0 {
+		t.Errorf("expected readyCount 0, got %#v", got.Details["readyCount"])
+	}
+	if got.Recommendation == "" {
+		t.Error("a warning about no registered hosts must say how to register one")
+	}
+}

@@ -27,10 +27,10 @@ function computeFileSHA256(filePath) {
   return hash.digest("hex");
 }
 
-/** Fetch a small text resource over HTTPS, following up to 5 redirects. */
+/** Fetch a small text resource over HTTPS, following up to MAX_REDIRECTS. */
 function fetchText(url, redirects = 0) {
   return new Promise((resolve, reject) => {
-    if (redirects > 5) {
+    if (redirects > MAX_REDIRECTS) {
       reject(new Error("too many redirects"));
       return;
     }
@@ -51,12 +51,26 @@ function fetchText(url, redirects = 0) {
           reject(new Error(`HTTP ${res.statusCode}`));
           return;
         }
+        let bytes = 0;
         let data = "";
+        let tooLarge = false;
         res.setEncoding("utf8");
         res.on("data", (chunk) => {
+          bytes += Buffer.byteLength(chunk);
+          if (bytes > MAX_TEXT_BYTES) {
+            tooLarge = true;
+            res.destroy(new Error(`response exceeds the ${MAX_TEXT_BYTES} byte limit`));
+            return;
+          }
           data += chunk;
         });
-        res.on("end", () => resolve(data));
+        res.on("end", () => {
+          if (tooLarge || bytes > MAX_TEXT_BYTES) {
+            reject(new Error(`response exceeds the ${MAX_TEXT_BYTES} byte limit`));
+            return;
+          }
+          resolve(data);
+        });
         res.on("error", reject);
       });
   });
@@ -80,6 +94,15 @@ const agent = new https.Agent({ keepAlive: false });
 
 // Guard against a stalled transfer: an npm lifecycle script must never hang.
 const REQUEST_TIMEOUT_MS = 120000;
+
+// Bounds for remote reads. A hostile or misconfigured origin must not be able
+// to exhaust memory or disk: the checksum manifest is a small text file (the
+// Go updater caps it at 1 MiB), and a native binary must fit well under the
+// 256 MiB archive bound used by internal/artifact. Redirects are capped at 5,
+// matching the Go artifact fetcher.
+const MAX_TEXT_BYTES = 1 << 20;
+const MAX_BINARY_BYTES = 256 << 20;
+const MAX_REDIRECTS = 5;
 
 /**
  * Refuse anything that is not plain HTTPS.
@@ -114,8 +137,12 @@ function resolveRedirect(currentUrl, location) {
   return assertHTTPS(new URL(location, currentUrl).toString());
 }
 
-function downloadFile(url, targetPath) {
+function downloadFile(url, targetPath, redirects = 0) {
   return new Promise((resolve, reject) => {
+    if (redirects > MAX_REDIRECTS) {
+      reject(new Error("too many redirects"));
+      return;
+    }
     let settled = false;
     const done = (err) => {
       if (settled) return;
@@ -132,15 +159,27 @@ function downloadFile(url, targetPath) {
       }
     };
 
-    const handleResponse = (res) => {
+    const handleResponse = (res, currentUrl, redirectCount) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (redirectCount >= MAX_REDIRECTS) {
+          res.resume();
+          done(new Error("too many redirects"));
+          return;
+        }
         // Follow the GitHub redirect. The response MUST be drained, otherwise
         // its socket is never released and the process cannot exit. The target
         // must still be HTTPS (see assertHTTPS).
         res.resume();
-        request(resolveRedirect(url, res.headers.location)).on("error", done).on("timeout", function () {
+        let nextUrl;
+        try {
+          nextUrl = resolveRedirect(currentUrl, res.headers.location);
+        } catch (err) {
+          done(err);
+          return;
+        }
+        request(nextUrl).on("error", done).on("timeout", function () {
           this.destroy(new Error("download timeout"));
-        }).on("response", handleResponse);
+        }).on("response", (r2) => handleResponse(r2, nextUrl, redirectCount + 1));
         return;
       }
 
@@ -150,9 +189,30 @@ function downloadFile(url, targetPath) {
         return;
       }
 
+      // Bound the download: a binary larger than MAX_BINARY_BYTES is either a
+      // misconfigured origin or an attack, never a legitimate release asset.
+      let bytes = 0;
+      res.on("data", (chunk) => {
+        bytes += chunk.length;
+        if (bytes > MAX_BINARY_BYTES) {
+          done(new Error(`download exceeds the ${MAX_BINARY_BYTES} byte limit`));
+          try {
+            res.destroy();
+          } catch (e) {
+            /* best effort */
+          }
+        }
+      });
+
       // `close` (not `finish`) is the reliable signal that the fd is closed.
       const file = fs.createWriteStream(targetPath);
-      file.on("close", () => done());
+      file.on("close", () => {
+        if (bytes > MAX_BINARY_BYTES) {
+          done(new Error(`download exceeds the ${MAX_BINARY_BYTES} byte limit`));
+          return;
+        }
+        done();
+      });
       file.on("error", done);
       res.on("error", done);
       res.on("aborted", () => done(new Error("download aborted")));
@@ -164,7 +224,7 @@ function downloadFile(url, targetPath) {
       .on("timeout", function () {
         this.destroy(new Error("download timeout"));
       })
-      .on("response", handleResponse);
+      .on("response", (res) => handleResponse(res, url, redirects));
   });
 }
 
@@ -312,8 +372,12 @@ async function installBinary() {
       console.warn(
         `[litespm] If that release does not exist yet, push the v${VERSION} tag and let its GitHub release publish before installing from npm.`
       );
-      console.warn(`[litespm] LiteSPM will resolve or re-attempt on first invocation.`);
     }
+    // Fail closed: a postinstall that cannot prove its binary must fail the
+    // install (non-zero exit) rather than succeed silently. The wrapper
+    // re-attempts the download on first invocation, so a transient network
+    // failure is recoverable by retrying the install.
+    throw err;
   }
 }
 
@@ -326,9 +390,9 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((err) => {
-      console.warn(`[litespm] Postinstall notice: ${err.message}`);
+      console.error(`[litespm] Postinstall failed: ${err.message}`);
       agent.destroy();
-      process.exit(0);
+      process.exit(1);
     });
 }
 
@@ -340,5 +404,10 @@ module.exports = {
   assertVerifiedDigest,
   assertHTTPS,
   resolveRedirect,
+  downloadFile,
+  fetchText,
   agent,
+  MAX_TEXT_BYTES,
+  MAX_BINARY_BYTES,
+  MAX_REDIRECTS,
 };

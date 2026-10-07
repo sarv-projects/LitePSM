@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sarv-projects/litespm/internal/config"
 	"github.com/sarv-projects/litespm/internal/domain"
 	"github.com/sarv-projects/litespm/internal/skills"
 	"github.com/sarv-projects/litespm/internal/state"
@@ -154,7 +155,8 @@ func installSkillFromListing(
 	// state database, the user's deny rules). Its "ask" is answered only by the
 	// approval that was consumed for this install; there is no
 	// "the request itself is the authorization" shortcut.
-	engine, perr := newPolicyEngine(db, dataRoot)
+	cfg, _ := config.LoadCurrentConfig()
+	engine, perr := newPolicyEngine(db, dataRoot, policyDefaultsFrom(cfg))
 	if perr != nil {
 		return nil, fmt.Errorf("load policy: %w", perr)
 	}

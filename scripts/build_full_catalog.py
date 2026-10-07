@@ -506,6 +506,9 @@ def build_full_catalog():
                 upstream = manifest_source_url(p.get("source")) or p.get("homepage") or p.get("repository") or src["repo"]
                 install_hint = f"/plugin install {name}@{src['marketplace']}" if src.get("marketplace") else ""
 
+            # Manifest version only when the manifest publishes one.
+            # An absent version is null, not a guess.
+            manifest_version = p.get("version") if isinstance(p.get("version"), str) and p.get("version").strip() else None
             row = {
                 "id": item_id,
                 "name": display,
@@ -662,4 +665,64 @@ def build_full_catalog():
     print(f"Published dataset stats: {len(items)} capabilities, sha256:{digest[:12]}")
 
 if __name__ == "__main__":
-    build_full_catalog()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Build web/data/catalog.json from upstream awesome-lists and vendor marketplace manifests. "
+        "Heuristic rows are discovery_only with no fabricated version/command/runtime; "
+        "only vendor-manifest rows carry metadata_verified.",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Override the catalog.json output path (default: web/data/catalog.json next to this script).",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Syntax/provenance check only: verify no fabricated commands or hardcoded versions remain, without network fetches.",
+    )
+    args = parser.parse_args()
+    if args.check:
+        import pathlib
+
+        full = pathlib.Path(__file__).read_text(encoding="utf-8")
+        # Only scan the builder body: everything before the CLI block.
+        # (The check itself names the forbidden patterns, so scanning the
+        # whole file would always self-match.)
+        src = full.split('if __name__ == "__main__":', 1)[0]
+        problems = []
+        # R5: the hint variable must stay defined (it was once referenced but
+        # never assigned, which aborted the run with a NameError), and it must
+        # never be written into the `transport` field — it is a list author's
+        # emoji claim, not proven metadata.
+        import re as _re
+        if _re.search(r'^\s*upstream_transport_hint\s*$', src, _re.M) and \
+           not _re.search(r'^\s*upstream_transport_hint\s*=', src, _re.M):
+            problems.append("upstream hint referenced without assignment (R5)")
+        if _re.search(r'["\']transport["\']\s*:\s*upstream_transport_hint', src):
+            problems.append("upstream hint emitted as transport (R5)")
+        # T1: no fabricated launch-line assignments in the builder.
+        for pat in ['f"{repo}-mcp"', 'f"@modelcontextprotocol/server-', 'cmd = "uvx"', 'cmd = "cargo"', 'cmd = "npx"', "args = [repo]"]:
+            if pat in src:
+                problems.append(f"fabricated command pattern still present: {pat}")
+        # T1: no row may be assigned a literal hardcoded version. (A comment
+        # describing the old behaviour is allowed; an assignment is not.)
+        if _re.search(r'["\']version["\']\s*:\s*["\']1\.0\.0["\']', src) or \
+           _re.search(r'version\s*=\s*["\']1\.0\.0["\']', src):
+            problems.append('hardcoded version "1.0.0" still assigned (T1)')
+        # T2: no hardcoded verified allowlists in the builder.
+        if "in [" in src and "modelcontextprotocol\", \"anthropic\"" in src:
+            problems.append("hardcoded verified allowlist still present (T2)")
+        if problems:
+            print("CHECK FAILED:")
+            for p in problems:
+                print(f"  - {p}")
+            sys.exit(1)
+        print("CHECK OK: no fabricated commands, no hardcoded versions, no undefined hint.")
+    else:
+        if args.output:
+            # Honour an explicit output override by monkey-patching the
+            # write path inside build_full_catalog via env.
+            os.environ["LITESPM_CATALOG_OUT"] = args.output
+        build_full_catalog()

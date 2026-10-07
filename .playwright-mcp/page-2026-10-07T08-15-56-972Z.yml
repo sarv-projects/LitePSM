@@ -1,0 +1,196 @@
+- generic [active] [ref=f7e1]:
+  - link "Skip to content" [ref=f7e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f7e3]:
+    - banner [ref=f7e4]:
+      - generic [ref=f7e5]:
+        - link "LiteSPM Market home" [ref=f7e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f7e11]: LiteSPM Market
+        - navigation "Primary" [ref=f7e12]:
+          - link "Explore" [ref=f7e13] [cursor=pointer]:
+            - /url: /explore/
+          - link "Agents" [ref=f7e14] [cursor=pointer]:
+            - /url: /agents/
+          - link "Categories" [ref=f7e15] [cursor=pointer]:
+            - /url: /categories/
+          - link "Coverage" [ref=f7e16] [cursor=pointer]:
+            - /url: /trending/
+    - main [ref=f7e17]:
+      - generic [ref=f7e18]:
+        - paragraph [ref=f7e19]: Entry detail
+        - heading "Package pages resolve one entry at a time" [level=1] [ref=f7e20]
+        - paragraph [ref=f7e21]:
+          - text: A detail page is requested as
+          - code [ref=f7e22]: /package/?slug=<key>
+          - text: against a single bundled catalog of 5,825 entries. Emitting one static file per entry would mean 5,825 files, so instead the index ships as one page and the entry resolves in the browser. The key is the entry’s slug, or its catalog id where the slug is shared by more than one entry.
+        - generic [ref=f7e23]:
+          - heading "Start of the catalog snapshot" [level=2] [ref=f7e24]
+          - link "search all" [ref=f7e25] [cursor=pointer]:
+            - /url: /explore/
+        - list [ref=f7e26]:
+          - listitem [ref=f7e27]:
+            - link "42crunch-api-security-testing Anthropic plugin Security & Testing" [ref=f7e28] [cursor=pointer]:
+              - /url: /package/?slug=claude-42crunch-api-security-testing
+              - generic [ref=f7e30]:
+                - generic [ref=f7e31]: 42crunch-api-security-testing
+                - generic [ref=f7e32]:
+                  - generic [ref=f7e33]: Anthropic
+                  - generic [ref=f7e34]: plugin
+                  - generic [ref=f7e35]: Security & Testing
+          - listitem [ref=f7e36]:
+            - link "academy-guide Anthropic plugin Developer Tools" [ref=f7e37] [cursor=pointer]:
+              - /url: /package/?slug=askills-academy-guide
+              - generic [ref=f7e39]:
+                - generic [ref=f7e40]: academy-guide
+                - generic [ref=f7e41]:
+                  - generic [ref=f7e42]: Anthropic
+                  - generic [ref=f7e43]: plugin
+                  - generic [ref=f7e44]: Developer Tools
+          - listitem [ref=f7e45]:
+            - link "ActiveCampaign Anthropic plugin Productivity & Workflow" [ref=f7e46] [cursor=pointer]:
+              - /url: /package/?slug=claude-activecampaign
+              - generic [ref=f7e48]:
+                - generic [ref=f7e49]: ActiveCampaign
+                - generic [ref=f7e50]:
+                  - generic [ref=f7e51]: Anthropic
+                  - generic [ref=f7e52]: plugin
+                  - generic [ref=f7e53]: Productivity & Workflow
+          - listitem [ref=f7e54]:
+            - link "ActiveCampaign Anthropic plugin Productivity & Workflow" [ref=f7e55] [cursor=pointer]:
+              - /url: /package/?slug=knowledge-activecampaign
+              - generic [ref=f7e57]:
+                - generic [ref=f7e58]: ActiveCampaign
+                - generic [ref=f7e59]:
+                  - generic [ref=f7e60]: Anthropic
+                  - generic [ref=f7e61]: plugin
+                  - generic [ref=f7e62]: Productivity & Workflow
+          - listitem [ref=f7e63]:
+            - link "Adobe Anthropic plugin Multimedia" [ref=f7e64] [cursor=pointer]:
+              - /url: /package/?slug=knowledge-adobe-for-creativity
+              - generic [ref=f7e66]:
+                - generic [ref=f7e67]: Adobe
+                - generic [ref=f7e68]:
+                  - generic [ref=f7e69]: Anthropic
+                  - generic [ref=f7e70]: plugin
+                  - generic [ref=f7e71]: Multimedia
+          - listitem [ref=f7e72]:
+            - link "adobe OpenAI plugin Multimedia" [ref=f7e73] [cursor=pointer]:
+              - /url: /package/?slug=codex-adobe
+              - generic [ref=f7e75]:
+                - generic [ref=f7e76]: adobe
+                - generic [ref=f7e77]:
+                  - generic [ref=f7e78]: OpenAI
+                  - generic [ref=f7e79]: plugin
+                  - generic [ref=f7e80]: Multimedia
+          - listitem [ref=f7e81]:
+            - link "adobe-for-creativity Anthropic plugin Multimedia" [ref=f7e82] [cursor=pointer]:
+              - /url: /package/?slug=claude-adobe-for-creativity
+              - generic [ref=f7e84]:
+                - generic [ref=f7e85]: adobe-for-creativity
+                - generic [ref=f7e86]:
+                  - generic [ref=f7e87]: Anthropic
+                  - generic [ref=f7e88]: plugin
+                  - generic [ref=f7e89]: Multimedia
+          - listitem [ref=f7e90]:
+            - link "Adspirer Anthropic plugin Productivity & Workflow" [ref=f7e91] [cursor=pointer]:
+              - /url: /package/?slug=knowledge-adspirer-ads-agent
+              - generic [ref=f7e93]:
+                - generic [ref=f7e94]: Adspirer
+                - generic [ref=f7e95]:
+                  - generic [ref=f7e96]: Anthropic
+                  - generic [ref=f7e97]: plugin
+                  - generic [ref=f7e98]: Productivity & Workflow
+          - listitem [ref=f7e99]:
+            - link "advisor Cursor plugin Plugins & Toolkits" [ref=f7e100] [cursor=pointer]:
+              - /url: /package/?slug=cursor-advisor
+              - generic [ref=f7e102]:
+                - generic [ref=f7e103]: advisor
+                - generic [ref=f7e104]:
+                  - generic [ref=f7e105]: Cursor
+                  - generic [ref=f7e106]: plugin
+                  - generic [ref=f7e107]: Plugins & Toolkits
+          - listitem [ref=f7e108]:
+            - link "agent-compatibility Cursor plugin Plugins & Toolkits" [ref=f7e109] [cursor=pointer]:
+              - /url: /package/?slug=cursor-agent-compatibility
+              - generic [ref=f7e111]:
+                - generic [ref=f7e112]: agent-compatibility
+                - generic [ref=f7e113]:
+                  - generic [ref=f7e114]: Cursor
+                  - generic [ref=f7e115]: plugin
+                  - generic [ref=f7e116]: Plugins & Toolkits
+          - listitem [ref=f7e117]:
+            - link "agent-sdk-dev Anthropic plugin Developer Tools" [ref=f7e118] [cursor=pointer]:
+              - /url: /package/?slug=claude-agent-sdk-dev
+              - generic [ref=f7e120]:
+                - generic [ref=f7e121]: agent-sdk-dev
+                - generic [ref=f7e122]:
+                  - generic [ref=f7e123]: Anthropic
+                  - generic [ref=f7e124]: plugin
+                  - generic [ref=f7e125]: Developer Tools
+          - listitem [ref=f7e126]:
+            - link "agentforce-adlc Anthropic plugin Developer Tools" [ref=f7e127] [cursor=pointer]:
+              - /url: /package/?slug=claude-agentforce-adlc
+              - generic [ref=f7e129]:
+                - generic [ref=f7e130]: agentforce-adlc
+                - generic [ref=f7e131]:
+                  - generic [ref=f7e132]: Anthropic
+                  - generic [ref=f7e133]: plugin
+                  - generic [ref=f7e134]: Developer Tools
+    - contentinfo [ref=f7e135]:
+      - generic [ref=f7e136]:
+        - generic [ref=f7e137]:
+          - paragraph [ref=f7e138]: LiteSPM Market
+          - paragraph [ref=f7e139]: One bridge entry per agent, installed once. The catalog is a snapshot of named upstream sources, and everything here is resolved locally by the LiteSPM daemon.
+        - generic [ref=f7e140]:
+          - heading "Indexed" [level=2] [ref=f7e141]
+          - list [ref=f7e142]:
+            - listitem [ref=f7e143]:
+              - link "Explore" [ref=f7e144] [cursor=pointer]:
+                - /url: /explore/
+            - listitem [ref=f7e145]:
+              - link "Categories" [ref=f7e146] [cursor=pointer]:
+                - /url: /categories/
+            - listitem [ref=f7e147]:
+              - link "Agent hosts" [ref=f7e148] [cursor=pointer]:
+                - /url: /agents/
+            - listitem [ref=f7e149]:
+              - link "Coverage" [ref=f7e150] [cursor=pointer]:
+                - /url: /trending/
+            - listitem [ref=f7e151]:
+              - link "/v1/current.json" [ref=f7e152] [cursor=pointer]:
+                - /url: /v1/current.json
+        - generic [ref=f7e153]:
+          - heading "What the numbers mean" [level=2] [ref=f7e154]
+          - list [ref=f7e155]:
+            - listitem [ref=f7e156]:
+              - strong [ref=f7e157]: No popularity figures are published.
+              - text: The upstream sources do not expose machine-readable star or install counts, so the catalog shows none rather than an estimate.
+            - listitem [ref=f7e158]:
+              - generic [ref=f7e159]: "0"
+              - text: agent hosts have compiled-in config adapters. Every one lists the documentation it was verified against.
+            - listitem [ref=f7e160]: "Publisher “vendor-listed” means the row came from that publisher’s own marketplace manifest; no registry verified the publisher and this project did not audit it. Rows from third-party awesome-lists are discovery-only: no version or launch command was proven."
+      - generic [ref=f7e162]:
+        - generic [ref=f7e163]:
+          - generic [ref=f7e164]:
+            - definition [ref=f7e165]:
+              - generic [ref=f7e166]: "0"
+            - term [ref=f7e167]: capabilities
+          - generic [ref=f7e168]:
+            - definition [ref=f7e169]:
+              - generic [ref=f7e170]: "0"
+            - term [ref=f7e171]: MCP
+          - generic [ref=f7e172]:
+            - definition [ref=f7e173]:
+              - generic [ref=f7e174]: "0"
+            - term [ref=f7e175]: skills
+          - generic [ref=f7e176]:
+            - definition [ref=f7e177]:
+              - generic [ref=f7e178]: "0"
+            - term [ref=f7e179]: plugins
+        - generic [ref=f7e180]:
+          - paragraph [ref=f7e181]: Open source. No analytics, no cookies, no install telemetry.
+          - link "GitHub repository" [ref=f7e182] [cursor=pointer]:
+            - /url: https://github.com/sarv-projects/LiteSPM
+  - status
+  - alert [ref=f7e183]

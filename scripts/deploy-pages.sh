@@ -41,6 +41,24 @@ go run ./cmd/litespm catalog build \
     --out "${PAGES_DIR}" \
     --prev web/public/v1/current.json
 
+echo "● Writing Cloudflare Pages _headers..."
+# ARCH/18 §4: the CDN caches /v1/releases/* immutably and /v1/current.json is
+# the only mutable part. CORS is open (the catalog is public data) and
+# nosniff is set on both stanzas.
+cat << 'EOF' > "${PAGES_DIR}/_headers"
+# Immutable release directory (forever cached)
+/v1/releases/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff
+
+# Pointer file (always revalidate)
+/v1/current.json
+  Cache-Control: public, no-cache, must-revalidate
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff
+EOF
+
 # Every judgement about the finished bundle lives in one script, which CI also
 # runs, so the deploy path and the checks it faces cannot drift apart.
 ./scripts/audit-pages-dist.sh "${PAGES_DIR}"

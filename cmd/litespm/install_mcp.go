@@ -193,10 +193,21 @@ func installMCPFromListing(
 	}
 
 	outcome.InstallID = fmt.Sprintf("inst_%s_%s_%s", scope, safeInstallIDPart(listing.ID), safeInstallIDPart(version))
+	// S1/S2: the install row carries its real kind, a content-bound tree
+	// digest (no CAS tree exists for a registration install, so the digest
+	// covers the registered entry), and the first config path as install_path.
+	entryDigest := domain.ComputeBytesDigest([]byte(command + "\x00" + strings.Join(runtime.Args, "\x00")))
+	installPath := ""
+	if len(outcome.Hosts) > 0 {
+		installPath = outcome.Hosts[0].ConfigPath
+	}
 	rec := &domain.InstallRecord{
 		InstallID:   outcome.InstallID,
 		ListingID:   listing.ID,
+		Kind:        domain.KindMCP,
 		Version:     version,
+		TreeDigest:  entryDigest,
+		InstallPath: installPath,
 		Scope:       scope,
 		Status:      domain.InstallActive,
 		InstalledAt: time.Now().UTC(),
@@ -205,31 +216,37 @@ func installMCPFromListing(
 	if err := db.SaveInstall(ctx, rec); err != nil {
 		return nil, fmt.Errorf("record the install: %w", err)
 	}
-	// The provider row's component_id is a foreign key onto install_components
-	// (ARCH/12 §13), so the component must exist. SaveInstallComponent keys that
-	// table by install id, which is also what SaveProvider falls back to.
+	// S2: component_id is distinct from install_id
+	// (<install>#<kind>/<name>); the provider FK resolves against it.
 	if err := db.SaveInstallComponent(ctx, &domain.InstallComponentRecord{
 		InstallID:     outcome.InstallID,
 		Kind:          domain.ComponentMCPProvider,
 		ComponentName: name,
-		Path:          "",
+		Path:          installPath,
 	}); err != nil {
 		return nil, fmt.Errorf("record the installed component: %w", err)
 	}
-	// One host_registrations row per config actually modified: this is the first
-	// production caller of that table, so it is also the first evidence that it
-	// records something real.
+	// S3/S4 + S5: one host_registrations row per config actually modified,
+	// each with a real entry fingerprint, plus one deployment-ledger row per
+	// owned write so uninstall can reconcile surgically (ARCH/33).
+	orch := newLifecycleOrchestrator(db)
 	for _, result := range outcome.Hosts {
 		if err := db.SaveHostRegistration(ctx, &domain.HostRegistrationRecord{
 			HostID:           result.HostID,
 			Scope:            scope,
 			ConfigPath:       result.ConfigPath,
 			ConfigFormat:     string(hostConfigFormatFor(result.HostID)),
+			ManagedEntryKey:  name,
 			EntryFingerprint: result.Fingerprint,
 			RegisteredAt:     time.Now().UTC(),
 			Status:           "active",
 		}); err != nil {
 			return nil, fmt.Errorf("record the host registration: %w", err)
+		}
+		if orch != nil {
+			_ = orch.RecordHostWrite(ctx, outcome.InstallID, listing.ID,
+				result.HostID, string(scope), result.ConfigPath,
+				hostStructureTypeFor(result.HostID), hostLocatorFor(result.HostID, name), "")
 		}
 	}
 

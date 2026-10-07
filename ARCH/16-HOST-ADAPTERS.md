@@ -101,7 +101,7 @@ protocol version and the string `✓ 6 Verified Host Adapters Compiled & Availab
 *   **Host ID:** `grok-build`
 *   **Target Configuration (user scope):**
     *   **Unix / macOS:** `~/.grok/config.toml`
-    *   **Windows:** `%USERPROFILE%\.grok\config.toml` (`%APPDATA%\Grok\config.toml` is a legacy fallback)
+    *   **Windows:** `%USERPROFILE%\.grok\config.toml`. There is no `%APPDATA%\Grok\config.toml` fallback — it appears in no xAI documentation and was removed after the 2026-10-06 audit (`internal/host/grokbuild.go`).
     *   Project scope `.grok/config.toml` is host-documented; the adapter does not scan it.
 *   **Format:** TOML.
 *   **Managed Injection:** Injects under `[mcp_servers.litespm]`.
@@ -118,7 +118,7 @@ protocol version and the string `✓ 6 Verified Host Adapters Compiled & Availab
 *   **Host ID:** `codex`
 *   **Target Configuration (user scope):**
     *   **Unix / macOS:** `~/.codex/config.toml`
-    *   **Windows:** `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback; `$CODEX_HOME` overrides the directory for the host, but the adapter does not honour it)
+    *   **Windows:** `%USERPROFILE%\.codex\config.toml`. The adapter **does** honour `$CODEX_HOME` (`internal/host/codex.go`). There is no `%APPDATA%\Codex\config.toml` fallback — it appears in no OpenAI documentation and was removed after the 2026-10-06 audit; the documented Windows system path is the administrator-owned `%ProgramData%\OpenAI\Codex\config.toml`, which LiteSPM does not write.
     *   Project scope `.codex/config.toml` is host-documented; the adapter does not scan it.
 *   **Format:** TOML.
 *   **Managed Injection:** Injects under `[mcp_servers.litespm]`.
@@ -278,15 +278,15 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 | `search_catalog` | `catalog.search` | resolves |
 | `get_extension` | `catalog.get_item` | resolves |
 | `prepare_install` | `resolver.prepare_plan` | resolves (plan only) |
-| `request_install` | `install.execute` | **Completes for skills** (installs files through the skills ledger); MCP/plugin fail closed with `LPSM-ARTIFACT-UNAVAILABLE` (no artifact source) (`STATUS.md` §3) |
+| `request_install` | `install.execute` | **Completes for skills** (installs files through the skills ledger) **and for MCP servers** (registers the server in each target host's config), behind the plan + approval gate in `install_authz.go`; plugins fail closed with `LPSM-ARTIFACT-UNAVAILABLE` (no artifact source) (`STATUS.md` §3) |
 | `list_installed` | `tools.list` | resolves |
 | `load_skill` | `skills.load_body` | resolves |
 | `read_skill_resource` | `skills.read_resource` | resolves |
-| `search_capabilities` | `capabilities.search` | **JSON-RPC `-32601`**, explicit reason (`cmd/litespm/main.go:1628`) |
-| `describe_capability` | `capabilities.describe` | **JSON-RPC `-32601`** (`main.go:1637`) |
-| `invoke_capability` | `provider.invoke` | **JSON-RPC `-32601`** — no capability rows, no session dispatch (`main.go:1676`) |
-| `get_invocation` | `invocation.get` | **JSON-RPC `-32601`** — no invocation registry (`main.go:1685`) |
-| `cancel_invocation` | `invocation.cancel` | **JSON-RPC `-32601`** (`main.go:1694`) |
+| `search_capabilities` | `capabilities.search` | resolves — over the capability rows `internal/discover` probed (`cmd/litespm/main.go:2089`) |
+| `describe_capability` | `capabilities.describe` | resolves — real input schema, fingerprint and provider command (`main.go:2135`) |
+| `invoke_capability` | `provider.invoke` | resolves — spawns the installed server and calls the discovered tool, refusing a schema that drifted (`main.go:2196`) |
+| `get_invocation` | `invocation.get` | **JSON-RPC `-32601`** — no invocation registry (`main.go:2216`) |
+| `cancel_invocation` | `invocation.cancel` | **JSON-RPC `-32601`** (`main.go:2225`) |
 
   A shim with no daemon connection answers every tool with
   `LPSM-IPC-DAEMON-UNREACHABLE` rather than inventing inventory
@@ -311,7 +311,7 @@ The in-agent experience is architected as an abstract UX Model mapped to host-sp
 ### Tab 1: MCP Servers
 *   Search bar for filtering MCP servers by keyword or category (`database`, `developer-tools`, `browser`).
 *   Lists server cards with publisher, verified status, and transport (`stdio` / `Streamable HTTP`).
-*   One-click "Install" action triggering the `prepare_install` flow (plan preview). Execution completes for skills and fails closed for MCP/plugin (see the table above).
+*   One-click "Install" action triggering the `prepare_install` flow (plan preview). Execution completes for skills and MCP servers and fails closed for plugins only (see the table above).
 
 ### Tab 2: Agent Skills
 *   Browse portable `SKILL.md` skills from `agentskills.io` and public Git sources.

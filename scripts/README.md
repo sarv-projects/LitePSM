@@ -1,9 +1,10 @@
 # `scripts/` — repository scripts
 
-Eleven scripts live in this directory. **None of them runs on a push or pull request.**
-`.github/workflows/ci.yml` only *checks their syntax* (`bash -n scripts/*.sh`,
-`python3 -m py_compile scripts/*.py`), and `.github/workflows/release.yml` executes exactly one of
-them (`build-release.sh`). Everything else is manual.
+Eleven scripts live in this directory. **Two of them run on a push or pull request.**
+`.github/workflows/ci.yml` *checks the syntax* of every script (`bash -n scripts/*.sh`,
+`python3 -m py_compile scripts/*.py`) **and executes `deploy-pages.sh`** in its `build-web` job
+(so the staged bundle is packaged and leak-audited on every push/PR); `.github/workflows/release.yml`
+executes `build-release.sh`. The other nine are manual.
 
 Capability states for the subsystems these scripts feed are in [STATUS.md](../STATUS.md); defect
 history is in [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md).
@@ -13,7 +14,7 @@ history is in [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md).
 | Script | Kind | Who runs it | Fails on bad input? |
 |---|---|---|---|
 | `build-release.sh` | bash | **Release** (`.github/workflows/release.yml`, on `v*` tags) | Yes — `set -euo pipefail`, `go build` aborts |
-| `deploy-pages.sh` | bash | **Manual** (site packaging) | Yes — `set -euo pipefail` + explicit leak audit `exit 1` |
+| `deploy-pages.sh` | bash | **CI** (`.github/workflows/ci.yml`, `build-web` job, every push/PR) and **manual** (site packaging) | Yes — `set -euo pipefail` + explicit leak audit `exit 1` |
 | `build_full_catalog.py` | Python | **Manual** (catalog dataset producer) | **No content assertions** — aborts only if a fetch raises; validation is fail-closed at release build time in Go |
 | `gen_hosts_ts.go` | Go (`//go:build ignore`) | **Manual** (before `build_full_catalog.py`) | Yes — `os.Exit(1)` on write failure |
 | `check_ci.py` | Python | **Manual** (status probe) | Yes by contract — exit `0` / `1` / `2` |
@@ -61,18 +62,19 @@ a script.
   the command fails closed if the pointer is missing or not a Go-built pointer) +
   `_headers` (immutable `/v1/releases/*`, no-cache `/v1/current.json`, CORS, `nosniff`).
   `pages-dist/` is gitignored.
-- **Who runs it.** No workflow in this repository references it, and it only packages — the
-  `wrangler.toml` (`name = "litespm"`, `[assets] directory = "./pages-dist"`) upload is a separate
-  step. The origin was published and verified 2026-10-05 (release `rel-2026-10-05-01`); whether
-  subsequent uploads are triggered by an external Cloudflare build or by hand is outside this
-  repository's control.
+- **Who runs it.** `.github/workflows/ci.yml` runs it in the `build-web` job (`Package and Audit
+  the Deploy Bundle` step) on every push/PR, and maintainers run it by hand. It only packages —
+  the `wrangler.toml` (`name = "litespm"`, `[assets] directory = "./pages-dist"`) upload is a
+  separate step. The origin was published and verified 2026-10-05 (release `rel-2026-10-05-01`);
+  whether subsequent uploads are triggered by an external Cloudflare build or by hand is outside
+  this repository's control.
 - **Truthfulness gaps.** It packages, it does not deploy. It reproduces the released pointer but
   never cuts a new release: refreshing the catalog is `python3 scripts/build_full_catalog.py`
   (dataset) then `go run ./cmd/litespm catalog build --out web/public` (pointer + tree), and only
   then this script. The `npm ci || npm install` fallback hides a lockfile mismatch. Its
   forbidden-file `find` expression rejects `.go`, `.env*`, `.pem`, `.key`, `.db`, `.sqlite*` and any
-  `.ts` file, but cannot catch a secret pasted into `.json`/`.html` — and because the script is
-  manual, the audit has no CI enforcement.
+  `.ts` file, but cannot catch a secret pasted into `.json`/`.html`. Because CI runs the script,
+  the audit **is** enforced on every push/PR.
 
 ## `build_full_catalog.py` — **the catalog dataset producer**
 
@@ -156,11 +158,13 @@ not ingestion: the ingestion path they informed is `build_full_catalog.py`.
 
 ## Coverage summary (what is actually enforced)
 
-- **Executed by CI on every push/PR:** nothing in this directory. CI's script steps are
-  `bash -n scripts/*.sh` (syntax) and `python3 -m py_compile scripts/*.py` (byte-compile) only.
+- **Executed by CI on every push/PR:** `deploy-pages.sh` (the `build-web` job's
+  `Package and Audit the Deploy Bundle` step, so the export, the byte-for-byte release
+  materialization and the leak audit run on each change) — in addition to the syntax steps
+  `bash -n scripts/*.sh` (syntax) and `python3 -m py_compile scripts/*.py` (byte-compile).
 - **Executed by the release workflow:** `build-release.sh`.
-- **Manual-only:** `deploy-pages.sh`, `build_full_catalog.py`, `gen_hosts_ts.go`, `check_ci.py`,
-  and the six research probes. (Not a script, but the same workflow: the release/publication step
+- **Manual-only:** `build_full_catalog.py`, `gen_hosts_ts.go`, `check_ci.py`, and the six research
+  probes. (Not a script, but the same workflow: the release/publication step
   `go run ./cmd/litespm catalog build --out web/public` is also manual, and `deploy-pages.sh` runs
   its `-materialize` form on every packaging run.)
 - **Assertion-less (never fail on bad content):** `build_full_catalog.py` (no row/schema checks of

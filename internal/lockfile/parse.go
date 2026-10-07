@@ -41,28 +41,32 @@ func Parse(data []byte) (*Lock, error) {
 		}
 		key := strings.TrimSpace(line[:eq])
 		val := strings.TrimSpace(line[eq+1:])
-		if cur == nil {
-			switch key {
-			case "lockVersion":
-				n, err := strconv.Atoi(val)
-				if err != nil {
-					return nil, fmt.Errorf("line %d: bad lockVersion", ln+1)
-				}
-				l.LockVersion = n
-			case "schemaVersion":
-				n, err := strconv.Atoi(val)
-				if err != nil {
-					return nil, fmt.Errorf("line %d: bad schemaVersion", ln+1)
-				}
-				l.SchemaVersion = n
-			case "manifestDigest":
-				l.ManifestDigest = unquoteLock(val)
-			case "lockDigest":
-				l.LockDigest = unquoteLock(val)
-			default:
-				return nil, fmt.Errorf("line %d: unknown lock key %q", ln+1, key)
+		// Header and footer keys are top-level regardless of position:
+		// MarshalCanonical emits lockDigest after the [[resolved]] blocks.
+		switch key {
+		case "lockVersion":
+			n, err := strconv.Atoi(val)
+			if err != nil {
+				return nil, fmt.Errorf("line %d: bad lockVersion", ln+1)
 			}
+			l.LockVersion = n
 			continue
+		case "schemaVersion":
+			n, err := strconv.Atoi(val)
+			if err != nil {
+				return nil, fmt.Errorf("line %d: bad schemaVersion", ln+1)
+			}
+			l.SchemaVersion = n
+			continue
+		case "manifestDigest":
+			l.ManifestDigest = unquoteLock(val)
+			continue
+		case "lockDigest":
+			l.LockDigest = unquoteLock(val)
+			continue
+		}
+		if cur == nil {
+			return nil, fmt.Errorf("line %d: unknown lock key %q", ln+1, key)
 		}
 		switch key {
 		case "id":

@@ -348,12 +348,9 @@ func runInvoke(args []string) {
 
 // newCatalogClient opens the local catalog index against the configured registry.
 func newCatalogClient(paths *config.PlatformPaths) (*catalog.Client, error) {
-	cfg, _ := config.LoadConfig("")
-	registry := config.DefaultRegistryURL
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		registry = cfg.Catalog.RegistryURL
-	}
-	client := catalog.NewClient(registry, paths.DataRoot, nil)
+	cfg, _ := config.LoadCurrentConfig()
+	registry := registryURLOf(cfg)
+	client := catalog.NewClientWithTimeout(registry, paths.DataRoot, catalogTimeoutOf(cfg), nil)
 	if err := client.LoadFromCache(); err != nil {
 		return nil, err
 	}

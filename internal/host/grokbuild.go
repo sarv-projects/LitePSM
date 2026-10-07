@@ -72,17 +72,20 @@ func (a *GrokBuildAdapter) PlanSetup(ctx context.Context, binaryPath string, bac
 	}
 
 	proposed := base
-	if strings.Contains(base, "[mcp_servers.litespm]") {
+	// A commented-out table is not a registration: writing must append the
+	// bridge rather than "update" a section no live header opens (the update
+	// loop below would then replace nothing and leave the file unchanged).
+	if tomlTableRegistered(base, "[mcp_servers.litespm]") {
 		lines := strings.Split(base, "\n")
 		var newLines []string
 		skip := false
 		for _, l := range lines {
-			if strings.TrimSpace(l) == "[mcp_servers.litespm]" {
+			if stripTOMLComment(l) == "[mcp_servers.litespm]" {
 				skip = true
 				newLines = append(newLines, strings.TrimRight(entry, "\n"))
 				continue
 			}
-			if skip && strings.HasPrefix(strings.TrimSpace(l), "[") {
+			if skip && strings.HasPrefix(stripTOMLComment(l), "[") {
 				skip = false
 			}
 			if !skip {
@@ -128,7 +131,7 @@ func (a *GrokBuildAdapter) VerifySetup(ctx context.Context) (*HostVerification, 
 	}
 
 	content := string(data)
-	registered := strings.Contains(content, "[mcp_servers.litespm]") && strings.Contains(content, "bridge")
+	registered := tomlBridgeRegistered(content, "[mcp_servers.litespm]")
 	status := "missing"
 	if registered {
 		status = "ready"

@@ -225,11 +225,15 @@ func (p *PlatformPaths) StagingPath() string {
 }
 
 // EnsureDirectories creates all standard directories with restrictive permissions (0700).
+//
+// The runtime root is created through ensureRuntimeRoot rather than plain
+// MkdirAll: it holds the daemon socket and, on Linux without XDG_RUNTIME_DIR,
+// sits in world-writable /tmp where another user could pre-plant it as a
+// symlink or their own directory (socket hijack). See runtime_root.go.
 func (p *PlatformPaths) EnsureDirectories() error {
 	dirs := []string{
 		p.DataRoot,
 		p.ConfigRoot,
-		p.RuntimeRoot,
 		p.CASPath(),
 		p.BackupsPath(),
 		p.StagingPath(),
@@ -239,6 +243,10 @@ func (p *PlatformPaths) EnsureDirectories() error {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("failed to create directory %q: %w", dir, err)
 		}
+	}
+
+	if err := ensureRuntimeRoot(p.RuntimeRoot); err != nil {
+		return err
 	}
 	return nil
 }

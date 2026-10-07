@@ -35,7 +35,7 @@ whose only real origin is broken is `WIRED` with the breakage stated, not
 | `internal/config` (platform paths, env, legacy adoption) | `WIRED` | `internal/config/paths.go`; legacy `LITEPSM_*` fallback `internal/config/config.go:132`; `internal/config/legacy_test.go` | — |
 | `internal/state` (SQLite WAL, 22 tables, safe CAS rollback journal) | `TESTED` | `internal/state/operations.go`; recovery tests; the daemon **halts** on recovery failure with `Fatal: startup recovery failed` → **exit 1** (`cmd/litespm/main.go:1173-1175`); `70` is a *doctor* category code only (`ARCH/20` §2) | Independent falsification pass |
 | `internal/ipc` (Named Pipe DACL / Unix socket 0600, dispatcher) | `TESTED` | `internal/ipc/`; the `Serve`/`Stop` race is fixed and reproduced under `-race -count=50` | — |
-| `internal/bridge` (12-tool stateless stdio shim) | `WIRED` | `internal/bridge/shim.go`; launched by `litespm bridge stdio --host`. Read tools resolve; see §4 for the `-32601` tools | Implement the `-32601` handlers |
+| `internal/bridge` (12-tool stateless stdio shim) | `WIRED` | `internal/bridge/shim.go`; launched by `litespm bridge stdio --host`. Read, capability and invoke tools resolve; `request_install` completes for skills and MCP servers; see §4 for the two remaining `-32601` tools | Implement the `invocation.get` / `invocation.cancel` handlers |
 | Daemon (`litespm daemon serve`) | `WIRED` | `cmd/litespm/main.go:92-96` (dispatch) and `:1121` (`runDaemonServe`); recovery runs before the listener binds | — |
 | `internal/policy` (effect taxonomy, install/skills gate) | `WIRED` | Evaluated on install and skills paths | Policy hierarchy + provenance (§5) |
 | `internal/secrets` (OS vault + memory/file stores) | `WIRED` for vault open; launch injection **`IMPLEMENTED`, not `WIRED`** | The daemon opens the store before serving (`cmd/litespm/main.go:1135`) and `doctor` round-trips a canary. **Secrets are *not* injected at provider launch:** `ResolveLaunchSecrets` has test-only callers (`internal/secrets/secrets_test.go`, `test/canary_test.go`) and nothing populates `LaunchSpec.SecretEnv` (`ARCH/19` §1.1) | A production caller that injects resolved secrets at provider launch |
@@ -76,9 +76,11 @@ whose only real origin is broken is `WIRED` with the breakage stated, not
 | Subsystem | State | Evidence | To reach the next state |
 |---|---|---|---|
 | `internal/provider` supervisor (start / stop / probe) | `WIRED` | `internal/provider/`; `provider.probe` returns the real supervisor view or an explicit not-found | Persist provider rows on install (`m4`) |
-| IPC `provider.invoke` / `invocation.get` / `invocation.cancel` + Bridge `invoke_capability` / `get_invocation` / `cancel_invocation` | `IMPLEMENTED` | Registered handlers return explicit `-32601` with concrete reasons (`cmd/litespm/main.go:1676-1699`; codes at `:1678`, `:1687`, `:1696`); no invocation registry exists | Invocation registry + persisted provider/capability rows |
-| IPC `capabilities.search` / `capabilities.describe` + Bridge `search_capabilities` / `describe_capability` | `IMPLEMENTED` | `cmd/litespm/main.go:1626-1642` (codes at `:1630`, `:1639`); explicit `-32601`; Bridge tools exist but resolve nowhere | A capability index |
-| State writers for `providers` / `capabilities` / `capability_grants` / `audit_events` / `host_registrations` | `IMPLEMENTED` | Writers exist in `internal/state`; **no non-test caller** per the wiring audit | Call them from the install/runtime path |
+| IPC `capabilities.search` / `capabilities.describe` + Bridge `search_capabilities` / `describe_capability` | `WIRED` | Handlers at `cmd/litespm/main.go:2089` and `:2135` read `db.ListCapabilities` / `db.GetCapability` over rows `internal/discover` wrote; the Bridge forwards and returns real results | — (invocation registry below) |
+| IPC `provider.invoke` + Bridge `invoke_capability` | `WIRED` | `cmd/litespm/main.go:2196` calls `discover.Invoke`, which re-checks the schema fingerprint and refuses drift; synchronous by contract (`ARCH/06` §4) | Persist provider rows on install so a fresh machine can invoke without a prior `capabilities refresh` |
+| IPC `invocation.get` / `invocation.cancel` + Bridge `get_invocation` / `cancel_invocation` | `IMPLEMENTED` | Registered handlers return explicit `-32601` (`cmd/litespm/main.go:2216`, `:2225`) with the concrete reason: `provider.invoke` is synchronous and the asynchronous registry is `ARCH/34`, still `DESIGNED`. **These two are the only `-32601` handlers left** | Invocation registry + receipt schema (`ARCH/34`) |
+| State writers for `providers` / `capabilities` / `host_registrations` | `WIRED` | Production callers exist: `SaveProvider` + `SaveCapability` from `internal/discover`; `SaveHostRegistration` from `cmd/litespm/install_mcp.go` | — |
+| State writers for `capability_grants` / `audit_events` | `IMPLEMENTED` | Writers exist in `internal/state` (`SaveCapabilityGrant`, `RecordAuditEvent`) with **no non-test caller**; `internal/policy` reads `capability_grants` but nothing ever writes one | Call them from the approval/invocation path |
 | `internal/discover` (probe installed servers → capability rows, invoke a tool) | `WIRED` | `internal/discover/discover.go`; spawns a configured host's registered server, `mcpclient.ProbeProvider` → `providers` + `capabilities` rows, and invokes one capability after re-checking its schema fingerprint. First production caller of `SaveProvider`, `SaveCapability` and `mcpclient`; `GetProvider`/`GetCapability`/`ListCapabilities`/`GetInstallComponent` readers added. Wired to `capabilities.search`, `capabilities.describe`, `provider.invoke` and the `litespm capabilities` / `litespm invoke` commands. Verified end to end against a locally published release and a real MCP server (sync → install → probe → list → describe → invoke), including refusal on schema drift | `invocation.get`/`cancel` (ARCH/34 `DESIGNED`); env metadata from the catalog (the user supplies variable names via `--env`, which the probe resolves) |
 | `internal/mcpclient` (dual-profile MCP client) | `WIRED` | `internal/mcpclient/`; its first production importer is `internal/discover`, which dials an installed server, probes its tools and calls one. `ConnectStdio` now completes the handshake with `notifications/initialized`, without which a real server connects and then hangs on the first `tools/list` | Remote transports (`ConnectStreamableHTTP`, `ConnectLegacy`) still have no caller — the catalog publishes no URL |
 | `internal/auth` (OAuth PKCE loopback broker) | `IMPLEMENTED` | `internal/auth/`; **zero production importers** | Wire into provider launch |
@@ -114,8 +116,9 @@ whose only real origin is broken is `WIRED` with the breakage stated, not
 | `scripts/build_full_catalog.py` (Python builder) | `WIRED` **(dataset producer)** | It publishes `web/data/catalog.json` and the dataset stats in `web/data/release.json`; it no longer touches `web/public/v1/*` — the served pointer and release tree belong to `litespm catalog build` (single writer per key). Listing ids are funnelled through fail-closed `canonical_id()` (an earlier revision shipped six ids the domain grammar rejects). CI never runs it (`ARCH/31` §4.3) | Close `D4` (the ingestion/publication split above is implemented, not adjudicated); add row assertions |
 
 **Companion guides for this section.** [`scripts/README.md`](scripts/README.md) inventories every
-script in `scripts/` and records which workflow (if any) runs it — `ci.yml` only syntax-checks them
-and `release.yml` runs exactly one. [`web/README.md`](web/README.md) documents the static
+script in `scripts/` and records which workflow (if any) runs it — `ci.yml` syntax-checks them all
+**and executes `deploy-pages.sh`** in its `build-web` job, and `release.yml` executes
+`build-release.sh`. [`web/README.md`](web/README.md) documents the static
 marketplace: verified commands, layout, deploy path, and why the site and the binary can read
 different catalog files.
 
@@ -131,10 +134,12 @@ table.
 
 ## Not yet true, and not claimed
 
-An end-to-end agent-driven install; provider autostart (the `providers` table is
-never populated by non-test code); a project manifest + lockfile; signed
-releases or packages; runtime policy enforcement; `invoke` / `get` / `cancel`;
-an invocation registry; and any isolation level beyond process supervision.
-(The catalog release tree **is** published and the live origin serves it —
-`catalog sync` was verified against it on 2026-10-05.) Signed releases remain
-the gap that blocks the most downstream work.
+Provider **autostart** (the `providers` table is written by `internal/discover` on
+`capabilities refresh`, but nothing persists a provider row **at install time**, so a fresh
+machine has nothing to autostart); a project manifest + lockfile; signed releases or packages;
+runtime policy enforcement at install time; `invocation.get` / `invocation.cancel` (an
+invocation registry); plugin installation; and any isolation level beyond process supervision.
+(An agent-driven install **does** complete for skill and MCP-server listings — plan + human
+approval → skills ledger / host-config registration. The catalog release tree **is** published
+and the live origin serves it — `catalog sync` was verified against it on 2026-10-05.)
+Signed releases remain the gap that blocks the most downstream work.

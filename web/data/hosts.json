@@ -45,7 +45,7 @@
     "format": "json",
     "keyPath": "mcpServers",
     "shape": "object",
-    "userPath": "~/data/mcp_server.json",
+    "userPath": "\u003cproject\u003e/data/mcp_server.json",
     "docsUrl": "https://github.com/AstrBotDevs/AstrBot/wiki/en-use-mcp",
     "generic": true
   },
@@ -73,6 +73,8 @@
     "id": "claude-code",
     "name": "Claude Code CLI",
     "format": "json",
+    "keyPath": "mcpServers",
+    "shape": "object",
     "userPath": "~/.claude.json",
     "generic": false
   },
@@ -80,7 +82,9 @@
     "id": "cline",
     "name": "Cline (VS Code Extension)",
     "format": "json",
-    "userPath": "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+    "keyPath": "mcpServers",
+    "shape": "object",
+    "userPath": "~/.cline/data/settings/cline_mcp_settings.json",
     "generic": false
   },
   {
@@ -118,6 +122,8 @@
     "id": "codex",
     "name": "OpenAI Codex CLI",
     "format": "toml",
+    "keyPath": "mcp_servers",
+    "shape": "object",
     "userPath": "~/.codex/config.toml",
     "generic": false
   },
@@ -146,7 +152,7 @@
     "name": "Crush",
     "format": "json",
     "keyPath": "mcp",
-    "shape": "object",
+    "shape": "stdio-typed",
     "userPath": "~/.config/crush/crush.json",
     "docsUrl": "https://charmbracelet-crush.mintlify.app/configuration/mcp",
     "generic": true
@@ -245,6 +251,8 @@
     "id": "grok-build",
     "name": "Grok Build (xAI Dev Tool)",
     "format": "toml",
+    "keyPath": "mcp_servers",
+    "shape": "object",
     "userPath": "~/.grok/config.toml",
     "generic": false
   },
@@ -363,6 +371,8 @@
     "id": "opencode",
     "name": "OpenCode CLI",
     "format": "json",
+    "keyPath": "mcp",
+    "shape": "local-array",
     "userPath": "~/.config/opencode/opencode.json",
     "generic": false
   },
@@ -380,6 +390,8 @@
     "id": "pi-agent",
     "name": "Pi Agent (Terminal Agent)",
     "format": "json",
+    "keyPath": "mcpServers",
+    "shape": "object",
     "userPath": "~/.pi/agent/mcp.json",
     "generic": false
   },
@@ -461,7 +473,7 @@
     "keyPath": "mcpServers",
     "shape": "object",
     "userPath": "~/.tabnine/agent/settings.json",
-    "docsUrl": "https://docs.tabnine.com/main/tabnine-agent/mcp-intro-and-setup/mcp-server-config",
+    "docsUrl": "https://docs.tabnine.com/main/getting-started/tabnine-agent/mcp-intro-and-setup/mcp-server-config",
     "generic": true
   },
   {

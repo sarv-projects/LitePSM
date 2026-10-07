@@ -225,17 +225,17 @@ func Diff(a, b *Profile) []string {
 
 // Lease scopes a capability to a session/task with a mandatory TTL.
 type Lease struct {
-	LeaseID           string    `json:"leaseId"`
-	CapabilityID      string    `json:"capabilityId"`
-	SchemaFingerprint string    `json:"schemaFingerprint"`
-	Scope             string    `json:"scope"` // session | task
-	SessionID         string    `json:"sessionId,omitempty"`
-	TaskID            string    `json:"taskId,omitempty"`
-	Permissions       []string  `json:"permissions"`
-	IssuedAt          time.Time `json:"issuedAt"`
-	ExpiresAt         time.Time `json:"expiresAt"`
+	LeaseID           string     `json:"leaseId"`
+	CapabilityID      string     `json:"capabilityId"`
+	SchemaFingerprint string     `json:"schemaFingerprint"`
+	Scope             string     `json:"scope"` // session | task
+	SessionID         string     `json:"sessionId,omitempty"`
+	TaskID            string     `json:"taskId,omitempty"`
+	Permissions       []string   `json:"permissions"`
+	IssuedAt          time.Time  `json:"issuedAt"`
+	ExpiresAt         time.Time  `json:"expiresAt"`
 	RevokedAt         *time.Time `json:"revokedAt,omitempty"`
-	IssuedBy          string    `json:"issuedBy,omitempty"`
+	IssuedBy          string     `json:"issuedBy,omitempty"`
 }
 
 // IssueLease creates a lease. TTL is mandatory; permissions must be a subset

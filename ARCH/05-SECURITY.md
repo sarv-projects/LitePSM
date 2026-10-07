@@ -58,7 +58,7 @@ Two honesty notes bound this diagram:
 
 ## 2. Artifact Extraction & Filesystem Safety
 
-Third-party packages (skills, MCP distribution archives, plugins) are untrusted. Artifact extraction is centralized in `internal/artifact` and called from the install engine (`internal/install/engine.go:322,345`). No production path currently supplies an archive to that engine (MCP/plugin installs fail closed with `LPSM-ARTIFACT-UNAVAILABLE`); skills install as files through `internal/skills`, which refuses symlinks and bounds the copied tree.
+Third-party packages (skills, MCP distribution archives, plugins) are untrusted. Artifact extraction is centralized in `internal/artifact` and called from the install engine (`internal/install/engine.go:322,345`). No production path currently supplies an archive to that engine (plugin installs fail closed with `LPSM-ARTIFACT-UNAVAILABLE`); skills install as files through `internal/skills`, which refuses symlinks and bounds the copied tree, and MCP servers install as a config entry with no artifact at all.
 
 ### 2.1 Extraction Safety Thresholds
 
@@ -118,7 +118,7 @@ Users may explicitly configure local filesystem paths or private network Git rep
 
 ## 4. Nested MCP Capability Clamping
 
-When the LiteSPM Daemon acts as an MCP client connecting to downstream local or remote MCP servers, it **clamps** its advertised client capabilities to protect user privacy. The clamps are implemented in `internal/mcpclient`, which has **zero production importers** ([STATUS.md](../STATUS.md) §4), so the whole set is `IMPLEMENTED`, not `WIRED`:
+When the LiteSPM Daemon acts as an MCP client connecting to downstream local or remote MCP servers, it **clamps** its advertised client capabilities to protect user privacy. The clamps are implemented in `internal/mcpclient`, whose first production importer is `internal/discover` ([STATUS.md](../STATUS.md) §4): the **stdio** profile — the only one a published listing can reach — runs on that path with `"capabilities": {}`, while the HTTP and legacy profiles still have no caller because the catalog publishes no URL. Item-by-item:
 
 1.  **Roots Forwarding Disabled:** `DefaultClientCaps()` returns `Roots: nil` (`internal/mcpclient/types.go:78-84`); the modern client attaches it to request metadata (`client_2026.go:66`) and the stdio client initializes with `"capabilities": {}` (`client_stdio.go:47`). A downstream provider cannot query the user's workspace structure through LiteSPM.
 2.  **Model Sampling Disabled:** `Sampling` is likewise `nil` by default (`types.go:69,83`).

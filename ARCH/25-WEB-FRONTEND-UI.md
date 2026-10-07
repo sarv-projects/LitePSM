@@ -52,12 +52,21 @@ web/
   │       └── Toast.tsx               # Copy-feedback toasts
   └── app/ (App Router, `output: 'export'`, `trailingSlash: true`)
       ├── layout.tsx                  # IBM Plex Sans/Condensed/Mono, site JSON-LD, skip link
-      ├── page.tsx                    # Search-first home with curated rows + catalog grid
-      ├── explore/page.tsx            # Power-filter surface (kind/category/agent/verified/sort)
-      ├── package/page.tsx            # Detail via `/package/?slug=<key>` (slug or id)
-      ├── agents/page.tsx             # Supported consumer hosts with readiness
-      ├── categories/page.tsx         # Category index with per-kind breakdown
-      └── trending/page.tsx           # Coverage/count ranking (counts, not stars)
+      ├── page.tsx                    # thin wrapper: `next/dynamic` → HomeView
+      ├── HomeView.tsx                # Search-first home with curated rows + catalog grid
+      ├── explore/page.tsx            # wrapper → ExploreView.tsx (power-filter surface: kind/category/agent/verified/sort)
+      ├── package/page.tsx            # wrapper → PackageView.tsx (detail via `/package/?slug=<key>`, slug or id)
+      ├── agents/page.tsx             # wrapper → AgentsView.tsx (supported consumer hosts with readiness)
+      ├── categories/page.tsx         # wrapper → CategoriesView.tsx (category index with per-kind breakdown)
+      └── trending/page.tsx           # wrapper → TrendingView.tsx (coverage/count ranking — counts, not stars)
+
+Each `page.tsx` is a ~15-line client wrapper whose only job is route-level code
+splitting: the `*View` module statically imports `data/catalog.json` (≈2.8 MB),
+so loading it through `next/dynamic` keeps that chunk out of every route's
+synchronous script set — the framework/layout hydrate first, and the catalog
+arrives as one shared async chunk at low fetch priority. `ssr: true` keeps the
+prerendered HTML, and React retains that server HTML across the suspended
+hydration.
 ```
 
 ---
@@ -66,12 +75,11 @@ web/
 
 ### 3.1 Header & Dynamic Telemetry Badge
 *   **Sticky Header:** Displays the LiteSPM logo, primary navigation links (**Explore**, **Agents**, **Categories**, **Coverage** → `/trending/`), kind tabs (All/MCP servers/Agent skills/Plugins with live counts), and a GitHub link.
-*   **Dynamic Telemetry Eyebrow Badge:** An animated status pill dynamically bound to `/v1/current.json` (never hard-coded):
-    *   **Live Capability Count:** Dynamically formatted from `current.json.itemCount` (e.g., `itemCount.toLocaleString() + " Capabilities"`).
-    *   **Relative Recency:** Dynamically calculated from `current.json.createdAt` against the client clock (e.g., `formatDistanceToNow(new Date(createdAt)) + " ago"`).
-    ```text
-    ● {itemCount.toLocaleString()} Capabilities · Updated {formatDistanceToNow(createdAt)} ago
-    ```
+*   **Release Stamp (`web/components/hero/HeroSection.tsx` → `ReleaseStamp`):** a status pill in the hero whose text is the *observed* state of a real `GET /v1/current.json`, never a hard-coded liveness claim:
+    *   **`loading`** (the first render, prerendered HTML included): `Checking release…` — the bundled manifest proves what this build shipped, not that the origin still serves it.
+    *   **`ready`** (the fetch answered 2xx): `Live catalog · Updated {relativeAge(createdAt)}`, with `releaseId · seq · manifestDigest` in the `title`. `relativeAge` reads the client clock, so it is computed after mount rather than during render (a `Date.now()` in render would hydrate to a different string than the server printed).
+    *   **`offline`** (the fetch failed): `Bundled catalog` — the counts on screen are the build's own snapshot.
+*   **Dynamic counts:** `itemCount` and the per-kind counts come from `current.json` once it answers, falling back to counts derived from the bundled listings; the hero never prints a zero placeholder while the data is still loading.
 
 ### 3.2 Dynamic Omni-Search & Category Rail
 *   **Search Form:** Centered input with glassmorphism blur, leading search icon, trailing keyboard shortcut pill (`⌘K`), and clear button.

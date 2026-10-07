@@ -209,6 +209,41 @@ Flags:
   --help, -h  show this help text`)
 }
 
+// registryURLOf returns the configured catalog origin, falling back to the
+// compiled default when configuration could not be loaded.
+func registryURLOf(cfg *config.Config) string {
+	if cfg != nil && cfg.Catalog.RegistryURL != "" {
+		return cfg.Catalog.RegistryURL
+	}
+	return config.DefaultRegistryURL
+}
+
+// catalogTimeoutOf returns the configured catalog request timeout
+// (LITESPM_NETWORK_TIMEOUT_SEC / [network]). A zero value selects the
+// catalog client's compiled default, so a configuration read failure can only
+// ever fall back to the documented 30s, never disable the bound.
+func catalogTimeoutOf(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.Network.Timeout <= 0 {
+		return 0
+	}
+	return cfg.Network.Timeout
+}
+
+// policyDefaultsFrom maps loaded configuration onto the policy engine's
+// defaults. When configuration could not be read at all it returns the secure
+// compiled defaults rather than a zero value, because a config read failure
+// must never weaken the policy gate (a zero value would switch
+// EnforceSignatures off).
+func policyDefaultsFrom(cfg *config.Config) policy.Defaults {
+	if cfg == nil {
+		return policy.SecureDefaults()
+	}
+	return policy.Defaults{
+		DefaultLevel:      cfg.Policy.DefaultLevel,
+		EnforceSignatures: cfg.Policy.EnforceSignatures,
+	}
+}
+
 func runSelfUpdate(args []string) {
 	if hasFlag(args, "--help") || hasFlag(args, "-h") {
 		selfUpdateUsage()
@@ -228,7 +263,7 @@ func runSelfUpdate(args []string) {
 	// (catalog metadata) and is never consulted for binaries. Configuration may
 	// still bound the download size.
 	maxDownload := int64(defaultUpdateDownloadLimit)
-	if cfg, cfgErr := config.LoadConfig(""); cfgErr == nil && cfg != nil && cfg.Network.MaxDownloadSizeBytes > 0 {
+	if cfg, cfgErr := config.LoadCurrentConfig(); cfgErr == nil && cfg != nil && cfg.Network.MaxDownloadSizeBytes > 0 {
 		maxDownload = cfg.Network.MaxDownloadSizeBytes
 	}
 
@@ -730,13 +765,10 @@ func runSearch(query string) {
 		os.Exit(1)
 	}
 
-	cfg, _ := config.LoadConfig("")
-	regURL := config.DefaultRegistryURL
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		regURL = cfg.Catalog.RegistryURL
-	}
+	cfg, _ := config.LoadCurrentConfig()
+	regURL := registryURLOf(cfg)
 
-	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
+	catClient := catalog.NewClientWithTimeout(regURL, paths.DataRoot, catalogTimeoutOf(cfg), nil)
 	results := catClient.Search(query, catalog.SearchOptions{Limit: 25})
 
 	if len(results) == 0 {
@@ -896,12 +928,9 @@ func runInstall(args []string) {
 	// Resolve the listing from the local catalog index so the install can route
 	// by kind. A skill installs as files through the skills ledger; every other
 	// kind needs an artifact the catalog does not carry yet and fails closed.
-	cfg, _ := config.LoadConfig("")
-	regURL := config.DefaultRegistryURL
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		regURL = cfg.Catalog.RegistryURL
-	}
-	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
+	cfg, _ := config.LoadCurrentConfig()
+	regURL := registryURLOf(cfg)
+	catClient := catalog.NewClientWithTimeout(regURL, paths.DataRoot, catalogTimeoutOf(cfg), nil)
 
 	fmt.Printf("Resolving and installing %s...\n", flags.listingID)
 	listing, listingErr := catClient.GetListing(flags.listingID)
@@ -987,13 +1016,10 @@ func runCatalogSync() {
 		os.Exit(1)
 	}
 
-	cfg, _ := config.LoadConfig("")
-	regURL := config.DefaultRegistryURL
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		regURL = cfg.Catalog.RegistryURL
-	}
+	cfg, _ := config.LoadCurrentConfig()
+	regURL := registryURLOf(cfg)
 
-	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
+	catClient := catalog.NewClientWithTimeout(regURL, paths.DataRoot, catalogTimeoutOf(cfg), nil)
 	fmt.Printf("Synchronizing catalog from %s...\n", regURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1499,7 +1525,7 @@ func runDaemonServe() {
 		os.Exit(1)
 	}
 
-	cfg, _ := config.LoadConfig("")
+	cfg, _ := config.LoadCurrentConfig()
 	lockFile, err := acquireLock(paths.DaemonLockPath())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal: unable to acquire daemon single-instance lock: %v\n", err)
@@ -1535,11 +1561,8 @@ func runDaemonServe() {
 		os.Exit(1)
 	}
 
-	regURL := config.DefaultRegistryURL
-	if cfg != nil && cfg.Catalog.RegistryURL != "" {
-		regURL = cfg.Catalog.RegistryURL
-	}
-	catClient := catalog.NewClient(regURL, paths.DataRoot, nil)
+	regURL := registryURLOf(cfg)
+	catClient := catalog.NewClientWithTimeout(regURL, paths.DataRoot, catalogTimeoutOf(cfg), nil)
 
 	// Provider lifecycle: construct the supervisor, start what the state
 	// database says should autostart, and stop everything on shutdown.
@@ -1567,7 +1590,7 @@ func runDaemonServe() {
 	server := ipc.NewServer(Version, ProtocolVersion)
 
 	// Register Core Handlers
-	registerCoreHandlers(server, db, catClient, installEngine, paths, secretStore, supervisor)
+	registerCoreHandlers(server, db, catClient, installEngine, paths, secretStore, supervisor, policyDefaultsFrom(cfg))
 
 	// Signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -1592,8 +1615,8 @@ func runDaemonServe() {
 	fmt.Println("[daemon] Shutdown complete.")
 }
 
-func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client, installEngine *install.Engine, paths *config.PlatformPaths, secretStore secrets.SecretStore, supervisor *provider.Supervisor) {
-	policyEngine := policy.NewEngine(db, nil)
+func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.Client, installEngine *install.Engine, paths *config.PlatformPaths, secretStore secrets.SecretStore, supervisor *provider.Supervisor, policyDefaults policy.Defaults) {
+	policyEngine := policy.NewEngineWithDefaults(db, nil, policyDefaults)
 	installEngine.SetPolicy(policyEngine)
 
 	// 1. tools.list returns installed capabilities & external detected tools.
@@ -2376,6 +2399,13 @@ func (p *catalogResolutionProvider) GetListingVersions(ctx context.Context, list
 // buildInstallPlan resolves the requested listing with the real resolver and
 // seals the outcome into a persisted InstallPlan. Resolution failures are
 // returned as RPC errors carrying the resolver's LPSM-RESOLVE-* details.
+//
+// Every field the plan declares is derived from data already in hand — the
+// listing, the catalog's published version record for the selected version,
+// and the hosts this install scope actually targets. A fact that cannot be
+// established here stays empty: preconditions.runtimesFound in particular is
+// a claim that a runtime was observed on this machine, and nothing in this
+// path probes the machine, so it is never filled from declared requirements.
 func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, version string, scope domain.InstallScope, listing *domain.Listing) (*domain.InstallPlan, *ipc.RPCError) {
 	r := resolver.NewResolver(&catalogResolutionProvider{client: catClient})
 	res, err := r.Resolve(ctx, id, version)
@@ -2386,6 +2416,22 @@ func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, versio
 	planID, err := newPlanID()
 	if err != nil {
 		return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+	}
+
+	// The published version record for the selected version: the only place
+	// the catalog states a transport, permissions or requirements. Absent
+	// (unsynced index, listing with no recorded version) means "not knowable"
+	// and every consumer below treats nil as empty rather than as an error.
+	versionRec := versionRecordFor(catClient, id, res.SelectedVersions[id])
+
+	// The default install targets for this scope: hosts whose LiteSPM bridge
+	// verifies as registered. installMCPFromListing resolves the same list at
+	// execution time, so this is the set the approval is being asked about
+	// (an explicit --host at install time names a host outside this list; the
+	// plan records the scope default, not a future flag).
+	var targetHosts []string
+	if listing != nil && listing.Kind == domain.KindMCP {
+		targetHosts = host.RegisteredBridgeHosts(ctx, scope)
 	}
 
 	now := time.Now().UTC()
@@ -2403,7 +2449,14 @@ func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, versio
 			Version:   res.SelectedVersions[id],
 			Artifacts: []domain.PlanArtifact{},
 		},
-		Effects: []string{"package.install"},
+		Effects: planEffects(listing, versionRec, targetHosts),
+		// Preconditions is deliberately left at zero: runtimesFound claims a
+		// runtime was observed on this machine, and nothing in this path
+		// probes the machine — the resolver publishes no runtime requirements
+		// either (its nodes carry versions and dependencies only).
+		Preconditions:   domain.PlanPreconditions{},
+		HostChanges:     hostChangesFor(ctx, listing, scope, targetHosts),
+		RequestedAccess: requestedAccessFor(versionRec),
 	}
 
 	// Immutable ref of the selected version, sourced from the catalog index.
@@ -2430,6 +2483,161 @@ func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, versio
 	}
 	plan.PlanHash = planHash
 	return plan, nil
+}
+
+// versionRecordFor returns the catalog's published version record for a
+// listing's selected version, or nil when there is none (an index that was
+// never synced, a listing whose versions were never recorded). Callers treat
+// nil as "not knowable" and leave the dependent plan fields empty rather than
+// substituting a guess.
+func versionRecordFor(catClient *catalog.Client, id, version string) *domain.VersionRecord {
+	if catClient == nil || id == "" {
+		return nil
+	}
+	rec, err := catClient.VersionRecordFor(id, version)
+	if err != nil {
+		return nil
+	}
+	return rec
+}
+
+// declaresRemoteTransport reports whether any component of the version record
+// declares an sse or http runtime — i.e. the server is reached over the
+// network rather than spawned locally. A record that publishes no runtime
+// declares nothing, so it yields false instead of a default.
+func declaresRemoteTransport(rec *domain.VersionRecord) bool {
+	if rec == nil {
+		return false
+	}
+	for _, comp := range rec.Components {
+		if comp.Runtime == nil {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(comp.Runtime.Type)) {
+		case "sse", "http":
+			return true
+		}
+	}
+	return false
+}
+
+// planEffects derives the plan's effect list from what the listing, its
+// published runtime and the install scope actually say:
+//
+//	kind mcp    -> package.install, host.config.write when this scope has at
+//	               least one target host, network.outbound when the published
+//	               runtime claims an sse or http transport;
+//	kind skill  -> package.install, filesystem.write for the skill files it
+//	               lays down;
+//	anything else -> package.install only: the catalog publishes no artifact
+//	               for it yet, so naming further effects would be speculation.
+//
+// Every name is a canonical policy effect (policy.ValidEffects), so a plan's
+// effects are the same vocabulary the engine evaluates. Where an effect lands
+// (which host config, which directory) is recorded structurally in hostChanges,
+// not encoded into the effect name.
+func planEffects(listing *domain.Listing, rec *domain.VersionRecord, targetHosts []string) []string {
+	effects := []string{string(policy.EffectPackageInstall)}
+	if listing == nil {
+		return effects
+	}
+	switch listing.Kind {
+	case domain.KindMCP:
+		if len(targetHosts) > 0 {
+			effects = append(effects, string(policy.EffectHostConfig))
+		}
+		if declaresRemoteTransport(rec) {
+			effects = append(effects, string(policy.EffectNetworkOutbound))
+		}
+	case domain.KindSkill:
+		effects = append(effects, string(policy.EffectFilesystemWrite))
+	}
+	return effects
+}
+
+// hostChangesFor lists the config files this install will write, one entry
+// per target host of the scope. Nothing else is filled in: ConfigPath is
+// resolved through the adapter that will do the writing, Action is the
+// documented `register_command` for an MCP server entry, and EntryKey is the
+// name the server is stored under — which is derivable from the listing, and
+// left empty (rather than dropped or guessed) if the listing has no usable
+// name. The written entry's value is not known until install time, so
+// ValueJSON stays empty.
+func hostChangesFor(ctx context.Context, listing *domain.Listing, scope domain.InstallScope, targetHosts []string) []domain.HostChange {
+	if listing == nil || listing.Kind != domain.KindMCP || len(targetHosts) == 0 {
+		return nil
+	}
+	entryKey := ""
+	if name, err := serverEntryNameFor(listing); err == nil {
+		entryKey = name
+	}
+	changes := make([]domain.HostChange, 0, len(targetHosts))
+	for _, hostID := range targetHosts {
+		configPath := ""
+		if adapter, aerr := host.GetAdapter(hostID); aerr == nil {
+			if p, derr := adapter.DetectConfig(ctx, scope); derr == nil {
+				configPath = p
+			}
+		}
+		changes = append(changes, domain.HostChange{
+			HostID:     hostID,
+			ConfigPath: configPath,
+			Action:     "register_command",
+			EntryKey:   entryKey,
+		})
+	}
+	return changes
+}
+
+// requestedAccessFor carries a version record's own declarations into the
+// plan's requested-access buckets, so the consent document shows what the
+// package asked for. No wired source declares permissions today (the dataset
+// generator deliberately writes an empty list — see internal/catalogbuild/
+// dataset.go), so this returns nil for every current row; it exists so a
+// declaration that does appear is surfaced rather than silently dropped.
+//
+// A declaration is filed by its declared type against the three buckets the
+// plan document has, and the recorded value is the declaration's own resource
+// (its target, or its type when it names none) — the bucket is only a
+// grouping, and no string here is composed by this function. Tool-typed
+// requirements are requested tools in the same sense.
+func requestedAccessFor(rec *domain.VersionRecord) *domain.RequestedAccess {
+	if rec == nil {
+		return nil
+	}
+	var out domain.RequestedAccess
+	add := func(kind, resource string) {
+		switch strings.ToLower(strings.TrimSpace(kind)) {
+		case "fs", "file", "filesystem", "path":
+			out.Paths = append(out.Paths, resource)
+		case "net", "network", "host", "url", "endpoint":
+			out.Hosts = append(out.Hosts, resource)
+		default:
+			out.Tools = append(out.Tools, resource)
+		}
+	}
+	for _, perm := range rec.PermissionsDeclared {
+		resource := strings.TrimSpace(perm.Target)
+		if resource == "" {
+			resource = strings.TrimSpace(perm.Type)
+		}
+		if resource == "" {
+			continue // a declaration naming neither a type nor a target says nothing
+		}
+		add(perm.Type, resource)
+	}
+	for _, req := range rec.Requirements {
+		if !strings.EqualFold(strings.TrimSpace(req.Type), "tool") {
+			continue // runtimes and env vars are prerequisites, not access
+		}
+		if name := strings.TrimSpace(req.Name); name != "" {
+			out.Tools = append(out.Tools, name)
+		}
+	}
+	if len(out.Tools)+len(out.Paths)+len(out.Hosts) == 0 {
+		return nil
+	}
+	return &out
 }
 
 // installRPCError maps install engine failures onto the JSON-RPC codes the

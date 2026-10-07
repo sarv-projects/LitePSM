@@ -117,6 +117,25 @@ func LoadConfig(projectDir string) (*Config, error) {
 	return cfg, nil
 }
 
+// LoadCurrentConfig loads configuration for the directory the process was
+// invoked from, so a project's `.litespm/config.toml` actually participates
+// (precedence step 3 above).
+//
+// Every command-line entry point used to call LoadConfig(""), which made the
+// project config unreachable no matter where the CLI ran: registry URL, policy
+// level and download bounds were silently read from the user file only. The
+// working directory is the project root for a CLI run, which is the directory
+// `.litespm/` lives in. When the working directory cannot be resolved (deleted
+// underneath the process), configuration still loads without step 3 instead of
+// failing the command.
+func LoadCurrentConfig() (*Config, error) {
+	dir, err := os.Getwd()
+	if err != nil || dir == "" {
+		return LoadConfig("")
+	}
+	return LoadConfig(dir)
+}
+
 // envOverride returns the value of the current-name environment variable, or
 // the legacy-name variable when the current one is unset.
 //

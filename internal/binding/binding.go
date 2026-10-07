@@ -45,8 +45,8 @@ func ParseMode(raw string) (Mode, error) {
 // Request describes what should be bound where.
 type Request struct {
 	ListingID domain.ListingID `json:"listingId"`
-	Mode      Mode              `json:"mode"`
-	HostID    string            `json:"hostId"`
+	Mode      Mode             `json:"mode"`
+	HostID    string           `json:"hostId"`
 }
 
 // Decision is the resolved binding.

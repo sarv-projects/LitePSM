@@ -3,7 +3,7 @@
 ## 1. System Topology & Architecture
 
 LiteSPM is bifurcated into two strictly isolated environments:
-1.  **Public Discovery Plane (Cloud):** A static, read-only distribution. The deployed catalog data is produced by `scripts/build_full_catalog.py` (the Python builder is the deployed producer; CI does not run it — [STATUS.md](../STATUS.md) §6) and served from a static origin: `/v1/current.json` is live today, while immutable `/v1/releases/<id>/…` trees are not yet published.
+1.  **Public Discovery Plane (Cloud):** A static, read-only distribution. The deployed catalog data is produced by `scripts/build_full_catalog.py` (the Python builder is the deployed producer; CI does not run it — [STATUS.md](../STATUS.md) §6) and served from a static origin: `/v1/current.json` **and** the immutable `/v1/releases/<id>/…` trees are live today (probe 2026-10-05: all four files `200`, byte-identical to the committed release).
 2.  **Local Control Plane (Workstation):** A client-side system consisting of thin, host-specific **Bridge Shims** communicating via secure local IPC with a persistent, single-writer **LiteSPM Daemon**.
 
 ```text
@@ -35,8 +35,8 @@ LiteSPM is bifurcated into two strictly isolated environments:
     └──────┬──────┘   └──────┬──────┘   └──────┬──────┘            │
            │                 │                 │                   │
            └─────────────────┼─────────────────┴───────────────────┘
-                             │ Local Authenticated IPC
-                             │ (Windows Named Pipe / Unix Domain Socket)
+                             │ Local IPC (OS-level ACLs:
+                             │ Windows Named Pipe DACL / Unix Domain Socket 0600)
                              ▼
     ┌─────────────────────────────────────────────────────────────────────────┐
     │                           LiteSPM Daemon                                │
@@ -79,7 +79,7 @@ To guarantee data integrity and prevent concurrency hazards across multiple simu
     1.  Speaks standard MCP JSON-RPC over `stdin`/`stdout`.
     2.  Identifies host identity (`--host claude-code`) and session attributes.
     3.  Dials the local IPC endpoint of the LiteSPM Daemon. **It never launches the daemon**: if the dial fails, `litespm bridge` runs standalone with no capabilities and says so on stderr, telling the user to start `litespm daemon serve` (`cmd/litespm/main.go:344-348`).
-    4.  Translates MCP tool calls to internal IPC RPCs (`search_catalog` → `catalog.search`, `prepare_install` → `resolver.prepare_plan`, …). Five tools (`search_capabilities`, `describe_capability`, `invoke_capability`, `get_invocation`, `cancel_invocation`) map to handlers that return explicit `-32601` today ([STATUS.md](../STATUS.md) §4).
+    4.  Translates MCP tool calls to internal IPC RPCs (`search_catalog` → `catalog.search`, `prepare_install` → `resolver.prepare_plan`, …). `search_capabilities`, `describe_capability` and `invoke_capability` resolve over discovered capability rows through `internal/discover`; only `get_invocation` and `cancel_invocation` map to handlers that return explicit `-32601` today, because the asynchronous registry they need is `ARCH/34` (`DESIGNED`) ([STATUS.md](../STATUS.md) §4).
     5.  Exits cleanly when the host agent terminates stdio.
 *   **Prohibitions:** The Bridge Shim **never** opens SQLite directly, never writes to configuration files, and never launches downstream provider child processes.
 
@@ -159,15 +159,15 @@ sequenceDiagram
         User->>Host: Approves installation
         Host->>Shim: MCP tools/call: request_install(planId, approvalToken)
         Shim->>Daemon: IPC: install.execute(planId, approvalToken)
-        Note over Daemon: skills install through the skills ledger;<br/>MCP/plugin fail closed (LPSM-ARTIFACT-UNAVAILABLE —<br/>no artifact source; internal/install/engine.go:204).
-        Daemon-->>Shim: ERROR: LPSM-ARTIFACT-UNAVAILABLE (MCP/plugin)
-        Shim-->>Host: MCP tool error — MCP/plugin install cannot complete (STATUS §3)
+        Note over Daemon: skills install through the skills ledger, MCP servers are registered<br/>in each target host's config (plan + approval required);<br/>only plugins fail closed (LPSM-ARTIFACT-UNAVAILABLE —<br/>no artifact source; internal/install/engine.go:204).
+        Daemon-->>Shim: ERROR: LPSM-ARTIFACT-UNAVAILABLE (plugins only)
+        Shim-->>Host: MCP tool error — plugin install cannot complete (STATUS §3)
     else Host does not support elicitation (human CLI path)
         User->>User: litespm install "listing-id" --version "ver" --scope user or project
-        Note over User: The CLI takes no --plan-id: it does not consume the persisted plan.<br/>It routes by kind: skills install real files; MCP/plugin fail closed.
+        Note over User: The CLI takes no --plan-id: it records its own plan and approval.<br/>It routes by kind: skills install real files, MCP servers register in host configs;<br/>plugins fail closed.
     end
 
-    Note over Daemon,Store: The steps below are the engine's real executed path; today nothing<br/>supplies an archive artifact source, so only skill installs (a different path) complete.
+    Note over Daemon,Store: The steps below are the engine's real executed path; today nothing<br/>supplies an archive artifact source, so a plugin install (a different path) cannot complete.
 
     Daemon->>Daemon: Verify planHash & expiry when a planId was bound (engine.loadPlan)
     Daemon->>DB: INSERT INTO operations (state='created')
@@ -242,7 +242,7 @@ sequenceDiagram
     Daemon->>Daemon: Start IPC listener (Named Pipe / Domain Socket)
 ```
 
-> **Status of §4.3–§4.4.** Recovery is implemented and test-covered (`internal/state/operations.go:243-343`; `TESTED` per [STATUS.md](../STATUS.md) §1). The §4.3 invocation flow is **not**: `provider.invoke` / `invocation.get` / `invocation.cancel` and the Bridge tools `invoke_capability` / `get_invocation` / `cancel_invocation` return explicit `-32601` — there is no invocation registry and no persisted capability rows (`cmd/litespm/main.go:1673-1698`; [STATUS.md](../STATUS.md) §4). §4.3 is target design specified in `ARCH/34` (`DESIGNED`).
+> **Status of §4.3–§4.4.** Recovery is implemented and test-covered (`internal/state/operations.go:243-343`; `TESTED` per [STATUS.md](../STATUS.md) §1). The §4.3 invocation flow is **partly** real: `provider.invoke` and the Bridge tool `invoke_capability` now resolve synchronously through `internal/discover` (probe → policy → schema-fingerprint re-check → call), but `invocation.get` / `invocation.cancel` and their Bridge counterparts still return explicit `-32601` — there is no asynchronous invocation registry (`cmd/litespm/main.go:2216,2225`; [STATUS.md](../STATUS.md) §4). The asynchronous, receipted §4.3 is target design specified in `ARCH/34` (`DESIGNED`).
 
 ---
 

@@ -27,12 +27,12 @@
 
 | Agent Host | Environment | Configuration Format | Default Config Path |
 |---|---|---|---|
-| **Cline** | VS Code Extension | JSON (`cline_mcp_settings.json`) | Windows: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\`<br>macOS: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/`<br>Linux: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/`<br>Cline CLI (not managed): `~/.cline/data/settings/cline_mcp_settings.json` |
-| **Pi Agent** | Terminal Coding Agent (`pi`) | JSON (`mcp.json` / `config.json`) + TS Extension | Unix: `~/.pi/agent/mcp.json`<br>Windows: `%USERPROFILE%\.pi\agent\mcp.json`<br>Project: `.pi/mcp.json` (trust-gated)<br>Legacy fallback: `~/.pi/config.json` / `~/.pi/mcp.json` |
-| **Grok Build** | Terminal / IDE (`grok`) [id: `grok-build`] | TOML (`config.toml`) | Unix: `~/.grok/config.toml`<br>Windows: `%USERPROFILE%\.grok\config.toml`<br>Project: `.grok/config.toml`<br>Legacy fallback: `%APPDATA%\Grok\config.toml` |
+| **Cline** | VS Code Extension (plus the Cline CLI / JetBrains clients) | JSON (`cline_mcp_settings.json`) | **Current default (written):** `~/.cline/data/settings/cline_mcp_settings.json`, relocated by `CLINE_MCP_SETTINGS_PATH` or `CLINE_DATA_DIR`. **Legacy (read-only fallback, probed last):** the VS Code `globalStorage` path — Windows `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\`, macOS `~/Library/Application Support/Code/User/globalStorage/…`, Linux `~/.config/Code/User/globalStorage/…` (plus `Code - Insiders`); current Cline reads it only in a one-shot migration (`internal/host/cline.go`) |
+| **Pi Agent** | Terminal Coding Agent (`pi`) | JSON (`mcp.json`) + TS Extension | `~/.pi/agent/mcp.json` (Windows `%USERPROFILE%\.pi\agent\mcp.json`), relocated by `PI_CODING_AGENT_DIR`; written under `mcpServers`, the only container Pi reads. Project `.pi/mcp.json` is host-documented but **not** scanned by the adapter, and the former `~/.pi/config.json` / `~/.pi/mcp.json` fallbacks were **removed** — no Pi release reads them (`internal/host/piagent.go`) |
+| **Grok Build** | Terminal / IDE (`grok`) [id: `grok-build`] | TOML (`config.toml`) | `$GROK_HOME/config.toml` (default `~/.grok/config.toml`; Windows `%USERPROFILE%\.grok\config.toml`). Project `.grok/config.toml` is host-documented but not scanned; `%APPDATA%\Grok\config.toml` was **removed** as a fallback (`internal/host/grokbuild.go`) |
 | **Claude Code** | Terminal CLI (`claude`) | JSON (`~/.claude.json`) | Unix: `~/.claude.json`<br>Windows: `%USERPROFILE%\.claude.json`<br>Project: `.mcp.json` in project root (local scope entry in `~/.claude.json`)<br>Host-side: `CLAUDE_CONFIG_DIR` overrides the config directory **for Claude Code itself**; LiteSPM's adapter does not read it (`ARCH/16` §3.4) |
-| **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | Unix: `~/.codex/config.toml`<br>Windows: `%USERPROFILE%\.codex\config.toml`<br>Project: `.codex/config.toml`<br>Legacy fallback: `%APPDATA%\Codex\config.toml`; host-side: `$CODEX_HOME` overrides the directory **for Codex itself**, but the LiteSPM adapter does not honour it (`ARCH/16` §3.5) |
-| **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.json` - v1 `mcp` / v2 `mcp.servers`) | Unix: `~/.config/opencode/opencode.json`<br>Windows: `%USERPROFILE%\.config\opencode\opencode.json`<br>Project: `opencode.json` or `.opencode/`<br>Legacy fallback: `%APPDATA%\OpenCode\opencode.json` |
+| **OpenAI Codex** | Terminal CLI (`codex`) | TOML (`config.toml`) | `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`; Windows `%USERPROFILE%\.codex\config.toml`) — the adapter **does** honour `$CODEX_HOME`. Project `.codex/config.toml` is host-documented but not scanned; `%APPDATA%\Codex\config.toml` was **removed** as a fallback (`internal/host/codex.go`) |
+| **OpenCode** | Open-source CLI (`opencode`) | JSON (`opencode.jsonc` preferred, else `opencode.json`) | `$OPENCODE_CONFIG_DIR/{opencode.jsonc,opencode.json}` when set, else `$XDG_CONFIG_HOME/opencode/` (default `~/.config/opencode/`), `.jsonc` first — on every OS, because OpenCode resolves the directory through xdg-basedir. Project scope and `%APPDATA%\OpenCode\opencode.json` are **not** read by any release and are no longer probed. One layout only: servers are direct members of `mcp` (`internal/host/opencode.go`) |
 
 > Six bespoke adapters above. The full registry is 50 bridge targets (6 bespoke + 44 generic `BridgeTarget` rows) plus 77 skill targets — see `ARCH/30-DATA-DRIVEN-BRIDGE-TARGETS.md` and `litespm host list`.
 
@@ -72,7 +72,7 @@ Once configured, simply launch your agent and type:
 ```
 
 ### UX Architecture: Portable Contract vs. Rich Host UI
-*   **Portable Text / MCP Contract:** For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` exposes 12 Bridge tools. Those that resolve against the daemon today: `search_catalog`, `get_extension`, `prepare_install`, `list_installed`, `load_skill`, `read_skill_resource`. `request_install` reaches `install.execute`, which **completes for skill listings** (installs real skill files through the skills ledger) and fails closed with `LPSM-ARTIFACT-UNAVAILABLE` for MCP/plugin listings, whose artifact source is not wired ([STATUS.md](STATUS.md) §3). The following are `IMPLEMENTED` but return JSON-RPC `-32601` ("not implemented"): `search_capabilities`, `describe_capability`, `invoke_capability`, `get_invocation`, `cancel_invocation`.
+*   **Portable Text / MCP Contract:** For terminal CLI agents (`claude`, `codex`, `grok`, `opencode`), `/marketplace` exposes 12 Bridge tools. Those that resolve against the daemon today: `search_catalog`, `get_extension`, `prepare_install`, `list_installed`, `load_skill`, `read_skill_resource`, `search_capabilities`, `describe_capability`, `invoke_capability`. `request_install` reaches `install.execute`, which — behind the plan + human-approval gate in `cmd/litespm/install_authz.go` — **completes for skill listings** (real skill files through the skills ledger) **and for MCP-server listings** (the server is registered in each target host's config), and fails closed with `LPSM-ARTIFACT-UNAVAILABLE` for **plugin** listings only, whose artifact source is not wired ([STATUS.md](STATUS.md) §3). Only `get_invocation` and `cancel_invocation` return JSON-RPC `-32601` ("not implemented"), because the asynchronous invocation registry is `ARCH/34` (`DESIGNED`).
 *   **Rich Host Renderer:** In hosts supporting rich extension panels or terminal TUIs (e.g. Cline in VS Code or Pi Agent TUI), `/marketplace` opens the **LiteSPM Capability Panel** with 4 dedicated tabs:
 
 ```text
@@ -90,7 +90,7 @@ reads `[INSTALLED (0)]` on an empty install and grows with the ledger plus detec
 ### Tab 1: MCP Servers
 *   Full search bar filtering by name, category, or transport (`stdio` / `Streamable HTTP`).
 *   Displays verified badges and upstream GitHub links. No star, download or install counts are shown: no upstream source exposes them, so the catalog publishes none rather than an estimate.
-*   One-click install button that prepares an `InstallPlan`. **Execution completes for skills** (installs files through the skills ledger); MCP/plugin installs still need an artifact source ([STATUS.md](STATUS.md) §3).
+*   One-click install button that prepares an `InstallPlan`. **Execution completes for skills** (installs files through the skills ledger) **and for MCP servers** (registers the server in each target host's config), both behind the plan + human-approval gate; **plugin** listings still need an artifact source ([STATUS.md](STATUS.md) §3).
 
 ### Tab 2: Agent Skills
 *   Search portable `SKILL.md` workflows from `agentskills.io`.
@@ -122,35 +122,36 @@ own config file. It does **not** assert runtime health:
 ## 4. Agent-Specific Integration Guides
 
 ### 4.1 Cline (VS Code Extension)
-*   **How it works:** LiteSPM adds itself to `cline_mcp_settings.json` under `mcpServers.litespm`. This path is correct for the VS Code extension. The standalone Cline CLI uses a separate file (`~/.cline/data/settings/cline_mcp_settings.json`, and `~/.cline/mcp.json`) that LiteSPM does not currently manage.
+*   **How it works:** LiteSPM adds itself to `cline_mcp_settings.json` under `mcpServers.litespm`. The file it writes is the **shared** one every current Cline client reads — `~/.cline/data/settings/cline_mcp_settings.json` (`CLINE_MCP_SETTINGS_PATH` or `CLINE_DATA_DIR` relocate it). The VS Code extension's `globalStorage` copy (`%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\`, `~/Library/Application Support/Code/User/globalStorage/…`, `~/.config/Code/User/globalStorage/…`, plus `Code - Insiders`) is **legacy**: current Cline reads it only in a one-shot migration, so LiteSPM probes it last and only for a client too old to have migrated (`internal/host/cline.go`). There is no separate, unmanaged CLI file.
 *   **Accessing in Cline:**
     1.  Open VS Code and launch the Cline panel.
     2.  Click the MCP icon or type `/marketplace` in the prompt.
     3.  Browse available tools or view existing tools. Cline displays the green status dot in its MCP settings view.
 
 ### 4.2 Pi Agent (`pi-coding-agent`)
-*   **How it works:** Minimalist terminal agent by Mario Zechner. LiteSPM registers under the `mcpServers` key in `~/.pi/agent/mcp.json` (project scope `.pi/mcp.json` is trust-gated; the legacy `~/.pi/config.json` and `~/.pi/mcp.json` are fallbacks) and creates `~/.pi/agent/extensions/litespm.ts`.
+*   **How it works:** Minimalist terminal agent by Mario Zechner. LiteSPM registers under the `mcpServers` key — the only container Pi reads — in `<agent-dir>/mcp.json`, where the agent directory is `~/.pi/agent` (`%USERPROFILE%\.pi\agent` on Windows) unless `PI_CODING_AGENT_DIR` overrides it, and creates `<agent-dir>/extensions/litespm.ts`. There is no project-scope or legacy-fallback file: `~/.pi/config.json` and `~/.pi/mcp.json` appear in no Pi documentation or source, and probing them used to write the bridge into a file Pi never reads (`internal/host/piagent.go`).
 *   **Accessing in Pi:**
     1.  Launch `pi` in terminal.
     2.  Type `/marketplace search <term>` or run `/marketplace` to trigger the interactive capability selector.
     3.  Pi uses its minimal token footprint to query LiteSPM only on demand.
 
 ### 4.3 Grok Build
-*   **How it works:** Host id is `grok-build`. LiteSPM injects the stdio bridge under `[mcp_servers.litespm]` in `~/.grok/config.toml` (project scope `.grok/config.toml`). On native Windows the config is `%USERPROFILE%\.grok\config.toml`; `%APPDATA%\Grok\config.toml` is only a legacy fallback.
+*   **How it works:** Host id is `grok-build`. LiteSPM injects the stdio bridge under `[mcp_servers.litespm]` in `$GROK_HOME/config.toml` (default `~/.grok/config.toml`; on native Windows `%USERPROFILE%\.grok\config.toml`). `%APPDATA%\Grok\config.toml` appears in no xAI documentation and was **removed** as a fallback; the host-documented project file `.grok/config.toml` is not scanned by the adapter (`internal/host/grokbuild.go`, `ARCH/16` §3).
 *   **Accessing in Grok Build:**
     1.  Launch `grok` in terminal.
     2.  Type `/marketplace` to open the capability browser.
     3.  Grok detects the companion command hook and loads selected tools directly into its execution loop.
 
 ### 4.4 OpenAI Codex
-*   **How it works:** LiteSPM injects the stdio bridge into `~/.codex/config.toml` under `[mcp_servers.litespm]`. Project scope is `.codex/config.toml`; native Windows user scope is `%USERPROFILE%\.codex\config.toml` (`%APPDATA%\Codex\config.toml` is a legacy fallback). `$CODEX_HOME` overrides the config directory **for the host tool only**; LiteSPM's adapter does not honour it — it resolves `$HOME`/`%USERPROFILE%` (plus the `%APPDATA%` fallback) in `internal/host/codex.go` (`ARCH/16` §3.5).
+*   **How it works:** LiteSPM injects the stdio bridge into `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`; native Windows `%USERPROFILE%\.codex\config.toml`) under `[mcp_servers.litespm]`. The adapter **does** honour `$CODEX_HOME`, and the `%APPDATA%\Codex\config.toml` fallback was **removed** — it appears in no OpenAI documentation (the documented Windows system path is the administrator-owned `%ProgramData%\OpenAI\Codex\config.toml`, which LiteSPM does not write). The host-documented project file `.codex/config.toml` is not scanned by the adapter (`internal/host/codex.go`, `ARCH/16` §3.5).
 *   **Accessing in Codex:** Launch `codex` and type `/marketplace` or use the registered companion skill.
 
 ### 4.5 OpenCode
-*   **How it works:** LiteSPM injects into `~/.config/opencode/opencode.json` (native Windows `%USERPROFILE%\.config\opencode\opencode.json`; `%APPDATA%\OpenCode\opencode.json` is a legacy fallback), supporting both v1 flat `mcp` and v2 nested `mcp.servers` layouts. Project scope also supports `opencode.json` in the project root or `.opencode/`.
+*   **How it works:** LiteSPM writes into `$OPENCODE_CONFIG_DIR/opencode.jsonc` (preferred) or `opencode.json`, falling back to `$XDG_CONFIG_HOME/opencode/` — default `~/.config/opencode/` on Unix and `%USERPROFILE%\.config\opencode\` on Windows — because OpenCode resolves its config directory through xdg-basedir on every OS. `%APPDATA%\OpenCode\opencode.json` is read by no OpenCode release and is not probed; neither is a project-scope `opencode.json` / `.opencode/` (`internal/host/opencode.go`, `ARCH/16` §3).
+*   **Layout:** OpenCode has **one** documented layout — servers are direct members of the `mcp` object — so the nested `mcp.servers` shape earlier revisions wrote is pruned when it is empty. Both shapes are still *read* when detecting pre-existing tools, so nothing already configured is lost.
 *   **Local entry shape:** OpenCode local MCP entries require `"type": "local"` and a combined string array `"command"`:
     ```json
-    {"mcp":{"servers":{"litespm":{"type":"local","command":["litespm","bridge","stdio","--host","opencode"]}}}}
+    {"mcp":{"litespm":{"type":"local","command":["litespm","bridge","stdio","--host","opencode"]}}}
     ```
 *   **Accessing in OpenCode:** Type `/marketplace` in the OpenCode CLI.
 

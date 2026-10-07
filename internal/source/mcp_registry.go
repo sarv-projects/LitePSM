@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -124,9 +125,18 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 
 		// Process packages
 		for _, pkg := range srv.Packages {
-			verStr := pkg.Version
+			verStr := strings.TrimSpace(pkg.Version)
 			if verStr == "" {
-				verStr = "1.0.0"
+				// A package that published no version contributes nothing
+				// installable: no version summary, no artifact, no runtime.
+				// This used to default to "1.0.0", which manufactured a
+				// resolvable, installable row out of a guess — an artifact
+				// URL and a digest key built from a version the upstream
+				// never published. With every package like this the listing
+				// has zero versions and mcpInstallability marks it
+				// discovery_only, which is exactly what the catalog can
+				// stand behind for it.
+				continue
 			}
 
 			versionSummaries = append(versionSummaries, domain.VersionSummary{
@@ -256,7 +266,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 			Status: status,
 			// Only a registry entry that published a package or remote with a
 			// launch descriptor proved something installable.
-			Installability: mcpInstallability(len(versionSummaries)),
+			Installability: mcpInstallability(versionSummaries),
 		}
 
 		listings = append(listings, listing)
@@ -278,10 +288,19 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 	}, nil
 }
 
-// mcpInstallability maps "the registry entry published N versions" to the
-// proven installability class; zero published versions is discovery_only.
-func mcpInstallability(publishedVersions int) domain.Installability {
-	if publishedVersions == 0 {
+// mcpInstallability maps "the registry entry published N proven versions" to
+// the proven installability class. An empty version string is not a version —
+// a row that published none is discovery_only, so no install path can ever
+// meet a listing that claims metadata_verified while being unable to name the
+// version it would install.
+func mcpInstallability(versionSummaries []domain.VersionSummary) domain.Installability {
+	proven := 0
+	for _, summary := range versionSummaries {
+		if strings.TrimSpace(summary.Version) != "" {
+			proven++
+		}
+	}
+	if proven == 0 {
 		return domain.InstallabilityDiscoveryOnly
 	}
 	return domain.InstallabilityMetadataVerified

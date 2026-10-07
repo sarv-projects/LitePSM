@@ -98,7 +98,7 @@ Two consequences worth stating precisely:
 | 1 | `search_catalog` | `catalog.search` (`:282`) | `WIRED` — real index search |
 | 2 | `get_extension` | `catalog.get_item` (`:305`) | `WIRED` |
 | 3 | `prepare_install` | `resolver.prepare_plan` (`:323`) | `WIRED` — plan persisted with `planHash` |
-| 4 | `request_install` | `install.execute` (`:341`) | `WIRED` **for skills** (installs files through the skills ledger), `LPSM-ARTIFACT-UNAVAILABLE` for MCP/plugin ([STATUS.md](../STATUS.md) §3) |
+| 4 | `request_install` | `install.execute` (`:341`) | `WIRED` **for skills and MCP servers** (installs files through the skills ledger / registers the server in each target host's config, both behind the plan + approval gate), `LPSM-ARTIFACT-UNAVAILABLE` for plugins ([STATUS.md](../STATUS.md) §3) |
 | 5 | `list_installed` | `tools.list` (`:359`) | `WIRED` — installs + read-only detected external tools |
 | 6 | `search_capabilities` | `capabilities.search` (`:370`) | Resolves — searches the tools **discovered on this machine**, which is a different question from `search_catalog`'s registry search |
 | 7 | `describe_capability` | `capabilities.describe` (`:388`) | Resolves — returns the real input schema, fingerprint and the command behind it |
@@ -111,10 +111,10 @@ Two consequences worth stating precisely:
 > Line numbers in the table are the `case` labels inside `DispatchTool`
 > (`shim.go:270-511`).
 
-The six resolving tools are exactly the ones [AGENTS.md](../AGENTS.md) §3 lists
-as resolving today. `request_install` reaches the handler but stops at the
-missing artifact source; the remaining five fail closed with an explicit
-`-32601` reason rather than fabricated data. Standalone mode (no daemon
+Ten of the twelve tools resolve. `request_install` reaches the handler and completes for
+skills and MCP servers, stopping only at the missing artifact source for plugins; the other
+two — `get_invocation` and `cancel_invocation` — fail closed with an explicit `-32601` reason
+rather than fabricated data. Standalone mode (no daemon
 connection) fails **all** twelve with `LPSM-IPC-DAEMON-UNREACHABLE`
 (`shim.go:274-280`, `:579-587`), and `ping` reports `{"connected": false}`
 truthfully (`shim.go:206-214`).
@@ -207,9 +207,11 @@ marks the handle `running` without enforcing `TimeoutSec`
 ## 3. Dual MCP Protocol Support (`internal/mcpclient`)
 
 LiteSPM speaks both protocol profiles itself — `go.mod` carries **no** MCP SDK
-dependency. This package is `IMPLEMENTED` with **zero production importers**
-([STATUS.md](../STATUS.md) §4): nothing in `cmd/` or `internal/provider/` calls
-it, so no provider session exists at runtime today.
+dependency. This package is `WIRED`: its first production importer is
+`internal/discover`, which dials an installed server over `ConnectStdio`,
+probes its tools and calls one ([STATUS.md](../STATUS.md) §4). The HTTP and
+legacy constructors are still reached only from tests, because the catalog
+publishes no URL.
 
 ### 3.1 Constructors and probes (exact signatures)
 
@@ -285,9 +287,9 @@ LiteSPM exposes installed capabilities to an agent host in one of two modes:
 
 In Routed Mode, tool discovery is progressive: the model queries
 `search_capabilities` and `describe_capability` on demand, keeping prompt
-context overhead minimal. **That path is not functional yet** — both tools are
-advertised but return `-32601` (§1.2), so progressive discovery currently has
-no index behind it. Projected Mode is `DESIGNED`; host adapters today perform
+context overhead minimal. **That path works today** — both tools read the
+capability rows `internal/discover` probes, so progressive discovery has a real
+index behind it ([STATUS.md](../STATUS.md) §4). Projected Mode is `DESIGNED`; host adapters today perform
 **MCP-entry merge only**, with no projection of skills, commands, or agents
 ([STATUS.md](../STATUS.md) §1, [ARCH/16](16-HOST-ADAPTERS.md)).
 

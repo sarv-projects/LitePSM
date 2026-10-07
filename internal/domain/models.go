@@ -242,8 +242,12 @@ type Listing struct {
 	VerificationSummary  VerificationSummary `json:"verificationSummary"`
 	Provenance           ProvenanceRecord    `json:"provenance"`
 	Status               ListingStatus       `json:"status"`
-	Installability       Installability      `json:"installability,omitempty"`
 	RawMetadataRef       string              `json:"rawMetadataRef,omitempty"`
+	// Installability gates install paths: discovery_only rows are searchable
+	// metadata with no proven artifact and must be refused with
+	// LPSM-NOT-INSTALLABLE. Empty means pre-installability (legacy) and is
+	// treated as installable by IsInstallable.
+	Installability Installability `json:"installability,omitempty"`
 }
 
 // DependencyConstraint specifies version constraints for dependencies.
@@ -350,16 +354,17 @@ type InstallRecord struct {
 	ListingID string `json:"listingId"`
 	// Kind is the install's real kind (mcp|skill|plugin|agent|...). Empty is
 	// stored as "mcp" only for legacy callers that predate the field.
-	Kind        ListingKind   `json:"kind,omitempty"`
-	Version     string        `json:"version"`
-	TreeDigest  string        `json:"treeDigest"`
-	InstallPath string        `json:"installPath,omitempty"`
-	Scope       InstallScope  `json:"scope"`
-	WorkspaceID string        `json:"workspaceId,omitempty"`
-	ProjectRoot string        `json:"projectRoot,omitempty"`
-	Status      InstallStatus `json:"status"`
-	InstalledAt time.Time     `json:"installedAt"`
-	UpdatedAt   time.Time     `json:"updatedAt"`
+	Kind         ListingKind   `json:"kind,omitempty"`
+	Version      string        `json:"version"`
+	ImmutableRef string        `json:"immutableRef,omitempty"`
+	TreeDigest   string        `json:"treeDigest"`
+	InstallPath  string        `json:"installPath,omitempty"`
+	Scope        InstallScope  `json:"scope"`
+	WorkspaceID  string        `json:"workspaceId,omitempty"`
+	ProjectRoot  string        `json:"projectRoot,omitempty"`
+	Status       InstallStatus `json:"status"`
+	InstalledAt  time.Time     `json:"installedAt"`
+	UpdatedAt    time.Time     `json:"updatedAt"`
 }
 
 // InstallComponentRecord maps an install record to individual components.
@@ -488,7 +493,14 @@ type RequestedAccess struct {
 	Hosts []string `json:"hosts,omitempty"`
 }
 
-// InstallPlan strictly adheres to schemas/install-plan.schema.json.
+// InstallPlan is the plan document the daemon persists and hashes.
+//
+// It does NOT currently validate against schemas/install-plan.schema.json:
+// ARCH/06 §2.2 records the open mismatches (effects, preconditions, approval,
+// requestedAccess, providerLaunches and the top-level collisions/warnings all
+// differ, and three of them are schema-required). The Go shape is authoritative
+// for now; consumers must use it rather than the schema. planHash covers the
+// Go fields only — see ARCH/06 §2.3.
 type InstallPlan struct {
 	SchemaVersion    int               `json:"schemaVersion"`
 	PlanID           string            `json:"planId"`

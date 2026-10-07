@@ -40,9 +40,13 @@ stated plainly.
 **Releases are integrity-checked, not signature-verified.** Each release
 publishes `SHA256SUMS.txt` alongside the binaries. The updater verifies the
 downloaded binary against that file and refuses to proceed on a mismatch. The
-npm installer aborts on a mismatch, but if the manifest has **no entry for your
-platform** (or the manifest cannot be fetched) it prints a warning and proceeds
-unverified rather than failing the install — see `npm/scripts/install-binary.js:185-204`.
+npm installer is **fail-closed on every path**: a missing `SHA256SUMS.txt`
+manifest, a missing entry for your platform, an unreadable manifest, or a
+digest mismatch all discard the download, print `INSTALL REFUSED`, and exit
+non-zero — nothing unverified is installed or executed
+(`npm/scripts/install-binary.js`, `verifyDownloadedBinary`). An earlier build
+warned and proceeded unverified when the manifest had no entry for the platform;
+that was removed.
 
 The honest limit: those checksums travel in the same release as the binaries, so
 they prove the download was not corrupted in transit. They do **not** prove the
@@ -57,9 +61,10 @@ was not always true — an earlier build skipped verification when the checksum
 was absent and carried a hard-coded bypass string. Both were removed.
 
 `npm install -g litespm` runs a `postinstall` script that downloads the platform
-binary from the GitHub release and verifies it against `SHA256SUMS.txt`. Read
+binary from the GitHub release and verifies it against `SHA256SUMS.txt`; the
+install fails closed (non-zero exit) when that proof cannot be produced. Read
 `npm/scripts/install-binary.js` before installing if you want to see exactly
-what it fetches; note the missing-entry fallback described above.
+what it fetches.
 
 ## What we do not claim
 

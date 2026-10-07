@@ -1,0 +1,691 @@
+- generic [active] [ref=f6e1]:
+  - link "Skip to content" [ref=f6e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f6e3]:
+    - banner [ref=f6e4]:
+      - generic [ref=f6e5]:
+        - link "LiteSPM Market home" [ref=f6e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=f6e11]: LiteSPM Market
+        - navigation "Primary" [ref=f6e12]:
+          - link "Explore" [ref=f6e13] [cursor=pointer]:
+            - /url: /explore/
+          - link "Agents" [ref=f6e14] [cursor=pointer]:
+            - /url: /agents/
+          - link "Categories" [ref=f6e15] [cursor=pointer]:
+            - /url: /categories/
+          - link "Coverage" [ref=f6e16] [cursor=pointer]:
+            - /url: /trending/
+    - main [ref=f6e17]:
+      - generic [ref=f6e18]:
+        - heading "Agent hosts" [level=1] [ref=f6e19]
+        - paragraph [ref=f6e20]: 86 hosts named · 50 with compiled-in adapters
+      - paragraph [ref=f6e21]: An entry’s compatibility list is what its publisher declared. LiteSPM adds a bridge entry to the hosts it has compiled-in adapters for; the remaining hosts are indexed because publishers list them, not because LiteSPM can edit their configuration.
+      - generic [ref=f6e22]:
+        - heading "Agent hosts, compatible entry counts, and config adapters" [level=2] [ref=f6e23]
+        - generic [ref=f6e24]:
+          - generic [ref=f6e25]: Host
+          - generic [ref=f6e26]: Adapter
+          - generic [ref=f6e27]: Compatible
+          - generic [ref=f6e28]: Config file this host uses
+      - list [ref=f6e29]:
+        - listitem [ref=f6e30]:
+          - link "Cursor 5,286 managed ~/.cursor/mcp.json" [ref=f6e31] [cursor=pointer]:
+            - /url: /explore/?host=Cursor
+            - generic [ref=f6e32]: Cursor
+            - generic [ref=f6e38]: 5,286
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e40]: managed
+            - code [ref=f6e43]: ~/.cursor/mcp.json
+        - listitem [ref=f6e44]:
+          - link "AiderDesk 5,187 managed ~/.aider-desk/mcp-servers.json" [ref=f6e45] [cursor=pointer]:
+            - /url: /explore/?host=AiderDesk
+            - generic [ref=f6e46]: AiderDesk
+            - generic [ref=f6e52]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e54]: managed
+            - code [ref=f6e57]: ~/.aider-desk/mcp-servers.json
+        - listitem [ref=f6e58]:
+          - link "Amp 5,187 managed ~/.config/amp/settings.json" [ref=f6e59] [cursor=pointer]:
+            - /url: /explore/?host=Amp
+            - generic [ref=f6e60]: Amp
+            - generic [ref=f6e66]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e68]: managed
+            - code [ref=f6e71]: ~/.config/amp/settings.json
+        - listitem [ref=f6e72]:
+          - link "Antigravity 5,187 managed ~/.gemini/config/mcp_config.json" [ref=f6e73] [cursor=pointer]:
+            - /url: /explore/?host=Antigravity
+            - generic [ref=f6e74]: Antigravity
+            - generic [ref=f6e80]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e82]: managed
+            - code [ref=f6e85]: ~/.gemini/config/mcp_config.json
+        - listitem [ref=f6e86]:
+          - link "Antigravity CLI 5,187 managed ~/.gemini/config/mcp_config.json" [ref=f6e87] [cursor=pointer]:
+            - /url: /explore/?host=Antigravity%20CLI
+            - generic [ref=f6e88]: Antigravity CLI
+            - generic [ref=f6e94]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e96]: managed
+            - code [ref=f6e99]: ~/.gemini/config/mcp_config.json
+        - listitem [ref=f6e100]:
+          - link "AstrBot 5,187 managed <project>/data/mcp_server.json" [ref=f6e101] [cursor=pointer]:
+            - /url: /explore/?host=AstrBot
+            - generic [ref=f6e102]: AstrBot
+            - generic [ref=f6e108]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e110]: managed
+            - code [ref=f6e113]: <project>/data/mcp_server.json
+        - listitem [ref=f6e114]:
+          - link "Augment 5,187 managed ~/.augment/settings.json" [ref=f6e115] [cursor=pointer]:
+            - /url: /explore/?host=Augment
+            - generic [ref=f6e116]: Augment
+            - generic [ref=f6e122]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e124]: managed
+            - code [ref=f6e127]: ~/.augment/settings.json
+        - listitem [ref=f6e128]:
+          - link "Code Studio 5,187 managed <project>/.codestudio/mcp.json" [ref=f6e129] [cursor=pointer]:
+            - /url: /explore/?host=Code%20Studio
+            - generic [ref=f6e130]: Code Studio
+            - generic [ref=f6e136]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e138]: managed
+            - code [ref=f6e141]: <project>/.codestudio/mcp.json
+        - listitem [ref=f6e142]:
+          - link "CodeArts Agent 5,187 managed ~/.codeartsdoer/codearts_cli.jsonc" [ref=f6e143] [cursor=pointer]:
+            - /url: /explore/?host=CodeArts%20Agent
+            - generic [ref=f6e144]: CodeArts Agent
+            - generic [ref=f6e150]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e152]: managed
+            - code [ref=f6e155]: ~/.codeartsdoer/codearts_cli.jsonc
+        - listitem [ref=f6e156]:
+          - link "CodeBuddy 5,187 managed ~/.codebuddy/.mcp.json" [ref=f6e157] [cursor=pointer]:
+            - /url: /explore/?host=CodeBuddy
+            - generic [ref=f6e158]: CodeBuddy
+            - generic [ref=f6e164]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e166]: managed
+            - code [ref=f6e169]: ~/.codebuddy/.mcp.json
+        - listitem [ref=f6e170]:
+          - link "Command Code 5,187 managed ~/.commandcode/mcp.json" [ref=f6e171] [cursor=pointer]:
+            - /url: /explore/?host=Command%20Code
+            - generic [ref=f6e172]: Command Code
+            - generic [ref=f6e178]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e180]: managed
+            - code [ref=f6e183]: ~/.commandcode/mcp.json
+        - listitem [ref=f6e184]:
+          - link "Cortex Code 5,187 managed ~/.snowflake/cortex/mcp.json" [ref=f6e185] [cursor=pointer]:
+            - /url: /explore/?host=Cortex%20Code
+            - generic [ref=f6e186]: Cortex Code
+            - generic [ref=f6e192]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e194]: managed
+            - code [ref=f6e197]: ~/.snowflake/cortex/mcp.json
+        - listitem [ref=f6e198]:
+          - link "Crush 5,187 managed ~/.config/crush/crush.json" [ref=f6e199] [cursor=pointer]:
+            - /url: /explore/?host=Crush
+            - generic [ref=f6e200]: Crush
+            - generic [ref=f6e206]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e208]: managed
+            - code [ref=f6e211]: ~/.config/crush/crush.json
+        - listitem [ref=f6e212]:
+          - link "Deep Agents 5,187 managed ~/.deepagents/.mcp.json" [ref=f6e213] [cursor=pointer]:
+            - /url: /explore/?host=Deep%20Agents
+            - generic [ref=f6e214]: Deep Agents
+            - generic [ref=f6e220]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e222]: managed
+            - code [ref=f6e225]: ~/.deepagents/.mcp.json
+        - listitem [ref=f6e226]:
+          - link "Droid 5,187 managed ~/.factory/mcp.json" [ref=f6e227] [cursor=pointer]:
+            - /url: /explore/?host=Droid
+            - generic [ref=f6e228]: Droid
+            - generic [ref=f6e234]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e236]: managed
+            - code [ref=f6e239]: ~/.factory/mcp.json
+        - listitem [ref=f6e240]:
+          - link "Firebender 5,187 managed ~/.firebender/firebender.json" [ref=f6e241] [cursor=pointer]:
+            - /url: /explore/?host=Firebender
+            - generic [ref=f6e242]: Firebender
+            - generic [ref=f6e248]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e250]: managed
+            - code [ref=f6e253]: ~/.firebender/firebender.json
+        - listitem [ref=f6e254]:
+          - link "ForgeCode 5,187 managed ~/forge/.mcp.json" [ref=f6e255] [cursor=pointer]:
+            - /url: /explore/?host=ForgeCode
+            - generic [ref=f6e256]: ForgeCode
+            - generic [ref=f6e262]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e264]: managed
+            - code [ref=f6e267]: ~/forge/.mcp.json
+        - listitem [ref=f6e268]:
+          - link "fx 5,187 managed ~/.fx/mcp.json" [ref=f6e269] [cursor=pointer]:
+            - /url: /explore/?host=fx
+            - generic [ref=f6e270]: fx
+            - generic [ref=f6e276]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e278]: managed
+            - code [ref=f6e281]: ~/.fx/mcp.json
+        - listitem [ref=f6e282]:
+          - link "Gemini CLI 5,187 managed ~/.gemini/settings.json" [ref=f6e283] [cursor=pointer]:
+            - /url: /explore/?host=Gemini%20CLI
+            - generic [ref=f6e284]: Gemini CLI
+            - generic [ref=f6e290]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e292]: managed
+            - code [ref=f6e295]: ~/.gemini/settings.json
+        - listitem [ref=f6e296]:
+          - link "IBM Bob 5,187 managed ~/.bob/settings/mcp.json" [ref=f6e297] [cursor=pointer]:
+            - /url: /explore/?host=IBM%20Bob
+            - generic [ref=f6e298]: IBM Bob
+            - generic [ref=f6e304]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e306]: managed
+            - code [ref=f6e309]: ~/.bob/settings/mcp.json
+        - listitem [ref=f6e310]:
+          - link "iFlow CLI 5,187 managed ~/.iflow/settings.json" [ref=f6e311] [cursor=pointer]:
+            - /url: /explore/?host=iFlow%20CLI
+            - generic [ref=f6e312]: iFlow CLI
+            - generic [ref=f6e318]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e320]: managed
+            - code [ref=f6e323]: ~/.iflow/settings.json
+        - listitem [ref=f6e324]:
+          - link "Jazz 5,187 managed ~/.agents/mcp.json" [ref=f6e325] [cursor=pointer]:
+            - /url: /explore/?host=Jazz
+            - generic [ref=f6e326]: Jazz
+            - generic [ref=f6e332]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e334]: managed
+            - code [ref=f6e337]: ~/.agents/mcp.json
+        - listitem [ref=f6e338]:
+          - link "Junie 5,187 managed ~/.junie/mcp/mcp.json" [ref=f6e339] [cursor=pointer]:
+            - /url: /explore/?host=Junie
+            - generic [ref=f6e340]: Junie
+            - generic [ref=f6e346]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e348]: managed
+            - code [ref=f6e351]: ~/.junie/mcp/mcp.json
+        - listitem [ref=f6e352]:
+          - link "Kilo Code 5,187 managed ~/.config/kilo/kilo.json" [ref=f6e353] [cursor=pointer]:
+            - /url: /explore/?host=Kilo%20Code
+            - generic [ref=f6e354]: Kilo Code
+            - generic [ref=f6e360]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e362]: managed
+            - code [ref=f6e365]: ~/.config/kilo/kilo.json
+        - listitem [ref=f6e366]:
+          - link "Kimchi 5,187 managed ~/.config/kimchi/harness/mcp.json" [ref=f6e367] [cursor=pointer]:
+            - /url: /explore/?host=Kimchi
+            - generic [ref=f6e368]: Kimchi
+            - generic [ref=f6e374]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e376]: managed
+            - code [ref=f6e379]: ~/.config/kimchi/harness/mcp.json
+        - listitem [ref=f6e380]:
+          - link "Kimi Code CLI 5,187 managed ~/.kimi-code/mcp.json" [ref=f6e381] [cursor=pointer]:
+            - /url: /explore/?host=Kimi%20Code%20CLI
+            - generic [ref=f6e382]: Kimi Code CLI
+            - generic [ref=f6e388]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e390]: managed
+            - code [ref=f6e393]: ~/.kimi-code/mcp.json
+        - listitem [ref=f6e394]:
+          - link "Kiro CLI 5,187 managed ~/.kiro/settings/mcp.json" [ref=f6e395] [cursor=pointer]:
+            - /url: /explore/?host=Kiro%20CLI
+            - generic [ref=f6e396]: Kiro CLI
+            - generic [ref=f6e402]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e404]: managed
+            - code [ref=f6e407]: ~/.kiro/settings/mcp.json
+        - listitem [ref=f6e408]:
+          - link "Kode 5,187 managed ~/.kode.json" [ref=f6e409] [cursor=pointer]:
+            - /url: /explore/?host=Kode
+            - generic [ref=f6e410]: Kode
+            - generic [ref=f6e416]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e418]: managed
+            - code [ref=f6e421]: ~/.kode.json
+        - listitem [ref=f6e422]:
+          - link "Neovate 5,187 managed ~/.neovate/config.json" [ref=f6e423] [cursor=pointer]:
+            - /url: /explore/?host=Neovate
+            - generic [ref=f6e424]: Neovate
+            - generic [ref=f6e430]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e432]: managed
+            - code [ref=f6e435]: ~/.neovate/config.json
+        - listitem [ref=f6e436]:
+          - link "Ona 5,187 managed <project>/.ona/mcp-config.json" [ref=f6e437] [cursor=pointer]:
+            - /url: /explore/?host=Ona
+            - generic [ref=f6e438]: Ona
+            - generic [ref=f6e444]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e446]: managed
+            - code [ref=f6e449]: <project>/.ona/mcp-config.json
+        - listitem [ref=f6e450]:
+          - link "OpenHands 5,187 managed ~/.openhands/mcp.json" [ref=f6e451] [cursor=pointer]:
+            - /url: /explore/?host=OpenHands
+            - generic [ref=f6e452]: OpenHands
+            - generic [ref=f6e458]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e460]: managed
+            - code [ref=f6e463]: ~/.openhands/mcp.json
+        - listitem [ref=f6e464]:
+          - link "Pochi 5,187 managed ~/.pochi/config.jsonc" [ref=f6e465] [cursor=pointer]:
+            - /url: /explore/?host=Pochi
+            - generic [ref=f6e466]: Pochi
+            - generic [ref=f6e472]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e474]: managed
+            - code [ref=f6e477]: ~/.pochi/config.jsonc
+        - listitem [ref=f6e478]:
+          - link "Posit Assistant 5,187 managed ~/.posit/assistant/settings.json" [ref=f6e479] [cursor=pointer]:
+            - /url: /explore/?host=Posit%20Assistant
+            - generic [ref=f6e480]: Posit Assistant
+            - generic [ref=f6e486]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e488]: managed
+            - code [ref=f6e491]: ~/.posit/assistant/settings.json
+        - listitem [ref=f6e492]:
+          - link "Qoder 5,187 managed ~/.qoder/settings.json" [ref=f6e493] [cursor=pointer]:
+            - /url: /explore/?host=Qoder
+            - generic [ref=f6e494]: Qoder
+            - generic [ref=f6e500]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e502]: managed
+            - code [ref=f6e505]: ~/.qoder/settings.json
+        - listitem [ref=f6e506]:
+          - link "Qoder CN 5,187 managed ~/.qoder-cn/settings.json" [ref=f6e507] [cursor=pointer]:
+            - /url: /explore/?host=Qoder%20CN
+            - generic [ref=f6e508]: Qoder CN
+            - generic [ref=f6e514]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e516]: managed
+            - code [ref=f6e519]: ~/.qoder-cn/settings.json
+        - listitem [ref=f6e520]:
+          - link "Qwen Code 5,187 managed ~/.qwen/settings.json" [ref=f6e521] [cursor=pointer]:
+            - /url: /explore/?host=Qwen%20Code
+            - generic [ref=f6e522]: Qwen Code
+            - generic [ref=f6e528]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e530]: managed
+            - code [ref=f6e533]: ~/.qwen/settings.json
+        - listitem [ref=f6e534]:
+          - link "Roo Code 5,187 managed <project>/.roo/mcp.json" [ref=f6e535] [cursor=pointer]:
+            - /url: /explore/?host=Roo%20Code
+            - generic [ref=f6e536]: Roo Code
+            - generic [ref=f6e542]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e544]: managed
+            - code [ref=f6e547]: <project>/.roo/mcp.json
+        - listitem [ref=f6e548]:
+          - link "Rovo Dev 5,187 managed ~/.rovodev/mcp.json" [ref=f6e549] [cursor=pointer]:
+            - /url: /explore/?host=Rovo%20Dev
+            - generic [ref=f6e550]: Rovo Dev
+            - generic [ref=f6e556]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e558]: managed
+            - code [ref=f6e561]: ~/.rovodev/mcp.json
+        - listitem [ref=f6e562]:
+          - link "Tabnine CLI 5,187 managed ~/.tabnine/agent/settings.json" [ref=f6e563] [cursor=pointer]:
+            - /url: /explore/?host=Tabnine%20CLI
+            - generic [ref=f6e564]: Tabnine CLI
+            - generic [ref=f6e570]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e572]: managed
+            - code [ref=f6e575]: ~/.tabnine/agent/settings.json
+        - listitem [ref=f6e576]:
+          - link "ZCode 5,187 managed ~/.zcode/cli/config.json" [ref=f6e577] [cursor=pointer]:
+            - /url: /explore/?host=ZCode
+            - generic [ref=f6e578]: ZCode
+            - generic [ref=f6e584]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e586]: managed
+            - code [ref=f6e589]: ~/.zcode/cli/config.json
+        - listitem [ref=f6e590]:
+          - link "Zed 5,187 managed ~/.config/zed/settings.json" [ref=f6e591] [cursor=pointer]:
+            - /url: /explore/?host=Zed
+            - generic [ref=f6e592]: Zed
+            - generic [ref=f6e598]: 5,187
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e600]: managed
+            - code [ref=f6e603]: ~/.config/zed/settings.json
+        - listitem [ref=f6e604]:
+          - link "Claude Code CLI 4,079 managed ~/.claude.json" [ref=f6e605] [cursor=pointer]:
+            - /url: /explore/?host=Claude%20Code%20CLI
+            - generic [ref=f6e606]: Claude Code CLI
+            - generic [ref=f6e612]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e614]: managed
+            - code [ref=f6e617]: ~/.claude.json
+        - listitem [ref=f6e618]:
+          - link "Cline (VS Code Extension) 4,079 managed ~/.cline/data/settings/cline_mcp_settings.json" [ref=f6e619] [cursor=pointer]:
+            - /url: /explore/?host=Cline%20(VS%20Code%20Extension)
+            - generic [ref=f6e620]: Cline (VS Code Extension)
+            - generic [ref=f6e626]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e628]: managed
+            - code [ref=f6e631]: ~/.cline/data/settings/cline_mcp_settings.json
+        - listitem [ref=f6e632]:
+          - link "Devin 4,079 managed ~/.config/devin/mcp_config.json" [ref=f6e633] [cursor=pointer]:
+            - /url: /explore/?host=Devin
+            - generic [ref=f6e634]: Devin
+            - generic [ref=f6e640]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e642]: managed
+            - code [ref=f6e645]: ~/.config/devin/mcp_config.json
+        - listitem [ref=f6e646]:
+          - link "GitHub Copilot CLI 4,079 managed ~/.copilot/mcp-config.json" [ref=f6e647] [cursor=pointer]:
+            - /url: /explore/?host=GitHub%20Copilot%20CLI
+            - generic [ref=f6e648]: GitHub Copilot CLI
+            - generic [ref=f6e654]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e656]: managed
+            - code [ref=f6e659]: ~/.copilot/mcp-config.json
+        - listitem [ref=f6e660]:
+          - link "Grok Build (xAI Dev Tool) 4,079 managed ~/.grok/config.toml" [ref=f6e661] [cursor=pointer]:
+            - /url: /explore/?host=Grok%20Build%20(xAI%20Dev%20Tool)
+            - generic [ref=f6e662]: Grok Build (xAI Dev Tool)
+            - generic [ref=f6e668]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e670]: managed
+            - code [ref=f6e673]: ~/.grok/config.toml
+        - listitem [ref=f6e674]:
+          - link "Mux (Xum) 4,079 managed ~/.xum/mcp.jsonc" [ref=f6e675] [cursor=pointer]:
+            - /url: /explore/?host=Mux%20(Xum)
+            - generic [ref=f6e676]: Mux (Xum)
+            - generic [ref=f6e682]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e684]: managed
+            - code [ref=f6e687]: ~/.xum/mcp.jsonc
+        - listitem [ref=f6e688]:
+          - link "OpenAI Codex CLI 4,079 managed ~/.codex/config.toml" [ref=f6e689] [cursor=pointer]:
+            - /url: /explore/?host=OpenAI%20Codex%20CLI
+            - generic [ref=f6e690]: OpenAI Codex CLI
+            - generic [ref=f6e696]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e698]: managed
+            - code [ref=f6e701]: ~/.codex/config.toml
+        - listitem [ref=f6e702]:
+          - link "OpenCode CLI 4,079 managed ~/.config/opencode/opencode.json" [ref=f6e703] [cursor=pointer]:
+            - /url: /explore/?host=OpenCode%20CLI
+            - generic [ref=f6e704]: OpenCode CLI
+            - generic [ref=f6e710]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e712]: managed
+            - code [ref=f6e715]: ~/.config/opencode/opencode.json
+        - listitem [ref=f6e716]:
+          - link "Pi Agent (Terminal Agent) 4,079 managed ~/.pi/agent/mcp.json" [ref=f6e717] [cursor=pointer]:
+            - /url: /explore/?host=Pi%20Agent%20(Terminal%20Agent)
+            - generic [ref=f6e718]: Pi Agent (Terminal Agent)
+            - generic [ref=f6e724]: 4,079
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e726]: managed
+            - code [ref=f6e729]: ~/.pi/agent/mcp.json
+        - listitem [ref=f6e730]:
+          - link "Claude Code 1,551 managed ~/.claude.json" [ref=f6e731] [cursor=pointer]:
+            - /url: /explore/?host=Claude%20Code
+            - generic [ref=f6e732]: Claude Code
+            - generic [ref=f6e738]: 1,551
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e740]: managed
+            - code [ref=f6e743]: ~/.claude.json
+        - listitem [ref=f6e744]:
+          - link "Codex 1,173 managed ~/.codex/config.toml" [ref=f6e745] [cursor=pointer]:
+            - /url: /explore/?host=Codex
+            - generic [ref=f6e746]: Codex
+            - generic [ref=f6e752]: 1,173
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e754]: managed
+            - code [ref=f6e757]: ~/.codex/config.toml
+        - listitem [ref=f6e758]:
+          - link "Grok Build 1,139 managed ~/.grok/config.toml" [ref=f6e759] [cursor=pointer]:
+            - /url: /explore/?host=Grok%20Build
+            - generic [ref=f6e760]: Grok Build
+            - generic [ref=f6e766]: 1,139
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e768]: managed
+            - code [ref=f6e771]: ~/.grok/config.toml
+        - listitem [ref=f6e772]:
+          - link "AdaL 1,108 declared not managed by LiteSPM" [ref=f6e773] [cursor=pointer]:
+            - /url: /explore/?host=AdaL
+            - generic [ref=f6e774]: AdaL
+            - generic [ref=f6e780]: 1,108
+            - generic [ref=f6e781]: declared
+            - code [ref=f6e782]: not managed by LiteSPM
+        - listitem [ref=f6e783]:
+          - link "Autohand Code CLI 1,108 declared not managed by LiteSPM" [ref=f6e784] [cursor=pointer]:
+            - /url: /explore/?host=Autohand%20Code%20CLI
+            - generic [ref=f6e785]: Autohand Code CLI
+            - generic [ref=f6e791]: 1,108
+            - generic [ref=f6e792]: declared
+            - code [ref=f6e793]: not managed by LiteSPM
+        - listitem [ref=f6e794]:
+          - link "Cline 1,108 managed ~/.cline/data/settings/cline_mcp_settings.json" [ref=f6e795] [cursor=pointer]:
+            - /url: /explore/?host=Cline
+            - generic [ref=f6e796]: Cline
+            - generic [ref=f6e802]: 1,108
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e804]: managed
+            - code [ref=f6e807]: ~/.cline/data/settings/cline_mcp_settings.json
+        - listitem [ref=f6e808]:
+          - link "Codemaker 1,108 declared not managed by LiteSPM" [ref=f6e809] [cursor=pointer]:
+            - /url: /explore/?host=Codemaker
+            - generic [ref=f6e810]: Codemaker
+            - generic [ref=f6e816]: 1,108
+            - generic [ref=f6e817]: declared
+            - code [ref=f6e818]: not managed by LiteSPM
+        - listitem [ref=f6e819]:
+          - link "Continue 1,108 declared not managed by LiteSPM" [ref=f6e820] [cursor=pointer]:
+            - /url: /explore/?host=Continue
+            - generic [ref=f6e821]: Continue
+            - generic [ref=f6e827]: 1,108
+            - generic [ref=f6e828]: declared
+            - code [ref=f6e829]: not managed by LiteSPM
+        - listitem [ref=f6e830]:
+          - link "Devin for Terminal 1,108 declared not managed by LiteSPM" [ref=f6e831] [cursor=pointer]:
+            - /url: /explore/?host=Devin%20for%20Terminal
+            - generic [ref=f6e832]: Devin for Terminal
+            - generic [ref=f6e838]: 1,108
+            - generic [ref=f6e839]: declared
+            - code [ref=f6e840]: not managed by LiteSPM
+        - listitem [ref=f6e841]:
+          - link "Dexto 1,108 declared not managed by LiteSPM" [ref=f6e842] [cursor=pointer]:
+            - /url: /explore/?host=Dexto
+            - generic [ref=f6e843]: Dexto
+            - generic [ref=f6e849]: 1,108
+            - generic [ref=f6e850]: declared
+            - code [ref=f6e851]: not managed by LiteSPM
+        - listitem [ref=f6e852]:
+          - link "Eve 1,108 declared not managed by LiteSPM" [ref=f6e853] [cursor=pointer]:
+            - /url: /explore/?host=Eve
+            - generic [ref=f6e854]: Eve
+            - generic [ref=f6e860]: 1,108
+            - generic [ref=f6e861]: declared
+            - code [ref=f6e862]: not managed by LiteSPM
+        - listitem [ref=f6e863]:
+          - link "GitHub Copilot 1,108 managed ~/.copilot/mcp-config.json" [ref=f6e864] [cursor=pointer]:
+            - /url: /explore/?host=GitHub%20Copilot
+            - generic [ref=f6e865]: GitHub Copilot
+            - generic [ref=f6e871]: 1,108
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e873]: managed
+            - code [ref=f6e876]: ~/.copilot/mcp-config.json
+        - listitem [ref=f6e877]:
+          - link "Goose 1,108 declared not managed by LiteSPM" [ref=f6e878] [cursor=pointer]:
+            - /url: /explore/?host=Goose
+            - generic [ref=f6e879]: Goose
+            - generic [ref=f6e885]: 1,108
+            - generic [ref=f6e886]: declared
+            - code [ref=f6e887]: not managed by LiteSPM
+        - listitem [ref=f6e888]:
+          - link "Hermes Agent 1,108 declared not managed by LiteSPM" [ref=f6e889] [cursor=pointer]:
+            - /url: /explore/?host=Hermes%20Agent
+            - generic [ref=f6e890]: Hermes Agent
+            - generic [ref=f6e896]: 1,108
+            - generic [ref=f6e897]: declared
+            - code [ref=f6e898]: not managed by LiteSPM
+        - listitem [ref=f6e899]:
+          - link "inference.sh 1,108 declared not managed by LiteSPM" [ref=f6e900] [cursor=pointer]:
+            - /url: /explore/?host=inference.sh
+            - generic [ref=f6e901]: inference.sh
+            - generic [ref=f6e907]: 1,108
+            - generic [ref=f6e908]: declared
+            - code [ref=f6e909]: not managed by LiteSPM
+        - listitem [ref=f6e910]:
+          - link "Lingma 1,108 declared not managed by LiteSPM" [ref=f6e911] [cursor=pointer]:
+            - /url: /explore/?host=Lingma
+            - generic [ref=f6e912]: Lingma
+            - generic [ref=f6e918]: 1,108
+            - generic [ref=f6e919]: declared
+            - code [ref=f6e920]: not managed by LiteSPM
+        - listitem [ref=f6e921]:
+          - link "Loaf 1,108 declared not managed by LiteSPM" [ref=f6e922] [cursor=pointer]:
+            - /url: /explore/?host=Loaf
+            - generic [ref=f6e923]: Loaf
+            - generic [ref=f6e929]: 1,108
+            - generic [ref=f6e930]: declared
+            - code [ref=f6e931]: not managed by LiteSPM
+        - listitem [ref=f6e932]:
+          - link "MCPJam 1,108 declared not managed by LiteSPM" [ref=f6e933] [cursor=pointer]:
+            - /url: /explore/?host=MCPJam
+            - generic [ref=f6e934]: MCPJam
+            - generic [ref=f6e940]: 1,108
+            - generic [ref=f6e941]: declared
+            - code [ref=f6e942]: not managed by LiteSPM
+        - listitem [ref=f6e943]:
+          - link "minimax Code 1,108 declared not managed by LiteSPM" [ref=f6e944] [cursor=pointer]:
+            - /url: /explore/?host=minimax%20Code
+            - generic [ref=f6e945]: minimax Code
+            - generic [ref=f6e951]: 1,108
+            - generic [ref=f6e952]: declared
+            - code [ref=f6e953]: not managed by LiteSPM
+        - listitem [ref=f6e954]:
+          - link "Mistral Vibe 1,108 declared not managed by LiteSPM" [ref=f6e955] [cursor=pointer]:
+            - /url: /explore/?host=Mistral%20Vibe
+            - generic [ref=f6e956]: Mistral Vibe
+            - generic [ref=f6e962]: 1,108
+            - generic [ref=f6e963]: declared
+            - code [ref=f6e964]: not managed by LiteSPM
+        - listitem [ref=f6e965]:
+          - link "Moxby 1,108 declared not managed by LiteSPM" [ref=f6e966] [cursor=pointer]:
+            - /url: /explore/?host=Moxby
+            - generic [ref=f6e967]: Moxby
+            - generic [ref=f6e973]: 1,108
+            - generic [ref=f6e974]: declared
+            - code [ref=f6e975]: not managed by LiteSPM
+        - listitem [ref=f6e976]:
+          - link "Mux 1,108 managed ~/.xum/mcp.jsonc" [ref=f6e977] [cursor=pointer]:
+            - /url: /explore/?host=Mux
+            - generic [ref=f6e978]: Mux
+            - generic [ref=f6e984]: 1,108
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e986]: managed
+            - code [ref=f6e989]: ~/.xum/mcp.jsonc
+        - listitem [ref=f6e990]:
+          - link "OpenClaw 1,108 declared not managed by LiteSPM" [ref=f6e991] [cursor=pointer]:
+            - /url: /explore/?host=OpenClaw
+            - generic [ref=f6e992]: OpenClaw
+            - generic [ref=f6e998]: 1,108
+            - generic [ref=f6e999]: declared
+            - code [ref=f6e1000]: not managed by LiteSPM
+        - listitem [ref=f6e1001]:
+          - link "OpenCode 1,108 managed ~/.config/opencode/opencode.json" [ref=f6e1002] [cursor=pointer]:
+            - /url: /explore/?host=OpenCode
+            - generic [ref=f6e1003]: OpenCode
+            - generic [ref=f6e1009]: 1,108
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e1011]: managed
+            - code [ref=f6e1014]: ~/.config/opencode/opencode.json
+        - listitem [ref=f6e1015]:
+          - link "Pi Agent 1,108 managed ~/.pi/agent/mcp.json" [ref=f6e1016] [cursor=pointer]:
+            - /url: /explore/?host=Pi%20Agent
+            - generic [ref=f6e1017]: Pi Agent
+            - generic [ref=f6e1023]: 1,108
+            - generic "LiteSPM has a compiled-in adapter that can write this host's config file" [ref=f6e1025]: managed
+            - code [ref=f6e1028]: ~/.pi/agent/mcp.json
+        - listitem [ref=f6e1029]:
+          - link "PromptScript 1,108 declared not managed by LiteSPM" [ref=f6e1030] [cursor=pointer]:
+            - /url: /explore/?host=PromptScript
+            - generic [ref=f6e1031]: PromptScript
+            - generic [ref=f6e1037]: 1,108
+            - generic [ref=f6e1038]: declared
+            - code [ref=f6e1039]: not managed by LiteSPM
+        - listitem [ref=f6e1040]:
+          - link "Reasonix 1,108 declared not managed by LiteSPM" [ref=f6e1041] [cursor=pointer]:
+            - /url: /explore/?host=Reasonix
+            - generic [ref=f6e1042]: Reasonix
+            - generic [ref=f6e1048]: 1,108
+            - generic [ref=f6e1049]: declared
+            - code [ref=f6e1050]: not managed by LiteSPM
+        - listitem [ref=f6e1051]:
+          - link "Replit 1,108 declared not managed by LiteSPM" [ref=f6e1052] [cursor=pointer]:
+            - /url: /explore/?host=Replit
+            - generic [ref=f6e1053]: Replit
+            - generic [ref=f6e1059]: 1,108
+            - generic [ref=f6e1060]: declared
+            - code [ref=f6e1061]: not managed by LiteSPM
+        - listitem [ref=f6e1062]:
+          - link "Sarvam Code 1,108 declared not managed by LiteSPM" [ref=f6e1063] [cursor=pointer]:
+            - /url: /explore/?host=Sarvam%20Code
+            - generic [ref=f6e1064]: Sarvam Code
+            - generic [ref=f6e1070]: 1,108
+            - generic [ref=f6e1071]: declared
+            - code [ref=f6e1072]: not managed by LiteSPM
+        - listitem [ref=f6e1073]:
+          - link "Terramind 1,108 declared not managed by LiteSPM" [ref=f6e1074] [cursor=pointer]:
+            - /url: /explore/?host=Terramind
+            - generic [ref=f6e1075]: Terramind
+            - generic [ref=f6e1081]: 1,108
+            - generic [ref=f6e1082]: declared
+            - code [ref=f6e1083]: not managed by LiteSPM
+        - listitem [ref=f6e1084]:
+          - link "Tinycloud 1,108 declared not managed by LiteSPM" [ref=f6e1085] [cursor=pointer]:
+            - /url: /explore/?host=Tinycloud
+            - generic [ref=f6e1086]: Tinycloud
+            - generic [ref=f6e1092]: 1,108
+            - generic [ref=f6e1093]: declared
+            - code [ref=f6e1094]: not managed by LiteSPM
+        - listitem [ref=f6e1095]:
+          - link "Trae 1,108 declared not managed by LiteSPM" [ref=f6e1096] [cursor=pointer]:
+            - /url: /explore/?host=Trae
+            - generic [ref=f6e1097]: Trae
+            - generic [ref=f6e1103]: 1,108
+            - generic [ref=f6e1104]: declared
+            - code [ref=f6e1105]: not managed by LiteSPM
+        - listitem [ref=f6e1106]:
+          - link "Trae CN 1,108 declared not managed by LiteSPM" [ref=f6e1107] [cursor=pointer]:
+            - /url: /explore/?host=Trae%20CN
+            - generic [ref=f6e1108]: Trae CN
+            - generic [ref=f6e1114]: 1,108
+            - generic [ref=f6e1115]: declared
+            - code [ref=f6e1116]: not managed by LiteSPM
+        - listitem [ref=f6e1117]:
+          - link "Windsurf 1,108 declared not managed by LiteSPM" [ref=f6e1118] [cursor=pointer]:
+            - /url: /explore/?host=Windsurf
+            - generic [ref=f6e1119]: Windsurf
+            - generic [ref=f6e1125]: 1,108
+            - generic [ref=f6e1126]: declared
+            - code [ref=f6e1127]: not managed by LiteSPM
+        - listitem [ref=f6e1128]:
+          - link "Zencoder 1,108 declared not managed by LiteSPM" [ref=f6e1129] [cursor=pointer]:
+            - /url: /explore/?host=Zencoder
+            - generic [ref=f6e1130]: Zencoder
+            - generic [ref=f6e1136]: 1,108
+            - generic [ref=f6e1137]: declared
+            - code [ref=f6e1138]: not managed by LiteSPM
+        - listitem [ref=f6e1139]:
+          - link "Zenflow 1,108 declared not managed by LiteSPM" [ref=f6e1140] [cursor=pointer]:
+            - /url: /explore/?host=Zenflow
+            - generic [ref=f6e1141]: Zenflow
+            - generic [ref=f6e1147]: 1,108
+            - generic [ref=f6e1148]: declared
+            - code [ref=f6e1149]: not managed by LiteSPM
+      - paragraph [ref=f6e1150]: Compatibility is publisher-declared. It is not a test result, and this site does not run these capabilities.
+    - contentinfo [ref=f6e1151]:
+      - generic [ref=f6e1152]:
+        - generic [ref=f6e1153]:
+          - paragraph [ref=f6e1154]: LiteSPM Market
+          - paragraph [ref=f6e1155]: One bridge entry per agent, installed once. The catalog is a snapshot of named upstream sources, and everything here is resolved locally by the LiteSPM daemon.
+        - generic [ref=f6e1156]:
+          - heading "Indexed" [level=2] [ref=f6e1157]
+          - list [ref=f6e1158]:
+            - listitem [ref=f6e1159]:
+              - link "Explore" [ref=f6e1160] [cursor=pointer]:
+                - /url: /explore/
+            - listitem [ref=f6e1161]:
+              - link "Categories" [ref=f6e1162] [cursor=pointer]:
+                - /url: /categories/
+            - listitem [ref=f6e1163]:
+              - link "Agent hosts" [ref=f6e1164] [cursor=pointer]:
+                - /url: /agents/
+            - listitem [ref=f6e1165]:
+              - link "Coverage" [ref=f6e1166] [cursor=pointer]:
+                - /url: /trending/
+            - listitem [ref=f6e1167]:
+              - link "/v1/current.json" [ref=f6e1168] [cursor=pointer]:
+                - /url: /v1/current.json
+        - generic [ref=f6e1169]:
+          - heading "What the numbers mean" [level=2] [ref=f6e1170]
+          - list [ref=f6e1171]:
+            - listitem [ref=f6e1172]:
+              - strong [ref=f6e1173]: No popularity figures are published.
+              - text: The upstream sources do not expose machine-readable star or install counts, so the catalog shows none rather than an estimate.
+            - listitem [ref=f6e1174]:
+              - generic [ref=f6e1175]: "50"
+              - text: agent hosts have compiled-in config adapters. Every one lists the documentation it was verified against.
+            - listitem [ref=f6e1176]: "Publisher “vendor-listed” means the row came from that publisher’s own marketplace manifest; no registry verified the publisher and this project did not audit it. Rows from third-party awesome-lists are discovery-only: no version or launch command was proven."
+      - generic [ref=f6e1178]:
+        - generic [ref=f6e1179]:
+          - generic [ref=f6e1180]:
+            - definition [ref=f6e1181]:
+              - generic [ref=f6e1182]: 5,825
+            - term [ref=f6e1183]: capabilities
+          - generic [ref=f6e1184]:
+            - definition [ref=f6e1185]:
+              - generic [ref=f6e1186]: 4,079
+            - term [ref=f6e1187]: MCP
+          - generic [ref=f6e1188]:
+            - definition [ref=f6e1189]:
+              - generic [ref=f6e1190]: 1,108
+            - term [ref=f6e1191]: skills
+          - generic [ref=f6e1192]:
+            - definition [ref=f6e1193]:
+              - generic [ref=f6e1194]: "638"
+            - term [ref=f6e1195]: plugins
+        - generic [ref=f6e1196]:
+          - paragraph [ref=f6e1197]: Open source. No analytics, no cookies, no install telemetry.
+          - link "GitHub repository" [ref=f6e1198] [cursor=pointer]:
+            - /url: https://github.com/sarv-projects/LiteSPM
+  - status
+  - alert [ref=f6e1199]

@@ -19,7 +19,7 @@ import generatedSkillTargets from "../data/skill-targets.json";
 
 export type PlatformOS = "win" | "mac" | "linux";
 export type HostFormat = "json" | "toml";
-export type HostShape = "object" | "local-array" | "command-string" | "";
+export type HostShape = "object" | "local-array" | "stdio-typed" | "command-string" | "";
 
 export interface HostAdapter {
   /** Registry id passed to `litespm bridge stdio --host <id>`. */
@@ -69,27 +69,23 @@ const PATH_OVERRIDES: Record<string, Partial<Record<PlatformOS, string>>> = {
   "claude-code": { win: "%USERPROFILE%\\.claude.json" },
   codex: { win: "%USERPROFILE%\\.codex\\config.toml" },
   opencode: { win: "%USERPROFILE%\\.config\\opencode\\opencode.json" },
-  cline: {
-    win: "%APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_mcp_settings.json",
-    mac: "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
-  },
+  // Cline moved the file out of VS Code's globalStorage into the shared
+  // ~/.cline/data/settings path every current client reads (see
+  // internal/host/cline.go); the previous win/mac overrides pointed at a
+  // location current Cline only reads once, as a legacy migration.
+  cline: { win: "%USERPROFILE%\\.cline\\data\\settings\\cline_mcp_settings.json" },
   "pi-agent": { win: "%USERPROFILE%\\.pi\\agent\\mcp.json" },
   "grok-build": { win: "%USERPROFILE%\\.grok\\config.toml" },
 };
 
 export const HOSTS: HostAdapter[] = (generated as GeneratedHost[]).map((h) => {
-  // Hand-written adapters (codex, claude-code, opencode, cline, pi-agent,
-  // grok-build) do not expose a key path in hosts.json, so apply bespoke
-  // defaults where necessary or fall back to the format's conventional default.
-  let fallback = h.format === "toml" ? "mcp_servers" : "mcpServers";
-  let shape: HostShape = (h.shape as HostShape) || "object";
-
-  if (h.id === "opencode") {
-    fallback = "mcp.servers";
-    shape = "local-array";
-  }
-
+  // keyPath and shape are emitted by scripts/gen_hosts_ts.go for every
+  // adapter — the six hand-written ones included — from the same registry the
+  // binary writes with, so this file no longer restates them. The fallbacks
+  // below only cover a host the registry declares no layout for.
+  const fallback = h.format === "toml" ? "mcp_servers" : "mcpServers";
   const keyPath = h.keyPath || fallback;
+  const shape: HostShape = (h.shape as HostShape) || "object";
   return {
     id: h.id,
     name: h.name,
@@ -200,9 +196,9 @@ export function resolveHost(name: string): HostAdapter | undefined {
 }
 
 /**
- * Nest `leaf` under a dotted key path, e.g. ("mcp.servers", v) →
- * `{ mcp: { servers: v } }`. Hosts genuinely differ here (OpenCode uses
- * mcp.servers, Amp uses amp.mcpServers), so the path comes from the registry
+ * Nest `leaf` under a dotted key path, e.g. ("amp.mcpServers", v) →
+ * `{ amp: { mcpServers: v } }`. Hosts genuinely differ here (Amp nests under
+ * `amp`, Crush reads `mcp` at the root), so the path comes from the registry
  * rather than being assumed.
  */
 function nest(keyPath: string, leaf: unknown): Record<string, unknown> {
@@ -221,6 +217,8 @@ export function bridgeEntry(host: HostAdapter, binary = "litespm"): unknown {
   switch (host.shape) {
     case "local-array":
       return { type: "local", command: [binary, ...args] };
+    case "stdio-typed":
+      return { type: "stdio", command: binary, args };
     case "command-string":
       return `${binary} ${args.join(" ")}`;
     default:

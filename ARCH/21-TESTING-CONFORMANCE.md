@@ -64,11 +64,12 @@ harness that must be built:
 
 ---
 
-## 5. MCP Conformance Test Matrix (`DESIGNED` — provider dispatch is not wired)
+## 5. MCP Conformance Test Matrix (`DESIGNED` — not executed)
 
-`internal/mcpclient` currently has **zero production importers** and the daemon's `provider.invoke`
-returns `-32601`, so LiteSPM does not yet validate a live MCP exchange. The matrix below is the
-intended coverage once provider dispatch lands; it is not executed today.
+`internal/mcpclient` is `WIRED` through `internal/discover`, which dials a real installed server,
+probes its tools and calls one — so a live MCP exchange **is** exercised end to end
+([STATUS.md](../STATUS.md) §4). The matrix below is the **additional** intended coverage
+(negotiation, HTTP headers, cancellation, elicitation) that no test runs today.
 *   **Version Negotiation:** Tests client behavior when server advertises modern `2026-07-28` vs. legacy `2025-11-25`.
 *   **Header Mirroring:** Verifies that HTTP POST requests mirror `Mcp-Method` headers.
 *   **Cancellation:** Verifies that sending `$/cancelRequest` cleanly terminates child process computation.

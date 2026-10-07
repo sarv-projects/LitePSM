@@ -70,7 +70,7 @@ platform (see [`SECURITY.md`](https://github.com/sarv-projects/LiteSPM/blob/main
 ```bash
 litespm                    # interactive setup wizard
 litespm search postgres    # search the federated catalog
-litespm install <id>       # install a capability (skills install for real; MCP/plugin pending)
+litespm install <id>       # install a capability (skills + MCP servers; plugins pending an artifact source)
 litespm host list          # show supported agents
 litespm doctor             # run local health checks
 litespm self-update        # update the binary
@@ -94,8 +94,11 @@ Inside a configured agent, just type:
   paths, symlinks, device files, case-fold collisions, and oversize payloads,
   and unpacks into a content-addressed store.
 - **Fail-closed by design.** Effectful actions are intended to require explicit,
-  cryptographically bound approval. Skills install for real through the ledger;
-  MCP/plugin installs and `invoke_capability` (`-32601`) do not execute yet —
+  cryptographically bound approval. Skills and MCP servers install for real (skills
+  through the ledger, MCP servers through host-config registration, both gated by a
+  plan plus a human approval); plugin installs still fail closed with
+  `LPSM-ARTIFACT-UNAVAILABLE`, and `get_invocation` / `cancel_invocation` (`-32601`)
+  have no invocation registry behind them —
   the wiring is tracked in [`STATUS.md`](https://github.com/sarv-projects/LiteSPM/blob/main/STATUS.md).
 - **Drift-bound approvals** (`IMPLEMENTED`, not yet wired). Approvals are designed
   to bind to a tool's schema fingerprint and content digest, so a change forces
@@ -118,7 +121,7 @@ Inside a configured agent, just type:
 |---|---|
 | `litespm` / `litespm setup` / `init` | Interactive agent selection and setup (no non-interactive form) |
 | `litespm search <query>` | Search MCP servers, skills, and plugins |
-| `litespm install <id>` | Install a capability (skills install for real; MCP/plugin pending an artifact source) |
+| `litespm install <id>` | Install a capability (skills and MCP servers complete; plugins pending an artifact source) |
 | `litespm uninstall [--dry-run]` | Remove the bridge entry from every agent host config |
 | `litespm bridge stdio --host <id>` | MCP stdio bridge used by hosts |
 | `litespm host [list\|detect\|setup\|remove]` | Inspect and configure host adapters |
@@ -136,7 +139,7 @@ Inside a configured agent, just type:
                      │  stdio (MCP)
                      ▼
              litespm bridge shim
-                     │  local authenticated IPC
+                     │  local IPC (OS-level ACLs)
                      ▼
               litespm daemon  ──  SQLite (WAL) · policy · secret vault
                      │
