@@ -164,50 +164,33 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "list":
+		if code := runList(os.Args[2:], false); code != 0 {
+			os.Exit(code)
+		}
+
+	case "inventory":
+		if code := runList(os.Args[2:], true); code != 0 {
+			os.Exit(code)
+		}
+
 	case "help", "--help", "-h":
-		printUsage()
+		runHelp(os.Args[2:])
 
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
 		printUsage()
-		os.Exit(1)
+		// An unknown command is a usage error (ARCH/20): the shipped list is
+		// printed above, and the exit code says the invocation itself was
+		// wrong rather than that some operation failed.
+		os.Exit(2)
 	}
 }
 
+// printUsage is a thin alias of the default help page, so a bare invocation
+// and `litespm help` can never disagree (ARCH/38 §3.2).
 func printUsage() {
-	fmt.Printf(`LiteSPM - The Lightweight Skill & Package Manager for AI Agents
-
-Usage:
-  litespm                     Run interactive agent setup wizard
-  litespm <command> [args]    Execute specific subcommand
-
-Available Commands:
-  setup                       Interactive setup wizard for AI agent hosts
-  search <query>              Search global catalog of MCP servers, skills, and plugins
-  install <id>                Install a capability (skills install now; MCP/plugin pending artifact wiring)
-  catalog sync                Synchronize latest catalog release from upstream
-  catalog build               Build the static /v1 release tree from the dataset
-  bridge stdio [--host h]     Launch stateless stdio MCP bridge shim for host agent
-  host [list|detect|setup]    Manage agent host adapters (Codex, Claude, OpenCode, Cline, Pi, Grok)
-  agent list [--json]         List installable ACP agents from the registry
-  agent resolve <id>          Resolve an ACP agent launch spec for this host
-  skills add <source>         Install SKILL.md skills (owner/repo, git URL, local dir)
-  skills update <name>...     Update installed skills from a source (--source, --ref, --dry-run)
-  skills remove <name>|--all  Remove installed skills recorded in the install ledger
-  install remove <installId>  Remove an installed package (nodes you edited are kept)
-  restore <installId>|--host  Roll an install back to its exact pre-install bytes (or refuse)
-  grant <capabilityId>        Authorize a tool invocation (interactive; list/revoke subcommands)
-  lock [--check|--sbom f|--verify]  Resolve litespm.yml into a deterministic litespm.lock (CI: --check)
-  copy --from <a> --to <b>   Port an agent's MCP servers & skills to another agent (plan first; --apply)
-  doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
-  self-update [--force]       Check for and apply binary updates
-  daemon serve                Start the LiteSPM background supervisor and IPC engine
-  version                     Print version and build details
-  help                        Show this help text
-
-Documentation & Architecture:
-  https://github.com/sarv-projects/litespm
-`)
+	renderDefaultHelp(os.Stdout)
 }
 
 // defaultUpdateDownloadLimit bounds the binary download when the configuration
