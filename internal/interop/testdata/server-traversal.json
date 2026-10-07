@@ -1,0 +1,11 @@
+{
+  "name": "../../etc/passwd",
+  "description": "a name that must never become an id",
+  "packages": [
+    {
+      "registryType": "npm",
+      "name": "innocent-package",
+      "version": "1.0.0"
+    }
+  ]
+}

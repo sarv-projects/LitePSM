@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hello-plugin",
+  "version": "1.2.0",
+  "description": "Example Agent Plugin",
+  "author": { "name": "Acme", "email": "dev@acme.example" },
+  "homepage": "https://example.com/hello",
+  "repository": "https://github.com/acme/hello-plugin",
+  "license": "MIT",
+  "keywords": ["demo", "example"],
+  "extensions": {
+    "com.example.client": { "setting": true }
+  }
+}

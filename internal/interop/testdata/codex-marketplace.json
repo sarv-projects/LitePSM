@@ -1,0 +1,25 @@
+{
+  "name": "acme-codex-plugins",
+  "interface": { "displayName": "Acme" },
+  "plugins": [
+    {
+      "name": "pdf-tools",
+      "description": "PDF helpers",
+      "version": "0.3.1",
+      "source": {
+        "source": "github",
+        "url": "https://github.com/acme/pdf-tools",
+        "path": "plugins/pdf"
+      },
+      "policy": {
+        "installation": "available",
+        "authentication": "required"
+      },
+      "category": "productivity"
+    },
+    {
+      "name": "no-version-helper",
+      "source": "acme/helpers"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "frontend-design": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/vercel-labs/agent-skills",
+      "ref": "main",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "e8a9f1c2d3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c"
+    },
+    "release-notes": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "pdf-tools": {
+      "source": "@acme/skills",
+      "sourceType": "node_modules",
+      "computedHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  }
+}

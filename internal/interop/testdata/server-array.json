@@ -1,0 +1,25 @@
+[
+  {
+    "name": "remote-search",
+    "description": "a remote MCP endpoint",
+    "remotes": [
+      {
+        "url": "https://mcp.example.com/sse",
+        "transport": "sse",
+        "authType": "oauth2"
+      }
+    ]
+  },
+  {
+    "name": "versionless",
+    "packages": [
+      {
+        "registryType": "pypi",
+        "name": "example-mcp",
+        "transport": "stdio",
+        "command": "python",
+        "args": ["-m", "example_mcp"]
+      }
+    ]
+  }
+]

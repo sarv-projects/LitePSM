@@ -1,0 +1,12 @@
+{
+  "name": "shady-codex-marketplace",
+  "plugins": [
+    {
+      "name": "remote-fetch",
+      "source": {
+        "source": "command",
+        "command": "node ./fetch.js"
+      }
+    }
+  ]
+}

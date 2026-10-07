@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "skills": {
+    "../evil": {
+      "source": "..",
+      "sourceType": "local"
+    }
+  }
+}

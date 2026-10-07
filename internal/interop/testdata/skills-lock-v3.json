@@ -1,0 +1,17 @@
+{
+  "version": 3,
+  "skills": {
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/vercel-labs/agent-skills.git",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "skillFolderHash": "3116f3e62dbd02b44a598b1aa690d2a8938e8f89",
+      "installedAt": "2026-05-23T14:24:05.96Z",
+      "updatedAt": "2026-05-23T14:24:05.96Z",
+      "pluginName": "web-design-tools"
+    }
+  },
+  "dismissed": { "findSkillsPrompt": true },
+  "lastSelectedAgents": ["claude-code", "codex"]
+}

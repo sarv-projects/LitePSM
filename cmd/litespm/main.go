@@ -97,6 +97,11 @@ func main() {
 			os.Exit(code)
 		}
 
+	case "import":
+		if code := runImport(os.Args[2:]); code != 0 {
+			os.Exit(code)
+		}
+
 	case "catalog":
 		if len(os.Args) >= 3 {
 			switch os.Args[2] {

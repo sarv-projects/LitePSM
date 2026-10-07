@@ -1,0 +1,27 @@
+{
+  "name": "postgres",
+  "description": "PostgreSQL MCP server",
+  "repository": "https://github.com/modelcontextprotocol/servers",
+  "license": "MIT",
+  "publisher": {
+    "name": "Model Context Protocol",
+    "url": "https://modelcontextprotocol.io",
+    "email": "registry@modelcontextprotocol.io"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "name": "@modelcontextprotocol/server-postgres",
+      "version": "0.6.2",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "runtime": "node",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "POSTGRES_CONNECTION_SECRET": "hunter2-never-printed"
+      }
+    }
+  ],
+  "status": "active"
+}
