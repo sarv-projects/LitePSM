@@ -14,6 +14,22 @@
 existing writer (`InstallServerEntry`) through the canonical IR defined in
 §6 below.
 
+> **Config-path audit (2026-10-07).** All 44 generic bridge-target rows in
+> `internal/host/targets_data.go` were checked against official vendor
+> documentation or vendor source: **44/44 verified**. 41 matched upstream as
+> recorded; the two env-relocation filename defects found were fixed
+> (`kode` writes `<KODE_CONFIG_DIR>/config.json`, `qwen-code`'s `QWEN_HOME`
+> replaces `~/.qwen` instead of prefixing it), and two further gaps found
+> during the audit were closed (`forgecode` now honours `FORGE_CONFIG`,
+> `zed` gained its macOS `Library/Application Support` path). `astrbot`'s
+> path was confirmed in vendor source (`func_tool_manager.py` →
+> `get_astrbot_data_path()/mcp_server.json`). Remaining caveats are recorded
+> in the row Notes: `iflow-cli` vendor EOL 2026-04-17 (target kept so
+> existing installs stay manageable), `antigravity-cli` disputed path
+> pending re-audit, `codebuddy` DocsURL unreachable from the audit
+> environment (text matched via mirrors). A regression test pins the three
+> relocated paths (`TestGenericTargetEnvRelocations`).
+
 ---
 
 ## 1. Extensible HostAdapter Architecture

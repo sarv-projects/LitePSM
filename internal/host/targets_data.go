@@ -155,7 +155,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectBinaries:   []string{"agy"},
 		SharedConfigWith: []string{"antigravity"},
 		DocsURL:          "https://antigravity.google/docs/mcp",
-		Note:             "Shares one config file with the Antigravity IDE; see the antigravity row.",
+		Note:             "Shares one config file with the Antigravity IDE; see the antigravity row. Recheck at next audit: an upstream issue disputes the global path (claims an app-data dir); this row follows the vendor docs.",
 	},
 	{
 		ID: "astrbot", Name: "AstrBot", Format: FormatJSON,
@@ -178,7 +178,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		},
 		DetectPaths: []string{".astrbot"},
 		DocsURL:     "https://github.com/AstrBotDevs/AstrBot/wiki/en-use-mcp",
-		Note:        "A chat-bot framework, not a coding agent. Config lives under ASTRBOT_ROOT, not $HOME.",
+		Note:        "A chat-bot framework, not a coding agent. Path verified in vendor source: <root>/data/mcp_server.json where root is ASTRBOT_ROOT else cwd (packaged desktop runtime: ~/.astrbot).",
 	},
 	{
 		ID: "augment", Name: "Augment", Format: FormatJSON,
@@ -252,13 +252,20 @@ var verifiedBridgeTargets = []BridgeTarget{
 	{
 		ID: "forgecode", Name: "ForgeCode", Format: FormatJSON,
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
-		Shape:          ShapeObject,
-		UserPath:       func(home string) string { return filepath.Join(home, "forge", ".mcp.json") },
+		Shape: ShapeObject,
+		UserPath: func(home string) string {
+			// FORGE_CONFIG relocates forge's base dir (forge_config reader.rs
+			// resolution order 1) and the MCP file is <base>/.mcp.json.
+			if v := os.Getenv("FORGE_CONFIG"); v != "" {
+				return filepath.Join(v, ".mcp.json")
+			}
+			return filepath.Join(home, "forge", ".mcp.json")
+		},
 		ProjectPath:    func(root string) string { return filepath.Join(root, ".mcp.json") },
 		DetectPaths:    []string{"forge"},
 		DetectBinaries: []string{"forge"},
 		DocsURL:        "https://github.com/tailcallhq/forgecode",
-		Note:           "Other settings live in ~/forge/.forge.toml; MCP is .mcp.json.",
+		Note:           "Other settings live in ~/forge/.forge.toml; MCP is .mcp.json; FORGE_CONFIG relocates the whole base dir (incl. the MCP file).",
 	},
 	{
 		ID: "fx", Name: "fx", Format: FormatJSON,
@@ -315,7 +322,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".iflow"},
 		DetectBinaries: []string{"iflow"},
 		DocsURL:        "https://github.com/iflow-ai/iflow-cli",
-		Note:           "Vendor docs list two conflicting layouts (settings.json vs .iflow/mcp/config.json); settings.json is what we target.",
+		Note:           "Vendor docs list two conflicting layouts (settings.json vs .iflow/mcp/config.json); settings.json is what we target. Vendor shut the product down 2026-04-17 (README banner); the target stays so existing installs remain manageable.",
 	},
 	{
 		ID: "jazz", Name: "Jazz", Format: FormatJSON,
@@ -408,7 +415,8 @@ var verifiedBridgeTargets = []BridgeTarget{
 		Shape: ShapeObject,
 		UserPath: func(home string) string {
 			if v := os.Getenv("KODE_CONFIG_DIR"); v != "" {
-				return filepath.Join(v, "kode.json")
+				// Vendor: <KODE_CONFIG_DIR>/config.json, not kode.json.
+				return filepath.Join(v, "config.json")
 			}
 			return filepath.Join(home, ".kode.json")
 		},
@@ -418,7 +426,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".kode"},
 		DetectBinaries: []string{"kode"},
 		DocsURL:        "https://github.com/shareAI-lab/Kode-cli",
-		Note:           "Project file .mcp.json; global map lives in ~/.kode.json.",
+		Note:           "Project file .mcp.json; global map lives in ~/.kode.json (or <KODE_CONFIG_DIR>/config.json when that env is set).",
 	},
 	{
 		ID: "crush", Name: "Crush", Format: FormatJSON,
@@ -463,13 +471,16 @@ var verifiedBridgeTargets = []BridgeTarget{
 			if ad := windowsAppData(); ad != "" {
 				return filepath.Join(ad, "Zed", "settings.json")
 			}
+			if runtime.GOOS == "darwin" {
+				return filepath.Join(home, "Library", "Application Support", "Zed", "settings.json")
+			}
 			return filepath.Join(xdgConfigDir(home), "zed", "settings.json")
 		},
 		ProjectPath:    func(root string) string { return filepath.Join(root, ".zed", "settings.json") },
 		DetectPaths:    []string{".config/zed", ".local/share/zed"},
 		DetectBinaries: []string{"zed"},
 		DocsURL:        "https://zed.dev/docs/ai/mcp",
-		Note:           "Key is \"context_servers\" (NOT mcpServers). settings.json is JSONC; comments are preserved on write.",
+		Note:           "Key is \"context_servers\" (NOT mcpServers). settings.json is JSONC; comments are preserved on write. macOS reads ~/Library/Application Support/Zed/settings.json.",
 	},
 	{
 		ID: "bob", Name: "IBM Bob", Format: FormatJSON,
@@ -625,9 +636,10 @@ var verifiedBridgeTargets = []BridgeTarget{
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
 		Shape: ShapeObject,
 		UserPath: func(home string) string {
-			// QWEN_HOME customizes the global configuration directory.
+			// QWEN_HOME replaces ~/.qwen wholesale (vendor settings docs env
+			// table); appending another .qwen would write a directory it opens.
 			if dir := os.Getenv("QWEN_HOME"); dir != "" {
-				return filepath.Join(dir, ".qwen", "settings.json")
+				return filepath.Join(dir, "settings.json")
 			}
 			return filepath.Join(home, ".qwen", "settings.json")
 		},

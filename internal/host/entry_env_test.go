@@ -242,6 +242,50 @@ env_vars = ["GITHUB_TOKEN"]
 	}
 }
 
+// The env-relocation branches are the silent-failure class: a wrong filename
+// under a relocated directory installs nowhere and still reports success. Each
+// case pins the exact materialisation a vendor document or vendor source states
+// (2026-10-07 config audit): kode writes <KODE_CONFIG_DIR>/config.json, QWEN_HOME
+// replaces ~/.qwen wholesale, FORGE_CONFIG relocates forge's whole base dir with
+// the MCP file inside it.
+func TestGenericTargetEnvRelocations(t *testing.T) {
+	cases := []struct {
+		id   string
+		env  string
+		want string // filename inside the relocated directory
+	}{
+		{"kode", "KODE_CONFIG_DIR", "config.json"},
+		{"qwen-code", "QWEN_HOME", "settings.json"},
+		{"forgecode", "FORGE_CONFIG", ".mcp.json"},
+	}
+	for _, c := range cases {
+		t.Run(c.id, func(t *testing.T) {
+			home := t.TempDir()
+			dir := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv(c.env, dir)
+			target := findBridgeTarget(t, c.id)
+			got := target.UserPath(home)
+			want := filepath.Join(dir, c.want)
+			if got != want {
+				t.Errorf("%s UserPath with %s set = %q, want %q per vendor docs",
+					c.id, c.env, got, want)
+			}
+		})
+	}
+}
+
+func findBridgeTarget(t *testing.T, id string) *BridgeTarget {
+	t.Helper()
+	for i := range verifiedBridgeTargets {
+		if verifiedBridgeTargets[i].ID == id {
+			return &verifiedBridgeTargets[i]
+		}
+	}
+	t.Fatalf("no bridge target %q", id)
+	return nil
+}
+
 func mustAdapter(t *testing.T, id string) HostAdapter {
 	t.Helper()
 	a, err := GetAdapter(id)
