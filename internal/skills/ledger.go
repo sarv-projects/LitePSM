@@ -380,6 +380,40 @@ func (l *Ledger) replaceEntryLocked(destDir string, e LedgerEntry) error {
 	return fmt.Errorf("no ledger entry recorded for %s", destDir)
 }
 
+// DeleteDest removes exactly the row recorded for one destination, and only
+// while its content digest still matches the digest this install wrote. It is
+// the ledger half of a failed install's rollback: the caller deletes the
+// freshly copied directory after this returns, so the ledger never outlives
+// the files it describes — and a digest mismatch means the row is no longer
+// ours to drop, which is refused rather than guessed.
+func (l *Ledger) DeleteDest(destDir, contentDigest string) error {
+	if destDir == "" {
+		return fmt.Errorf("delete ledger row: empty destination")
+	}
+	if err := l.confineDest(destDir); err != nil {
+		return fmt.Errorf("refusing to roll back %s: %w", destDir, err)
+	}
+	return l.withLock(func() error {
+		entries, err := l.read()
+		if err != nil {
+			return err
+		}
+		kept := make([]LedgerEntry, 0, len(entries))
+		found := false
+		for _, e := range entries {
+			if e.DestDir == destDir && e.ContentDigest == contentDigest {
+				found = true
+				continue
+			}
+			kept = append(kept, e)
+		}
+		if !found {
+			return fmt.Errorf("no ledger row for %s with digest %s; refusing to remove another install's record", destDir, contentDigest)
+		}
+		return l.write(kept)
+	})
+}
+
 // removableReason returns "" when the directory is safe to delete, or an
 // explanation of why it was left alone.
 func removableReason(e LedgerEntry, force bool) string {

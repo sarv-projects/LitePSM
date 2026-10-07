@@ -176,37 +176,35 @@ func isEmptyJSONObject(body string) bool {
 	return strings.TrimSpace(body) == "{"
 }
 
-// chainLiteral renders the value for a container member whose NAME is supplied
-// by the caller, containing the remaining container chain in keys and, at the
-// leaf, the `litespm` member holding entry.
+// chainLiteral renders the value for a container member whose NAME is
+// supplied by the caller: the remaining container chain in keys, ending in an
+// EMPTY object so the caller's own upsert inserts the correctly named member.
 //
-//	keys = []          -> {"litespm": entry}             (member "mcpServers")
-//	keys = ["servers"] -> {"servers": {"litespm": ...}}  (member "mcp")
+//	keys = []          -> {}                       (member "mcpServers")
+//	keys = ["servers"] -> {"servers": {}}          (member "mcp")
 //
-// keyPath names containers only and `litespm` is always the leaf member. The
-// previous helper hardcoded `litespm` at the leaf and dropped intermediate
-// names, so a two-level path such as opencode's `mcp.servers` produced a
-// spurious extra `mcp` level. No data-driven target used a two-level path, so
-// the defect stayed latent until the bespoke adapters were routed here.
-func chainLiteral(keys []string, entry string, indent string) string {
-	inner := indent + "  "
+// The leaf used to be hardcoded to a `litespm` member. That is right for the
+// bridge entry itself, but ensureKeyPath is shared with server-entry installs:
+// installing a server into a fresh config created the missing container with
+// a `litespm` member holding the SERVER's launch line — a phantom bridge
+// entry whose command was a third-party binary, which then made VerifySetup
+// report the host as bridged. The named upsert that follows always writes the
+// right member, so the container just needs to exist.
+func chainLiteral(keys []string, indent string) string {
 	if len(keys) == 0 {
-		return "{\n" + inner + fmt.Sprintf("%q: %s", litespmServerName, entry) + "\n" + indent + "}"
+		return "{}"
 	}
-	child := chainLiteral(keys[1:], entry, inner)
+	inner := indent + "  "
+	child := chainLiteral(keys[1:], inner)
 	return "{\n" + inner + fmt.Sprintf("%q: %s", keys[0], child) + "\n" + indent + "}"
 }
 
 // ensureKeyPath makes sure the object at keyPath exists, creating any missing
-// intermediate levels, and returns the resulting text plus the byte range of
-// that object's value.
-func ensureKeyPath(raw string, keyPath []string, entry any) (string, int, int, error) {
+// intermediate levels (as empty objects), and returns the resulting text plus
+// the byte range of that object's value.
+func ensureKeyPath(raw string, keyPath []string) (string, int, int, error) {
 	if len(keyPath) == 0 {
 		return "", 0, 0, fmt.Errorf("empty key path")
-	}
-	entryCompact, err := json.Marshal(entry)
-	if err != nil {
-		return "", 0, 0, err
 	}
 	cur := raw
 	for depth := range keyPath {
@@ -235,9 +233,9 @@ func ensureKeyPath(raw string, keyPath []string, entry any) (string, int, int, e
 		}
 		objText := cur[containerStart:containerEnd]
 		memberIndent := lineIndentOf(cur, containerStart) + "  "
-		// The inserted member is named keyPath[depth]; its value is the rest of
-		// the container chain plus the `litespm` leaf.
-		value := chainLiteral(keyPath[depth+1:], string(entryCompact), memberIndent)
+		// The inserted member is named keyPath[depth]; its value is the rest
+		// of the container chain, ending empty for the caller's upsert.
+		value := chainLiteral(keyPath[depth+1:], memberIndent)
 		closeRel := strings.LastIndex(objText, "}")
 		if closeRel < 0 {
 			return "", 0, 0, fmt.Errorf("cannot create %v: parent is not an object", keyPath[:depth])
@@ -273,7 +271,7 @@ func mergeJSONEntrySurgicalNamed(raw string, keyPath []string, name string, valu
 	if strings.TrimSpace(stripJSONComments(raw)) == "" {
 		raw = "{}"
 	}
-	cur, start, end, err := ensureKeyPath(raw, keyPath, value)
+	cur, start, end, err := ensureKeyPath(raw, keyPath)
 	if err != nil {
 		return "", err
 	}

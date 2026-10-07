@@ -23,6 +23,7 @@ package host
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -78,6 +79,10 @@ type EntryInstallResult struct {
 	PriorEntry string
 	// PriorFingerprint is the hash of PriorEntry ("" when none existed).
 	PriorFingerprint string
+	// BackupPath is the pre-edit copy of the config this write was taken
+	// against ("" when the config did not exist, i.e. Created). Callers use it
+	// to restore the file byte-for-byte when a later install step fails.
+	BackupPath string
 }
 
 // entrySpec is everything that varies between hosts for a server entry.
@@ -444,10 +449,35 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 		proposed = merged
 	}
 
+	backupPath := ""
 	if !created {
-		if _, backupErr := CreateAtomicBackup(configPath, opts.BackupDir, adapter.Descriptor().HostID); backupErr != nil {
+		p, backupErr := CreateAtomicBackup(configPath, opts.BackupDir, adapter.Descriptor().HostID)
+		if backupErr != nil {
 			return nil, backupErr
 		}
+		backupPath = p
+	}
+	// Everything from the first byte on disk onward can still fail: a read-back
+	// that will not parse, an entry that did not land, a fingerprint that
+	// cannot be taken. Those failures must not leave a half-verified config
+	// behind, so this function undoes its own write before returning. The
+	// caller's install transaction therefore only ever sees a result that is
+	// either fully written or fully restored.
+	rollbackWrite := func() error {
+		if created {
+			if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("removing newly created %s: %w", configPath, err)
+			}
+			return nil
+		}
+		return RestoreBackup(configPath, backupPath)
+	}
+	fail := func(cause error) (*EntryInstallResult, error) {
+		if rbErr := rollbackWrite(); rbErr != nil {
+			return nil, errors.Join(cause,
+				fmt.Errorf("additionally, restoring %s after the failed install did not succeed: %w", configPath, rbErr))
+		}
+		return nil, cause
 	}
 	if err := AtomicWriteFile(configPath, []byte(proposed), 0600); err != nil {
 		return nil, fmt.Errorf("write %s: %w", configPath, err)
@@ -456,14 +486,14 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 	// Read back what the host will actually see.
 	written, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("read back %s: %w", configPath, err)
+		return fail(fmt.Errorf("read back %s: %w", configPath, err))
 	}
 	if _, present := lookupServerEntry(spec, string(written), entry.Name); !present {
-		return nil, fmt.Errorf("%s: wrote %s but the entry %q is not readable from it", adapter.Descriptor().HostID, configPath, entry.Name)
+		return fail(fmt.Errorf("%s: wrote %s but the entry %q is not readable from it", adapter.Descriptor().HostID, configPath, entry.Name))
 	}
 	writtenRaw, ok, serr := entryStateFromContent(spec, string(written), entry.Name)
 	if serr != nil || !ok {
-		return nil, fmt.Errorf("%s: wrote %s but the entry %q cannot be fingerprinted: %v", adapter.Descriptor().HostID, configPath, entry.Name, serr)
+		return fail(fmt.Errorf("%s: wrote %s but the entry %q cannot be fingerprinted: %v", adapter.Descriptor().HostID, configPath, entry.Name, serr))
 	}
 	priorFP := ""
 	if priorEntry != "" {
@@ -479,6 +509,7 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 		Fingerprint:      fingerprintOf(writtenRaw),
 		PriorEntry:       priorEntry,
 		PriorFingerprint: priorFP,
+		BackupPath:       backupPath,
 	}, nil
 }
 

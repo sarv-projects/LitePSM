@@ -120,6 +120,8 @@ func main() {
 
 	case "uninstall":
 		runUninstall(context.Background(), os.Args[2:])
+	case "restore":
+		runRestore(context.Background(), os.Args[2:])
 
 	case "agent":
 		runAgentCommand(os.Args[2:])
@@ -180,6 +182,8 @@ Available Commands:
   skills add <source>         Install SKILL.md skills (owner/repo, git URL, local dir)
   skills update <name>...     Update installed skills from a source (--source, --ref, --dry-run)
   skills remove <name>|--all  Remove installed skills recorded in the install ledger
+  install remove <installId>  Remove an installed package (nodes you edited are kept)
+  restore <installId>|--host  Roll an install back to its exact pre-install bytes (or refuse)
   doctor [--repair]           Run 10-check diagnostic verification & optional auto-repair
   self-update [--force]       Check for and apply binary updates
   daemon serve                Start the LiteSPM background supervisor and IPC engine
@@ -614,6 +618,43 @@ func runUninstall(ctx context.Context, args []string) {
 	fmt.Println("    delete them yourself once you are satisfied.")
 }
 
+// runInstallRemove is the terminal counterpart of the install.remove RPC:
+// the same ledger-driven, symmetric removal — strip only the nodes LiteSPM
+// still owns, keep every node the user edited, then delete state.
+func runInstallRemove(args []string) {
+	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
+		fmt.Println(`Usage: litespm install remove <installId>
+
+Removes one installed package: LiteSPM's own entries are stripped out of the
+host configs (restoring any user entry they replaced), and nodes you edited
+after the install are kept, not deleted.
+
+See also:
+  litespm restore <installId>   byte-exact rollback to the pre-install state`)
+		os.Exit(1)
+	}
+
+	ctx := context.Background()
+	paths, err := config.ResolvePlatformPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving paths: %v\n", err)
+		os.Exit(1)
+	}
+	db, err := state.Open(paths.StateDBPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening state: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := removeInstalledPackage(ctx, db, paths.DataRoot, args[0]); err != nil {
+		fmt.Fprintf(os.Stderr, "Remove failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("✓ Removed %s\n", args[0])
+	fmt.Println("  LiteSPM's entries were stripped from the host configs; nodes you edited were kept.")
+}
+
 func runAgentCommand(args []string) {
 	ctx := context.Background()
 
@@ -894,6 +935,13 @@ func parseInstallFlags(args []string) (installFlags, error) {
 }
 
 func runInstall(args []string) {
+	// `litespm install remove <installId>` shares the parser's first word but
+	// is the opposite operation: the terminal counterpart of the install.remove
+	// RPC, routed through the same ledger-driven symmetric removal.
+	if len(args) > 0 && args[0] == "remove" {
+		runInstallRemove(args[1:])
+		return
+	}
 	flags, err := parseInstallFlags(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Install error: %v\n", err)
@@ -1919,7 +1967,9 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		return result, nil
 	})
 
-	// 6. install.remove removes an installed package. A missing install is
+	// 6. install.remove removes an installed package as one ledger-driven
+	// unit: reconcile owned structures three-way, strip only what is still
+	// ours, keep what the user edited, then delete state. A missing install is
 	// reported as not-found instead of a fake `removed: true`.
 	server.RegisterHandler("install.remove", func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
 		var req struct {
@@ -1931,7 +1981,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 		if strings.TrimSpace(req.InstallID) == "" {
 			return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: "invalid params: installId is required"}
 		}
-		if err := db.DeleteInstall(ctx, req.InstallID); err != nil {
+		if err := removeInstalledPackage(ctx, db, paths.DataRoot, req.InstallID); err != nil {
 			var lpsmErr *domain.LPSMError
 			if errors.As(err, &lpsmErr) && lpsmErr.Code == "LPSM-STATE-NOT-FOUND" {
 				return nil, &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}

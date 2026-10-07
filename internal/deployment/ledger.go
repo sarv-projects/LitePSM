@@ -34,6 +34,13 @@ type Mutation struct {
 	// PriorEntry is the canonical text of a user-authored node this write
 	// replaced ("" when the locator did not exist). Uninstall restores it.
 	PriorEntry string
+	// BackupPath is the pre-edit backup file this write was taken against
+	// ("" when the write created the target, so there was nothing to back
+	// up). `litespm restore` replays it for a byte-exact rollback; it is
+	// recorded on first insert only, because the first pre-state is the
+	// user's while a later re-install's backup is LiteSPM's own previous
+	// write.
+	BackupPath string
 	Detached   bool
 	CreatedAt  time.Time
 }
@@ -136,15 +143,15 @@ func SaveMutationExec(ctx context.Context, ex Execer, m *Mutation) error {
 	_, err := ex.ExecContext(ctx, `
 	INSERT INTO deployment_mutations
 		(mutation_id, install_id, capability_id, host_id, scope, file_path,
-		 structure_type, locator, pre_image_hash, post_image_hash, owner, prior_entry, detached, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+		 structure_type, locator, pre_image_hash, post_image_hash, owner, prior_entry, backup_path, detached, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
 	ON CONFLICT(install_id, host_id, scope, file_path, locator) DO UPDATE SET
 		capability_id = excluded.capability_id,
 		post_image_hash = excluded.post_image_hash,
 		detached = 0;`,
 		m.MutationID, m.InstallID, m.CapabilityID, m.HostID, m.Scope,
 		m.FilePath, m.StructureType, m.Locator,
-		m.PreImageHash, m.PostImageHash, m.Owner, m.PriorEntry,
+		m.PreImageHash, m.PostImageHash, m.Owner, m.PriorEntry, m.BackupPath,
 	)
 	if err != nil {
 		return fmt.Errorf("save deployment mutation: %w", err)
@@ -155,7 +162,7 @@ func SaveMutationExec(ctx context.Context, ex Execer, m *Mutation) error {
 func (l *Ledger) MutationsForInstall(ctx context.Context, installID string) ([]Mutation, error) {
 	rows, err := l.db.QueryContext(ctx, `
 	SELECT mutation_id, install_id, capability_id, host_id, scope, file_path,
-	       structure_type, locator, pre_image_hash, post_image_hash, owner, prior_entry, detached, created_at
+	       structure_type, locator, pre_image_hash, post_image_hash, owner, prior_entry, backup_path, detached, created_at
 	FROM deployment_mutations WHERE install_id = ? ORDER BY created_at, mutation_id;`, installID)
 	if err != nil {
 		return nil, err
@@ -167,7 +174,35 @@ func (l *Ledger) MutationsForInstall(ctx context.Context, installID string) ([]M
 		var detached int
 		if err := rows.Scan(&m.MutationID, &m.InstallID, &m.CapabilityID, &m.HostID,
 			&m.Scope, &m.FilePath, &m.StructureType, &m.Locator,
-			&m.PreImageHash, &m.PostImageHash, &m.Owner, &m.PriorEntry, &detached, &m.CreatedAt); err != nil {
+			&m.PreImageHash, &m.PostImageHash, &m.Owner, &m.PriorEntry, &m.BackupPath, &detached, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.Detached = detached == 1
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// MutationsForHost returns every non-detached owned write for one host across
+// all installs, ordered oldest first. `litespm restore --host` rolls these
+// back; oldest-first matters because the earliest backup for a file is the
+// state before LiteSPM first touched it.
+func (l *Ledger) MutationsForHost(ctx context.Context, hostID string) ([]Mutation, error) {
+	rows, err := l.db.QueryContext(ctx, `
+	SELECT mutation_id, install_id, capability_id, host_id, scope, file_path,
+	       structure_type, locator, pre_image_hash, post_image_hash, owner, prior_entry, backup_path, detached, created_at
+	FROM deployment_mutations WHERE host_id = ? AND detached = 0 ORDER BY created_at, mutation_id;`, hostID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Mutation
+	for rows.Next() {
+		var m Mutation
+		var detached int
+		if err := rows.Scan(&m.MutationID, &m.InstallID, &m.CapabilityID, &m.HostID,
+			&m.Scope, &m.FilePath, &m.StructureType, &m.Locator,
+			&m.PreImageHash, &m.PostImageHash, &m.Owner, &m.PriorEntry, &m.BackupPath, &detached, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.Detached = detached == 1

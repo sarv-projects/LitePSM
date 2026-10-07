@@ -47,11 +47,26 @@ func HashFile(path string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// RecordHostWrite stores one ledger row for an owned host-config write. Call
-// it after the config splice succeeds and before (or with) the install commit
-// so a file edit without a ledger row never ships silently.
-func (o *Orchestrator) RecordHostWrite(ctx context.Context, installID, capabilityID, hostID, scope, filePath, structureType, locator, preHash string) error {
-	m := &deployment.Mutation{
+// OwnedWrite builds the deployment-ledger row for one owned write with
+// explicit images (ARCH/33 §2):
+//
+//   - preImage is the hash of the OWNED STRUCTURE before this install wrote
+//     it ("" when it did not exist). For a host config entry that is the
+//     EntryInstallResult.PriorFingerprint; for a skill directory it is ""
+//     because Install refuses a destination that already exists. Without it
+//     the Reconcile pre-image arm is dead and every three-way decision
+//     degrades to a two-way one.
+//   - postImage is the hash of what was actually written: the entry
+//     fingerprint for a config node, the content digest for a skill
+//     directory. SaveMutation refuses an empty one.
+//   - priorEntry is the canonical text of a user-authored node this write
+//     replaced ("" when none existed), so uninstall restores it instead of
+//     deleting it.
+//   - backupPath is the pre-edit backup file the write was taken against ( ""
+//     when the write created the target). `litespm restore` replays it for a
+//     byte-exact rollback; SaveMutation records it on first insert only.
+func OwnedWrite(installID, capabilityID, hostID, scope, filePath, structureType, locator, preImage, postImage, priorEntry, backupPath string) *deployment.Mutation {
+	return &deployment.Mutation{
 		InstallID:     installID,
 		CapabilityID:  capabilityID,
 		HostID:        hostID,
@@ -59,10 +74,19 @@ func (o *Orchestrator) RecordHostWrite(ctx context.Context, installID, capabilit
 		FilePath:      filePath,
 		StructureType: structureType,
 		Locator:       locator,
-		PreImageHash:  preHash,
-		PostImageHash: HashFile(filePath),
+		PreImageHash:  preImage,
+		PostImageHash: postImage,
+		PriorEntry:    priorEntry,
+		BackupPath:    backupPath,
 		Owner:         "litespm",
 	}
+}
+
+// RecordOwnedWrite stores one ledger row outside a transaction. Install paths
+// that already hold a *sql.Tx call deployment.SaveMutationExec directly with
+// OwnedWrite instead, so the row lands in the same transaction as the install
+// row it belongs to.
+func (o *Orchestrator) RecordOwnedWrite(ctx context.Context, m *deployment.Mutation) error {
 	return o.ledger.SaveMutation(ctx, m)
 }
 

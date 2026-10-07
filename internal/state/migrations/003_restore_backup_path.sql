@@ -1,0 +1,15 @@
+-- 003_restore_backup_path: record, per owned write, the pre-write backup the
+-- write was taken against.
+--
+-- `litespm restore` promises to put the EXACT original bytes back. A node
+-- splice (strip our entry, re-splice the prior one) only approximates that:
+-- whitespace and formatting inside the restored node are re-rendered, not
+-- replayed. The backup file is the byte-exact pre-state, but nothing tied it
+-- to the write that created it — backups are named host_timestamp_hash and
+-- carry no install identity.
+--
+-- Like pre_image_hash, the FIRST backup for a target is the user's; a later
+-- re-install's backup describes LiteSPM's own previous write and must never
+-- be restored, so backup_path is written on insert only (the upsert in
+-- deployment.SaveMutationExec does not update it).
+ALTER TABLE deployment_mutations ADD COLUMN backup_path TEXT NOT NULL DEFAULT '';

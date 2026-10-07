@@ -14,7 +14,7 @@ import (
 
 // CurrentSchemaVersion is the maximum schema version supported by this binary.
 // It must equal the highest Version in Migrations (asserted by a test).
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
 
 // Migration defines a versioned database schema migration.
 type Migration struct {
@@ -34,6 +34,11 @@ var Migrations = []Migration{
 		Version:     2,
 		Description: "002_phase1_state_lifecycle",
 		UpSQL:       phase1LifecycleSQL,
+	},
+	{
+		Version:     3,
+		Description: "003_restore_backup_path",
+		UpSQL:       restoreBackupPathSQL,
 	},
 }
 

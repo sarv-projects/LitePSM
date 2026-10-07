@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/sarv-projects/litespm/internal/deployment"
 	"github.com/sarv-projects/litespm/internal/domain"
 	"github.com/sarv-projects/litespm/internal/envref"
 	"github.com/sarv-projects/litespm/internal/host"
+	"github.com/sarv-projects/litespm/internal/lifecycle"
 	"github.com/sarv-projects/litespm/internal/state"
 )
 
@@ -180,6 +185,20 @@ func installMCPFromListing(
 		}
 	}
 
+	// State writes need a database; refuse before any config is touched.
+	if db == nil {
+		return nil, fmt.Errorf("installing %s requires a state database", listing.ID)
+	}
+
+	// The install is one unit (ARCH/33 §5): each host config write registers
+	// its own compensation as it happens, and every state row lands in one
+	// SQLite transaction. A failure at any point restores every config
+	// byte-for-byte (LIFO) and leaves no state row behind — the two used to be
+	// independent, so a state failure stranded edited configs with nothing
+	// recording them.
+	txn := lifecycle.BeginInstall(ctx)
+	defer txn.RollbackUnlessCommitted()
+
 	for _, hostID := range hosts {
 		result, err := host.InstallServerEntry(ctx, hostID, entry, host.EntryInstallOptions{
 			BackupDir: backupDir,
@@ -187,9 +206,11 @@ func installMCPFromListing(
 			Force:     force,
 		})
 		if err != nil {
-			return nil, err
+			return nil, errors.Join(err, txn.Rollback())
 		}
 		outcome.Hosts = append(outcome.Hosts, result)
+		written := result
+		txn.Undo(func(ctx context.Context) error { return undoHostConfigWrite(written) })
 	}
 
 	outcome.InstallID = fmt.Sprintf("inst_%s_%s_%s", scope, safeInstallIDPart(listing.ID), safeInstallIDPart(version))
@@ -213,44 +234,81 @@ func installMCPFromListing(
 		InstalledAt: time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
-	if err := db.SaveInstall(ctx, rec); err != nil {
-		return nil, fmt.Errorf("record the install: %w", err)
-	}
-	// S2: component_id is distinct from install_id
-	// (<install>#<kind>/<name>); the provider FK resolves against it.
-	if err := db.SaveInstallComponent(ctx, &domain.InstallComponentRecord{
-		InstallID:     outcome.InstallID,
-		Kind:          domain.ComponentMCPProvider,
-		ComponentName: name,
-		Path:          installPath,
-	}); err != nil {
-		return nil, fmt.Errorf("record the installed component: %w", err)
-	}
-	// S3/S4 + S5: one host_registrations row per config actually modified,
-	// each with a real entry fingerprint, plus one deployment-ledger row per
-	// owned write so uninstall can reconcile surgically (ARCH/33).
-	orch := newLifecycleOrchestrator(db)
-	for _, result := range outcome.Hosts {
-		if err := db.SaveHostRegistration(ctx, &domain.HostRegistrationRecord{
-			HostID:           result.HostID,
-			Scope:            scope,
-			ConfigPath:       result.ConfigPath,
-			ConfigFormat:     string(hostConfigFormatFor(result.HostID)),
-			ManagedEntryKey:  name,
-			EntryFingerprint: result.Fingerprint,
-			RegisteredAt:     time.Now().UTC(),
-			Status:           "active",
+	// S3/S4 + S5: install row, component row, one host_registrations row per
+	// config modified and one deployment-ledger row per owned write — all in
+	// one transaction. The ledger row carries the node-level pre-image (the
+	// fingerprint of the entry this write replaced, "" when none existed) and
+	// the node-level post-image (the entry as written), so the Reconcile
+	// pre-image arm is live and uninstall can distinguish "user edited our
+	// node" from "the file changed elsewhere" (ARCH/33 §4).
+	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := db.SaveInstallExec(ctx, tx, rec); err != nil {
+			return fmt.Errorf("record the install: %w", err)
+		}
+		// S2: component_id is distinct from install_id
+		// (<install>#<kind>/<name>); the provider FK resolves against it.
+		if err := db.SaveInstallComponentExec(ctx, tx, &domain.InstallComponentRecord{
+			InstallID:     outcome.InstallID,
+			Kind:          domain.ComponentMCPProvider,
+			ComponentName: name,
+			Path:          installPath,
 		}); err != nil {
-			return nil, fmt.Errorf("record the host registration: %w", err)
+			return fmt.Errorf("record the installed component: %w", err)
 		}
-		if orch != nil {
-			_ = orch.RecordHostWrite(ctx, outcome.InstallID, listing.ID,
+		for _, result := range outcome.Hosts {
+			if err := db.SaveHostRegistrationExec(ctx, tx, &domain.HostRegistrationRecord{
+				HostID:           result.HostID,
+				Scope:            scope,
+				ConfigPath:       result.ConfigPath,
+				ConfigFormat:     string(hostConfigFormatFor(result.HostID)),
+				ManagedEntryKey:  name,
+				EntryFingerprint: result.Fingerprint,
+				RegisteredAt:     time.Now().UTC(),
+				Status:           "active",
+			}); err != nil {
+				return fmt.Errorf("record the host registration: %w", err)
+			}
+			m := lifecycle.OwnedWrite(outcome.InstallID, listing.ID,
 				result.HostID, string(scope), result.ConfigPath,
-				hostStructureTypeFor(result.HostID), hostLocatorFor(result.HostID, name), "")
+				hostStructureTypeFor(result.HostID), hostLocatorFor(result.HostID, name),
+				result.PriorFingerprint, result.Fingerprint, result.PriorEntry, result.BackupPath)
+			if err := deployment.SaveMutationExec(ctx, tx, m); err != nil {
+				return fmt.Errorf("record the deployment mutation: %w", err)
+			}
 		}
+		return nil
+	}); err != nil {
+		return nil, errors.Join(err, txn.Rollback())
+	}
+	// State is durable: the configs stay. From here the deferred rollback is
+	// a no-op.
+	if err := txn.Commit(); err != nil {
+		return nil, err
 	}
 
 	return outcome, nil
+}
+
+// undoHostConfigWrite restores one host config to exactly the bytes it held
+// before InstallServerEntry wrote it. A config this install created is removed
+// (pre-install state was "no file"); a config it edited is restored from the
+// pre-write backup. InstallTxn runs these in reverse write order, so a
+// multi-host failure ends byte-identical to the pre-install machine — and a
+// backup that should exist but does not is an error, never a silent skip.
+func undoHostConfigWrite(r *host.EntryInstallResult) error {
+	if r == nil {
+		return nil
+	}
+	if r.Created {
+		if err := os.Remove(r.ConfigPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing config %s this install created: %w", r.ConfigPath, err)
+		}
+		return nil
+	}
+	if r.BackupPath == "" {
+		return fmt.Errorf("no pre-write backup recorded for %s; refusing to leave the edited config in place", r.ConfigPath)
+	}
+	return host.RestoreBackup(r.ConfigPath, r.BackupPath)
 }
 
 // hostConfigFormatFor reports the format of a host's config, for the

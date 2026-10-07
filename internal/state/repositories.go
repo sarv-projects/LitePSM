@@ -296,12 +296,6 @@ func (db *DB) RevokeApproval(ctx context.Context, approvalID string) error {
 
 // --- Installs & Components ---
 
-// execer is satisfied by both *sql.DB and *sql.Tx so write helpers can run
-// standalone or inside a larger transaction (see CommitInstallOperation).
-type execer interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
 // SaveInstall persists a local installation record.
 func (db *DB) SaveInstall(ctx context.Context, rec *domain.InstallRecord) error {
 	return db.saveInstallExec(ctx, db.raw, rec)
@@ -980,31 +974,33 @@ func (db *DB) GetActiveGrant(ctx context.Context, capabilityID, schemaFingerprin
 // the entry LiteSPM actually wrote; an empty one is refused rather than
 // recorded as a placeholder.
 func (db *DB) SaveHostRegistration(ctx context.Context, reg *domain.HostRegistrationRecord) error {
-	key := reg.ManagedEntryKey
-	if key == "" {
-		key = "litespm"
-	}
-	if reg.EntryFingerprint == "" {
-		return fmt.Errorf("host registration %s/%s: entry fingerprint is required (hash of the written entry)", reg.HostID, key)
-	}
-	query := `
-	INSERT INTO host_registrations (host_id, scope, workspace_id, config_path, managed_entry_key, entry_fingerprint, registered_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(host_id, scope, workspace_id, managed_entry_key) DO UPDATE SET
-		config_path = excluded.config_path,
-		entry_fingerprint = excluded.entry_fingerprint,
-		registered_at = excluded.registered_at;`
+	return db.SaveHostRegistrationExec(ctx, db.raw, reg)
+}
 
-	_, err := db.raw.ExecContext(ctx, query,
-		reg.HostID,
-		string(reg.Scope),
-		reg.WorkspaceID,
-		reg.ConfigPath,
-		key,
-		reg.EntryFingerprint,
-		reg.RegisteredAt,
-	)
-	return err
+// ListHostRegistrationsForEntry returns every managed registration for one
+// entry key in one scope, across hosts. Uninstall uses it to find the configs
+// that still hold an entry written before the deployment ledger existed.
+func (db *DB) ListHostRegistrationsForEntry(ctx context.Context, scope domain.InstallScope, entryKey string) ([]domain.HostRegistrationRecord, error) {
+	rows, err := db.raw.QueryContext(ctx, `
+	SELECT host_id, scope, COALESCE(workspace_id, ''), config_path, managed_entry_key, COALESCE(entry_fingerprint, ''), registered_at
+	FROM host_registrations WHERE scope = ? AND managed_entry_key = ? ORDER BY host_id;`,
+		string(scope), entryKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.HostRegistrationRecord
+	for rows.Next() {
+		var rec domain.HostRegistrationRecord
+		var scopeStr string
+		if err := rows.Scan(&rec.HostID, &scopeStr, &rec.WorkspaceID, &rec.ConfigPath,
+			&rec.ManagedEntryKey, &rec.EntryFingerprint, &rec.RegisteredAt); err != nil {
+			return nil, err
+		}
+		rec.Scope = domain.InstallScope(scopeStr)
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 // DeleteHostRegistration removes one managed-entry registration row.

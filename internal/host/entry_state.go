@@ -121,6 +121,51 @@ func ReadServerEntryState(ctx context.Context, hostID, name string, scope domain
 	}, nil
 }
 
+// EntryUnreadable is the fingerprint sentinel for a config that cannot be
+// parsed or looked up right now. It never equals a real "sha256:..." value, so
+// a three-way reconcile classifies the node as user-edited and refuses to
+// strip it — never as ours to delete.
+const EntryUnreadable = "unreadable:entry"
+
+// EntryFingerprintNow fingerprints the named server entry as it exists in the
+// host config at this moment. "" means the config file or the entry is gone
+// (a genuine missing); EntryUnreadable means the answer could not be
+// established (unparseable document, host without a declared layout), which
+// callers must treat as "not provably ours" rather than as missing.
+//
+// This is the C image of ARCH/33 §4 for a host-config node: it hashes the
+// entry's canonical text, never the whole file, so a sibling edit elsewhere in
+// the config does not read as modification of this node.
+func EntryFingerprintNow(ctx context.Context, hostID, name string, scope domain.InstallScope) (string, error) {
+	adapter, err := GetAdapter(hostID)
+	if err != nil {
+		return EntryUnreadable, err
+	}
+	spec, ok := entrySpecForScope(adapter, scope)
+	if !ok {
+		return EntryUnreadable, fmt.Errorf("host %q has no documented MCP entry shape", hostID)
+	}
+	configPath, err := adapter.DetectConfig(ctx, scope)
+	if err != nil {
+		return EntryUnreadable, err
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return EntryUnreadable, err
+	}
+	raw, present, err := entryStateFromContent(spec, string(data), name)
+	if err != nil {
+		return EntryUnreadable, nil
+	}
+	if !present {
+		return "", nil
+	}
+	return fingerprintOf(raw), nil
+}
+
 // EntryRemoveResult reports what RemoveServerEntry did to one host config.
 type EntryRemoveResult struct {
 	HostID     string

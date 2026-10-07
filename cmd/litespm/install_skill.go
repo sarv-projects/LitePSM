@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,7 +25,9 @@ import (
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/config"
+	"github.com/sarv-projects/litespm/internal/deployment"
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/lifecycle"
 	"github.com/sarv-projects/litespm/internal/skills"
 	"github.com/sarv-projects/litespm/internal/state"
 )
@@ -169,6 +173,15 @@ func installSkillFromListing(
 		return true
 	})
 	installer := skills.NewInstaller(ledger, checker)
+	if db == nil {
+		return nil, fmt.Errorf("installing %s requires a state database", listing.ID)
+	}
+
+	// One unit (ARCH/33 §5): each skill copy registers its compensation (drop
+	// the ledger row, then the directory it wrote), and every state row lands
+	// in one SQLite transaction. A failure mid-way leaves neither half behind.
+	txn := lifecycle.BeginInstall(ctx)
+	defer txn.RollbackUnlessCommitted()
 
 	outcome := &skillInstallOutcome{
 		ListingID: listing.ID,
@@ -185,10 +198,12 @@ func installSkillFromListing(
 			ObservedRef: observedRef,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("installing skill %s into %s: %w", op.SkillName, op.ToDir, err)
+			return nil, errors.Join(fmt.Errorf("installing skill %s into %s: %w", op.SkillName, op.ToDir, err), txn.Rollback())
 		}
 		outcome.LedgerEntries = append(outcome.LedgerEntries, entry)
 		outcome.Destinations = append(outcome.Destinations, entry.DestDir)
+		written := entry
+		txn.Undo(func(ctx context.Context) error { return undoSkillInstall(ledger, written) })
 	}
 	if len(outcome.LedgerEntries) > 0 {
 		last := outcome.LedgerEntries[len(outcome.LedgerEntries)-1]
@@ -215,28 +230,57 @@ func installSkillFromListing(
 		InstalledAt: now,
 		UpdatedAt:   now,
 	}
-	if err := db.SaveInstall(ctx, rec); err != nil {
-		return nil, fmt.Errorf("record install %s: %w", outcome.InstallID, err)
-	}
-	// S2/S4: one component row with a distinct component id, plus one
-	// deployment-ledger row per written skill directory so removal is
-	// ledger-driven and symmetric.
-	if err := db.SaveInstallComponent(ctx, &domain.InstallComponentRecord{
-		InstallID:     outcome.InstallID,
-		Kind:          domain.ComponentSkill,
-		ComponentName: outcome.SkillName,
-		Path:          installPath,
-	}); err != nil {
-		return nil, fmt.Errorf("record the installed component: %w", err)
-	}
-	if orch := newLifecycleOrchestrator(db); orch != nil {
-		for _, dest := range outcome.Destinations {
-			_ = orch.RecordHostWrite(ctx, outcome.InstallID, listing.ID,
-				"skills-ledger", string(scope), dest, "skill-dir",
-				"skills."+outcome.SkillName, "")
+	// S2/S4: install row, component row, and one deployment-ledger row per
+	// written skill directory — one transaction. The row's post-image is the
+	// directory's content digest (the same digest removal recomputes), and its
+	// pre-image is "" because Install refuses a destination that already
+	// exists: there was nothing there to replace.
+	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := db.SaveInstallExec(ctx, tx, rec); err != nil {
+			return fmt.Errorf("record install %s: %w", outcome.InstallID, err)
 		}
+		if err := db.SaveInstallComponentExec(ctx, tx, &domain.InstallComponentRecord{
+			InstallID:     outcome.InstallID,
+			Kind:          domain.ComponentSkill,
+			ComponentName: outcome.SkillName,
+			Path:          installPath,
+		}); err != nil {
+			return fmt.Errorf("record the installed component: %w", err)
+		}
+		for i, dest := range outcome.Destinations {
+			m := lifecycle.OwnedWrite(outcome.InstallID, listing.ID,
+				"skills-ledger", string(scope), dest, "skill-dir",
+				"skills."+outcome.SkillName, "", outcome.LedgerEntries[i].ContentDigest, "", "")
+			if err := deployment.SaveMutationExec(ctx, tx, m); err != nil {
+				return fmt.Errorf("record the deployment mutation for %s: %w", dest, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, errors.Join(err, txn.Rollback())
+	}
+	if err := txn.Commit(); err != nil {
+		return nil, err
 	}
 	return outcome, nil
+}
+
+// undoSkillInstall rolls one skill copy back: the ledger row this install
+// recorded goes first (the ledger must never describe files that are gone),
+// then the directory itself. DeleteDest refuses a row whose digest no longer
+// matches what this install wrote, so a directory the user reached during the
+// install is reported, not swept away.
+func undoSkillInstall(ledger *skills.Ledger, e skills.LedgerEntry) error {
+	if ledger == nil {
+		return fmt.Errorf("skill rollback: no ledger")
+	}
+	if err := ledger.DeleteDest(e.DestDir, e.ContentDigest); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(e.DestDir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing skill directory %s: %w", e.DestDir, err)
+	}
+	return nil
 }
 
 // selectSkillForListing picks the discovered skill that matches the listing

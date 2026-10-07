@@ -18,6 +18,9 @@ var initialSchemaSQL string
 //go:embed migrations/002_phase1_state_lifecycle.sql
 var phase1LifecycleSQL string
 
+//go:embed migrations/003_restore_backup_path.sql
+var restoreBackupPathSQL string
+
 // DB wraps a SQLite 3 connection pool configured for WAL mode and strong durability.
 type DB struct {
 	raw    *sql.DB
