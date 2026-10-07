@@ -40,3 +40,6 @@ __pycache__/
 
 # Cloudflare CLI local state (auth cache, temp files)
 .wrangler/
+
+# Local browser console logs (test scratch)
+.playwright-mcp/
