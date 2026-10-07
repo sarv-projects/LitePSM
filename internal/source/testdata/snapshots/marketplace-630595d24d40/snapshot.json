@@ -1,0 +1,23 @@
+{
+  "format": "litespm-source-snapshot/v1",
+  "snapshot": {
+    "snapshotId": "snap_01M49THV00JSENZPS73ZPHP8K0",
+    "sourceId": "git:claude-plugins-official",
+    "adapterVersion": "py-catalog-1",
+    "upstreamRevision": null,
+    "startedAt": "2026-10-07T00:00:00Z",
+    "status": "healthy",
+    "contentDigest": "sha256:9ca42d11a40f078c21b76b123333142f202883678eda18a78e797cba5db24c62",
+    "errorSummary": null,
+    "completedAt": "2026-10-07T00:00:00Z",
+    "itemCount": 3
+  },
+  "fetch": {
+    "url": "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json",
+    "etag": "\"9ca42d11a40f078c21b76b123333142f202883678eda18a78e797cba5db24c62\"",
+    "httpStatus": 200,
+    "fetchedAt": "2026-10-07T00:00:00Z",
+    "bodyFile": "body",
+    "byteSize": 1290
+  }
+}

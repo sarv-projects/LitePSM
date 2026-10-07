@@ -1,10 +1,41 @@
+import urllib.error
 import urllib.request
 import re
 import json
 import os
 import sys
+import time
 
 sys.stdout.reconfigure(encoding='utf-8')
+
+# FETCH SNAPSHOT LAYER
+# Every upstream fetch goes through scripts/snapshot_store.py: raw bytes are
+# recorded as a durable source snapshot (ARCH/03 §4 record shape) BEFORE any
+# parsing, and the parse below always reads the recorded bytes -- a re-run
+# replays the recording without touching the network, `--refresh` issues a
+# conditional request (If-None-Match) and only replaces a recording when the
+# server says the content changed. A recording whose digest does not match its
+# bytes is refused, never used; a fetch that failed records nothing (the
+# failure goes to failures.jsonl); an ETag-less endpoint still snapshots and
+# refresh compares digests only.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import snapshot_store
+
+# UPSTREAM FEEDS: (URL, sourceId) pairs. The sourceIds follow the
+# domain.SourceID grammar (`^[a-z0-9_-]{3,32}:[a-z0-9_-]{3,64}$`); the git:*
+# ids are the ones already registered in internal/source/sources.go.
+FEED_AWESOME_MCP = (
+    "https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md",
+    "feed:punkpeye-awesome-mcp-servers",
+)
+FEED_AWESOME_SKILLS = (
+    "https://raw.githubusercontent.com/VoltAgent/awesome-agent-skills/main/README.md",
+    "feed:voltagent-awesome-agent-skills",
+)
+FEED_OFFICIAL_SERVERS = (
+    "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/README.md",
+    "feed:modelcontextprotocol-servers",
+)
 
 # NOTE ON POPULARITY DATA
 # This builder deliberately publishes NO star / download / popularity figures.
@@ -190,45 +221,164 @@ def clean_category(cat_str):
             return v
     return cat if cat else "Developer Tools"
 
-def build_full_catalog():
-    print("Ingesting real registries...")
-    
-    # 1. Fetch punkpeye/awesome-mcp-servers
-    print("1/3 Fetching punkpeye/awesome-mcp-servers...")
-    req1 = urllib.request.Request(
-        "https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md",
-        headers={"User-Agent": "Mozilla/5.0"}
-    )
-    with urllib.request.urlopen(req1, timeout=25) as resp:
-        mcp_md = resp.read().decode("utf-8", errors="ignore")
-    
-    # 2. Fetch VoltAgent/awesome-agent-skills
-    print("2/3 Fetching VoltAgent/awesome-agent-skills...")
-    req2 = urllib.request.Request(
-        "https://raw.githubusercontent.com/VoltAgent/awesome-agent-skills/main/README.md",
-        headers={"User-Agent": "Mozilla/5.0"}
-    )
-    with urllib.request.urlopen(req2, timeout=25) as resp:
-        skills_md = resp.read().decode("utf-8", errors="ignore")
-        
-    # 3. Fetch modelcontextprotocol/servers
-    print("3/3 Fetching modelcontextprotocol/servers...")
+def _http_get(url, timeout, etag=None):
+    """GET `url`; return (status, headers, body).
+
+    A conditional request answering 304 comes back as status 304 with an empty
+    body whether urllib raises it (HTTPError) or returns it directly.
+    """
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if etag:
+        headers["If-None-Match"] = etag
+    req = urllib.request.Request(url, headers=headers)
     try:
-        req3 = urllib.request.Request(
-            "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/README.md",
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-        with urllib.request.urlopen(req3, timeout=15) as resp:
-            official_mcp_md = resp.read().decode("utf-8", errors="ignore")
+        resp = urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304:
+            return 304, exc.headers, b""
+        raise
+    try:
+        status = resp.getcode()
+        if status == 304:
+            return 304, resp.headers, b""
+        return status, resp.headers, resp.read()
+    finally:
+        resp.close()
+
+
+def _record_snapshot(root, url, source_id, status, headers, body, started_at):
+    """Persist a fetched response as the snapshot this run will parse from."""
+    rec = snapshot_store.write_snapshot(
+        root, url, source_id,
+        headers.get("ETag") if headers is not None else None,
+        status, body, started_at=started_at,
+    )
+    etag_note = ", etag recorded" if rec["fetch"]["etag"] else ", digest-only"
+    print(f"    recorded {rec['snapshot']['snapshotId']} "
+          f"({rec['fetch']['byteSize']} bytes{etag_note})")
+    return rec
+
+
+def obtain(url, source_id, timeout, refresh, label):
+    """Return the bytes this build normalizes from -- always the recorded
+    snapshot, never a live response.
+
+    Replay (default): use the recording; fetch and record only what is
+    missing. Refresh: conditional request with the recorded ETag; a 304 or a
+    200 whose content digest matches keeps the recording, a 200 with new
+    bytes replaces it, and a network failure keeps the recorded bytes while
+    logging the failure (failures.jsonl) and printing an explicit STALE
+    notice. A corrupt recording is fatal on a replay run (refused, not used)
+    and replaced on a refresh run.
+    """
+    root = snapshot_store.default_root()
+    rec_body = rec_meta = None
+    try:
+        rec_body, rec_meta = snapshot_store.load_snapshot(root, url)
+    except snapshot_store.SnapshotMissing:
+        pass
+    except snapshot_store.SnapshotIntegrityError as exc:
+        if not refresh:
+            raise
+        print(f"    {label}: recorded snapshot REFUSED ({exc}); fetching a replacement")
+        snapshot_store.log_failure(root, url, "snapshot-integrity", str(exc))
+        rec_body = rec_meta = None
+
+    if not refresh:
+        if rec_meta is not None:
+            print(f"    {label}: replay {rec_meta['snapshot']['snapshotId']} "
+                  f"(recorded {rec_meta['fetch']['fetchedAt']})")
+            return rec_body
+        print(f"    {label}: no recorded snapshot; fetching")
+        started_at = time.time()
+        try:
+            status, headers, body = _http_get(url, timeout)
+        except Exception as exc:
+            snapshot_store.log_failure(root, url, "fetch", str(exc))
+            raise
+        _record_snapshot(root, url, source_id, status, headers, body, started_at)
+        return body
+
+    etag = rec_meta["fetch"].get("etag") if rec_meta is not None else None
+    started_at = time.time()
+    try:
+        status, headers, body = _http_get(url, timeout, etag)
+    except Exception as exc:
+        if rec_meta is None:
+            snapshot_store.log_failure(root, url, "refresh", str(exc))
+            raise
+        print(f"    {label}: STALE -- refresh failed ({exc}); keeping snapshot "
+              f"recorded {rec_meta['fetch']['fetchedAt']}")
+        snapshot_store.log_failure(root, url, "refresh", str(exc))
+        return rec_body
+    if status == 304:
+        if rec_meta is None:
+            # Nothing recorded: a 304 gives us no bytes to normalize from, and
+            # inventing an entry we did not fetch is forbidden.
+            raise snapshot_store.SnapshotIntegrityError(
+                f"upstream answered 304 for {url} but no snapshot is recorded")
+        print(f"    {label}: upstream unchanged (304); snapshot kept")
+        return rec_body
+    if rec_meta is not None and \
+            snapshot_store.digest_bytes(body) == rec_meta["snapshot"]["contentDigest"]:
+        print(f"    {label}: content unchanged (digest match); snapshot kept")
+        return rec_body
+    if rec_meta is not None:
+        print(f"    {label}: upstream content changed; replacing snapshot")
+    else:
+        print(f"    {label}: recording snapshot")
+    _record_snapshot(root, url, source_id, status, headers, body, started_at)
+    return body
+
+
+def build_full_catalog(refresh=False):
+    print("Ingesting real registries...")
+    snap_root = snapshot_store.default_root()
+    if refresh:
+        print("Mode: refresh -- conditional requests; recorded snapshots are "
+              "replaced only when upstream content changes")
+    else:
+        print("Mode: replay -- recorded snapshots are used as-is; the network "
+              "is touched only for missing entries")
+    print(f"Snapshot store: {snap_root}")
+
+    mcp_url, mcp_source = FEED_AWESOME_MCP
+    skills_url, skills_source = FEED_AWESOME_SKILLS
+    official_url, official_source = FEED_OFFICIAL_SERVERS
+
+    # 1. punkpeye/awesome-mcp-servers
+    print("1/3 punkpeye/awesome-mcp-servers...")
+    mcp_md = obtain(mcp_url, mcp_source, 25, refresh,
+                    "awesome-mcp-servers").decode("utf-8", errors="ignore")
+
+    # 2. VoltAgent/awesome-agent-skills
+    print("2/3 VoltAgent/awesome-agent-skills...")
+    skills_md = obtain(skills_url, skills_source, 25, refresh,
+                       "awesome-agent-skills").decode("utf-8", errors="ignore")
+
+    # 3. modelcontextprotocol/servers -- tolerating an upstream failure on a
+    #    FIRST fetch (published behaviour: this feed may be absent), but never
+    #    tolerating a corrupt recording: a refused snapshot aborts the build.
+    print("3/3 modelcontextprotocol/servers...")
+    try:
+        official_raw = obtain(official_url, official_source, 15, refresh,
+                              "official servers")
+    except snapshot_store.SnapshotIntegrityError:
+        raise
     except Exception:
-        official_mcp_md = ""
+        official_raw = None
+    official_mcp_md = official_raw.decode("utf-8", errors="ignore") if official_raw else ""
 
     items = []
     seen_ids = set()
+    # (url, sourceId, rows this run contributed) -- used to finalize each
+    # recorded snapshot with its real itemCount after a successful parse.
+    row_counts = []
 
     # --- Parse Official MCP Servers ---
     print("Parsing official MCP servers...")
     official_cat = "Official Core"
+    rows_before = len(items)
     for line in official_mcp_md.splitlines():
         line_s = line.strip()
         if line_s.startswith("- [") and "github.com/modelcontextprotocol/servers" in line_s:
@@ -263,10 +413,12 @@ def build_full_catalog():
                         "args": None,
                         "installability": DISCOVERY_ONLY,
                     })
+    row_counts.append((official_url, official_source, len(items) - rows_before))
 
     # --- Parse punkpeye/awesome-mcp-servers ---
     print(f"Parsing punkpeye servers...")
     current_category = "Developer Tools"
+    rows_before = len(items)
     for line in mcp_md.splitlines():
         raw_line = line.strip()
         if raw_line.startswith("### ") or raw_line.startswith("## "):
@@ -328,10 +480,12 @@ def build_full_catalog():
                     "args": None,
                     "installability": DISCOVERY_ONLY,
                 })
+    row_counts.append((mcp_url, mcp_source, len(items) - rows_before))
 
     # --- Parse VoltAgent/awesome-agent-skills ---
     print(f"Parsing VoltAgent skills...")
     skill_category = "Agent Skills"
+    rows_before = len(items)
     for line in skills_md.splitlines():
         raw_line = line.strip()
         if raw_line.startswith("### ") or raw_line.startswith("## "):
@@ -373,16 +527,19 @@ def build_full_catalog():
                     "skillSource": url,
                     "installability": DISCOVERY_ONLY,
                 })
+    row_counts.append((skills_url, skills_source, len(items) - rows_before))
 
     # --- Parse vendor plugin marketplaces (registered in internal/source/sources.go) ---
-    # Each manifest is fetched live; entries map to plugin rows (and, for
-    # anthropics/skills, one skill row per bundled skill). Slugs are namespaced
-    # per source so they can never collide with awesome-list rows.
+    # Each manifest is obtained through the snapshot layer (recorded bytes, see
+    # obtain()); entries map to plugin rows (and, for anthropics/skills, one
+    # skill row per bundled skill). Slugs are namespaced per source so they can
+    # never collide with awesome-list rows.
     print("Parsing vendor plugin marketplaces...")
     MARKETPLACE_SOURCES = [
         {
             "key": "claude", "id_owner": "claude-official",
             "url": "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json",
+            "source_id": "git:claude-plugins-official",
             "repo": "https://github.com/anthropics/claude-plugins-official",
             "publisher": "Anthropic", "family": "claude",
             "marketplace": "claude-plugins-official", "hosts": ["Claude Code"],
@@ -390,6 +547,7 @@ def build_full_catalog():
         {
             "key": "knowledge", "id_owner": "knowledge-work",
             "url": "https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/.claude-plugin/marketplace.json",
+            "source_id": "git:knowledge-work-plugins",
             "repo": "https://github.com/anthropics/knowledge-work-plugins",
             "publisher": "Anthropic", "family": "claude",
             "marketplace": "knowledge-work-plugins", "hosts": ["Claude Code"],
@@ -397,6 +555,7 @@ def build_full_catalog():
         {
             "key": "askills", "id_owner": "anthropic-skills",
             "url": "https://raw.githubusercontent.com/anthropics/skills/main/.claude-plugin/marketplace.json",
+            "source_id": "git:anthropics-skills",
             "repo": "https://github.com/anthropics/skills",
             "publisher": "Anthropic", "family": "claude",
             "marketplace": "anthropic-agent-skills", "hosts": ["Claude Code"],
@@ -404,6 +563,7 @@ def build_full_catalog():
         {
             "key": "codex", "id_owner": "openai-plugins",
             "url": "https://raw.githubusercontent.com/openai/plugins/main/.agents/plugins/marketplace.json",
+            "source_id": "git:openai-plugins",
             "repo": "https://github.com/openai/plugins",
             "publisher": "OpenAI", "family": "codex",
             "marketplace": "", "hosts": ["Codex"],
@@ -411,6 +571,7 @@ def build_full_catalog():
         {
             "key": "codex", "id_owner": "openai-plugins",
             "url": "https://raw.githubusercontent.com/openai/plugins/main/.agents/plugins/api_marketplace.json",
+            "source_id": "git:openai-plugins",
             "repo": "https://github.com/openai/plugins",
             "publisher": "OpenAI", "family": "codex",
             "marketplace": "", "hosts": ["Codex"],
@@ -418,6 +579,7 @@ def build_full_catalog():
         {
             "key": "cursor", "id_owner": "cursor-plugins",
             "url": "https://raw.githubusercontent.com/cursor/plugins/main/.cursor-plugin/marketplace.json",
+            "source_id": "git:cursor-plugins",
             "repo": "https://github.com/cursor/plugins",
             "publisher": "Cursor", "family": "cursor",
             "marketplace": "", "hosts": ["Cursor"],
@@ -425,16 +587,12 @@ def build_full_catalog():
         {
             "key": "xai", "id_owner": "xai-plugins",
             "url": "https://raw.githubusercontent.com/xai-org/plugin-marketplace/main/.grok-plugin/marketplace.json",
+            "source_id": "git:xai-plugin-marketplace",
             "repo": "https://github.com/xai-org/plugin-marketplace",
             "publisher": "xAI", "family": "grok",
             "marketplace": "", "hosts": ["Grok Build"],
         },
     ]
-
-    def fetch_json(url):
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            return json.loads(resp.read().decode("utf-8", errors="ignore"))
 
     def manifest_author(a, fallback):
         if isinstance(a, dict):
@@ -460,9 +618,14 @@ def build_full_catalog():
 
     for src in MARKETPLACE_SOURCES:
         try:
-            manifest = fetch_json(src["url"])
+            manifest = json.loads(
+                obtain(src["url"], src["source_id"], 25, refresh, src["key"])
+                .decode("utf-8", errors="ignore"))
+        except snapshot_store.SnapshotIntegrityError:
+            raise
         except Exception as e:
             print(f"  {src['key']}: fetch failed ({e}), skipped")
+            snapshot_store.log_failure(snap_root, src["url"], "obtain", str(e))
             continue
         entries = manifest.get("plugins", []) if isinstance(manifest, dict) else []
         added = 0
@@ -559,6 +722,16 @@ def build_full_catalog():
                     })
                     added += 1
         print(f"  {src['key']}: +{added} rows")
+        row_counts.append((src["url"], src["source_id"], added))
+
+    # Finalize the snapshots this run ingested: status healthy + itemCount.
+    # Only recordings that exist are updated -- a skipped source has no
+    # snapshot and claims none (never fabricate an entry you did not fetch).
+    for snap_url, snap_source_id, snap_rows in row_counts:
+        updated, changed = snapshot_store.mark_ingested(snap_root, snap_url, snap_rows)
+        if changed and updated is not None:
+            print(f"  snapshot {updated['snapshot']['snapshotId']}: "
+                  f"{snap_rows} rows ingested -> healthy")
 
     # --- No hand-curated "featured" plugins ---
     # An earlier revision injected three hand-written plugin rows here, each
@@ -682,6 +855,13 @@ if __name__ == "__main__":
         action="store_true",
         help="Syntax/provenance check only: verify no fabricated commands or hardcoded versions remain, without network fetches.",
     )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Re-fetch upstream with conditional requests (If-None-Match) and replace a recorded "
+             "snapshot only when the server reports a change. Default: replay recorded snapshots, "
+             "fetching only what is missing (a re-run needs no network and is byte-reproducible).",
+    )
     args = parser.parse_args()
     if args.check:
         import pathlib
@@ -722,7 +902,13 @@ if __name__ == "__main__":
         print("CHECK OK: no fabricated commands, no hardcoded versions, no undefined hint.")
     else:
         if args.output:
-            # Honour an explicit output override by monkey-patching the
-            # write path inside build_full_catalog via env.
-            os.environ["LITESPM_CATALOG_OUT"] = args.output
-        build_full_catalog()
+            # Honour an explicit output override: the builder writes
+            # catalog.json (and the dataset stats) into CATALOG_OUT_DIR, so
+            # point that directory at the requested path. A path that names a
+            # directory (or lacks a .json suffix) is treated as the directory;
+            # a catalog.json path contributes its parent directory.
+            out_arg = os.path.abspath(args.output)
+            if out_arg.endswith(".json") and not os.path.isdir(out_arg):
+                out_arg = os.path.dirname(out_arg)
+            os.environ["CATALOG_OUT_DIR"] = out_arg
+        build_full_catalog(refresh=args.refresh)

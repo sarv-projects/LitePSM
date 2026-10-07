@@ -17,6 +17,9 @@ cover.html
 *.db-wal
 *.db-shm
 daemon.lock
+# Fetch snapshot layer: recorded upstream bytes for reproducible catalog builds
+# (scripts/snapshot_store.py). A cache, not a published artifact.
+source-snapshots/
 
 # OS and IDE files
 .DS_Store

@@ -1,6 +1,6 @@
 # `scripts/` — repository scripts
 
-Twelve scripts live in this directory. **Two of them are executed on a push or pull request.**
+Thirteen scripts live in this directory. **Two of them are executed on a push or pull request.**
 `.github/workflows/ci.yml` *checks the syntax* of every script (`bash -n scripts/*.sh`,
 `python3 -m py_compile scripts/*.py`) and **executes** `gen_hosts_ts.go` (regeneration gate),
 `deploy-pages.sh` (in its `build-web` job, so the staged bundle is packaged and leak-audited on
@@ -18,7 +18,8 @@ history is in [REMEDIATION-PLAN.md](../REMEDIATION-PLAN.md).
 | `build-release.sh` | bash | **Release** (`.github/workflows/release.yml`, on `v*` tags) | Yes — `set -euo pipefail`, `go build` aborts |
 | `deploy-pages.sh` | bash | **CI** (`.github/workflows/ci.yml`, `build-web` job, every push/PR) and **manual** (site packaging) | Yes — `set -euo pipefail` + explicit leak audit `exit 1` |
 | `check_ci_local.sh` | bash | **Manual** — mirrors `ci.yml` stage-for-stage (`--web`, `--quick` flags) | Yes — `set -euo pipefail`, every stage names itself on failure |
-| `build_full_catalog.py` | Python | **Manual** (catalog dataset producer) | **No content assertions** — aborts only if a fetch raises; validation is fail-closed at release build time in Go |
+| `build_full_catalog.py` | Python | **Manual** (catalog dataset producer) | **No content assertions** — aborts if a fetch raises or a recorded snapshot fails verification (digest mismatch is refused); row/schema validation is fail-closed at release build time in Go |
+| `snapshot_store.py` | Python | **Manual** (`python3 scripts/snapshot_store.py` runs its own self-test); imported by `build_full_catalog.py` | Yes — refuses tampered/malformed snapshots, http URLs, and fabricated entries (exit 1 on self-test failure) |
 | `gen_hosts_ts.go` | Go (`//go:build ignore`) | **CI** (regeneration gate in `static-checks`) and **manual** (before committing host-adapter edits) | Yes — `os.Exit(1)` on write failure |
 | `check_ci.py` | Python | **Manual** (status probe) | Yes by contract — exit `0` / `1` / `2` |
 | `check_headers.py` | Python | **Manual** (upstream research) | No — prints, never asserts |
@@ -86,11 +87,21 @@ a script.
 
 - **Purpose.** Fetch upstream markdown registries, normalize them into catalog rows, and publish
   the dataset the site and `litespm catalog build` consume (`STATUS.md` §2, `ARCH/31` §4.3).
-- **Invocation.** `python3 scripts/build_full_catalog.py` from the repo root (Python 3, stdlib only,
-  network required).
-- **Inputs.** Upstream raw GitHub markdown: `punkpeye/awesome-mcp-servers`,
-  `VoltAgent/awesome-agent-skills`, `modelcontextprotocol/servers`, plus vendor plugin marketplaces;
-  and the two registries `web/data/hosts.json` + `web/data/skill-targets.json` (run
+- **Invocation.** `python3 scripts/build_full_catalog.py` from the repo root (Python 3, stdlib only).
+  Default run **replays recorded snapshots** (network only for entries never fetched) and is
+  byte-reproducible; `--refresh` re-fetches with conditional requests (`If-None-Match`) and replaces
+  a recording only when the server reports a change (`304` or an identical content digest keeps
+  it). `--check` is the offline syntax/provenance gate; `--output` overrides the output directory.
+- **Snapshot layer.** Every fetch is recorded first (raw bytes + ETag + `sha256:` digest + fetch
+  timestamp) by `snapshot_store.py` under `source-snapshots/<slug>-<sha256(url)[:12]>/`
+  (gitignored; override with `LITESPM_SOURCE_SNAPSHOT_DIR`), in the `SourceSnapshot` record shape
+  of `ARCH/03` §4. The parse always reads the recorded bytes; a recording whose digest does not
+  match its bytes is refused (fatal), a fetch that failed records nothing (it goes to
+  `failures.jsonl`), and a refresh that cannot reach upstream keeps the recording while printing
+  an explicit `STALE` notice.
+- **Inputs.** Recorded snapshots of upstream raw GitHub markdown (`punkpeye/awesome-mcp-servers`,
+  `VoltAgent/awesome-agent-skills`, `modelcontextprotocol/servers`), vendor plugin marketplace
+  manifests, and the two registries `web/data/hosts.json` + `web/data/skill-targets.json` (run
   `gen_hosts_ts.go` first — if they are unreadable the script warns and publishes **empty** host
   lists).
 - **Outputs.** `web/data/catalog.json` (**5,814 rows** as committed; every listing id passes through
@@ -169,7 +180,8 @@ not ingestion: the ingestion path they informed is `build_full_catalog.py`.
   materialization and the leak audit run on each change) — in addition to the syntax steps
   `bash -n scripts/*.sh` (syntax) and `python3 -m py_compile scripts/*.py` (byte-compile).
 - **Executed by the release workflow:** `build-release.sh`.
-- **Manual-only:** `build_full_catalog.py`, `gen_hosts_ts.go`, `check_ci.py`, and the six research
+- **Manual-only:** `build_full_catalog.py`, `snapshot_store.py` (its self-test),
+  `gen_hosts_ts.go`, `check_ci.py`, and the six research
   probes. (Not a script, but the same workflow: the release/publication step
   `go run ./cmd/litespm catalog build --out web/public` is also manual, and `deploy-pages.sh` runs
   its `-materialize` form on every packaging run.)
