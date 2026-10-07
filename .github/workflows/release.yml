@@ -123,10 +123,12 @@ jobs:
       #
       # NODE_AUTH_TOKEN is scoped to this step only: a job-level env would
       # expose the token to every preceding step (build, test, packaging).
+      # The `secrets` context is not available in `if:`, so the presence
+      # check reads the step's own env (`env` is available there).
       # Set the NPM_TOKEN repository secret to enable this step. Unset, the
       # release is still built and published to GitHub.
       - name: Publish npm package
-        if: ${{ secrets.NPM_TOKEN != '' }}
+        if: ${{ env.NODE_AUTH_TOKEN != '' }}
         working-directory: ./npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
