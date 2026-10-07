@@ -617,6 +617,12 @@ func TestInventoryJSONShape(t *testing.T) {
 		seedListMachine(t)
 		fromList, _ := listJSON(t, nil, false)
 		fromInventory, _ := listJSON(t, nil, true)
+		// capturedAt is observation wall-clock: two invocations that
+		// straddle a second boundary differ by construction. The contract
+		// under test is that everything else is byte-identical, so pin
+		// the timestamp before comparing.
+		fromList.CapturedAt = "PINNED"
+		fromInventory.CapturedAt = "PINNED"
 		a, err := marshalInventory(&fromList)
 		if err != nil {
 			t.Fatal(err)
