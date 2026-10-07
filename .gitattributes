@@ -1,0 +1,7 @@
+# Byte-faithful files: content is verified against recorded sha256 digests,
+# so a CRLF checkout on Windows (core.autocrlf=true, the Git-for-Windows
+# default) breaks every digest check. These are never text-converted.
+internal/source/testdata/** -text
+# The published /v1 release tree is digest-chained (pointer -> manifest ->
+# files); conversion would invalidate the chain on a Windows checkout.
+web/public/v1/** -text

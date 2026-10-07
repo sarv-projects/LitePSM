@@ -268,18 +268,34 @@ func (l *Lock) Release() error {
 	if l == nil || l.path == "" {
 		return nil
 	}
-	data, err := os.ReadFile(l.path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	// Read + verify + remove with a bounded retry. On Windows an antivirus or
+	// indexer can hold the lock file for a moment, and callers (the skills
+	// ledger) ignore this error: a single failed remove would leave a lock
+	// file owned by a LIVE pid behind, blocking every other writer until the
+	// acquire timeout (30s) — which is exactly how the concurrency test failed
+	// on windows-latest while passing on Linux, where unlink cannot fail this
+	// way. Half a second of retrying costs nothing on the happy path.
+	var lastErr error
+	for attempt := 0; attempt < 20; attempt++ {
+		if attempt > 0 {
+			time.Sleep(25 * time.Millisecond)
 		}
-		return err
+		data, err := os.ReadFile(l.path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil // already gone
+			}
+			lastErr = err
+			continue // transient handle: retry
+		}
+		if _, tok, ok := decode(data); !ok || tok != l.token {
+			return nil // not ours any more
+		}
+		if err := os.Remove(l.path); err != nil && !os.IsNotExist(err) {
+			lastErr = err
+			continue
+		}
+		return nil
 	}
-	if _, tok, ok := decode(data); !ok || tok != l.token {
-		return nil // not ours any more
-	}
-	if err := os.Remove(l.path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
+	return lastErr
 }
