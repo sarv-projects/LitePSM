@@ -41,8 +41,8 @@ web/
                   `app/data/catalog.json/route.ts` exports the rows as `/data/catalog.json`
                   (`force-static`), byte-for-byte from `data/catalog.json`.
   components/     catalog/  hero/  home/  layout/  navigation/  ui/
-  lib/            catalog.ts  catalogData.ts  hosts.ts  telemetry.ts  search.worker.ts
-                  useCatalogSearch.ts  site.ts  clipboard.ts  format.ts
+  lib/            catalog.ts  catalogData.ts  hosts.ts  landing.ts  query.ts  telemetry.ts
+                  search.worker.ts  useCatalogSearch.ts  site.ts  clipboard.ts  format.ts
   data/           catalog.json · hosts.json · skill-targets.json · release.json   (build inputs)
   public/v1/      current.json                                                     (runtime fetch)
   out/            static export produced by `npm run build` (gitignored)
@@ -114,7 +114,10 @@ The site is public static content. Binding rules:
    could read them.
 2. The only data shipped is the JSON in §3 — public catalog metadata and host paths written as `~`
    or `<project>` placeholders by `gen_hosts_ts.go`.
-3. The app performs **two** same-origin requests, both public static files and no cookies: `/v1/current.json` on load (release liveness), and `/data/catalog.json` **only when a reader searches, filters, sorts, pages or opens an entry** — a passive first visit fetches neither the rows nor any script containing them. Search, the MiniSearch worker and the index all run in the browser; there is no analytics beacon, no `localStorage`, no third-party script.
+3. The app performs **two** same-origin requests, both public static files and no cookies: `/v1/current.json` on load (release liveness), and `/data/catalog.json` **only when a reader searches, filters, sorts, pages or opens an entry** — a passive first visit fetches neither the rows nor any script containing them. Search, the MiniSearch worker and the index all run in the browser; there is no analytics
+   beacon, no cookie, no third-party script. The only browser state is two `localStorage` keys
+   that never leave the machine — `litespm-theme` (system/light/dark) and `litespm-agent` (the
+   "What do you use?" preference) — and neither one can trigger a fetch.
 4. `scripts/deploy-pages.sh` enforces a file-type allowlist on the staged tree and exits non-zero
    on `.env*`, `.pem`, `.key`, `.db`, `.sqlite*`, `.go` or `.ts` files — but it is manual, so do not
    treat that as CI enforcement.
