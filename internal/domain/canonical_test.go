@@ -112,3 +112,45 @@ func TestComputeBytesDigestFormat(t *testing.T) {
 		t.Fatalf("digest %q lacks sha256: prefix", digest)
 	}
 }
+
+// TestComputeContentDigestTracksContent pins C6: a snapshot digest over listing
+// IDs alone cannot see a content change that keeps the same ids.
+func TestComputeContentDigestTracksContent(t *testing.T) {
+	mk := func(summary, version string) ([]*Listing, []*VersionRecord) {
+		return []*Listing{{ID: "mcp:s:a", Summary: summary}},
+			[]*VersionRecord{{ListingID: "mcp:s:a", Version: version}}
+	}
+	l1, v1 := mk("one", "1.0.0")
+	base, err := ComputeContentDigest(l1, v1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, _ := ComputeContentDigest(l1, v1)
+	if base != again {
+		t.Fatal("digest is not deterministic")
+	}
+	l2, v2 := mk("two", "1.0.0")
+	if d, _ := ComputeContentDigest(l2, v2); d == base {
+		t.Fatal("summary rewrite with an unchanged id did not change the digest")
+	}
+	l3, v3 := mk("one", "1.0.1")
+	if d, _ := ComputeContentDigest(l3, v3); d == base {
+		t.Fatal("version bump with an unchanged id did not change the digest")
+	}
+}
+
+func TestInstallabilityZeroValueIsDiscoveryOnly(t *testing.T) {
+	var zero Listing
+	if zero.IsInstallable() || zero.Installability.Effective() != InstallabilityDiscoveryOnly {
+		t.Fatal("zero-value installability must be discovery_only")
+	}
+	if !(&Listing{Installability: InstallabilityMetadataVerified}).IsInstallable() {
+		t.Fatal("metadata_verified must be installable")
+	}
+	if Installability("bogus").Valid() {
+		t.Fatal("unknown installability reported valid")
+	}
+	if got := ErrNotInstallable("mcp:s:a", "x"); got.Code != "LPSM-NOT-INSTALLABLE" {
+		t.Fatalf("code = %q", got.Code)
+	}
+}

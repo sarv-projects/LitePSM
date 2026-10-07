@@ -70,6 +70,14 @@ type EntryInstallResult struct {
 	Replaced bool
 	// Created is true when this call created the config file.
 	Created bool
+	// Fingerprint is the hash of the entry as read back from the written
+	// config (see EntryState): the ledger's post-image for this node.
+	Fingerprint string
+	// PriorEntry is the canonical text of the user-authored entry this call
+	// replaced ("" when none existed); RemoveServerEntry restores it.
+	PriorEntry string
+	// PriorFingerprint is the hash of PriorEntry ("" when none existed).
+	PriorFingerprint string
 }
 
 // entrySpec is everything that varies between hosts for a server entry.
@@ -92,12 +100,22 @@ type entrySpec struct {
 // declare all three; the hand-written adapters declare them here, next to the
 // removal specs that describe the same containers.
 func entrySpecFor(adapter HostAdapter) (entrySpec, bool) {
+	return entrySpecForScope(adapter, domain.ScopeUser)
+}
+
+// entrySpecForScope is entrySpecFor with the install scope honoured. Hosts
+// whose user and project containers differ (fx reads `mcp` in the user file
+// and `mcpServers` in a project `.mcp.json`) must be written at the key the
+// scope actually uses: entrySpecFor always returned the user key, so a
+// project-scope install into fx landed under `mcp`, where fx never looks.
+func entrySpecForScope(adapter HostAdapter, scope domain.InstallScope) (entrySpec, bool) {
 	id := strings.ToLower(adapter.Descriptor().HostID)
+	projectScope := scope == domain.ScopeProject
 	var base entrySpec
 	switch g := adapter.(type) {
 	case *GenericAdapter:
 		base = entrySpec{
-			KeyPath: g.Target.keyPathFor(false),
+			KeyPath: g.Target.keyPathFor(projectScope),
 			Format:  g.Target.Format,
 			Shape:   g.Target.Shape,
 		}
@@ -346,7 +364,7 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 	if err != nil {
 		return nil, err
 	}
-	spec, ok := entrySpecFor(adapter)
+	spec, ok := entrySpecForScope(adapter, opts.Scope)
 	if !ok {
 		return nil, fmt.Errorf("host %q has no documented MCP entry shape, so a server entry cannot be written to it", hostID)
 	}
@@ -367,7 +385,9 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 	}
 
 	replaced := false
+	priorEntry := ""
 	if _, present := lookupServerEntry(spec, original, entry.Name); present {
+		priorEntry, _, _ = entryStateFromContent(spec, original, entry.Name)
 		if !opts.Force {
 			return nil, domain.ErrNameConflict(fmt.Sprintf(
 				"host %q already has an entry named %q in %s; re-run with force to replace it",
@@ -422,13 +442,24 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 	if _, present := lookupServerEntry(spec, string(written), entry.Name); !present {
 		return nil, fmt.Errorf("%s: wrote %s but the entry %q is not readable from it", adapter.Descriptor().HostID, configPath, entry.Name)
 	}
+	writtenRaw, ok, serr := entryStateFromContent(spec, string(written), entry.Name)
+	if serr != nil || !ok {
+		return nil, fmt.Errorf("%s: wrote %s but the entry %q cannot be fingerprinted: %v", adapter.Descriptor().HostID, configPath, entry.Name, serr)
+	}
+	priorFP := ""
+	if priorEntry != "" {
+		priorFP = fingerprintOf(priorEntry)
+	}
 
 	return &EntryInstallResult{
-		HostID:     adapter.Descriptor().HostID,
-		ConfigPath: configPath,
-		Name:       entry.Name,
-		Replaced:   replaced,
-		Created:    created,
+		HostID:           adapter.Descriptor().HostID,
+		ConfigPath:       configPath,
+		Name:             entry.Name,
+		Replaced:         replaced,
+		Created:          created,
+		Fingerprint:      fingerprintOf(writtenRaw),
+		PriorEntry:       priorEntry,
+		PriorFingerprint: priorFP,
 	}, nil
 }
 
@@ -501,7 +532,7 @@ func ListServerEntriesWithValues(ctx context.Context, hostID string, scope domai
 	if err != nil {
 		return nil, err
 	}
-	spec, ok := entrySpecFor(adapter)
+	spec, ok := entrySpecForScope(adapter, scope)
 	if !ok {
 		return nil, fmt.Errorf("host %q has no documented MCP entry shape", hostID)
 	}
@@ -692,7 +723,7 @@ func ListServerEntries(ctx context.Context, hostID string, scope domain.InstallS
 	if err != nil {
 		return nil, err
 	}
-	spec, ok := entrySpecFor(adapter)
+	spec, ok := entrySpecForScope(adapter, scope)
 	if !ok {
 		return nil, fmt.Errorf("host %q has no documented MCP entry shape", hostID)
 	}
@@ -707,6 +738,7 @@ func ListServerEntries(ctx context.Context, hostID string, scope domain.InstallS
 		}
 		return nil, err
 	}
+
 	if spec.Format == FormatTOML {
 		var names []string
 		prefix := "[" + strings.Join(spec.KeyPath, ".") + "."

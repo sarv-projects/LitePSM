@@ -32,11 +32,18 @@ func TestBespokeJSONAdaptersSpliceWithoutRewriting(t *testing.T) {
 
 	t.Run("cline_jsonc_comments_preserved", func(t *testing.T) {
 		home := spliceHome(t)
-		dir := filepath.Join(home, ".config", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings")
+		// The legacy globalStorage location is platform-specific; resolve it
+		// through the adapter helper so this test exercises the real Windows
+		// (%APPDATA%) and macOS (Library) candidates instead of hardcoding Unix.
+		legacies := legacyClineSettingsPaths(home)
+		if len(legacies) == 0 {
+			t.Fatal("no legacy cline paths for this platform")
+		}
+		path := legacies[0]
+		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		path := filepath.Join(dir, "cline_mcp_settings.json")
 		original := "{\n  // keep my cline settings\n  \"clineSetting\": true,\n" +
 			"  \"mcpServers\": {\n    // an existing server of mine\n" +
 			"    \"mine\": { \"command\": \"npx\" }\n  }\n}\n"

@@ -154,8 +154,9 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
 
 	adapter := &OpenCodeAdapter{}
 	planV1 := &HostChangePlan{
-		HostID:     "opencode",
-		ConfigPath: v1File,
+		HostID:          "opencode",
+		ConfigPath:      v1File,
+		OriginalContent: v1Content,
 		ProposedContent: `{
   "mcp": {
     "fetch": {
@@ -190,8 +191,9 @@ func TestOpenCodeAdapter_V1_and_V2(t *testing.T) {
 	}
 
 	planV2 := &HostChangePlan{
-		HostID:     "opencode",
-		ConfigPath: v2File,
+		HostID:          "opencode",
+		ConfigPath:      v2File,
+		OriginalContent: v2Content,
 		ProposedContent: `{
   "mcp": {
     "servers": {

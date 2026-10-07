@@ -24,13 +24,14 @@ func openTestState(t *testing.T) *state.DB {
 
 func skillListingFor(id, name, source string) *domain.Listing {
 	return &domain.Listing{
-		SchemaVersion: 1,
-		ID:            id,
-		Kind:          domain.KindSkill,
-		Name:          name,
-		Summary:       "test fixture",
-		Source:        domain.SourceReference{SourceID: "example", UpstreamID: name, URL: source},
-		Status:        domain.ListingStatusActive,
+		SchemaVersion:  1,
+		ID:             id,
+		Kind:           domain.KindSkill,
+		Name:           name,
+		Summary:        "test fixture",
+		Source:         domain.SourceReference{SourceID: "example", UpstreamID: name, URL: source},
+		Status:         domain.ListingStatusActive,
+		Installability: domain.InstallabilityMetadataVerified,
 	}
 }
 
@@ -62,7 +63,7 @@ func TestInstallSkillFromListingLocal(t *testing.T) {
 	writeTestSkill(t, skillDir, "demo-skill", "A demo skill for the install test")
 
 	listing := skillListingFor("skill:example:demo-skill", "demo-skill", skillDir)
-	outcome, err := installSkillFromListing(context.Background(), db, dataRoot, project, home,
+	outcome, err := installSkillFromListing(authorizedTestContext(), db, dataRoot, project, home,
 		listing, "1.0.0", domain.ScopeProject, []string{agent})
 	if err != nil {
 		t.Fatalf("install: %v", err)
@@ -115,13 +116,14 @@ func TestInstallExecuteSkillThroughDaemon(t *testing.T) {
 	writeTestSkill(t, skillDir, "demo-skill", "installed through the daemon")
 	const listingID = "skill:test:demo-skill"
 	listing := &domain.Listing{
-		SchemaVersion: 2,
-		ID:            listingID,
-		Kind:          domain.KindSkill,
-		Name:          "demo-skill",
-		Summary:       "daemon install fixture",
-		Source:        domain.SourceReference{SourceID: "test", UpstreamID: "demo-skill", URL: skillDir},
-		Versions:      []domain.VersionSummary{{Version: "1.0.0"}},
+		SchemaVersion:  2,
+		ID:             listingID,
+		Kind:           domain.KindSkill,
+		Name:           "demo-skill",
+		Summary:        "daemon install fixture",
+		Source:         domain.SourceReference{SourceID: "test", UpstreamID: "demo-skill", URL: skillDir},
+		Versions:       []domain.VersionSummary{{Version: "1.0.0"}},
+		Installability: domain.InstallabilityMetadataVerified,
 	}
 	h := newHarnessWith(t, []*domain.Listing{listing})
 	ctx := context.Background()
@@ -134,7 +136,8 @@ func TestInstallExecuteSkillThroughDaemon(t *testing.T) {
 	}
 
 	var result map[string]any
-	if err := h.client.Call(ctx, "install.execute", map[string]any{"planId": plan.PlanID}, &result); err != nil {
+	approvalID := approvePlanAsHuman(t, h.db, &plan)
+	if err := h.client.Call(ctx, "install.execute", map[string]any{"planId": plan.PlanID, "approvalToken": approvalID}, &result); err != nil {
 		t.Fatalf("install.execute failed: %v", err)
 	}
 	if result["kind"] != "skill" {
@@ -195,7 +198,7 @@ func TestInstallSkillFromListingFailsClosed(t *testing.T) {
 			if tc.listing.Source.URL == "" {
 				tc.listing.Source.URL = source
 			}
-			_, err := installSkillFromListing(context.Background(), openTestState(t), t.TempDir(),
+			_, err := installSkillFromListing(authorizedTestContext(), openTestState(t), t.TempDir(),
 				t.TempDir(), t.TempDir(), tc.listing, "1.0.0", domain.ScopeProject, []string{"codex"})
 			if err == nil {
 				t.Fatal("expected a failure")

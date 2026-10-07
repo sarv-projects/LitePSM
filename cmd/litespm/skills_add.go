@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/config"
-	"github.com/sarv-projects/litespm/internal/policy"
 	"github.com/sarv-projects/litespm/internal/skills"
 )
 
@@ -442,14 +441,20 @@ func runSkillsAdd(args []string) {
 		os.Exit(1)
 	}
 
-	// The policy engine gates every write. It is built without a state DB:
-	// skill directories are not provider capabilities, so no capability grant
-	// or schema identity applies. The engine always asks for an effectful
-	// install; that ask was already answered by this command's consent (the
-	// interactive proceed prompt, or --yes), so the resolver records that here
-	// rather than inventing an approval. A "deny" still stops the write.
+	// The policy engine gates every write and runs with its real tiers: the
+	// state database (capability grants) and the user's deny rules. The engine
+	// always asks for an effectful install; that ask was already answered by
+	// this command's consent (the interactive proceed prompt, or --yes), so the
+	// resolver records that here rather than inventing an approval. A "deny"
+	// still stops the write.
+	policyEngine, closePolicy, policyErr := openCLIPolicyEngine(platformPaths.DataRoot)
+	if policyErr != nil {
+		fmt.Fprintf(os.Stderr, "Error loading the policy engine: %v\n", policyErr)
+		os.Exit(1)
+	}
+	defer closePolicy()
 	askNoted := false
-	checker := enginePolicyChecker(policy.NewEngine(nil, nil), func(_ context.Context, _ skills.PolicyRequest, detail string) bool {
+	checker := enginePolicyChecker(policyEngine, func(_ context.Context, _ skills.PolicyRequest, detail string) bool {
 		if !askNoted {
 			fmt.Fprintf(os.Stderr, "Policy: skill writes require approval (%s); authorized by this command's installation consent.\n", detail)
 			askNoted = true

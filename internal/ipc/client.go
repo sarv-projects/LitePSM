@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+
+	"github.com/sarv-projects/litespm/internal/buildinfo"
 )
 
 // Client represents a connected JSON-RPC 2.0 client session.
@@ -18,6 +20,22 @@ type Client struct {
 	pending map[string]chan *Response
 	mu      sync.Mutex
 	done    chan struct{}
+
+	// The daemon refuses every method until daemon.handshake succeeds on the
+	// connection. The client performs it lazily before its first call, using
+	// the identity set by SetIdentity ("cli" by default).
+	hsMu       sync.Mutex
+	handshaken bool
+	kind       string
+	hostID     string
+}
+
+// SetIdentity sets the clientKind/hostId sent in the automatic handshake. Call
+// before the first Call.
+func (c *Client) SetIdentity(clientKind, hostID string) {
+	c.hsMu.Lock()
+	defer c.hsMu.Unlock()
+	c.kind, c.hostID = clientKind, hostID
 }
 
 // Dial connects to a LiteSPM daemon IPC endpoint.
@@ -93,21 +111,51 @@ func (c *Client) closePending(err error) {
 // Handshake performs the mandatory initial handshake with the daemon.
 func (c *Client) Handshake(ctx context.Context, clientKind, hostID string) (*HandshakeResult, error) {
 	params := HandshakeParams{
-		ClientVersion: "0.1.0",
+		ClientVersion: buildinfo.Version,
 		ClientKind:    clientKind,
 		HostID:        hostID,
 		PID:           os.Getpid(),
 	}
 
 	var res HandshakeResult
-	if err := c.Call(ctx, "daemon.handshake", params, &res); err != nil {
+	if err := c.call(ctx, "daemon.handshake", params, &res); err != nil {
 		return nil, fmt.Errorf("handshake failed: %w", err)
 	}
+	c.hsMu.Lock()
+	c.handshaken = true
+	c.hsMu.Unlock()
 	return &res, nil
 }
 
-// Call sends a JSON-RPC request and blocks until a response is received or ctx is cancelled.
+// ensureHandshake performs the handshake once, before the first real call.
+func (c *Client) ensureHandshake(ctx context.Context) error {
+	c.hsMu.Lock()
+	if c.handshaken {
+		c.hsMu.Unlock()
+		return nil
+	}
+	kind, hostID := c.kind, c.hostID
+	c.hsMu.Unlock()
+	if kind == "" {
+		kind = "cli"
+	}
+	_, err := c.Handshake(ctx, kind, hostID)
+	return err
+}
+
+// Call sends a JSON-RPC request and blocks until a response is received or
+// ctx is cancelled. The connection handshake is performed first if it has not
+// happened yet.
 func (c *Client) Call(ctx context.Context, method string, params any, result any) error {
+	if method != "daemon.handshake" {
+		if err := c.ensureHandshake(ctx); err != nil {
+			return err
+		}
+	}
+	return c.call(ctx, method, params, result)
+}
+
+func (c *Client) call(ctx context.Context, method string, params any, result any) error {
 	seq := atomic.AddUint64(&c.seq, 1)
 	idRaw := json.RawMessage(fmt.Sprintf("%d", seq))
 	idStr := string(idRaw)

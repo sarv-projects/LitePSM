@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/config"
-	"github.com/sarv-projects/litespm/internal/policy"
 	"github.com/sarv-projects/litespm/internal/skills"
 )
 
@@ -229,7 +228,12 @@ func executeSkillsUpdate(ctx context.Context, opts skillsUpdateOptions, paths *c
 	}
 
 	asker := newInteractivePolicyAsker(opts.yes)
-	installer := skills.NewInstaller(ledger, enginePolicyChecker(policy.NewEngine(nil, nil), asker.resolve))
+	policyEngine, closePolicy, policyErr := openCLIPolicyEngine(paths.DataRoot)
+	if policyErr != nil {
+		return nil, fmt.Errorf("load policy: %w", policyErr)
+	}
+	defer closePolicy()
+	installer := skills.NewInstaller(ledger, enginePolicyChecker(policyEngine, asker.resolve))
 
 	wanted := make([]string, 0, len(opts.names))
 	seen := make(map[string]bool, len(opts.names))

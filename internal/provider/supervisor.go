@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -159,6 +158,46 @@ func NewSupervisor() *Supervisor {
 	}
 }
 
+// IsolationError reports that a started provider could not be placed under
+// the platform's process containment (Windows job object, Unix watchdog). The
+// process has already been killed and reaped when this is returned.
+type IsolationError struct {
+	ProviderID string
+	Err        error
+}
+
+func (e *IsolationError) Error() string {
+	return fmt.Sprintf("provider %s: process isolation failed, process killed: %v", e.ProviderID, e.Err)
+}
+
+func (e *IsolationError) Unwrap() error { return e.Err }
+
+// postStartIsolation is the platform hook; it is a variable only so tests can
+// inject a failure.
+var postStartIsolation = postStartProcessIsolation
+
+// abortStartedProcess kills a just-started process (and its group where the
+// platform has one), reaps it, and releases the watchdog pipe. It runs before
+// the monitor goroutine exists, so it is the sole caller of cmd.Wait.
+func abortStartedProcess(cmd *exec.Cmd, h *ProviderHandle) {
+	if cmd.Process != nil {
+		killGroupNow(cmd.Process.Pid)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}
+	closeWatchdogPipe(h)
+}
+
+// closeWatchdogPipe releases the watchdog pipe ends, if any.
+func closeWatchdogPipe(h *ProviderHandle) {
+	if h.PipeWriter != nil {
+		_ = h.PipeWriter.Close()
+	}
+	if h.PipeReader != nil {
+		_ = h.PipeReader.Close()
+	}
+}
+
 // StartProvider spawns a provider process with strict process group isolation and parent death guarantees.
 func (s *Supervisor) StartProvider(ctx context.Context, providerID string, spec LaunchSpec) (*ProviderHandle, error) {
 	s.mu.Lock()
@@ -175,14 +214,9 @@ func (s *Supervisor) StartProvider(ctx context.Context, providerID string, spec 
 	cmd := exec.CommandContext(ctx, spec.Executable, spec.Args...)
 	cmd.Dir = spec.WorkingDir
 
-	// Build minimal clean environment
-	cmd.Env = os.Environ()
-	for k, v := range spec.Env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-	}
-	for k, v := range spec.SecretEnv {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-	}
+	// Minimal allow-listed environment + spec.Env + resolved SecretEnv; the
+	// daemon's own environment never reaches a provider wholesale (E1).
+	cmd.Env = BuildChildEnv(spec.Env, spec.SecretEnv)
 
 	// Platform-specific process isolation
 	setupProcessIsolation(cmd)
@@ -220,8 +254,16 @@ func (s *Supervisor) StartProvider(ctx context.Context, providerID string, spec 
 		waitDone:     make(chan struct{}),
 	}
 
-	// Platform post-start isolation hooks (Windows Job Object assignment or Unix watchdog pipe)
-	_ = postStartProcessIsolation(cmd, handle)
+	// Platform post-start isolation hooks (Windows Job Object assignment or
+	// Unix watchdog pipe). Failure is fatal (E3): a provider that could not be
+	// contained must not keep running outside the containment the caller was
+	// promised, so kill it, reap it, and report a typed error.
+	if err := postStartIsolation(cmd, handle); err != nil {
+		abortStartedProcess(cmd, handle)
+		_ = stdin.Close()
+		_ = stdout.Close()
+		return nil, &IsolationError{ProviderID: providerID, Err: err}
+	}
 
 	s.providers[providerID] = handle
 
@@ -269,9 +311,9 @@ func (h *ProviderHandle) Terminate(gracePeriod time.Duration) error {
 	h.terminating = true
 	_ = h.Stdin.Close()
 	_ = h.Stdout.Close()
-	if h.PipeWriter != nil {
-		_ = h.PipeWriter.Close()
-	}
+	// The watchdog pipe writer is deliberately NOT closed here: closing it
+	// would trip the non-Linux watchdog into an immediate SIGKILL before the
+	// SIGTERM grace period below applies. monitorProcess closes it after reap.
 
 	_ = killProcessTree(h, gracePeriod)
 
@@ -342,6 +384,10 @@ func (s *Supervisor) monitorProcess(h *ProviderHandle) {
 	// Unblock any Terminate/killProcessTree waiter before taking the lock so
 	// there is no lock-ordering deadlock between the reaper and Terminate.
 	h.signalExit()
+
+	// The process is reaped: release the watchdog pipe so its goroutine (if
+	// any) sees EOF, observes waitDone, and exits without killing anything.
+	closeWatchdogPipe(h)
 
 	h.mu.Lock()
 	defer h.mu.Unlock()

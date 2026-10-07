@@ -2,8 +2,6 @@ package source
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -70,7 +68,6 @@ func (a *CodexMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string,
 	var listings []*domain.Listing
 	var versions []*domain.VersionRecord
 	now := time.Now().UTC()
-	hasher := sha256.New()
 
 	publisher := firstNonEmpty(PublisherForSource(a.sourceID), "Community")
 
@@ -152,14 +149,17 @@ func (a *CodexMarketplaceAdapter) Ingest(ctx context.Context, snapshotID string,
 				SourceSnapshotID: snapshotID,
 				IngestedAt:       now,
 			},
-			Status: domain.ListingStatusActive,
+			Status:         domain.ListingStatusActive,
+			Installability: domain.InstallabilityMetadataVerified,
 		}
 
 		listings = append(listings, listing)
-		hasher.Write([]byte(listing.ID))
 	}
 
-	digest := fmt.Sprintf("sha256:%s", hex.EncodeToString(hasher.Sum(nil)))
+	digest, err := domain.ComputeContentDigest(listings, versions)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot content digest: %w", err)
+	}
 
 	return &IngestResult{
 		SourceID:   a.sourceID,

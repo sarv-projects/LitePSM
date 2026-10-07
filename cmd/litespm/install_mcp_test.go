@@ -12,13 +12,15 @@ import (
 
 func mcpListing(id, name string) *domain.Listing {
 	return &domain.Listing{
-		ID:       id,
-		Name:     name,
-		Kind:     domain.KindMCP,
-		Status:   domain.ListingStatusActive,
-		Summary:  "an MCP server",
-		Source:   domain.SourceReference{SourceID: "example", UpstreamID: name},
-		Versions: []domain.VersionSummary{{Version: "1.0.0"}},
+		ID:     id,
+		Name:   name,
+		Kind:   domain.KindMCP,
+		Status: domain.ListingStatusActive,
+		// Proven by a manifest in this fixture; discovery_only is refused.
+		Installability: domain.InstallabilityMetadataVerified,
+		Summary:        "an MCP server",
+		Source:         domain.SourceReference{SourceID: "example", UpstreamID: name},
+		Versions:       []domain.VersionSummary{{Version: "1.0.0"}},
 	}
 }
 
@@ -158,5 +160,18 @@ func TestServerEntryNameForNormalizesHostUnsafeNames(t *testing.T) {
 	// A name that would collide with the bridge must be refused, not installed.
 	if _, err := serverEntryNameFor(mcpListing("mcp:x:y", "litespm")); err == nil {
 		t.Error("a listing named litespm was accepted")
+	}
+}
+
+// TestInstallMCPFromListingRefusesDiscoveryOnly pins Phase 0.1/T3: heuristic
+// rows (and unset installability) are searchable metadata, never installable.
+func TestInstallMCPFromListingRefusesDiscoveryOnly(t *testing.T) {
+	for _, class := range []domain.Installability{"", domain.InstallabilityDiscoveryOnly} {
+		listing := mcpListing("mcp:example:demo", "demo")
+		listing.Installability = class
+		_, err := installMCPFromListing(context.Background(), nil, t.TempDir(), listing, "1.0.0", domain.ScopeUser, nil, false, stdioRuntime(), nil)
+		if domain.ErrorCode(err) != "LPSM-NOT-INSTALLABLE" {
+			t.Fatalf("class %q: err = %v, want LPSM-NOT-INSTALLABLE", class, err)
+		}
 	}
 }

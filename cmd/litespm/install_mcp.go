@@ -82,6 +82,14 @@ func installMCPFromListing(
 		return nil, fmt.Errorf("installMCPFromListing: %s is kind %q, not mcp", listing.ID, listing.Kind)
 	}
 
+	// Installability gate (Phase 0.1/T3): heuristic awesome-list rows are
+	// discovery_only metadata with no proven version or launch line. Refuse
+	// with a typed error rather than installing a guessed command.
+	if !listing.IsInstallable() {
+		return nil, domain.ErrNotInstallable(listing.ID,
+			"this listing is discovery-only metadata from an awesome-list with no authoritative manifest; no version or launch line was proven")
+	}
+
 	// The launch line comes from the published version record's component
 	// runtime, not from the listing: listings carry no command at all.
 	if runtime == nil {
@@ -213,12 +221,13 @@ func installMCPFromListing(
 	// records something real.
 	for _, result := range outcome.Hosts {
 		if err := db.SaveHostRegistration(ctx, &domain.HostRegistrationRecord{
-			HostID:       result.HostID,
-			Scope:        scope,
-			ConfigPath:   result.ConfigPath,
-			ConfigFormat: string(hostConfigFormatFor(result.HostID)),
-			RegisteredAt: time.Now().UTC(),
-			Status:       "active",
+			HostID:           result.HostID,
+			Scope:            scope,
+			ConfigPath:       result.ConfigPath,
+			ConfigFormat:     string(hostConfigFormatFor(result.HostID)),
+			EntryFingerprint: result.Fingerprint,
+			RegisteredAt:     time.Now().UTC(),
+			Status:           "active",
 		}); err != nil {
 			return nil, fmt.Errorf("record the host registration: %w", err)
 		}

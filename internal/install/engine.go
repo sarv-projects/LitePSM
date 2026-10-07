@@ -2,16 +2,20 @@ package install
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/artifact"
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/fslock"
 	"github.com/sarv-projects/litespm/internal/policy"
 	"github.com/sarv-projects/litespm/internal/state"
 )
@@ -30,6 +34,8 @@ type InstallOptions struct {
 	WorkspaceID string
 	ProjectRoot string
 	ApprovalID  string
+	// Kind is the install kind recorded in installs.kind. Empty means mcp.
+	Kind domain.ListingKind
 	// PlanID, when set, binds this operation to a stored install plan: the
 	// plan is re-verified (hash + expiry) before any work happens and its
 	// request fields are used to fill or cross-check the fields above.
@@ -53,6 +59,12 @@ type Engine struct {
 	policy      *policy.Engine
 	casRoot     string
 	stagingRoot string
+	// casLocks provides E6 single-flight per tree digest: concurrent installs
+	// of the same content serialize on the digest so the stat-then-promote
+	// sequence cannot race (two winners promoting different bytes under one
+	// digest, or both deleting a shared tree on rollback).
+	casMu    sync.Mutex
+	casLocks map[string]*sync.Mutex
 }
 
 // NewEngine creates a new installation engine.
@@ -68,6 +80,37 @@ func NewEngine(db *state.DB, casRoot, stagingRoot string) (*Engine, error) {
 		db:          db,
 		casRoot:     filepath.Clean(casRoot),
 		stagingRoot: filepath.Clean(stagingRoot),
+		casLocks:    map[string]*sync.Mutex{},
+	}, nil
+}
+
+// casLockTimeout bounds how long an install waits for another process that is
+// promoting or removing the same tree.
+const casLockTimeout = 2 * time.Minute
+
+// lockDigest serializes every promote/verify/remove of one CAS tree digest
+// (E6 single-flight): first an in-process mutex, then a cross-process lock file
+// so a CLI install and the daemon cannot race either. The returned func
+// releases both; it is safe to call exactly once.
+func (e *Engine) lockDigest(treeDigest string) (func(), error) {
+	e.casMu.Lock()
+	m, ok := e.casLocks[treeDigest]
+	if !ok {
+		m = &sync.Mutex{}
+		e.casLocks[treeDigest] = m
+	}
+	e.casMu.Unlock()
+	m.Lock()
+
+	name := strings.NewReplacer(":", "_", "/", "_", "\\", "_").Replace(treeDigest)
+	fl, err := fslock.Acquire(filepath.Join(e.casRoot, "locks", name+".lock"), fslock.Options{Timeout: casLockTimeout})
+	if err != nil {
+		m.Unlock()
+		return nil, fmt.Errorf("lock CAS tree %s: %w", treeDigest, err)
+	}
+	return func() {
+		_ = fl.Release()
+		m.Unlock()
 	}, nil
 }
 
@@ -183,6 +226,20 @@ func (e *Engine) loadPlan(ctx context.Context, opts *InstallOptions) (*planBindi
 // rolled_back after removing only this operation's staging directory and CAS
 // trees.
 func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.InstallRecord, error) {
+	var consumed string
+	rec, err := e.execute(ctx, opts, &consumed)
+	if err != nil && consumed != "" {
+		// The approval was spent but the install failed (and was rolled back)
+		// before any effect was committed: give the approval back so a
+		// transient fetch/extract failure does not burn the user's consent.
+		if rerr := e.db.RefundApproval(context.WithoutCancel(ctx), consumed); rerr != nil {
+			err = fmt.Errorf("%w (approval %s could not be refunded: %v)", err, consumed, rerr)
+		}
+	}
+	return rec, err
+}
+
+func (e *Engine) execute(ctx context.Context, opts InstallOptions, consumed *string) (*domain.InstallRecord, error) {
 	binding, err := e.loadPlan(ctx, &opts)
 	if err != nil {
 		return nil, err
@@ -233,7 +290,13 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 	}
 
 	sum := sha256.Sum256([]byte(opts.ListingID + opts.Version))
-	opID := fmt.Sprintf("op_%d_%x", time.Now().UnixNano(), sum[:4])
+	// The random suffix keeps ids unique when two installs of the same
+	// listing start within one clock tick (coarse timers, concurrent callers).
+	var salt [4]byte
+	if _, err := rand.Read(salt[:]); err != nil {
+		return nil, domain.ErrInternal("failed to generate operation id", err)
+	}
+	opID := fmt.Sprintf("op_%d_%x_%x", time.Now().UnixNano(), sum[:4], salt[:])
 	stagingDir := filepath.Join(e.stagingRoot, opID)
 
 	// Step 1: Initialize journal entry (state "created"), bound to the plan when one supplied.
@@ -265,10 +328,17 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 			_ = e.Rollback(ctx, opID)
 			return nil, err
 		}
-		if err := e.db.ConsumeApproval(ctx, opts.ApprovalID); err != nil {
+		// The approval is bound to the plan it was granted for. Without a
+		// plan, it is bound to the (listing, version, scope) being installed.
+		subjectHash := installSubjectHash(opts.ListingID, opts.Version, opts.Scope)
+		if binding != nil {
+			subjectHash = binding.plan.PlanHash
+		}
+		if err := e.db.ConsumeApproval(ctx, opts.ApprovalID, "install-plan", subjectHash); err != nil {
 			_ = e.Rollback(ctx, opID)
 			return nil, err
 		}
+		*consumed = opts.ApprovalID
 		if err := e.db.AdvanceOperationState(ctx, opID, "approved"); err != nil {
 			_ = e.Rollback(ctx, opID)
 			return nil, err
@@ -357,6 +427,15 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 		return nil, domain.ErrInternal("extraction produced no tree metadata", nil)
 	}
 
+	return e.promoteAndCommit(ctx, opID, stagingDir, extractedDir, treeInfo, opts)
+}
+
+// promoteAndCommit runs steps 5-7: CAS placement, verification, and the
+// metadata commit. It holds the tree's single-flight lock for the whole span so
+// a concurrent install of the same digest either waits and reuses a verified
+// tree, or runs after this one has finished; a concurrent rollback cannot
+// delete the tree between our promote and our commit.
+func (e *Engine) promoteAndCommit(ctx context.Context, opID, stagingDir, extractedDir string, treeInfo *domain.ExtractedTreeInfo, opts InstallOptions) (*domain.InstallRecord, error) {
 	// Step 5: CAS Store Placement & Deduplication
 	if err := e.db.AdvanceOperationState(ctx, opID, "commit_intent"); err != nil {
 		_ = e.Rollback(ctx, opID)
@@ -369,32 +448,80 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 		return nil, err
 	}
 
+	unlock, err := e.lockDigest(treeInfo.TreeDigest)
+	if err != nil {
+		_ = e.Rollback(ctx, opID)
+		return nil, err
+	}
+	locked := true
+	release := func() {
+		if locked {
+			locked = false
+			unlock()
+		}
+	}
+	defer release()
+	// fail rolls back while holding the digest lock (rollbackLocked skips
+	// re-locking the held digest).
+	fail := func(err error) (*domain.InstallRecord, error) {
+		_ = e.rollback(ctx, opID, treeInfo.TreeDigest)
+		return nil, err
+	}
+
 	createdByOp := false
-	// Check if tree already exists in CAS store
+	existing := false
 	if _, statErr := os.Stat(casTreePath); statErr == nil {
-		// Tree already exists in CAS! Re-use it and mark created_by_op = 0
-		if err := e.db.RecordOperationTree(ctx, opID, treeInfo.TreeDigest, false); err != nil {
-			_ = e.Rollback(ctx, opID)
-			return nil, err
+		existing = true
+	} else if !os.IsNotExist(statErr) {
+		return fail(fmt.Errorf("stat CAS tree %s: %w", casTreePath, statErr))
+	}
+
+	if existing {
+		// Never trust bytes that merely share a name: re-hash the reused tree.
+		// A tree that no longer matches its digest is quarantined (moved aside,
+		// not deleted) and replaced by the freshly extracted one.
+		actual, derr := artifact.ComputeCanonicalTreeDigest(casTreePath)
+		if derr == nil && actual == treeInfo.TreeDigest {
+			if err := e.db.RecordOperationTree(ctx, opID, treeInfo.TreeDigest, false); err != nil {
+				return fail(err)
+			}
+			_ = os.RemoveAll(stagingDir)
+		} else {
+			qpath, qerr := e.quarantineTree(treeInfo.TreeDigest, casTreePath)
+			if qerr != nil {
+				return fail(fmt.Errorf("CAS tree %s is corrupt and could not be quarantined: %w", treeInfo.TreeDigest, qerr))
+			}
+			reason := "digest mismatch"
+			if derr != nil {
+				reason = derr.Error()
+			}
+			e.step(ctx, opID, "cas_quarantine", "done",
+				fmt.Sprintf("existing tree %s failed verification (%s); moved to %s", treeInfo.TreeDigest, reason, qpath))
+			existing = false
 		}
-		_ = os.RemoveAll(stagingDir)
-	} else {
-		// New tree: atomically place in CAS store and mark created_by_op = 1
+	}
+
+	if !existing {
+		// New (or replaced-after-quarantine) tree: place it atomically and mark
+		// created_by_op only if this call really created the directory. A rename
+		// that loses to a concurrent promoter (cross-process, lock-less writer)
+		// reports created=false so a later rollback never deletes the winner's tree.
 		if err := os.MkdirAll(filepath.Dir(casTreePath), 0700); err != nil {
-			_ = e.Rollback(ctx, opID)
-			return nil, fmt.Errorf("failed to create CAS tree parent dir: %w", err)
+			return fail(fmt.Errorf("failed to create CAS tree parent dir: %w", err))
 		}
-
-		if err := moveOrCopyDir(extractedDir, casTreePath); err != nil {
-			_ = e.Rollback(ctx, opID)
-			return nil, fmt.Errorf("failed to promote tree to CAS store %s: %w", casTreePath, err)
+		created, perr := promoteTree(extractedDir, casTreePath)
+		if perr != nil {
+			return fail(fmt.Errorf("failed to promote tree to CAS store %s: %w", casTreePath, perr))
 		}
-
-		if err := e.db.RecordOperationTree(ctx, opID, treeInfo.TreeDigest, true); err != nil {
-			_ = e.Rollback(ctx, opID)
-			return nil, err
+		if err := e.db.RecordOperationTree(ctx, opID, treeInfo.TreeDigest, created); err != nil {
+			if created {
+				// The journal does not know about this tree, so rollback will
+				// not remove it: remove it here rather than orphan it.
+				_ = os.RemoveAll(casTreePath)
+			}
+			return fail(err)
 		}
-		createdByOp = true
+		createdByOp = created
 		_ = os.RemoveAll(stagingDir)
 	}
 
@@ -402,24 +529,20 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 	// any metadata is committed ("verified" state).
 	actualDigest, err := artifact.ComputeCanonicalTreeDigest(casTreePath)
 	if err != nil {
-		_ = e.Rollback(ctx, opID)
-		return nil, fmt.Errorf("failed to recompute tree digest for verification: %w", err)
+		return fail(fmt.Errorf("failed to recompute tree digest for verification: %w", err))
 	}
 	if actualDigest != treeInfo.TreeDigest {
-		_ = e.Rollback(ctx, opID)
-		return nil, domain.ErrChecksumMismatch(treeInfo.TreeDigest, actualDigest)
+		return fail(domain.ErrChecksumMismatch(treeInfo.TreeDigest, actualDigest))
 	}
 	if err := e.db.AdvanceOperationState(ctx, opID, "verified"); err != nil {
-		_ = e.Rollback(ctx, opID)
-		return nil, err
+		return fail(err)
 	}
 	e.step(ctx, opID, "tree_verified", "done",
 		fmt.Sprintf("recomputed CAS digest %s matches staged tree (created_by_op=%t)", actualDigest, createdByOp))
 
 	// Step 7: Commit metadata to SQLite
 	if err := e.db.AdvanceOperationState(ctx, opID, "committing"); err != nil {
-		_ = e.Rollback(ctx, opID)
-		return nil, err
+		return fail(err)
 	}
 
 	digestShort := strings.TrimPrefix(treeInfo.TreeDigest, "sha256:")
@@ -434,12 +557,23 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 	}, opts.ListingID)
 	installID := fmt.Sprintf("inst_%s_%s_%s", opts.Scope, safeListing, digestShort)
 
+	kind := opts.Kind
+	if kind == "" {
+		kind = domain.KindMCP
+	}
+	compKind := domain.ComponentMCPProvider
+	if kind == domain.KindSkill {
+		compKind = domain.ComponentSkill
+	}
+
 	now := time.Now().UTC()
 	installRec := &domain.InstallRecord{
 		InstallID:   installID,
 		ListingID:   opts.ListingID,
+		Kind:        kind,
 		Version:     opts.Version,
 		TreeDigest:  treeInfo.TreeDigest,
+		InstallPath: casTreePath,
 		Scope:       opts.Scope,
 		WorkspaceID: opts.WorkspaceID,
 		ProjectRoot: opts.ProjectRoot,
@@ -451,7 +585,7 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 	// Main component record
 	compRec := &domain.InstallComponentRecord{
 		InstallID:     installID,
-		Kind:          domain.ComponentMCPProvider,
+		Kind:          compKind,
 		ComponentName: "default",
 		Path:          casTreePath,
 	}
@@ -460,11 +594,54 @@ func (e *Engine) Execute(ctx context.Context, opts InstallOptions) (*domain.Inst
 	// "committed" are written in one transaction: a crash leaves either no
 	// install row (recovery rolls back) or a complete one (recovery finalizes).
 	if err := e.db.CommitInstallOperation(ctx, installRec, compRec, opID); err != nil {
-		_ = e.Rollback(ctx, opID)
-		return nil, fmt.Errorf("failed to commit install metadata: %w", err)
+		return fail(fmt.Errorf("failed to commit install metadata: %w", err))
 	}
 
 	return installRec, nil
+}
+
+// quarantineTree moves a corrupt CAS tree aside under casRoot/quarantine so the
+// evidence survives and the digest path is free for a verified tree. It never
+// deletes the corrupt tree.
+func (e *Engine) quarantineTree(treeDigest, treePath string) (string, error) {
+	dir := filepath.Join(e.casRoot, "quarantine")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	name := strings.NewReplacer(":", "_", "/", "_", "\\", "_").Replace(treeDigest)
+	dest := filepath.Join(dir, fmt.Sprintf("%s-%d", name, time.Now().UnixNano()))
+	if err := os.Rename(treePath, dest); err != nil {
+		return "", err
+	}
+	return dest, nil
+}
+
+// promoteTree moves src to dst without ever merging into an existing dst.
+// created reports whether dst was created by this call; false means dst already
+// existed (this caller lost a promotion race) and src is left for the caller to
+// discard.
+func promoteTree(src, dst string) (created bool, err error) {
+	if err := os.Rename(src, dst); err == nil {
+		return true, nil
+	}
+	if _, statErr := os.Lstat(dst); statErr == nil {
+		return false, nil
+	}
+	// Cross-device or similar: copy beside the destination, then rename into
+	// place so dst never exists half-populated.
+	tmp := fmt.Sprintf("%s.tmp-%d", dst, time.Now().UnixNano())
+	if err := moveOrCopyDir(src, tmp); err != nil {
+		_ = os.RemoveAll(tmp)
+		return false, err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.RemoveAll(tmp)
+		if _, statErr := os.Lstat(dst); statErr == nil {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // TreePath computes the local filesystem path for a given Merkle tree digest.
@@ -491,6 +668,17 @@ func (e *Engine) TreePath(treeDigest string) (string, error) {
 // half-way leaves the operation in "rolling_back" — a state startup recovery
 // finishes — instead of pretending the cleanup already succeeded.
 func (e *Engine) Rollback(ctx context.Context, opID string) error {
+	return e.rollback(ctx, opID, "")
+}
+
+// rollback is Rollback with one digest the caller already holds the
+// single-flight lock for (heldDigest, "" when none), so it is not re-locked.
+//
+// A tree is removed only when this operation created it AND nothing else
+// depends on it: an install row referencing the digest, or another live
+// operation that reused it, keeps the tree (a stale created_by_op=1 can never
+// delete bytes someone else committed against).
+func (e *Engine) rollback(ctx context.Context, opID, heldDigest string) error {
 	if err := e.db.AdvanceOperationState(ctx, opID, "rolling_back"); err != nil {
 		return err
 	}
@@ -504,7 +692,7 @@ func (e *Engine) Rollback(ctx context.Context, opID string) error {
 	if err != nil {
 		return err
 	}
-	var removed []string
+	var removed, kept []string
 	for _, t := range trees {
 		if !t.CreatedByOp {
 			continue
@@ -513,10 +701,15 @@ func (e *Engine) Rollback(ctx context.Context, opID string) error {
 		if pathErr != nil {
 			return pathErr
 		}
-		if rmErr := os.RemoveAll(path); rmErr != nil {
+		didRemove, rmErr := e.removeCreatedTree(ctx, opID, t.TreeDigest, path, heldDigest)
+		if rmErr != nil {
 			return fmt.Errorf("failed to remove tree %s created by operation %s: %w", t.TreeDigest, opID, rmErr)
 		}
-		removed = append(removed, t.TreeDigest)
+		if didRemove {
+			removed = append(removed, t.TreeDigest)
+		} else {
+			kept = append(kept, t.TreeDigest)
+		}
 	}
 
 	if err := e.db.AdvanceOperationState(ctx, opID, "rolled_back"); err != nil {
@@ -526,8 +719,32 @@ func (e *Engine) Rollback(ctx context.Context, opID string) error {
 	if len(removed) > 0 {
 		detail = fmt.Sprintf("removed staging and trees %s", strings.Join(removed, ", "))
 	}
+	if len(kept) > 0 {
+		detail += fmt.Sprintf("; kept in-use tree(s) %s", strings.Join(kept, ", "))
+	}
 	_ = e.db.RecordOperationStep(ctx, opID, "rollback", "done", detail)
 	return nil
+}
+
+func (e *Engine) removeCreatedTree(ctx context.Context, opID, digest, path, heldDigest string) (bool, error) {
+	if digest != heldDigest {
+		unlock, err := e.lockDigest(digest)
+		if err != nil {
+			return false, err
+		}
+		defer unlock()
+	}
+	inUse, err := e.db.TreeInUse(ctx, opID, digest)
+	if err != nil {
+		return false, err
+	}
+	if inUse {
+		return false, nil
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func moveOrCopyDir(src, dst string) error {
@@ -575,4 +792,17 @@ func moveOrCopyDir(src, dst string) error {
 	}
 
 	return os.RemoveAll(src)
+}
+
+// installSubjectHash is the approval subject for an install that has no
+// persisted plan: a digest of exactly what is being installed.
+func installSubjectHash(listingID, version string, scope domain.InstallScope) string {
+	sum := sha256.Sum256([]byte("install\x00" + listingID + "\x00" + version + "\x00" + string(scope)))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// InstallSubjectHash exposes the plan-less approval subject so a human
+// approval flow can bind to it.
+func InstallSubjectHash(listingID, version string, scope domain.InstallScope) string {
+	return installSubjectHash(listingID, version, scope)
 }

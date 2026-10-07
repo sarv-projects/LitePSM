@@ -87,6 +87,58 @@ func ComputeBytesDigest(data []byte) string {
 	return fmt.Sprintf("sha256:%s", hex.EncodeToString(hash[:]))
 }
 
+// ComputeContentDigest hashes canonical Listing+VersionRecord content.
+//
+// C6: a snapshot digest over listing IDs alone cannot detect a content change
+// that keeps the same ids (summary rewrite, command swap, version bump). This
+// hashes the RFC 8785 canonical bytes of every listing and version record in
+// sorted order, so any content change changes the digest.
+func ComputeContentDigest(listings []*Listing, versions []*VersionRecord) (string, error) {
+	sortedListings := make([]*Listing, 0, len(listings))
+	for _, l := range listings {
+		if l != nil {
+			sortedListings = append(sortedListings, l)
+		}
+	}
+	sort.Slice(sortedListings, func(i, j int) bool { return sortedListings[i].ID < sortedListings[j].ID })
+	sortedVersions := make([]*VersionRecord, 0, len(versions))
+	for _, v := range versions {
+		if v != nil {
+			sortedVersions = append(sortedVersions, v)
+		}
+	}
+	sort.Slice(sortedVersions, func(i, j int) bool {
+		if sortedVersions[i].ListingID == sortedVersions[j].ListingID {
+			return sortedVersions[i].Version < sortedVersions[j].Version
+		}
+		return sortedVersions[i].ListingID < sortedVersions[j].ListingID
+	})
+	hasher := sha256.New()
+	for _, l := range sortedListings {
+		raw, err := json.Marshal(l)
+		if err != nil {
+			return "", fmt.Errorf("marshal listing %q: %w", l.ID, err)
+		}
+		canonical, err := CanonicalizeJSON(raw)
+		if err != nil {
+			return "", fmt.Errorf("canonicalize listing %q: %w", l.ID, err)
+		}
+		hasher.Write(canonical)
+	}
+	for _, v := range sortedVersions {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("marshal version %s@%s: %w", v.ListingID, v.Version, err)
+		}
+		canonical, err := CanonicalizeJSON(raw)
+		if err != nil {
+			return "", fmt.Errorf("canonicalize version %s@%s: %w", v.ListingID, v.Version, err)
+		}
+		hasher.Write(canonical)
+	}
+	return fmt.Sprintf("sha256:%s", hex.EncodeToString(hasher.Sum(nil))), nil
+}
+
 // CanonicalizeJSON implements RFC 8785 (JSON Canonicalization Scheme - JCS).
 // It accepts any valid JSON bytes and returns canonicalized JSON bytes.
 func CanonicalizeJSON(input []byte) ([]byte, error) {

@@ -2,7 +2,9 @@ package state
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -21,8 +23,17 @@ func (db *DB) SavePlan(ctx context.Context, plan *domain.InstallPlan) error {
 	}
 
 	query := `
-	INSERT OR REPLACE INTO plans (plan_id, plan_hash, schema_version, listing_id, requested_version, plan_json, created_at, expires_at, status)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending');`
+	INSERT INTO plans (plan_id, plan_hash, schema_version, listing_id, requested_version, plan_json, created_at, expires_at, status)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+	ON CONFLICT(plan_id) DO UPDATE SET
+		plan_hash = excluded.plan_hash,
+		schema_version = excluded.schema_version,
+		listing_id = excluded.listing_id,
+		requested_version = excluded.requested_version,
+		plan_json = excluded.plan_json,
+		created_at = excluded.created_at,
+		expires_at = excluded.expires_at,
+		status = 'pending';`
 
 	_, err = db.raw.ExecContext(ctx, query,
 		plan.PlanID,
@@ -78,60 +89,166 @@ func (db *DB) UpdatePlanStatus(ctx context.Context, planID, status string) error
 
 // --- Approvals (Replay Prevention) ---
 
-// RecordApproval creates an approval record with status 'active'.
+// approvalTimeLayout is the fixed-width UTC layout approval timestamps are
+// stored in. It matches CURRENT_TIMESTAMP's shape (UTC, "YYYY-MM-DD HH:MM:SS")
+// with a fractional part, so stored values are unambiguous and sort correctly.
+const approvalTimeLayout = "2006-01-02 15:04:05.000000000"
+
+// parseStoredApprovalTime decodes an approvals timestamp column. It accepts
+// the layout this package writes plus the shapes the driver and older rows
+// produced. ok is false for an unparsable value; callers fail closed.
+func parseStoredApprovalTime(v any) (time.Time, bool) {
+	switch t := v.(type) {
+	case time.Time:
+		return t.UTC(), true
+	case string:
+		str := strings.TrimSpace(t)
+		if i := strings.Index(str, " m=+"); i >= 0 { // monotonic clock suffix from time.Time.String()
+			str = str[:i]
+		}
+		for _, layout := range []string{
+			approvalTimeLayout,
+			"2006-01-02 15:04:05.999999999 -0700 MST",
+			"2006-01-02 15:04:05.999999999-07:00",
+			"2006-01-02 15:04:05.999999999Z07:00",
+			time.RFC3339Nano,
+			"2006-01-02 15:04:05",
+		} {
+			if parsed, err := time.Parse(layout, str); err == nil {
+				return parsed.UTC(), true
+			}
+		}
+	case []byte:
+		return parseStoredApprovalTime(string(t))
+	}
+	return time.Time{}, false
+}
+
+// RecordApproval creates an approval record with status 'active'. The expiry is
+// stored in UTC.
 func (db *DB) RecordApproval(ctx context.Context, approvalID, subjectType, subjectHash, actor, channel, scope string, expiresAt *time.Time) error {
 	query := `
 	INSERT INTO approvals (approval_id, subject_type, subject_hash, actor, channel, status, granted_at, expires_at, scope)
-	VALUES (?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?, ?);`
+	VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?);`
 
-	_, err := db.raw.ExecContext(ctx, query, approvalID, subjectType, subjectHash, actor, channel, expiresAt, scope)
+	now := time.Now().UTC().Format(approvalTimeLayout)
+	var expires any
+	if expiresAt != nil {
+		expires = expiresAt.UTC().Format(approvalTimeLayout)
+	}
+	_, err := db.raw.ExecContext(ctx, query, approvalID, subjectType, subjectHash, actor, channel, now, expires, scope)
 	if err != nil {
 		return fmt.Errorf("failed to record approval %s: %w", approvalID, err)
 	}
 	return nil
 }
 
-// ConsumeApproval atomically consumes an active approval.
-// If the approval was already consumed or expired, it fails closed with an appropriate error.
-func (db *DB) ConsumeApproval(ctx context.Context, approvalID string) error {
-	query := `
-	UPDATE approvals
-	SET status = 'consumed', consumed_at = CURRENT_TIMESTAMP
-	WHERE approval_id = ? AND status = 'active'
-	  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);`
+// ApprovalRecord is the stored form of an approval.
+type ApprovalRecord struct {
+	ApprovalID  string
+	SubjectType string
+	SubjectHash string
+	Actor       string
+	Channel     string
+	Status      string
+	Scope       string
+	ExpiresAt   *time.Time
+}
 
-	res, err := db.raw.ExecContext(ctx, query, approvalID)
+// GetApproval loads an approval by id.
+func (db *DB) GetApproval(ctx context.Context, approvalID string) (*ApprovalRecord, error) {
+	var rec ApprovalRecord
+	var expires any
+	err := db.raw.QueryRowContext(ctx,
+		"SELECT approval_id, subject_type, subject_hash, actor, channel, status, scope, expires_at FROM approvals WHERE approval_id = ?",
+		approvalID).Scan(&rec.ApprovalID, &rec.SubjectType, &rec.SubjectHash, &rec.Actor, &rec.Channel, &rec.Status, &rec.Scope, &expires)
 	if err != nil {
-		return fmt.Errorf("failed to execute atomic approval consumption: %w", err)
+		if err == sql.ErrNoRows {
+			return nil, domain.ErrNotFound("approval", approvalID)
+		}
+		return nil, err
 	}
+	if expires != nil {
+		if t, ok := parseStoredApprovalTime(expires); ok {
+			rec.ExpiresAt = &t
+		} else {
+			// Unparsable expiry: fail closed as already expired.
+			t := time.Unix(0, 0).UTC()
+			rec.ExpiresAt = &t
+		}
+	}
+	return &rec, nil
+}
 
-	rows, err := res.RowsAffected()
+// ConsumeApproval atomically consumes an active approval for exactly one
+// subject. The approval must have been granted for subjectType and
+// subjectHash; an approval for a different plan or action is refused without
+// being consumed. Expiry is evaluated in UTC. An approval that was already
+// consumed or has expired fails closed with the matching error.
+func (db *DB) ConsumeApproval(ctx context.Context, approvalID, subjectType, subjectHash string) error {
+	if strings.TrimSpace(subjectType) == "" || strings.TrimSpace(subjectHash) == "" {
+		return domain.ErrApprovalSubjectMismatch(approvalID, "the action to authorize carries no subject type/hash")
+	}
+	rec, err := db.GetApproval(ctx, approvalID)
 	if err != nil {
 		return err
 	}
 
-	if rows == 0 {
-		// Determine why it failed: already consumed, expired, or non-existent
-		var status string
-		var expiresAt sql.NullTime
-		checkErr := db.raw.QueryRowContext(ctx, "SELECT status, expires_at FROM approvals WHERE approval_id = ?", approvalID).Scan(&status, &expiresAt)
-		if checkErr != nil {
-			if checkErr == sql.ErrNoRows {
-				return domain.ErrNotFound("approval", approvalID)
-			}
-			return checkErr
-		}
-
-		if status == "consumed" {
-			return domain.ErrApprovalConsumed(approvalID)
-		}
-		if status == "expired" || (expiresAt.Valid && expiresAt.Time.Before(time.Now())) {
-			return domain.ErrApprovalExpired(approvalID)
-		}
-		return fmt.Errorf("approval %s cannot be consumed (status: %s)", approvalID, status)
+	switch rec.Status {
+	case "consumed":
+		return domain.ErrApprovalConsumed(approvalID)
+	case "expired":
+		return domain.ErrApprovalExpired(approvalID)
+	case "active":
+	default:
+		return fmt.Errorf("approval %s cannot be consumed (status: %s)", approvalID, rec.Status)
+	}
+	if rec.SubjectType != subjectType || rec.SubjectHash != subjectHash {
+		return domain.ErrApprovalSubjectMismatch(approvalID, fmt.Sprintf(
+			"it was granted for %s %q, not %s %q", rec.SubjectType, rec.SubjectHash, subjectType, subjectHash))
+	}
+	now := time.Now().UTC()
+	if rec.ExpiresAt != nil && !rec.ExpiresAt.After(now) {
+		return domain.ErrApprovalExpired(approvalID)
 	}
 
+	// The status guard makes the transition atomic: of two concurrent
+	// consumers only one affects a row.
+	res, err := db.raw.ExecContext(ctx, `
+	UPDATE approvals SET status = 'consumed', consumed_at = ?
+	WHERE approval_id = ? AND status = 'active' AND subject_type = ? AND subject_hash = ?;`,
+		now.Format(approvalTimeLayout), approvalID, subjectType, subjectHash)
+	if err != nil {
+		return fmt.Errorf("failed to execute atomic approval consumption: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrApprovalConsumed(approvalID)
+	}
 	return nil
+}
+
+// RefundApproval returns a consumed approval to 'active' after the guarded
+// action failed before producing its effect, so the user is not forced to
+// re-approve a plan that never ran. An approval that has since expired stays
+// consumed. Refunding an approval that is not consumed is a no-op.
+func (db *DB) RefundApproval(ctx context.Context, approvalID string) error {
+	rec, err := db.GetApproval(ctx, approvalID)
+	if err != nil {
+		return err
+	}
+	if rec.Status != "consumed" {
+		return nil
+	}
+	if rec.ExpiresAt != nil && !rec.ExpiresAt.After(time.Now().UTC()) {
+		return nil
+	}
+	_, err = db.raw.ExecContext(ctx,
+		"UPDATE approvals SET status = 'active', consumed_at = NULL WHERE approval_id = ? AND status = 'consumed';", approvalID)
+	return err
 }
 
 // RevokeApproval revokes an active approval.
@@ -169,26 +286,45 @@ func (db *DB) SaveInstall(ctx context.Context, rec *domain.InstallRecord) error 
 }
 
 func (db *DB) saveInstallExec(ctx context.Context, ex execer, rec *domain.InstallRecord) error {
+	kind, err := installKindColumn(rec.Kind)
+	if err != nil {
+		return fmt.Errorf("install %s: %w", rec.InstallID, err)
+	}
+	// ON CONFLICT DO UPDATE, never INSERT OR REPLACE: REPLACE deletes the old
+	// row first, and with foreign keys on that cascades away the install's
+	// components, providers, capabilities and capability grants.
 	query := `
-	INSERT OR REPLACE INTO installs (
+	INSERT INTO installs (
 		install_id, listing_id, kind, version, immutable_ref,
 		tree_digest, install_path, scope, workspace_id, project_root,
 		enabled, installed_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(install_id) DO UPDATE SET
+		listing_id = excluded.listing_id,
+		kind = excluded.kind,
+		version = excluded.version,
+		immutable_ref = excluded.immutable_ref,
+		tree_digest = excluded.tree_digest,
+		install_path = excluded.install_path,
+		scope = excluded.scope,
+		workspace_id = excluded.workspace_id,
+		project_root = excluded.project_root,
+		enabled = excluded.enabled,
+		updated_at = excluded.updated_at;`
 
 	enabledInt := 1
 	if rec.Status == domain.InstallDisabled || rec.Status == domain.InstallRemoved {
 		enabledInt = 0
 	}
 
-	_, err := ex.ExecContext(ctx, query,
+	_, err = ex.ExecContext(ctx, query,
 		rec.InstallID,
 		rec.ListingID,
-		"mcp", // default kind
+		kind,
 		rec.Version,
 		"",
 		rec.TreeDigest,
-		rec.ProjectRoot,
+		rec.InstallPath,
 		string(rec.Scope),
 		rec.WorkspaceID,
 		rec.ProjectRoot,
@@ -202,22 +338,39 @@ func (db *DB) saveInstallExec(ctx context.Context, ex execer, rec *domain.Instal
 	return nil
 }
 
+// installKindColumn validates an install kind against the installs.kind enum.
+// An empty kind is stored as "mcp" for callers that predate the field; every
+// production writer sets it explicitly.
+func installKindColumn(k domain.ListingKind) (string, error) {
+	switch k {
+	case "":
+		return string(domain.KindMCP), nil
+	case domain.KindPlugin, domain.KindMCP, domain.KindSkill, domain.KindConnector,
+		domain.KindAgent, domain.KindRule, domain.KindHook, domain.KindTool, domain.KindLSP:
+		return string(k), nil
+	}
+	return "", fmt.Errorf("unknown install kind %q", k)
+}
+
 // GetInstall retrieves an installation record by InstallID.
 func (db *DB) GetInstall(ctx context.Context, installID string) (*domain.InstallRecord, error) {
 	query := `
-	SELECT install_id, listing_id, version, tree_digest, scope, workspace_id, project_root, enabled, installed_at, updated_at
+	SELECT install_id, listing_id, kind, version, tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at
 	FROM installs
 	WHERE install_id = ?;`
 
 	var rec domain.InstallRecord
 	var scopeStr, wsID, pRoot sql.NullString
 	var enabledInt int
+	var kindStr string
 
 	err := db.raw.QueryRowContext(ctx, query, installID).Scan(
 		&rec.InstallID,
 		&rec.ListingID,
+		&kindStr,
 		&rec.Version,
 		&rec.TreeDigest,
+		&rec.InstallPath,
 		&scopeStr,
 		&wsID,
 		&pRoot,
@@ -232,6 +385,7 @@ func (db *DB) GetInstall(ctx context.Context, installID string) (*domain.Install
 		return nil, err
 	}
 
+	rec.Kind = domain.ListingKind(kindStr)
 	rec.Scope = domain.InstallScope(scopeStr.String)
 	if wsID.Valid {
 		rec.WorkspaceID = wsID.String
@@ -254,10 +408,10 @@ func (db *DB) ListInstalls(ctx context.Context, scope domain.InstallScope, works
 	var args []any
 
 	if scope == domain.ScopeProject {
-		query = `SELECT install_id, listing_id, version, tree_digest, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'project' AND workspace_id = ? ORDER BY installed_at DESC;`
+		query = `SELECT install_id, listing_id, kind, version, tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'project' AND workspace_id = ? ORDER BY installed_at DESC;`
 		args = append(args, workspaceID)
 	} else {
-		query = `SELECT install_id, listing_id, version, tree_digest, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'user' ORDER BY installed_at DESC;`
+		query = `SELECT install_id, listing_id, kind, version, tree_digest, install_path, scope, workspace_id, project_root, enabled, installed_at, updated_at FROM installs WHERE scope = 'user' ORDER BY installed_at DESC;`
 	}
 
 	rows, err := db.raw.QueryContext(ctx, query, args...)
@@ -271,12 +425,15 @@ func (db *DB) ListInstalls(ctx context.Context, scope domain.InstallScope, works
 		var rec domain.InstallRecord
 		var scopeStr, wsID, pRoot sql.NullString
 		var enabledInt int
+		var kindStr string
 
 		if err := rows.Scan(
 			&rec.InstallID,
 			&rec.ListingID,
+			&kindStr,
 			&rec.Version,
 			&rec.TreeDigest,
+			&rec.InstallPath,
 			&scopeStr,
 			&wsID,
 			&pRoot,
@@ -287,6 +444,7 @@ func (db *DB) ListInstalls(ctx context.Context, scope domain.InstallScope, works
 			return nil, err
 		}
 
+		rec.Kind = domain.ListingKind(kindStr)
 		rec.Scope = domain.InstallScope(scopeStr.String)
 		if wsID.Valid {
 			rec.WorkspaceID = wsID.String
@@ -327,16 +485,35 @@ func (db *DB) SaveInstallComponent(ctx context.Context, comp *domain.InstallComp
 	return db.saveInstallComponentExec(ctx, db.raw, comp)
 }
 
-func (db *DB) saveInstallComponentExec(ctx context.Context, ex execer, comp *domain.InstallComponentRecord) error {
-	query := `
-	INSERT OR REPLACE INTO install_components (component_id, install_id, kind, name, relative_path, enabled)
-	VALUES (?, ?, ?, ?, ?, 1);`
+// ComponentIDFor derives the component row id. It is deliberately distinct
+// from the install id (a component is a sub-element of an install, and several
+// can share one), and deterministic so re-saving the same component updates
+// its row instead of creating a duplicate.
+func ComponentIDFor(installID string, kind domain.ComponentKind, name string) string {
+	return fmt.Sprintf("%s#%s/%s", installID, kind, name)
+}
 
-	_, err := ex.ExecContext(ctx, query, comp.InstallID, comp.InstallID, string(comp.Kind), comp.ComponentName, comp.Path)
+func (db *DB) saveInstallComponentExec(ctx context.Context, ex execer, comp *domain.InstallComponentRecord) error {
+	componentID := comp.ComponentID
+	if componentID == "" {
+		componentID = ComponentIDFor(comp.InstallID, comp.Kind, comp.ComponentName)
+	}
+	// ON CONFLICT DO UPDATE: providers.component_id references this row, so a
+	// REPLACE (delete + insert) would be rejected or cascade.
+	query := `
+	INSERT INTO install_components (component_id, install_id, kind, name, relative_path, enabled)
+	VALUES (?, ?, ?, ?, ?, 1)
+	ON CONFLICT(component_id) DO UPDATE SET
+		install_id = excluded.install_id,
+		kind = excluded.kind,
+		name = excluded.name,
+		relative_path = excluded.relative_path;`
+
+	_, err := ex.ExecContext(ctx, query, componentID, comp.InstallID, string(comp.Kind), comp.ComponentName, comp.Path)
 	return err
 }
 
-// GetInstallComponent reads one installed-component row by its id.
+// GetInstallComponent reads one installed-component row by its component id.
 func (db *DB) GetInstallComponent(ctx context.Context, componentID string) (*domain.InstallComponentRecord, error) {
 	row := db.raw.QueryRowContext(ctx, `
 	SELECT component_id, install_id, kind, name, COALESCE(relative_path, ''), enabled
@@ -345,13 +522,40 @@ func (db *DB) GetInstallComponent(ctx context.Context, componentID string) (*dom
 		rec     domain.InstallComponentRecord
 		enabled int
 	)
-	if err := row.Scan(&rec.InstallID, &rec.InstallID, &rec.Kind, &rec.ComponentName, &rec.Path, &enabled); err != nil {
+	if err := row.Scan(&rec.ComponentID, &rec.InstallID, &rec.Kind, &rec.ComponentName, &rec.Path, &enabled); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, domain.ErrNotFound("install_component", componentID)
+		}
 		return nil, err
 	}
 	if enabled == 1 {
 		rec.Status = string(domain.InstallActive)
 	}
 	return &rec, nil
+}
+
+// ListInstallComponents returns every component row of one install.
+func (db *DB) ListInstallComponents(ctx context.Context, installID string) ([]domain.InstallComponentRecord, error) {
+	rows, err := db.raw.QueryContext(ctx, `
+	SELECT component_id, install_id, kind, name, COALESCE(relative_path, ''), enabled
+	FROM install_components WHERE install_id = ? ORDER BY component_id;`, installID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []domain.InstallComponentRecord
+	for rows.Next() {
+		var rec domain.InstallComponentRecord
+		var enabled int
+		if err := rows.Scan(&rec.ComponentID, &rec.InstallID, &rec.Kind, &rec.ComponentName, &rec.Path, &enabled); err != nil {
+			return nil, err
+		}
+		if enabled == 1 {
+			rec.Status = string(domain.InstallActive)
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 // CommitInstallOperation writes the install record, its primary component
@@ -477,18 +681,38 @@ func (db *DB) SaveProvider(ctx context.Context, p *domain.ProviderRecord) error 
 		return err
 	}
 
-	// component_id is a foreign key onto install_components. SaveInstallComponent
-	// keys that table by install id, so an unset ComponentID falls back to the
-	// install id — which is a row that exists — rather than to a display name
-	// that does not.
+	// component_id is a foreign key onto install_components. An unset
+	// ComponentID is resolved to that install's mcp-provider component row
+	// (preferring the one named like the provider's ComponentName), never to the
+	// install id: component ids are distinct from install ids.
 	componentID := p.ComponentID
 	if componentID == "" {
-		componentID = p.InstallID
+		err := db.raw.QueryRowContext(ctx, `
+		SELECT component_id FROM install_components
+		WHERE install_id = ? AND kind = ?
+		ORDER BY (name = ?) DESC, component_id LIMIT 1;`,
+			p.InstallID, string(domain.ComponentMCPProvider), p.ComponentName).Scan(&componentID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("provider %s: install %s has no mcp-provider component row to attach to", p.ProviderID, p.InstallID)
+			}
+			return err
+		}
 	}
 
+	// ON CONFLICT DO UPDATE: capabilities, provider_sessions and
+	// oauth_sessions cascade from this row, and capability_grants hang off
+	// capabilities, so REPLACE would silently revoke every grant.
 	query := `
-	INSERT OR REPLACE INTO providers (provider_id, install_id, component_id, mode, runtime_adapter, launch_spec_json, auth_profile_id, enabled, autostart, created_at)
-	VALUES (?, ?, ?, ?, 'process', ?, ?, 1, 0, ?);`
+	INSERT INTO providers (provider_id, install_id, component_id, mode, runtime_adapter, launch_spec_json, auth_profile_id, enabled, autostart, created_at)
+	VALUES (?, ?, ?, ?, 'process', ?, ?, 1, 0, ?)
+	ON CONFLICT(provider_id) DO UPDATE SET
+		install_id = excluded.install_id,
+		component_id = excluded.component_id,
+		mode = excluded.mode,
+		runtime_adapter = excluded.runtime_adapter,
+		launch_spec_json = excluded.launch_spec_json,
+		auth_profile_id = excluded.auth_profile_id;`
 
 	var authArg any
 	if p.AuthProfileID != "" {
@@ -598,8 +822,17 @@ func (db *DB) ListCapabilities(ctx context.Context, providerID string) ([]domain
 // SaveCapability stores a tool schema and fingerprint.
 func (db *DB) SaveCapability(ctx context.Context, c *domain.CapabilityRecord) error {
 	query := `
-	INSERT OR REPLACE INTO capabilities (capability_id, provider_id, native_name, title, description, schema_fingerprint, input_schema_json, discovered_at, status)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active');`
+	INSERT INTO capabilities (capability_id, provider_id, native_name, title, description, schema_fingerprint, input_schema_json, discovered_at, status)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+	ON CONFLICT(capability_id) DO UPDATE SET
+		provider_id = excluded.provider_id,
+		native_name = excluded.native_name,
+		title = excluded.title,
+		description = excluded.description,
+		schema_fingerprint = excluded.schema_fingerprint,
+		input_schema_json = excluded.input_schema_json,
+		discovered_at = excluded.discovered_at,
+		status = 'active';`
 
 	_, err := db.raw.ExecContext(ctx, query,
 		c.CapabilityID,
@@ -617,11 +850,21 @@ func (db *DB) SaveCapability(ctx context.Context, c *domain.CapabilityRecord) er
 // SaveCapabilityGrant records policy or user authorization for a capability.
 func (db *DB) SaveCapabilityGrant(ctx context.Context, grant *domain.CapabilityGrant, grantedBy string) error {
 	query := `
-	INSERT OR REPLACE INTO capability_grants (
+	INSERT INTO capability_grants (
 		grant_id, capability_id, schema_fingerprint, cas_tree_digest,
 		endpoint_origin, server_version_digest, status, granted_by,
 		granted_at, expires_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(grant_id) DO UPDATE SET
+		capability_id = excluded.capability_id,
+		schema_fingerprint = excluded.schema_fingerprint,
+		cas_tree_digest = excluded.cas_tree_digest,
+		endpoint_origin = excluded.endpoint_origin,
+		server_version_digest = excluded.server_version_digest,
+		status = excluded.status,
+		granted_by = excluded.granted_by,
+		granted_at = excluded.granted_at,
+		expires_at = excluded.expires_at;`
 
 	_, err := db.raw.ExecContext(ctx, query,
 		grant.GrantID,
@@ -686,19 +929,44 @@ func (db *DB) GetActiveGrant(ctx context.Context, capabilityID, schemaFingerprin
 
 // --- Host Registrations & Backups ---
 
-// SaveHostRegistration records or updates an agent host registration.
+// SaveHostRegistration records or updates a managed host-config entry. The row
+// is keyed by (host, scope, workspace, managed entry), so two MCP servers on
+// one host no longer overwrite each other. EntryFingerprint must be the hash of
+// the entry LiteSPM actually wrote; an empty one is refused rather than
+// recorded as a placeholder.
 func (db *DB) SaveHostRegistration(ctx context.Context, reg *domain.HostRegistrationRecord) error {
+	key := reg.ManagedEntryKey
+	if key == "" {
+		key = "litespm"
+	}
+	if reg.EntryFingerprint == "" {
+		return fmt.Errorf("host registration %s/%s: entry fingerprint is required (hash of the written entry)", reg.HostID, key)
+	}
 	query := `
-	INSERT OR REPLACE INTO host_registrations (host_id, scope, workspace_id, config_path, managed_entry_key, entry_fingerprint, registered_at)
-	VALUES (?, ?, ?, ?, 'litespm', 'fp_default', ?);`
+	INSERT INTO host_registrations (host_id, scope, workspace_id, config_path, managed_entry_key, entry_fingerprint, registered_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(host_id, scope, workspace_id, managed_entry_key) DO UPDATE SET
+		config_path = excluded.config_path,
+		entry_fingerprint = excluded.entry_fingerprint,
+		registered_at = excluded.registered_at;`
 
 	_, err := db.raw.ExecContext(ctx, query,
 		reg.HostID,
 		string(reg.Scope),
 		reg.WorkspaceID,
 		reg.ConfigPath,
+		key,
+		reg.EntryFingerprint,
 		reg.RegisteredAt,
 	)
+	return err
+}
+
+// DeleteHostRegistration removes one managed-entry registration row.
+func (db *DB) DeleteHostRegistration(ctx context.Context, hostID string, scope domain.InstallScope, workspaceID, managedEntryKey string) error {
+	_, err := db.raw.ExecContext(ctx,
+		`DELETE FROM host_registrations WHERE host_id = ? AND scope = ? AND workspace_id = ? AND managed_entry_key = ?;`,
+		hostID, string(scope), workspaceID, managedEntryKey)
 	return err
 }
 
@@ -717,8 +985,15 @@ func (db *DB) SaveHostBackup(ctx context.Context, backupID, hostID string, scope
 // SaveAuthProfile stores an authentication profile.
 func (db *DB) SaveAuthProfile(ctx context.Context, prof *domain.AuthProfile) error {
 	query := `
-	INSERT OR REPLACE INTO auth_profiles (profile_id, provider_id, profile_type, secret_ref, status, metadata_json, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?);`
+	INSERT INTO auth_profiles (profile_id, provider_id, profile_type, secret_ref, status, metadata_json, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(profile_id) DO UPDATE SET
+		provider_id = excluded.provider_id,
+		profile_type = excluded.profile_type,
+		secret_ref = excluded.secret_ref,
+		status = excluded.status,
+		metadata_json = excluded.metadata_json,
+		updated_at = excluded.updated_at;`
 
 	_, err := db.raw.ExecContext(ctx, query,
 		prof.ProfileID,
@@ -768,7 +1043,14 @@ func (db *DB) RecordAuditEvent(ctx context.Context, actor, action, targetRef, de
 	INSERT INTO audit_events (event_id, actor, action, target_ref, decision, approval_id, operation_id, outcome, metadata_json, timestamp)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);`
 
-	eventID := fmt.Sprintf("evt_%d", time.Now().UnixNano())
+	// Nanosecond timestamps alone collide when two events land in the same
+	// clock tick (coarse Windows timers, concurrent writers); the random
+	// suffix makes the id collision-free without a coordination point.
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return fmt.Errorf("generate audit event id: %w", err)
+	}
+	eventID := fmt.Sprintf("evt_%d_%s", time.Now().UnixNano(), hex.EncodeToString(suffix[:]))
 
 	var appArg, opArg, decArg any
 	if approvalID != "" {

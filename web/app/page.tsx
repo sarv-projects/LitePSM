@@ -111,7 +111,7 @@ export default function Home() {
           <>
             <SectionRow
               title="Verified publishers"
-              note="MCP servers whose publisher carries a verified flag in the upstream registry."
+              note="MCP servers listed in the publisher's own repository manifest (not an audit)."
               items={sections.official}
               hostCount={hostCount}
               viewAllHref="/explore/?kind=mcp&verified=1"

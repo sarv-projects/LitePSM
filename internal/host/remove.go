@@ -72,10 +72,21 @@ func removalSpecFor(adapter HostAdapter) (removalSpec, error) {
 	id := strings.ToLower(adapter.Descriptor().HostID)
 
 	if g, ok := adapter.(*GenericAdapter); ok {
-		return removalSpec{
+		userKey := g.Target.keyPathFor(false)
+		projectKey := g.Target.keyPathFor(true)
+		spec := removalSpec{
 			Format:  g.Target.Format,
-			KeyPath: g.Target.keyPathFor(false),
-		}, nil
+			KeyPath: userKey,
+		}
+		// Hosts whose user and project containers differ (fx: `mcp` in the
+		// user file, `mcpServers` in a project `.mcp.json`) may hold the
+		// bridge entry under either key, depending on which scope wrote it.
+		// Trying only the user key left a project-scope registration behind
+		// while removal reported success.
+		if strings.Join(userKey, ".") != strings.Join(projectKey, ".") && len(projectKey) > 0 {
+			spec.Candidates = [][]string{userKey, projectKey}
+		}
+		return spec, nil
 	}
 
 	if id == "opencode" {
@@ -143,20 +154,31 @@ func PlanRemoval(ctx context.Context, adapter HostAdapter, backupDir string) (*H
 	// Try every documented container path: the first one that actually holds a
 	// bridge entry is the one the adapter wrote, and it is the only one we
 	// rewrite. A file that matches none of them is reported as "not present"
-	// rather than rewritten blindly.
+	// rather than rewritten blindly. A file that cannot be parsed at all is an
+	// error, not a quiet not-present: every candidate fails the same way, and
+	// the first parse failure is surfaced so a corrupt config is never
+	// misreported as clean.
 	proposed, removed := orig, false
 	effective := spec.KeyPath
+	var candidateErr error
 	for _, candidate := range spec.effectiveKeyPaths() {
 		attempt := spec
 		attempt.KeyPath = candidate
 		updated, didRemove, err := stripBridgeEntry(orig, attempt)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", adapter.Descriptor().DisplayName, err)
+			if candidateErr == nil {
+				candidateErr = err
+			}
+			continue
 		}
 		if didRemove {
 			proposed, removed, effective = updated, true, candidate
+			candidateErr = nil
 			break
 		}
+	}
+	if candidateErr != nil {
+		return nil, nil, fmt.Errorf("%s: %w", adapter.Descriptor().DisplayName, candidateErr)
 	}
 	if !removed {
 		return nil, &RemovalResult{
@@ -239,13 +261,23 @@ func stripJSONEntryNamed(content string, keyPath []string, serverName string) (s
 	locatable := stripJSONComments(content)
 
 	objStart, objEnd, found, err := jsonValueSpan(locatable, keyPath)
-	if err != nil || !found {
+	if err != nil {
+		// A malformed config is not "entry absent": reporting not-removed
+		// here silently left the bridge registration behind while the caller
+		// believed the file was clean. Surface the parse failure so the
+		// caller fails closed instead of misreporting.
+		return "", false, fmt.Errorf("parsing config to remove %q: %w", serverName, err)
+	}
+	if !found {
 		return content, false, nil
 	}
 
 	objText := content[objStart:objEnd]
 	valueStart, valueEnd, present, err := jsonValueSpan(stripJSONComments(objText), []string{serverName})
-	if err != nil || !present {
+	if err != nil {
+		return "", false, fmt.Errorf("parsing config to remove %q: %w", serverName, err)
+	}
+	if !present {
 		return content, false, nil
 	}
 

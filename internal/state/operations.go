@@ -89,8 +89,9 @@ func (db *DB) RecordOperationTree(ctx context.Context, opID, treeDigest string, 
 	}
 
 	query := `
-	INSERT OR REPLACE INTO operation_trees (operation_id, tree_digest, created_by_op)
-	VALUES (?, ?, ?);`
+	INSERT INTO operation_trees (operation_id, tree_digest, created_by_op)
+	VALUES (?, ?, ?)
+	ON CONFLICT(operation_id, tree_digest) DO UPDATE SET created_by_op = excluded.created_by_op;`
 
 	_, err := db.raw.ExecContext(ctx, query, opID, treeDigest, createdInt)
 	if err != nil {
@@ -165,6 +166,29 @@ func (db *DB) HasInstallsForTrees(ctx context.Context, digests []string) (bool, 
 
 	var one int
 	err := db.raw.QueryRowContext(ctx, query, args...).Scan(&one)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// TreeInUse reports whether a CAS tree is depended on by something other than
+// operation opID: an install row that references the digest, or another
+// operation (not rolled back, failed or cancelled) that recorded it. Rollback
+// uses it so a tree this operation created, but someone else has since reused
+// or committed against, is never deleted out from under them.
+func (db *DB) TreeInUse(ctx context.Context, opID, treeDigest string) (bool, error) {
+	var one int
+	err := db.raw.QueryRowContext(ctx, `
+	SELECT 1 WHERE EXISTS (SELECT 1 FROM installs WHERE tree_digest = ?)
+	   OR EXISTS (
+	        SELECT 1 FROM operation_trees ot JOIN operations o ON o.operation_id = ot.operation_id
+	        WHERE ot.tree_digest = ? AND ot.operation_id != ?
+	          AND o.state NOT IN ('rolled_back', 'failed', 'cancelled'));`,
+		treeDigest, treeDigest, opID).Scan(&one)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -325,6 +349,15 @@ func (db *DB) recoverOperation(ctx context.Context, op *OperationRecord, staging
 			}
 			p := treePath(t.TreeDigest)
 			if p == "" {
+				continue
+			}
+			// A tree another live operation reused (or an install now
+			// references) is not ours to delete any more.
+			inUse, uerr := db.TreeInUse(ctx, op.OperationID, t.TreeDigest)
+			if uerr != nil {
+				return "", uerr
+			}
+			if inUse {
 				continue
 			}
 			if err := os.RemoveAll(p); err != nil {

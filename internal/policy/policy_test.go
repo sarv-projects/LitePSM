@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -209,5 +210,159 @@ func TestPolicy_Tier4_AskAndTier5_Benign(t *testing.T) {
 	decWrite := engine.Evaluate(ctx, inputWrite)
 	if decWrite.Decision != DecisionAsk {
 		t.Errorf("expected ASK for dangerous action, got %+v", decWrite)
+	}
+}
+
+func TestPolicy_SSRF_StructuralChecks(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(nil, nil)
+
+	denied := []string{
+		"http://10.0.0.5/x", "10.255.255.255", "http://172.16.0.1", "172.31.255.254:8080",
+		"https://192.168.1.1/admin", "http://169.254.169.254/latest/meta-data", "100.64.0.1",
+		"100.127.255.255", "127.0.0.1", "http://localhost:3000", "foo.localhost", "0.0.0.0",
+		"0.1.2.3", "[::1]:80", "::1", "http://[::1]/", "fc00::1", "fd12:3456::1", "fe80::1",
+		"[fe80::1%25eth0]", "::ffff:10.0.0.1", "2130706433", "0x7f.0.0.1", "017700000001", "127.1",
+		"printer.local", "metadata.google.internal",
+	}
+	for _, target := range denied {
+		dec := engine.Evaluate(ctx, PolicyInput{
+			Actor: "user", Operation: "invoke",
+			Effects: []EffectDeclaration{{Effect: EffectNetworkOutbound, Provenance: domain.ProvenancePublisherDeclared, Target: target}},
+		})
+		if dec.Decision != DecisionDeny || dec.ReasonCodes[0] != "INVARIANT_DENY_SSRF_LOOPBACK" {
+			t.Errorf("target %q: expected SSRF deny, got %+v", target, dec)
+		}
+	}
+
+	// Public targets (including names that merely contain private-looking
+	// substrings) are not an invariant violation; they fall to the ask tier.
+	allowedToAsk := []string{
+		"https://example.com", "https://example10.com/x", "api.192-168-1-1.example.org",
+		"8.8.8.8", "172.32.0.1", "172.15.255.255", "100.128.0.1", "100.63.255.255", "2606:4700::1111",
+		"https://notlocalhost.example.com",
+	}
+	for _, target := range allowedToAsk {
+		dec := engine.Evaluate(ctx, PolicyInput{
+			Actor: "user", Operation: "invoke",
+			Effects: []EffectDeclaration{{Effect: EffectNetworkOutbound, Target: target}},
+		})
+		if dec.Decision != DecisionAsk {
+			t.Errorf("target %q: expected ask, got %+v", target, dec)
+		}
+	}
+}
+
+func TestPolicy_SSRF_ProvenanceCannotBypass(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(nil, nil)
+	for _, prov := range []domain.EffectProvenance{
+		domain.ProvenanceUserClassified, domain.ProvenanceCurated, domain.ProvenancePublisherDeclared,
+	} {
+		dec := engine.Evaluate(ctx, PolicyInput{
+			Actor: "user", Operation: "invoke",
+			Effects: []EffectDeclaration{{Effect: EffectNetworkOutbound, Provenance: prov, Target: "http://127.0.0.1:9000"}},
+		})
+		if dec.Decision != DecisionDeny {
+			t.Errorf("provenance %q bypassed the SSRF invariant: %+v", prov, dec)
+		}
+	}
+}
+
+func TestPolicy_EmptyNetworkTargetDenied(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(nil, nil)
+	for _, target := range []string{"", "   ", "http://", "://x"} {
+		dec := engine.Evaluate(ctx, PolicyInput{
+			Actor: "user", Operation: "invoke",
+			Effects: []EffectDeclaration{{Effect: EffectNetworkOutbound, Provenance: domain.ProvenanceUserClassified, Target: target}},
+		})
+		if dec.Decision != DecisionDeny || dec.ReasonCodes[0] != "INVARIANT_DENY_NETWORK_TARGET_UNKNOWN" {
+			t.Errorf("target %q: expected unknown-target deny, got %+v", target, dec)
+		}
+	}
+}
+
+func TestPolicy_UnknownEffectDenied(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(nil, nil)
+	dec := engine.Evaluate(ctx, PolicyInput{
+		Actor: "user", Operation: "read",
+		Effects: []EffectDeclaration{{Effect: CanonicalEffect("filesystem.teleport")}},
+	})
+	if dec.Decision != DecisionDeny || dec.ReasonCodes[0] != "INVARIANT_DENY_UNKNOWN_EFFECT" {
+		t.Errorf("expected unknown-effect deny, got %+v", dec)
+	}
+	dec = engine.Evaluate(ctx, PolicyInput{
+		Actor: "user", Operation: "read",
+		Effects: []EffectDeclaration{{Effect: ""}},
+	})
+	if dec.Decision != DecisionDeny {
+		t.Errorf("empty effect must be denied, got %+v", dec)
+	}
+}
+
+func TestPolicy_DenyRuleHostIDAndConjunction(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(nil, []DenyRule{
+		{RuleID: "no_codex_install", TargetRef: "pkg:x", HostID: "codex"},
+		{RuleID: "no_delete_for_pkg_z", TargetRef: "pkg:z", Effect: EffectFilesystemDelete},
+		{RuleID: "empty"},
+	})
+
+	mk := func(host, target string, effs ...CanonicalEffect) PolicyInput {
+		in := PolicyInput{Actor: "user", HostID: host, TargetRef: target, Operation: "install"}
+		for _, e := range effs {
+			in.Effects = append(in.Effects, EffectDeclaration{Effect: e})
+		}
+		return in
+	}
+
+	if dec := engine.Evaluate(ctx, mk("codex", "pkg:x")); dec.Decision != DecisionDeny || dec.MatchedRuleIDs[0] != "no_codex_install" {
+		t.Errorf("host-scoped rule must deny on its host, got %+v", dec)
+	}
+	if dec := engine.Evaluate(ctx, mk("opencode", "pkg:x")); dec.Decision == DecisionDeny {
+		t.Errorf("host-scoped rule must not deny another host, got %+v", dec)
+	}
+	// Conjunction: the effect alone, or the target alone, does not match.
+	if dec := engine.Evaluate(ctx, mk("", "pkg:z")); dec.Decision == DecisionDeny {
+		t.Errorf("target-only input must not match a target+effect rule, got %+v", dec)
+	}
+	if dec := engine.Evaluate(ctx, mk("", "pkg:other", EffectFilesystemDelete)); dec.Decision == DecisionDeny && len(dec.MatchedRuleIDs) > 0 {
+		t.Errorf("effect-only input must not match a target+effect rule, got %+v", dec)
+	}
+	if dec := engine.Evaluate(ctx, mk("", "pkg:z", EffectFilesystemDelete)); dec.Decision != DecisionDeny || dec.MatchedRuleIDs[0] != "no_delete_for_pkg_z" {
+		t.Errorf("target+effect rule must match, got %+v", dec)
+	}
+	for _, id := range []string{"empty"} {
+		if dec := engine.Evaluate(ctx, mk("", "pkg:q")); len(dec.MatchedRuleIDs) > 0 && dec.MatchedRuleIDs[0] == id {
+			t.Errorf("a rule with no fields must match nothing, got %+v", dec)
+		}
+	}
+}
+
+func TestLoadDenyRules(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DenyRulesFile)
+
+	rules, err := LoadDenyRules(path)
+	if err != nil || rules != nil {
+		t.Fatalf("missing file must be (nil, nil), got %v, %v", rules, err)
+	}
+	write := func(s string) {
+		if err := os.WriteFile(path, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`[{"ruleId":"r1","targetRef":"pkg:a","hostId":"codex"}]`)
+	rules, err = LoadDenyRules(path)
+	if err != nil || len(rules) != 1 || rules[0].HostID != "codex" {
+		t.Fatalf("valid file: %v, %v", rules, err)
+	}
+	for _, bad := range []string{`not json`, `[{"ruleId":"r"}]`, `[{"ruleId":"r","effect":"bogus"}]`} {
+		write(bad)
+		if _, err := LoadDenyRules(path); err == nil {
+			t.Errorf("malformed rules %q must be an error (fail closed)", bad)
+		}
 	}
 }

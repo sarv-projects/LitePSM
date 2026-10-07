@@ -3,6 +3,9 @@ package policy
 import (
 	"context"
 	"fmt"
+	"net/netip"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -96,12 +99,160 @@ type PolicyDecision struct {
 	Detail          string                 `json:"detail,omitempty"`
 }
 
-// DenyRule defines explicit user or organizational blacklists.
+// DenyRule defines explicit user or organizational blacklists. Every
+// non-empty field must match for the rule to apply (a conjunction): a rule
+// that sets TargetRef and Effect denies only that effect on that target, and a
+// rule that sets HostID applies only to operations from that host. A rule with
+// no field set matches nothing.
 type DenyRule struct {
-	RuleID    string
-	TargetRef string
-	Effect    CanonicalEffect
-	HostID    string
+	RuleID    string          `json:"ruleId"`
+	TargetRef string          `json:"targetRef,omitempty"`
+	Effect    CanonicalEffect `json:"effect,omitempty"`
+	HostID    string          `json:"hostId,omitempty"`
+}
+
+// blockedNetworkPrefixes are the address ranges a third-party capability may
+// never reach: loopback, private (RFC 1918), link-local / cloud metadata,
+// carrier-grade NAT, the "this network" block, and the IPv6 equivalents.
+var blockedNetworkPrefixes = mustPrefixes(
+	"0.0.0.0/8",
+	"10.0.0.0/8",
+	"100.64.0.0/10",
+	"127.0.0.0/8",
+	"169.254.0.0/16",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"::/128",
+	"::1/128",
+	"fc00::/7",
+	"fe80::/10",
+)
+
+func mustPrefixes(cidrs ...string) []netip.Prefix {
+	out := make([]netip.Prefix, 0, len(cidrs))
+	for _, c := range cidrs {
+		out = append(out, netip.MustParsePrefix(c))
+	}
+	return out
+}
+
+// networkTargetHost extracts the host from a network.outbound target, which
+// may be a URL, host:port, a bare host, or a bracketed IPv6 literal.
+func networkTargetHost(target string) string {
+	t := strings.TrimSpace(target)
+	if t == "" {
+		return ""
+	}
+	if strings.Contains(t, "://") {
+		if u, err := url.Parse(t); err == nil {
+			return strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+		}
+		return ""
+	}
+	// Strip any path/query before looking for a port.
+	if i := strings.IndexAny(t, "/?#"); i >= 0 {
+		t = t[:i]
+	}
+	if i := strings.LastIndex(t, "@"); i >= 0 {
+		t = t[i+1:]
+	}
+	if strings.HasPrefix(t, "[") {
+		if end := strings.Index(t, "]"); end > 0 {
+			return strings.ToLower(t[1:end])
+		}
+		return ""
+	}
+	// host:port, but not a bare IPv6 literal (which has several colons).
+	if strings.Count(t, ":") == 1 {
+		t = t[:strings.Index(t, ":")]
+	}
+	return strings.ToLower(strings.TrimSuffix(t, "."))
+}
+
+// parseLenientIP parses canonical IP literals plus the legacy IPv4 forms the
+// OS resolver (inet_aton) accepts: "2130706433", "0x7f.1", "017700000001".
+func parseLenientIP(host string) (netip.Addr, bool) {
+	if i := strings.Index(host, "%"); i >= 0 { // IPv6 zone
+		host = host[:i]
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		return a.Unmap(), true
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) == 0 || len(parts) > 4 {
+		return netip.Addr{}, false
+	}
+	nums := make([]uint64, len(parts))
+	for i, p := range parts {
+		if p == "" {
+			return netip.Addr{}, false
+		}
+		n, err := strconv.ParseUint(p, 0, 32) // base prefix: 0x hex, 0 octal
+		if err != nil {
+			return netip.Addr{}, false
+		}
+		nums[i] = n
+	}
+	var v uint64
+	for i := 0; i < len(nums)-1; i++ {
+		if nums[i] > 255 {
+			return netip.Addr{}, false
+		}
+		v |= nums[i] << (8 * uint(3-i))
+	}
+	last := nums[len(nums)-1]
+	if last >= 1<<(8*uint(4-(len(nums)-1))) {
+		return netip.Addr{}, false
+	}
+	v |= last
+	return netip.AddrFrom4([4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}), true
+}
+
+// isRestrictedNetworkTarget reports whether a network.outbound target points at
+// loopback, private, link-local, metadata or otherwise non-routable space. The
+// check is structural (parsed addresses and CIDR membership), never a substring
+// match, so "example10.com" is not blocked and "2130706433" is.
+func isRestrictedNetworkTarget(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") ||
+		strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") ||
+		strings.HasSuffix(host, ".localdomain") {
+		return true
+	}
+	addr, ok := parseLenientIP(host)
+	if !ok {
+		return false
+	}
+	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsPrivate() ||
+		addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() {
+		return true
+	}
+	for _, p := range blockedNetworkPrefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r DenyRule) matches(input PolicyInput) (matchedEffect CanonicalEffect, ok bool) {
+	if r.TargetRef == "" && r.Effect == "" && r.HostID == "" {
+		return "", false
+	}
+	if r.HostID != "" && r.HostID != input.HostID {
+		return "", false
+	}
+	if r.TargetRef != "" && r.TargetRef != input.TargetRef {
+		return "", false
+	}
+	if r.Effect != "" {
+		for _, eff := range input.Effects {
+			if eff.Effect == r.Effect {
+				return r.Effect, true
+			}
+		}
+		return "", false
+	}
+	return "", true
 }
 
 // Engine evaluates operations against the 5-tier security precedence model.
@@ -125,7 +276,8 @@ func (e *Engine) Evaluate(ctx context.Context, input PolicyInput) PolicyDecision
 	// -------------------------------------------------------------
 
 	// Invariant 1: Deny raw shell command execution from marketplace sources
-	if strings.HasPrefix(input.TargetRef, "cmd:") || strings.HasPrefix(input.TargetRef, "command:") {
+	targetLower := strings.ToLower(strings.TrimSpace(input.TargetRef))
+	if strings.HasPrefix(targetLower, "cmd:") || strings.HasPrefix(targetLower, "command:") {
 		return PolicyDecision{
 			Decision:    DecisionDeny,
 			ReasonCodes: []string{"INVARIANT_DENY_COMMAND_MARKETPLACE"},
@@ -134,6 +286,16 @@ func (e *Engine) Evaluate(ctx context.Context, input PolicyInput) PolicyDecision
 	}
 
 	for _, eff := range input.Effects {
+		// Invariant 0: only the canonical effect taxonomy is evaluable; an
+		// unknown effect is never treated as benign.
+		if !ValidEffects[eff.Effect] {
+			return PolicyDecision{
+				Decision:    DecisionDeny,
+				ReasonCodes: []string{"INVARIANT_DENY_UNKNOWN_EFFECT"},
+				Detail:      fmt.Sprintf("Effect %q is not a canonical effect", eff.Effect),
+			}
+		}
+
 		// Invariant 2: Deny writing plaintext secrets to non-vault files
 		if eff.Effect == EffectCredentialWrite {
 			tLower := strings.ToLower(eff.Target)
@@ -146,24 +308,24 @@ func (e *Engine) Evaluate(ctx context.Context, input PolicyInput) PolicyDecision
 			}
 		}
 
-		// Invariant 3: Deny SSRF / loopback network access for untrusted third-party capabilities
+		// Invariant 3: Deny SSRF / loopback / private-range network access.
+		// The check is structural and independent of any caller-supplied
+		// provenance: a caller cannot declare its way past it. An empty or
+		// unparsable target cannot be proven safe, so it is denied as well.
 		if eff.Effect == EffectNetworkOutbound {
-			tLower := strings.ToLower(eff.Target)
-			isLocalOrMeta := strings.Contains(tLower, "127.") ||
-				strings.Contains(tLower, "localhost") ||
-				strings.Contains(tLower, "169.254.") ||
-				strings.Contains(tLower, "[::1]") ||
-				strings.Contains(tLower, "::1") ||
-				strings.Contains(tLower, "0.0.0.0") ||
-				strings.Contains(tLower, "10.") ||
-				strings.Contains(tLower, "192.168.")
-			if isLocalOrMeta {
-				if eff.Provenance != domain.ProvenanceUserClassified {
-					return PolicyDecision{
-						Decision:    DecisionDeny,
-						ReasonCodes: []string{"INVARIANT_DENY_SSRF_LOOPBACK"},
-						Detail:      "Access to loopback, private network, or cloud metadata endpoints is restricted",
-					}
+			host := networkTargetHost(eff.Target)
+			if host == "" {
+				return PolicyDecision{
+					Decision:    DecisionDeny,
+					ReasonCodes: []string{"INVARIANT_DENY_NETWORK_TARGET_UNKNOWN"},
+					Detail:      "Outbound network access requires a declared, parsable target host",
+				}
+			}
+			if isRestrictedNetworkTarget(host) {
+				return PolicyDecision{
+					Decision:    DecisionDeny,
+					ReasonCodes: []string{"INVARIANT_DENY_SSRF_LOOPBACK"},
+					Detail:      "Access to loopback, private network, or cloud metadata endpoints is restricted",
 				}
 			}
 		}
@@ -173,23 +335,23 @@ func (e *Engine) Evaluate(ctx context.Context, input PolicyInput) PolicyDecision
 	// Tier 2: Explicit User Deny Rules (Config / Blacklist)
 	// -------------------------------------------------------------
 	for _, rule := range e.denyRules {
-		if rule.TargetRef != "" && rule.TargetRef == input.TargetRef {
+		effect, ok := rule.matches(input)
+		if !ok {
+			continue
+		}
+		if effect != "" {
 			return PolicyDecision{
 				Decision:       DecisionDeny,
-				ReasonCodes:    []string{"USER_EXPLICIT_DENY"},
+				ReasonCodes:    []string{"USER_EFFECT_DENY"},
 				MatchedRuleIDs: []string{rule.RuleID},
-				Detail:         fmt.Sprintf("Explicitly blacklisted by user rule %s", rule.RuleID),
+				Detail:         fmt.Sprintf("Effect %s blacklisted by rule %s", effect, rule.RuleID),
 			}
 		}
-		for _, eff := range input.Effects {
-			if rule.Effect != "" && rule.Effect == eff.Effect {
-				return PolicyDecision{
-					Decision:       DecisionDeny,
-					ReasonCodes:    []string{"USER_EFFECT_DENY"},
-					MatchedRuleIDs: []string{rule.RuleID},
-					Detail:         fmt.Sprintf("Effect %s blacklisted by rule %s", rule.Effect, rule.RuleID),
-				}
-			}
+		return PolicyDecision{
+			Decision:       DecisionDeny,
+			ReasonCodes:    []string{"USER_EXPLICIT_DENY"},
+			MatchedRuleIDs: []string{rule.RuleID},
+			Detail:         fmt.Sprintf("Explicitly blacklisted by user rule %s", rule.RuleID),
 		}
 	}
 

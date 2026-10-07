@@ -19,6 +19,49 @@ const (
 	KindLSP       ListingKind = "lsp"
 )
 
+// Installability states how far a listing's installability has been proven.
+// It is provenance, not a feature flag: heuristic ingestion (awesome-lists)
+// can only ever claim discovery_only, because no manifest proved a version or
+// launch line. The zero value ("") is treated as discovery_only.
+type Installability string
+
+const (
+	// InstallabilityDiscoveryOnly: searchable metadata; no proven artifact.
+	InstallabilityDiscoveryOnly Installability = "discovery_only"
+	// InstallabilityMetadataVerified: an authoritative upstream manifest
+	// supplied the version and launch/source data.
+	InstallabilityMetadataVerified Installability = "metadata_verified"
+	// InstallabilityRuntimeVerified: the launch line was observed to start.
+	InstallabilityRuntimeVerified Installability = "runtime_verified"
+	// InstallabilityLiteSPMTested: covered by a LiteSPM acceptance record.
+	InstallabilityLiteSPMTested Installability = "litespm_tested"
+)
+
+// Effective returns the installability with the zero value mapped to
+// discovery_only, so callers never treat "unset" as proven.
+func (i Installability) Effective() Installability {
+	if i == "" {
+		return InstallabilityDiscoveryOnly
+	}
+	return i
+}
+
+// Valid reports whether i is a known value (the zero value is accepted).
+func (i Installability) Valid() bool {
+	switch i {
+	case "", InstallabilityDiscoveryOnly, InstallabilityMetadataVerified,
+		InstallabilityRuntimeVerified, InstallabilityLiteSPMTested:
+		return true
+	}
+	return false
+}
+
+// IsInstallable reports whether the listing's installability is above
+// discovery_only.
+func (l *Listing) IsInstallable() bool {
+	return l.Installability.Effective() != InstallabilityDiscoveryOnly
+}
+
 // ListingStatus represents publication lifecycle status.
 type ListingStatus string
 
@@ -199,6 +242,7 @@ type Listing struct {
 	VerificationSummary  VerificationSummary `json:"verificationSummary"`
 	Provenance           ProvenanceRecord    `json:"provenance"`
 	Status               ListingStatus       `json:"status"`
+	Installability       Installability      `json:"installability,omitempty"`
 	RawMetadataRef       string              `json:"rawMetadataRef,omitempty"`
 }
 
@@ -302,10 +346,14 @@ type VersionRecord struct {
 
 // InstallRecord captures an installed component bound to a scope and canonical workspace.
 type InstallRecord struct {
-	InstallID   string        `json:"installId"`
-	ListingID   string        `json:"listingId"`
+	InstallID string `json:"installId"`
+	ListingID string `json:"listingId"`
+	// Kind is the install's real kind (mcp|skill|plugin|agent|...). Empty is
+	// stored as "mcp" only for legacy callers that predate the field.
+	Kind        ListingKind   `json:"kind,omitempty"`
 	Version     string        `json:"version"`
 	TreeDigest  string        `json:"treeDigest"`
+	InstallPath string        `json:"installPath,omitempty"`
 	Scope       InstallScope  `json:"scope"`
 	WorkspaceID string        `json:"workspaceId,omitempty"`
 	ProjectRoot string        `json:"projectRoot,omitempty"`
@@ -316,6 +364,9 @@ type InstallRecord struct {
 
 // InstallComponentRecord maps an install record to individual components.
 type InstallComponentRecord struct {
+	// ComponentID is distinct from InstallID. Empty on write means "derive it"
+	// (state.ComponentIDFor); it is always populated on read.
+	ComponentID   string        `json:"componentId,omitempty"`
 	InstallID     string        `json:"installId"`
 	ComponentName string        `json:"componentName"`
 	Kind          ComponentKind `json:"kind"`
@@ -325,14 +376,19 @@ type InstallComponentRecord struct {
 
 // HostRegistrationRecord tracks integration bindings injected into agent host configurations.
 type HostRegistrationRecord struct {
-	HostID         string       `json:"hostId"`
-	Scope          InstallScope `json:"scope"`
-	WorkspaceID    string       `json:"workspaceId"`
-	ConfigPath     string       `json:"configPath"`
-	ConfigFormat   string       `json:"configFormat"`
-	RegisteredAt   time.Time    `json:"registeredAt"`
-	LastVerifiedAt time.Time    `json:"lastVerifiedAt"`
-	Status         string       `json:"status"`
+	HostID       string       `json:"hostId"`
+	Scope        InstallScope `json:"scope"`
+	WorkspaceID  string       `json:"workspaceId"`
+	ConfigPath   string       `json:"configPath"`
+	ConfigFormat string       `json:"configFormat"`
+	// ManagedEntryKey is the host-config key LiteSPM owns ("litespm" for the
+	// bridge, the server name for an installed MCP server).
+	ManagedEntryKey string `json:"managedEntryKey,omitempty"`
+	// EntryFingerprint is the sha256 of the entry LiteSPM actually wrote.
+	EntryFingerprint string    `json:"entryFingerprint,omitempty"`
+	RegisteredAt     time.Time `json:"registeredAt"`
+	LastVerifiedAt   time.Time `json:"lastVerifiedAt"`
+	Status           string    `json:"status"`
 }
 
 // AuthProfile manages credentials and session tokens for local or remote providers.

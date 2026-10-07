@@ -22,7 +22,8 @@ const validMCPRow = `{
 	"transport": "stdio",
 	"version": "1.0.0",
 	"command": "npx",
-	"args": ["-y", "brave-search-mcp-server-mcp"]
+	"args": ["-y", "brave-search-mcp-server-mcp"],
+	"installability": "metadata_verified"
 }`
 
 const validSkillRow = `{
@@ -34,7 +35,8 @@ const validSkillRow = `{
 	"category": "Dev Skills",
 	"publisher": {"name": "example", "url": "https://example.com"},
 	"version": "0.1.0",
-	"skillSource": "https://example.com/demo"
+	"skillSource": "https://example.com/demo",
+	"installability": "metadata_verified"
 }`
 
 // TestParseDatasetRejectsMalformedRows pins the fail-closed contract: the
@@ -71,18 +73,28 @@ func TestParseDatasetRejectsMalformedRows(t *testing.T) {
 			"missing name",
 		},
 		{
+			"discovery_only row with a guessed launch command",
+			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"transport":"stdio","version":"","command":"npx","args":[],"installability":"discovery_only"}]`,
+			"commands must be proven",
+		},
+		{
+			"unknown installability",
+			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"installability":"trusted"}]`,
+			"unknown installability",
+		},
+		{
 			"missing version",
-			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"transport":"stdio","version":"","command":"x","args":[]}]`,
-			"missing version",
+			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"transport":"stdio","version":"","command":"x","args":[],"installability":"metadata_verified"}]`,
+			"has no version",
 		},
 		{
 			"mcp row without launch command",
-			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"transport":"stdio","version":"1.0.0","command":"","args":[]}]`,
+			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"transport":"stdio","version":"1.0.0","command":"","args":[],"installability":"metadata_verified"}]`,
 			"no launch command",
 		},
 		{
 			"mcp row without transport",
-			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"transport":"","version":"1.0.0","command":"x","args":[]}]`,
+			`[{"id":"mcp:example:demo","kind":"mcp","name":"n","summary":"s","category":"c","publisher":{"name":"e"},"transport":"","version":"1.0.0","command":"x","args":[],"installability":"metadata_verified"}]`,
 			"no transport",
 		},
 	}
@@ -97,6 +109,35 @@ func TestParseDatasetRejectsMalformedRows(t *testing.T) {
 				t.Fatalf("error %q does not contain %q", err.Error(), tc.want)
 			}
 		})
+	}
+}
+
+// TestDiscoveryOnlyRowsCarryNoInventedClaims pins Phase 0.1: a heuristic row
+// with no proven version or launch line is accepted as searchable metadata,
+// converts with installability discovery_only, no version, and no runtime.
+// The zero value of the installability field is treated as discovery_only.
+func TestDiscoveryOnlyRowsCarryNoInventedClaims(t *testing.T) {
+	for _, explicit := range []string{`"installability":"discovery_only",`, ``} {
+		raw := `[{` + explicit + `"id":"mcp:acme:widget","kind":"mcp","name":"widget","summary":"s","category":"c","publisher":{"name":"acme"}}]`
+		rows, err := ParseDataset([]byte(raw))
+		if err != nil {
+			t.Fatalf("discovery-only row rejected: %v", err)
+		}
+		listings, versions, err := ConvertDataset(rows, "rel-1", "snap-1", time.Now().UTC())
+		if err != nil {
+			t.Fatalf("ConvertDataset: %v", err)
+		}
+		if listings[0].Installability != domain.InstallabilityDiscoveryOnly || listings[0].IsInstallable() {
+			t.Errorf("installability = %q, want discovery_only and not installable", listings[0].Installability)
+		}
+		if len(listings[0].Versions) != 0 || versions[0].Version != "" {
+			t.Errorf("a version was invented: %+v / %q", listings[0].Versions, versions[0].Version)
+		}
+		for _, c := range versions[0].Components {
+			if c.Runtime != nil {
+				t.Errorf("a runtime was invented: %+v", c.Runtime)
+			}
+		}
 	}
 }
 
@@ -149,7 +190,7 @@ func TestConvertDatasetClaimsAreHonest(t *testing.T) {
 			!listing.Provenance.IngestedAt.Equal(ingestedAt) {
 			t.Errorf("listing %s: provenance not stamped: %+v", listing.ID, listing.Provenance)
 		}
-		if len(listing.Versions) != 1 || listing.Versions[0].Version != row.Version {
+		if row.Version != "" && (len(listing.Versions) != 1 || listing.Versions[0].Version != row.Version) {
 			t.Errorf("listing %s: versions %+v do not carry dataset version %q", listing.ID, listing.Versions, row.Version)
 		}
 		// The dataset's popularity figure is deliberately null; nothing may

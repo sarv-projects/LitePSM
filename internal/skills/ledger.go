@@ -21,7 +21,18 @@ package skills
 //     alone, so user-added content is never destroyed;
 //   - removal is refused, per entry, when the recorded scope does not match
 //     the requested scope, so `--all` cannot cross scopes silently;
-//   - the ledger entry is dropped only after the directory is gone.
+//   - the ledger entry is dropped only after the directory is gone;
+//   - the recorded path is confined before any RemoveAll: it must be absolute,
+//     already clean (no "..", no "." segments), not a filesystem root, and its
+//     parent must be a skills tree (basename "skills" - every supported agent
+//     target ends in it), or lie inside the explicit roots set with SetRoots.
+//     The ledger is a user-writable JSON file, so a hand-edited or corrupted
+//     DestDir must never be able to aim RemoveAll at $HOME or a drive root.
+//
+// Concurrency: every read-modify-write of the ledger runs under both an
+// in-process mutex and a cross-process lock file (<ledger>.lock, see
+// internal/fslock), so two `litespm skills` processes cannot lose each other's
+// entries or interleave a removal with an add.
 
 import (
 	"encoding/json"
@@ -33,6 +44,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sarv-projects/litespm/internal/fslock"
 )
 
 // LedgerEntry records one directory this tool created.
@@ -63,8 +76,70 @@ type LedgerEntry struct {
 
 // Ledger is a JSON file listing every directory this tool has created.
 type Ledger struct {
-	path string
-	mu   sync.Mutex
+	path  string
+	mu    sync.Mutex
+	roots []string
+}
+
+// ledgerLockTimeout bounds how long a mutation waits for another process.
+const ledgerLockTimeout = 30 * time.Second
+
+// SetRoots confines removals to directories strictly inside one of roots
+// (replacing the default "parent is a skills tree" rule). Call before use.
+func (l *Ledger) SetRoots(roots ...string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.roots = nil
+	for _, r := range roots {
+		if r = strings.TrimSpace(r); r != "" {
+			l.roots = append(l.roots, filepath.Clean(r))
+		}
+	}
+}
+
+// withLock runs fn holding the in-process mutex and the cross-process lock.
+func (l *Ledger) withLock(fn func() error) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fl, err := fslock.Acquire(l.path+".lock", fslock.Options{Timeout: ledgerLockTimeout})
+	if err != nil {
+		return fmt.Errorf("lock skills ledger %s: %w", l.path, err)
+	}
+	defer func() { _ = fl.Release() }()
+	return fn()
+}
+
+// confineDest refuses any recorded destination that is not safely inside a
+// skills tree. It is evaluated on the recorded string and is deliberately
+// independent of the filesystem state, so it also holds for entries whose
+// directory is missing or a symlink (those are refused separately).
+func (l *Ledger) confineDest(dest string) error {
+	if dest == "" {
+		return fmt.Errorf("empty destination")
+	}
+	if !filepath.IsAbs(dest) {
+		return fmt.Errorf("destination %q is not absolute", dest)
+	}
+	if filepath.Clean(dest) != dest {
+		return fmt.Errorf("destination %q is not a clean path (contains .., ., or duplicate separators)", dest)
+	}
+	parent := filepath.Dir(dest)
+	if parent == dest || filepath.Dir(parent) == parent {
+		return fmt.Errorf("destination %q is a filesystem root or sits directly under one", dest)
+	}
+	if len(l.roots) > 0 {
+		for _, r := range l.roots {
+			rel, err := filepath.Rel(r, dest)
+			if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return nil
+			}
+		}
+		return fmt.Errorf("destination %q is outside the permitted skill roots", dest)
+	}
+	if !strings.EqualFold(filepath.Base(parent), "skills") {
+		return fmt.Errorf("destination %q is not inside a skills directory (parent %q)", dest, filepath.Base(parent))
+	}
+	return nil
 }
 
 // OpenLedger loads the ledger at path. A missing file is not an error: it means
@@ -131,12 +206,13 @@ func (l *Ledger) write(entries []LedgerEntry) error {
 // Add records newly created directories. Entries with a destination already in
 // the ledger are ignored, so re-running an install cannot double-count.
 func (l *Ledger) Add(entries []LedgerEntry) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	if len(entries) == 0 {
 		return nil
 	}
+	return l.withLock(func() error { return l.addLocked(entries) })
+}
+
+func (l *Ledger) addLocked(entries []LedgerEntry) error {
 	existing, err := l.read()
 	if err != nil {
 		return err
@@ -220,9 +296,16 @@ func (l *Ledger) Remove(names []string, dryRun bool) ([]RemovalOutcome, error) {
 // guards in RemoveOptions. Every refusal is reported per entry; nothing is
 // deleted silently.
 func (l *Ledger) RemoveScoped(opts RemoveOptions) ([]RemovalOutcome, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	var outcomes []RemovalOutcome
+	err := l.withLock(func() error {
+		var rerr error
+		outcomes, rerr = l.removeScopedLocked(opts)
+		return rerr
+	})
+	return outcomes, err
+}
 
+func (l *Ledger) removeScopedLocked(opts RemoveOptions) ([]RemovalOutcome, error) {
 	entries, err := l.read()
 	if err != nil {
 		return nil, err
@@ -245,6 +328,11 @@ func (l *Ledger) RemoveScoped(opts RemoveOptions) ([]RemovalOutcome, error) {
 				Entry:  e,
 				Reason: fmt.Sprintf("scope mismatch: installed scope %q, requested %q; left in place", e.Scope, opts.Scope),
 			})
+			keep = append(keep, e)
+			continue
+		}
+		if cerr := l.confineDest(e.DestDir); cerr != nil {
+			outcomes = append(outcomes, RemovalOutcome{Entry: e, Reason: "refusing to delete: " + cerr.Error()})
 			keep = append(keep, e)
 			continue
 		}
@@ -275,9 +363,10 @@ func (l *Ledger) RemoveScoped(opts RemoveOptions) ([]RemovalOutcome, error) {
 // ReplaceEntry overwrites the recorded entry whose DestDir matches, preserving
 // order. It is used by updates to refresh provenance after an atomic swap.
 func (l *Ledger) ReplaceEntry(destDir string, e LedgerEntry) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	return l.withLock(func() error { return l.replaceEntryLocked(destDir, e) })
+}
 
+func (l *Ledger) replaceEntryLocked(destDir string, e LedgerEntry) error {
 	entries, err := l.read()
 	if err != nil {
 		return err

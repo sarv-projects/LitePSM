@@ -76,8 +76,9 @@ export function SiteFooter() {
               compiled-in config adapters. Every one lists the documentation it was verified against.
             </li>
             <li>
-              Publisher &ldquo;verified&rdquo; means the upstream source flagged that publisher, not
-              that this project audited it.
+              Publisher &ldquo;vendor-listed&rdquo; means the row came from that publisher&rsquo;s own
+              marketplace manifest; no registry verified the publisher and this project did not audit it.
+              Rows from third-party awesome-lists are discovery-only: no version or launch command was proven.
             </li>
           </ul>
         </div>

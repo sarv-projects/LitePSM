@@ -21,7 +21,7 @@ func writeSkillBody(t *testing.T, dir, body string) {
 
 func testInstaller(t *testing.T) (*Installer, *Ledger) {
 	t.Helper()
-	l, err := OpenLedger(filepath.Join(t.TempDir(), "ledger.json"))
+	l, err := testLedger(t, filepath.Join(t.TempDir(), "ledger.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestInstallerUpdateHappyPath(t *testing.T) {
 		t.Fatalf("new ref not recorded: %+v", outcome.Entry)
 	}
 
-	reopened, _ := OpenLedger(ledger.path)
+	reopened, _ := testLedger(t, ledger.path)
 	all, _ := reopened.All()
 	if len(all) != 1 || all[0].ContentDigest != outcome.Entry.ContentDigest || all[0].SourceRef != "abc123" {
 		t.Fatalf("ledger not updated: %+v", all)

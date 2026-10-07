@@ -22,7 +22,8 @@ const buildTestDataset = `[
 		"transport": "stdio",
 		"version": "1.2.3",
 		"command": "npx",
-		"args": ["-y", "demo"]
+		"args": ["-y", "demo"],
+		"installability": "metadata_verified"
 	},
 	{
 		"id": "skill:example:demo-skill",

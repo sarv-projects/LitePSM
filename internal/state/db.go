@@ -15,6 +15,9 @@ import (
 //go:embed migrations/001_initial_schema.sql
 var initialSchemaSQL string
 
+//go:embed migrations/002_phase1_state_lifecycle.sql
+var phase1LifecycleSQL string
+
 // DB wraps a SQLite 3 connection pool configured for WAL mode and strong durability.
 type DB struct {
 	raw    *sql.DB

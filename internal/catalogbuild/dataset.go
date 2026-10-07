@@ -41,12 +41,17 @@ type DatasetRow struct {
 	Command     string           `json:"command"`     // mcp only
 	Args        []string         `json:"args"`        // mcp only
 	SkillSource string           `json:"skillSource"` // skill only
+	// Installability is the provenance class of the row (domain.Installability
+	// values). Empty means discovery_only: heuristic ingestion never proved a
+	// version or launch line.
+	Installability string `json:"installability"`
 }
 
 // ParseDataset decodes and validates dataset bytes fail-closed. Every row must
 // carry a domain-valid listing id whose kind segment agrees with the row, a
-// non-empty name and version, and -- for MCP rows -- the command and transport
-// a future install would launch; ids must be unique. The generator normalizes
+// non-empty name and -- for MCP rows that claim more than discovery_only -- the
+// version, command and transport a future install would launch; ids must be
+// unique. The generator normalizes
 // ids to the same grammar (canonical_id in scripts/build_full_catalog.py), so
 // a violation means the producer and the domain have drifted and the release
 // must not be built.
@@ -79,16 +84,26 @@ func ParseDataset(raw []byte) ([]DatasetRow, error) {
 		if r.Name == "" {
 			fail("missing name")
 		}
-		if r.Version == "" {
-			fail("missing version")
+		if !domain.Installability(r.Installability).Valid() {
+			fail("unknown installability %q", r.Installability)
 		}
-		if r.Kind == "mcp" {
-			if r.Command == "" {
-				fail("mcp row has no launch command")
+		// Version and launch line are required only of rows that claim more
+		// than discovery_only: a heuristic row has none to give, and the
+		// generator no longer invents them.
+		if domain.Installability(r.Installability).Effective() != domain.InstallabilityDiscoveryOnly {
+			if r.Kind == "mcp" {
+				if r.Version == "" {
+					fail("mcp row claims %s but has no version", r.Installability)
+				}
+				if r.Command == "" {
+					fail("mcp row claims %s but has no launch command", r.Installability)
+				}
+				if r.Transport == "" {
+					fail("mcp row claims %s but has no transport", r.Installability)
+				}
 			}
-			if r.Transport == "" {
-				fail("mcp row has no transport")
-			}
+		} else if r.Command != "" {
+			fail("discovery_only row carries a launch command; commands must be proven from a manifest")
 		}
 	}
 	if len(problems) > 0 {
@@ -179,6 +194,20 @@ func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Ti
 		return nil, nil, err
 	}
 
+	installability := domain.Installability(row.Installability)
+	if installability == "" {
+		// Dataset rows without an explicit provenance class are heuristic
+		// ingestion (awesome-lists): discovery-only by default. Only vendor
+		// manifests opt into metadata_verified by setting the field.
+		installability = domain.InstallabilityDiscoveryOnly
+	}
+
+	versionForRecord := row.Version
+	versionSummaries := []domain.VersionSummary{}
+	if versionForRecord != "" {
+		versionSummaries = []domain.VersionSummary{{Version: versionForRecord}}
+	}
+
 	listing := &domain.Listing{
 		SchemaVersion: 1,
 		ID:            row.ID,
@@ -196,9 +225,7 @@ func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Ti
 			UpstreamID: upstream,
 			URL:        sourceURL,
 		},
-		Versions: []domain.VersionSummary{
-			{Version: row.Version},
-		},
+		Versions:             versionSummaries,
 		ComponentsSummary:    summaries,
 		RequirementsSummary:  []string{},
 		CompatibilitySummary: []domain.CompatibilityFact{},
@@ -210,12 +237,13 @@ func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Ti
 			IngestedAt:       ingestedAt,
 			CatalogReleaseID: releaseID,
 		},
-		Status: domain.ListingStatusActive,
+		Status:         domain.ListingStatusActive,
+		Installability: installability,
 	}
 
 	version := &domain.VersionRecord{
 		ListingID:        row.ID,
-		Version:          row.Version,
+		Version:          versionForRecord,
 		SourceSnapshotID: snapshotID,
 		Artifacts:        []domain.ArtifactRef{},
 		Components:       components,
@@ -233,18 +261,41 @@ func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Ti
 }
 
 // datasetComponents derives the per-kind component lists. MCP rows carry their
-// real launch line (command/args/transport) into a RuntimeDescriptor so the
-// future install path has the launch data in the domain shape it expects.
+// launch line (command/args/transport) into a RuntimeDescriptor ONLY when the
+// dataset proves one; discovery-only rows (no proven command) produce a
+// component with no runtime so no installer can invent a launch line.
 func datasetComponents(row DatasetRow, lid domain.ListingID) ([]domain.ComponentSummary, []domain.Component, error) {
+	// Component IDs embed a version; discovery-only rows carry no proven
+	// version, so the ID uses the literal "discovery" rather than inventing
+	// one. The VersionRecord itself keeps the honest empty value.
+	versionForID := row.Version
+	if versionForID == "" {
+		versionForID = "discovery"
+	}
 	switch domain.ListingKind(row.Kind) {
 	case domain.KindMCP:
+		if row.Command == "" {
+			// No proven launch line: honest absence, not an empty command.
+			return []domain.ComponentSummary{{Kind: domain.ComponentMCPProvider, Name: "server"}},
+				[]domain.Component{{
+					ID:   string(domain.NewComponentID(lid, versionForID, domain.ComponentMCPProvider, "server")),
+					Kind: domain.ComponentMCPProvider,
+					Name: "server",
+					// Runtime is nil: RuntimeForListing fails closed.
+					Runtime:         nil,
+					DeclaredEffects: []domain.EffectDeclaration{},
+					// Not "yes": resolving and installing this launch line from
+					// the catalog is not wired yet (STATUS.md install row).
+					SupportedByLiteSPM: domain.SupportUnknown,
+				}}, nil
+		}
 		transport := row.Transport
 		if transport == "" {
 			transport = "stdio"
 		}
 		return []domain.ComponentSummary{{Kind: domain.ComponentMCPProvider, Name: "server"}},
 			[]domain.Component{{
-				ID:   string(domain.NewComponentID(lid, row.Version, domain.ComponentMCPProvider, "server")),
+				ID:   string(domain.NewComponentID(lid, versionForID, domain.ComponentMCPProvider, "server")),
 				Kind: domain.ComponentMCPProvider,
 				Name: "server",
 				Runtime: &domain.RuntimeDescriptor{
@@ -265,7 +316,7 @@ func datasetComponents(row DatasetRow, lid domain.ListingID) ([]domain.Component
 		}
 		return []domain.ComponentSummary{{Kind: domain.ComponentSkill, Name: row.Name}},
 			[]domain.Component{{
-				ID:   string(domain.NewComponentID(lid, row.Version, domain.ComponentSkill, componentName)),
+				ID:   string(domain.NewComponentID(lid, versionForID, domain.ComponentSkill, componentName)),
 				Kind: domain.ComponentSkill,
 				Name: row.Name,
 				// The shipped skills lifecycle installs, stores, and loads

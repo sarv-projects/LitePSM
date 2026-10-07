@@ -27,16 +27,138 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
 	"github.com/sarv-projects/litespm/internal/envref"
 	"github.com/sarv-projects/litespm/internal/mcpclient"
+	"github.com/sarv-projects/litespm/internal/policy"
+	"github.com/sarv-projects/litespm/internal/provider"
 	"github.com/sarv-projects/litespm/internal/state"
 )
+
+// Policy is the slice of internal/policy.Engine that Invoke needs. *policy.Engine
+// satisfies it; the interface exists so tests (and other policy sources) can
+// stand in without a database-backed engine.
+type Policy interface {
+	Evaluate(ctx context.Context, input policy.PolicyInput) policy.PolicyDecision
+}
+
+// Option configures Discover and Invoke.
+type Option func(*options)
+
+type options struct {
+	policy     Policy
+	supervisor *provider.Supervisor
+	actor      string
+	hostID     string
+	effects    []policy.EffectDeclaration
+}
+
+// WithPolicy routes Invoke through a policy engine. Without it Invoke is
+// fail-closed: only an invocation explicitly classified read-only (WithEffects)
+// proceeds, everything else is denied.
+func WithPolicy(p Policy) Option { return func(o *options) { o.policy = p } }
+
+// WithSupervisor makes Discover and Invoke spawn their server through a shared
+// provider.Supervisor. The default is a private supervisor scoped to the call.
+func WithSupervisor(s *provider.Supervisor) Option { return func(o *options) { o.supervisor = s } }
+
+// WithActor sets the policy actor ("user" | "agent" | "system"); default "user".
+func WithActor(actor string) Option { return func(o *options) { o.actor = actor } }
+
+// WithHostID records the calling host in the policy input.
+func WithHostID(hostID string) Option { return func(o *options) { o.hostID = hostID } }
+
+// WithEffects replaces the default effect classification of the invocation.
+// The default is conservative (a local process is spawned with the user's
+// authority). Callers that hold a curated or user classification pass it here;
+// an effect set made only of filesystem.read / external.read counts as
+// read-only for the no-policy fail-closed rule.
+func WithEffects(effects ...policy.EffectDeclaration) Option {
+	return func(o *options) { o.effects = append([]policy.EffectDeclaration(nil), effects...) }
+}
+
+func newOptions(opts []Option) *options {
+	o := &options{actor: "user"}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(o)
+		}
+	}
+	if o.supervisor == nil {
+		o.supervisor = provider.NewSupervisor()
+	}
+	return o
+}
+
+// defaultInvokeEffects classifies an invocation of an arbitrary stdio MCP
+// tool: LiteSPM cannot know what the tool does, but it does know it starts a
+// provider process and spawns code under the user's account.
+func defaultInvokeEffects() []policy.EffectDeclaration {
+	return []policy.EffectDeclaration{
+		{Effect: policy.EffectProviderStart, Provenance: domain.ProvenanceRuntimeObserved},
+		{Effect: policy.EffectProcessSpawn, Provenance: domain.ProvenanceRuntimeObserved},
+	}
+}
+
+func isReadOnlyEffects(effects []policy.EffectDeclaration) bool {
+	if len(effects) == 0 {
+		return false // unclassified is never read-only
+	}
+	for _, e := range effects {
+		if e.Effect != policy.EffectFilesystemRead && e.Effect != policy.EffectExternalRead {
+			return false
+		}
+	}
+	return true
+}
+
+// authorize is the single policy gate for an invocation. It is evaluated twice:
+// before the server is spawned (recorded fingerprint) and after the re-probe
+// (current fingerprint), so a capability grant bound to a fingerprint is
+// validated against both what was discovered and what the server now serves.
+func (o *options) authorize(ctx context.Context, capabilityID, fingerprint string, effects []policy.EffectDeclaration) error {
+	if o.policy == nil {
+		if isReadOnlyEffects(effects) {
+			return nil
+		}
+		return domain.NewError(domain.CodePolicyDenied,
+			fmt.Sprintf("invocation of %s denied: no policy engine configured and the invocation is not classified read-only", capabilityID),
+			map[string]any{"capabilityId": capabilityID})
+	}
+	decision := o.policy.Evaluate(ctx, policy.PolicyInput{
+		Actor:             o.actor,
+		HostID:            o.hostID,
+		Operation:         "invoke",
+		TargetRef:         capabilityID,
+		CapabilityID:      capabilityID,
+		Effects:           effects,
+		SchemaFingerprint: fingerprint,
+		Scope:             domain.ScopeUser,
+	})
+	if decision.Decision == policy.DecisionAllow {
+		return nil
+	}
+	code := domain.CodePolicyDenied
+	if len(decision.ReasonCodes) > 0 && strings.HasPrefix(decision.ReasonCodes[0], "LPSM-") {
+		code = decision.ReasonCodes[0]
+	}
+	msg := fmt.Sprintf("invocation of %s refused by policy (%s)", capabilityID, decision.Decision)
+	if decision.Decision == policy.DecisionAsk {
+		msg = fmt.Sprintf("invocation of %s requires an active capability grant (approval required)", capabilityID)
+	}
+	if decision.Detail != "" {
+		msg += ": " + decision.Detail
+	}
+	return domain.NewError(code, msg, map[string]any{
+		"capabilityId": capabilityID,
+		"decision":     string(decision.Decision),
+		"reasonCodes":  decision.ReasonCodes,
+	})
+}
 
 // ProviderSpec is one installed MCP server to probe or call.
 type ProviderSpec struct {
@@ -92,12 +214,12 @@ func sanitizeIDPart(s string) string {
 // unprobeable server should fail the surrounding operation. The rows themselves
 // are written only after a complete, successful listing, so a server that dies
 // mid-probe cannot leave a half-discovered capability set behind.
-func Discover(ctx context.Context, db *state.DB, spec ProviderSpec) (*DiscoveredProvider, error) {
+func Discover(ctx context.Context, db *state.DB, spec ProviderSpec, opts ...Option) (*DiscoveredProvider, error) {
 	if strings.TrimSpace(spec.Command) == "" {
 		return nil, fmt.Errorf("provider %q has no command to run", spec.ComponentName)
 	}
 
-	session, cleanup, err := dial(ctx, spec)
+	session, cleanup, err := dial(ctx, spec, newOptions(opts).supervisor)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +291,17 @@ type InvokeResult struct {
 // tool schema changed since discovery, the call is refused rather than made
 // against arguments nobody validated. That is the drift check
 // `mcpclient.DetectDrift` exists for, applied as a gate instead of a report.
-func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments json.RawMessage) (*InvokeResult, error) {
+//
+// Authorization: the call is gated by the policy engine (WithPolicy) before
+// the server is spawned and again, against the freshly probed fingerprint,
+// before the tool is called. Without a policy the call is fail-closed: it is
+// denied unless explicitly classified read-only via WithEffects.
+func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments json.RawMessage, opts ...Option) (*InvokeResult, error) {
+	o := newOptions(opts)
+	effects := o.effects
+	if effects == nil {
+		effects = defaultInvokeEffects()
+	}
 	_, installID, componentName, toolName, err := domain.ParseCapabilityID(capabilityID)
 	if err != nil {
 		return nil, err
@@ -211,7 +343,12 @@ func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments js
 		return nil, fmt.Errorf("provider %s has no command recorded; re-run discovery", providerID)
 	}
 
-	session, cleanup, err := dial(ctx, spec)
+	// Gate 1 (before any process exists): grant + recorded fingerprint.
+	if err := o.authorize(ctx, capabilityID, capability.SchemaFingerprint, effects); err != nil {
+		return nil, err
+	}
+
+	session, cleanup, err := dial(ctx, spec, o.supervisor)
 	if err != nil {
 		return nil, err
 	}
@@ -231,6 +368,11 @@ func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments js
 			return nil, fmt.Errorf("tool %q changed its input schema since discovery (recorded %s, now %s); "+
 				"re-run discovery before invoking it", toolName, capability.SchemaFingerprint, tool.SchemaFingerprint)
 		}
+		// Gate 2: the grant must also hold for the fingerprint the server
+		// serves right now (a drifted schema invalidates a prior grant).
+		if err := o.authorize(ctx, capabilityID, tool.SchemaFingerprint, effects); err != nil {
+			return nil, err
+		}
 		if len(arguments) == 0 {
 			arguments = json.RawMessage("{}")
 		}
@@ -243,7 +385,6 @@ func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments js
 	return nil, fmt.Errorf("provider %s no longer exposes a tool named %q", providerID, toolName)
 }
 
-// dial spawns the server and completes an MCP session over its stdio pipes.
 // flattenContent renders a tool result's content parts as the single string the
 // Bridge contract expects. Non-text parts are named rather than dropped, so a
 // caller is never told a call produced nothing when it produced an image.
@@ -264,67 +405,71 @@ func flattenContent(parts []mcpclient.ToolContent) string {
 	return b.String()
 }
 
-func dial(ctx context.Context, spec ProviderSpec) (mcpclient.ClientSession, func(), error) {
+var dialSeq atomic.Uint64
+
+// resolveEnv turns the stored environment (references, names, or values) into
+// the concrete variables the server is given. It resolves only variables the
+// stored spec names; nothing else from this process's environment is forwarded.
+func resolveEnv(spec ProviderSpec) map[string]string {
+	if len(spec.Env) == 0 {
+		return nil
+	}
+	// A name-list host (Codex) stores only the name, so its read-back value
+	// is empty; a reference-host stores the reference text. Both resolve here,
+	// from this process's environment, because the host's own expansion never
+	// runs for a server LiteSPM spawns itself.
+	hostSpec, _ := envref.SpecFor(spec.HostID)
+	lookup := func(k string) (string, bool) { return os.LookupEnv(k) }
+	out := make(map[string]string, len(spec.Env))
+	for k, v := range spec.Env {
+		// Only pass a value we actually have. An unset reference resolves to
+		// its own text and a name-list host stores no value; passing either
+		// through would hand the server a literal `${VAR}` or an empty string
+		// in place of a variable that does not exist.
+		resolved, expanded := hostSpec.Resolve(v, lookup)
+		if !expanded && resolved == "" {
+			continue
+		}
+		out[k] = resolved
+	}
+	return out
+}
+
+// dial starts the server through the provider supervisor (process-group /
+// job-object isolation, minimal environment) and completes an MCP session over
+// its stdio pipes. The returned cleanup closes the session and terminates the
+// process tree.
+func dial(ctx context.Context, spec ProviderSpec, sup *provider.Supervisor) (mcpclient.ClientSession, func(), error) {
 	if !isStdioTransport(spec.Transport) {
 		// The catalog publishes no remote endpoint for any row, so this is
 		// unreachable today; it fails loudly rather than pretending to dial.
 		return nil, nil, fmt.Errorf("provider %q uses transport %q, which is not supported yet",
 			spec.ComponentName, spec.Transport)
 	}
-	cmd := exec.CommandContext(ctx, spec.Command, spec.Args...)
-	// Inherit this process's environment first, so a key we do not override keeps
-	// the value the user's shell exported.
-	cmd.Env = cmd.Environ()
-	if len(spec.Env) > 0 {
-		// A name-list host (Codex) stores only the name, so its read-back value
-		// is empty; a reference-host stores the reference text. Both resolve here,
-		// from this process's environment, because the host's own expansion never
-		// runs for a server LiteSPM spawns itself.
-		hostSpec, _ := envref.SpecFor(spec.HostID)
-		lookup := func(k string) (string, bool) { return os.LookupEnv(k) }
-		keys := make([]string, 0, len(spec.Env))
-		for k := range spec.Env {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			// Only append a value we actually have. A name-list host stores no
-			// value at all (its read-back placeholder is empty), and an unset
-			// reference resolves to its own text; appending either as `NAME=`
-			// would override the real value already inherited from this
-			// environment with an empty one, which is the opposite of what the
-			// user asked for. Leaving the key out keeps the inherited value.
-			resolved, expanded := hostSpec.Resolve(spec.Env[k], lookup)
-			if !expanded && resolved == "" {
-				continue
-			}
-			cmd.Env = append(cmd.Env, k+"="+resolved)
-		}
+	if sup == nil {
+		sup = provider.NewSupervisor()
 	}
-	stdin, err := cmd.StdinPipe()
+	// A unique id per spawn: StartProvider reuses a still-running provider with
+	// the same id, which must never happen for a one-shot call.
+	handleID := fmt.Sprintf("%s#%d", ProviderIDFor(spec.InstallID, spec.ComponentName), dialSeq.Add(1))
+	handle, err := sup.StartProvider(ctx, handleID, provider.LaunchSpec{
+		Executable: spec.Command,
+		Args:       spec.Args,
+		Env:        resolveEnv(spec),
+	})
 	if err != nil {
-		return nil, nil, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := cmd.Start(); err != nil {
 		return nil, nil, fmt.Errorf("start %s: %w", spec.Command, err)
 	}
-	kill := func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}
+	terminate := func() { _ = handle.Terminate(2 * time.Second) }
 
-	session, err := mcpclient.ConnectStdio(ctx, stdout, stdin)
+	session, err := mcpclient.ConnectStdio(ctx, handle.Stdout, handle.Stdin)
 	if err != nil {
-		kill()
+		terminate()
 		return nil, nil, fmt.Errorf("connect to %s: %w", spec.Command, err)
 	}
 	cleanup := func() {
 		_ = session.CloseSession()
-		kill()
+		terminate()
 	}
 	return session, cleanup, nil
 }

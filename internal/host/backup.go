@@ -40,23 +40,75 @@ func CreateAtomicBackup(originalPath, backupDir, hostID string) (string, error) 
 }
 
 // AtomicWriteFile writes data to targetPath atomically via a temporary file.
+//
+// Two properties matter because the target is someone else's config:
+//
+//   - Symlinks are preserved, not severed. A plain rename over a symlink
+//     replaces the link with a regular file, silently breaking the user's
+//     dotfile management (stow, chezmoi, a hand-made link). When the final
+//     path component is a symlink it is resolved and the write goes to the
+//     link's target, leaving the link itself intact.
+//   - The existing file mode is preserved. Forcing 0600 rewrote a file the
+//     user deliberately shared (or a test fixture at 0644) into a private
+//     one; a new file still gets 0600.
 func AtomicWriteFile(targetPath string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(targetPath)
+	resolved := targetPath
+	if fi, err := os.Lstat(targetPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		link, err := os.Readlink(targetPath)
+		if err != nil {
+			return fmt.Errorf("resolving symlink %s: %w", targetPath, err)
+		}
+		if !filepath.IsAbs(link) {
+			link = filepath.Join(filepath.Dir(targetPath), link)
+		}
+		resolved = link
+	}
+
+	effective := perm
+	if fi, err := os.Stat(resolved); err == nil && !fi.IsDir() {
+		effective = fi.Mode().Perm()
+	}
+
+	dir := filepath.Dir(resolved)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
-	tmpFile := filepath.Join(dir, fmt.Sprintf(".tmp_%d_%s", time.Now().UnixNano(), filepath.Base(targetPath)))
-	if err := os.WriteFile(tmpFile, data, perm); err != nil {
+	// O_EXCL so a leftover temp file from a crashed run is never silently
+	// truncated and reused; retry with a fresh name on collision.
+	var tmp *os.File
+	var tmpName string
+	for attempt := 0; attempt < 5; attempt++ {
+		tmpName = filepath.Join(dir, fmt.Sprintf(".tmp_%d_%d_%s", os.Getpid(), time.Now().UnixNano(), filepath.Base(resolved)))
+		f, err := os.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, effective)
+		if err != nil {
+			if os.IsExist(err) {
+				continue
+			}
+			return err
+		}
+		tmp = f
+		break
+	}
+	if tmp == nil {
+		return fmt.Errorf("could not create a unique temp file in %s", dir)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return err
 	}
-	if err := os.Chmod(tmpFile, perm); err != nil {
-		_ = os.Remove(tmpFile)
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
 		return err
 	}
-	if err := os.Rename(tmpFile, targetPath); err != nil {
-		_ = os.Remove(tmpFile)
+	if err := os.Chmod(tmpName, effective); err != nil {
+		_ = os.Remove(tmpName)
 		return err
 	}
-	return os.Chmod(targetPath, perm)
+	if err := os.Rename(tmpName, resolved); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return os.Chmod(resolved, effective)
 }

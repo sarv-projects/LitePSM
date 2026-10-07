@@ -16,17 +16,19 @@ export function PublisherTile({ name, kind }: { name?: string; kind: Listing["ki
 }
 
 /**
- * `publisher.verified` is a registry flag on the publisher, not a LiteSPM
- * security audit. Rendered as a distinct verified badge.
+ * `publisher.verified` is true only when the row was read from the publisher's
+ * own repository manifest (`publisher.provenance === "vendor-manifest"`). No
+ * upstream registry verified the publisher and LiteSPM did not audit it, so the
+ * badge says "vendor-listed" and the tooltip states exactly that.
  */
 export function VerifiedMark({ glyph = true }: { glyph?: boolean }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-[2px] bg-accent-wash px-1.5 py-0.5 text-[10px] font-medium text-accent border border-accent/20"
-      title="The upstream registry marks this publisher as verified. This is not a LiteSPM security audit."
+      title="Listed in this publisher's own marketplace manifest. No registry verified the publisher and LiteSPM has not audited it."
     >
       {glyph && <Check className="h-2.5 w-2.5 stroke-[2.5]" aria-hidden="true" />}
-      verified
+      vendor-listed
     </span>
   );
 }

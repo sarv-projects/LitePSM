@@ -119,3 +119,28 @@ func TestRuntimeForListingFailsClosedWithoutARunnableComponent(t *testing.T) {
 		t.Fatal("RuntimeForListing invented a command for a version with no runtime component")
 	}
 }
+
+// TestVersionRecordsLatestUsesSemver pins that "latest" is chosen by semver
+// precedence: a lexical sort would rank 1.9.0 above 1.10.0.
+func TestVersionRecordsLatestUsesSemver(t *testing.T) {
+	idx := NewSearchIndex()
+	idx.IndexVersions([]*domain.VersionRecord{
+		{ListingID: "mcp:demo:semver", Version: "1.9.0"},
+		{ListingID: "mcp:demo:semver", Version: "1.10.0"},
+		{ListingID: "mcp:demo:semver", Version: "1.2.0"},
+		{ListingID: "mcp:demo:semver", Version: "1.10.0-rc.1"},
+		{ListingID: "mcp:demo:semver", Version: "remote"},
+	})
+	records := idx.VersionRecords("mcp:demo:semver")
+	var got []string
+	for _, r := range records {
+		got = append(got, r.Version)
+	}
+	want := []string{"1.10.0", "1.10.0-rc.1", "1.9.0", "1.2.0", "remote"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+	if records[0].Version != "1.10.0" {
+		t.Fatalf("latest = %q, want 1.10.0", records[0].Version)
+	}
+}

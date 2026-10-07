@@ -37,3 +37,17 @@ func useTempHome(t *testing.T) string {
 	}
 	return home
 }
+
+// testLedger opens a ledger whose removal roots are the ledger's own directory,
+// so tests that keep skill directories beside ledger.json stay confined to the
+// temp dir. Confinement behaviour itself is tested in ledger_confine_test.go
+// against OpenLedger's defaults.
+func testLedger(t *testing.T, path string) (*Ledger, error) {
+	t.Helper()
+	l, err := OpenLedger(path)
+	if err != nil {
+		return nil, err
+	}
+	l.SetRoots(filepath.Dir(path))
+	return l, nil
+}

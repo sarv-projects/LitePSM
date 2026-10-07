@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/resolver"
 )
 
 // SearchOptions provides filtering and pagination for catalog queries.
@@ -67,7 +68,9 @@ func (idx *SearchIndex) IndexVersions(versions []*domain.VersionRecord) {
 }
 
 // VersionRecords returns the published version records for a listing, newest
-// version string first so "latest" is deterministic rather than map-ordered.
+// version first (semver precedence, so 1.10.0 beats 1.9.0) so "latest" is
+// deterministic rather than map-ordered. Versions that do not parse as semver
+// sort after every valid one, among themselves by descending string.
 func (idx *SearchIndex) VersionRecords(listingID string) []*domain.VersionRecord {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -77,8 +80,27 @@ func (idx *SearchIndex) VersionRecords(listingID string) []*domain.VersionRecord
 	}
 	out := make([]*domain.VersionRecord, len(records))
 	copy(out, records)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Version > out[j].Version })
+	sort.SliceStable(out, func(i, j int) bool { return versionNewer(out[i].Version, out[j].Version) })
 	return out
+}
+
+// versionNewer reports whether version a is strictly newer than b.
+func versionNewer(a, b string) bool {
+	va, errA := resolver.ParseVersion(a)
+	vb, errB := resolver.ParseVersion(b)
+	switch {
+	case errA == nil && errB == nil:
+		if c := va.Compare(vb); c != 0 {
+			return c > 0
+		}
+		return a > b
+	case errA == nil:
+		return true
+	case errB == nil:
+		return false
+	default:
+		return a > b
+	}
 }
 
 // IndexListings bulk indexes or updates listings in memory.

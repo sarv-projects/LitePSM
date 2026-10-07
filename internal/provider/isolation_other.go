@@ -40,3 +40,7 @@ func killProcessTree(h *ProviderHandle, gracePeriod time.Duration) error {
 	}
 	return nil
 }
+
+// killGroupNow is a no-op here: there is no process group to signal; the
+// caller kills the direct child.
+func killGroupNow(pid int) {}

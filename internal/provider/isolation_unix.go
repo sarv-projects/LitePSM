@@ -21,8 +21,12 @@ func setupProcessIsolation(cmd *exec.Cmd) {
 }
 
 func postStartProcessIsolation(cmd *exec.Cmd, h *ProviderHandle) error {
-	startWatchdogIfRequired(h)
-	return nil
+	return startWatchdogIfRequired(h)
+}
+
+// killGroupNow SIGKILLs the child's whole process group immediately.
+func killGroupNow(pid int) {
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
 }
 
 func killProcessTree(h *ProviderHandle, gracePeriod time.Duration) error {

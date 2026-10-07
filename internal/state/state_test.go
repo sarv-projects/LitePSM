@@ -107,12 +107,12 @@ func TestApprovalAtomicReplayPrevention(t *testing.T) {
 	}
 
 	// First consumption must succeed
-	if err := db.ConsumeApproval(ctx, approvalID); err != nil {
+	if err := db.ConsumeApproval(ctx, approvalID, "install-plan", "sha256:1234"); err != nil {
 		t.Fatalf("first ConsumeApproval failed: %v", err)
 	}
 
 	// Second consumption on the same approval MUST fail closed with LPSM-POLICY-APPROVAL-CONSUMED
-	err = db.ConsumeApproval(ctx, approvalID)
+	err = db.ConsumeApproval(ctx, approvalID, "install-plan", "sha256:1234")
 	if err == nil {
 		t.Fatal("expected second ConsumeApproval to fail with replay error, but succeeded")
 	}
@@ -530,5 +530,117 @@ func TestRecovery_ResolvesInterruptedRollback(t *testing.T) {
 	}
 	if _, err := os.Stat(stagingDir); !os.IsNotExist(err) {
 		t.Error("staging of the interrupted rollback must be removed")
+	}
+}
+
+func approvalErrCode(err error) string {
+	if lpsmErr, ok := err.(*domain.LPSMError); ok {
+		return lpsmErr.Code
+	}
+	return ""
+}
+
+func TestConsumeApproval_ExpiredBranch(t *testing.T) {
+	db, tmpDir := openTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer db.Close()
+	ctx := context.Background()
+
+	// An expiry expressed in a far-east zone: 30 minutes in the past, but its
+	// local wall-clock reads hours ahead of UTC. A zone-naive comparison would
+	// treat it as still valid.
+	zone := time.FixedZone("UTC+10", 10*3600)
+	past := time.Now().Add(-30 * time.Minute).In(zone)
+	if err := db.RecordApproval(ctx, "app_expired", "install-plan", "h1", "human-cli", "cli-tty", "user", &past); err != nil {
+		t.Fatal(err)
+	}
+	err := db.ConsumeApproval(ctx, "app_expired", "install-plan", "h1")
+	if approvalErrCode(err) != "LPSM-POLICY-APPROVAL-EXPIRED" {
+		t.Fatalf("expected expired error, got %v", err)
+	}
+
+	// Future expiry in a far-west zone is still valid.
+	west := time.FixedZone("UTC-11", -11*3600)
+	future := time.Now().Add(30 * time.Minute).In(west)
+	if err := db.RecordApproval(ctx, "app_valid", "install-plan", "h1", "human-cli", "cli-tty", "user", &future); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ConsumeApproval(ctx, "app_valid", "install-plan", "h1"); err != nil {
+		t.Fatalf("unexpired approval in a non-UTC zone must be consumable: %v", err)
+	}
+
+	// A missing approval is not-found, not a silent success.
+	if err := db.ConsumeApproval(ctx, "app_missing", "install-plan", "h1"); err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestConsumeApproval_WrongSubject(t *testing.T) {
+	db, tmpDir := openTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer db.Close()
+	ctx := context.Background()
+
+	expires := time.Now().Add(time.Hour)
+	if err := db.RecordApproval(ctx, "app_subj", "install-plan", "hash-A", "human-cli", "cli-tty", "user", &expires); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, args := range map[string][2]string{
+		"wrong hash": {"install-plan", "hash-B"},
+		"wrong type": {"update-plan", "hash-A"},
+		"empty hash": {"install-plan", ""},
+		"empty type": {"", "hash-A"},
+	} {
+		err := db.ConsumeApproval(ctx, "app_subj", args[0], args[1])
+		if approvalErrCode(err) != "LPSM-POLICY-APPROVAL-SUBJECT-MISMATCH" {
+			t.Errorf("%s: expected subject mismatch, got %v", name, err)
+		}
+	}
+
+	// The mismatches must not have burned the approval.
+	if err := db.ConsumeApproval(ctx, "app_subj", "install-plan", "hash-A"); err != nil {
+		t.Fatalf("correct subject must still consume after mismatches: %v", err)
+	}
+}
+
+func TestRefundApproval(t *testing.T) {
+	db, tmpDir := openTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer db.Close()
+	ctx := context.Background()
+
+	expires := time.Now().Add(time.Hour)
+	if err := db.RecordApproval(ctx, "app_refund", "install-plan", "h", "human-cli", "cli-tty", "user", &expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ConsumeApproval(ctx, "app_refund", "install-plan", "h"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RefundApproval(ctx, "app_refund"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ConsumeApproval(ctx, "app_refund", "install-plan", "h"); err != nil {
+		t.Fatalf("refunded approval must be consumable again: %v", err)
+	}
+	// Refund of an active approval is a no-op; double consume still blocked.
+	if err := db.ConsumeApproval(ctx, "app_refund", "install-plan", "h"); approvalErrCode(err) != "LPSM-POLICY-APPROVAL-CONSUMED" {
+		t.Fatalf("expected consumed, got %v", err)
+	}
+
+	// A refund after expiry leaves the approval consumed.
+	soon := time.Now().Add(150 * time.Millisecond)
+	if err := db.RecordApproval(ctx, "app_late", "install-plan", "h", "human-cli", "cli-tty", "user", &soon); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ConsumeApproval(ctx, "app_late", "install-plan", "h"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := db.RefundApproval(ctx, "app_late"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ConsumeApproval(ctx, "app_late", "install-plan", "h"); approvalErrCode(err) != "LPSM-POLICY-APPROVAL-CONSUMED" {
+		t.Fatalf("expired approval must stay consumed after refund, got %v", err)
 	}
 }

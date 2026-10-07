@@ -104,8 +104,8 @@ func (a *PiAgentAdapter) PlanSetup(ctx context.Context, binaryPath string, backu
 }
 
 func (a *PiAgentAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan) (*HostApplyResult, error) {
-	if err := AtomicWriteFile(plan.ConfigPath, []byte(plan.ProposedContent), 0600); err != nil {
-		return nil, fmt.Errorf("failed to write config %s: %w", plan.ConfigPath, err)
+	if err := ApplyPlanWrite(plan); err != nil {
+		return nil, err
 	}
 
 	// Also ensure companion extension directory and file exists for Pi agent
@@ -151,18 +151,13 @@ func (a *PiAgentAdapter) VerifySetup(ctx context.Context) (*HostVerification, er
 		return &HostVerification{HostID: "pi-agent", ConfigPath: configPath, Status: "corrupted"}, nil
 	}
 
+	// `mcpServers` is the only container Pi reads (see PlanSetup), so verify
+	// must look only there. Earlier revisions also accepted `mcp` /
+	// `mcp.servers`, which let a bridge written to an unread container verify
+	// as ready — the exact self-confirming failure this audit removes.
 	registered := false
-	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
-		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
-			_, registered = serversVal["litespm"]
-		} else {
-			_, registered = mcpVal["litespm"]
-		}
-	}
-	if !registered {
-		if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
-			_, registered = mcpServers["litespm"]
-		}
+	if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
+		_, registered = mcpServers["litespm"]
 	}
 
 	status := "missing"
@@ -220,17 +215,8 @@ func (a *PiAgentAdapter) DetectPreExistingComponents(ctx context.Context) ([]Pre
 		results = append(results, comp)
 	}
 
-	if mcpVal, ok := rootMap["mcp"].(map[string]any); ok {
-		if serversVal, ok := mcpVal["servers"].(map[string]any); ok {
-			for name, details := range serversVal {
-				extractComp(name, details)
-			}
-		} else {
-			for name, details := range mcpVal {
-				extractComp(name, details)
-			}
-		}
-	}
+	// Only `mcpServers` is read by Pi; entries under a foreign `mcp` object are
+	// ignored by the host and must not be surfaced as installed components.
 	if mcpServers, ok := rootMap["mcpServers"].(map[string]any); ok {
 		for name, details := range mcpServers {
 			extractComp(name, details)

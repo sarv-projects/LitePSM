@@ -136,7 +136,7 @@ func TestInstall_ApprovalReplayPrevention(t *testing.T) {
 
 	approvalID := "appr_test_123"
 	expires := time.Now().Add(1 * time.Hour)
-	err := db.RecordApproval(ctx, approvalID, "install-plan", "hash123", "user", "cli-tty", "user", &expires)
+	err := db.RecordApproval(ctx, approvalID, "install-plan", InstallSubjectHash("tool-c", "1.0.0", domain.ScopeUser), "user", "cli-tty", "user", &expires)
 	if err != nil {
 		t.Fatalf("failed to record approval: %v", err)
 	}

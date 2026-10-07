@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -54,8 +52,6 @@ func (a *AgentSkillsAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 	now := time.Now().UTC()
 	var listings []*domain.Listing
 	var versions []*domain.VersionRecord
-
-	hasher := sha256.New()
 
 	for filename, content := range a.documents {
 		doc, err := ParseSkillMarkdown(content)
@@ -134,14 +130,17 @@ func (a *AgentSkillsAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 				SourceSnapshotID: snapshotID,
 				IngestedAt:       now,
 			},
-			Status: domain.ListingStatusActive,
+			Status:         domain.ListingStatusActive,
+			Installability: domain.InstallabilityMetadataVerified,
 		}
 
 		listings = append(listings, listing)
-		hasher.Write([]byte(listing.ID))
 	}
 
-	digest := fmt.Sprintf("sha256:%s", hex.EncodeToString(hasher.Sum(nil)))
+	digest, err := domain.ComputeContentDigest(listings, versions)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot content digest: %w", err)
+	}
 
 	return &IngestResult{
 		SourceID:   a.sourceID,

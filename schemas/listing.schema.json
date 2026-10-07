@@ -122,6 +122,11 @@
       "type": "string",
       "enum": ["active", "stale", "deprecated", "withdrawn", "unavailable"]
     },
+    "installability": {
+      "type": "string",
+      "enum": ["discovery_only", "metadata_verified", "runtime_verified", "litespm_tested"],
+      "description": "How far installability has been proven. Absent is treated as discovery_only."
+    },
     "rawMetadataRef": { "type": "string" }
   },
   "additionalProperties": false

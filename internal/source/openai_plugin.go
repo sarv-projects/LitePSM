@@ -2,8 +2,6 @@ package source
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -144,12 +142,14 @@ func (a *OpenAIPluginAdapter) Ingest(ctx context.Context, snapshotID string, raw
 			SourceSnapshotID: snapshotID,
 			IngestedAt:       now,
 		},
-		Status: domain.ListingStatusActive,
+		Status:         domain.ListingStatusActive,
+		Installability: domain.InstallabilityMetadataVerified,
 	}
 
-	hasher := sha256.New()
-	hasher.Write([]byte(listing.ID))
-	digest := fmt.Sprintf("sha256:%s", hex.EncodeToString(hasher.Sum(nil)))
+	digest, err := domain.ComputeContentDigest([]*domain.Listing{listing}, []*domain.VersionRecord{verRecord})
+	if err != nil {
+		return nil, fmt.Errorf("snapshot content digest: %w", err)
+	}
 
 	return &IngestResult{
 		SourceID:   a.sourceID,

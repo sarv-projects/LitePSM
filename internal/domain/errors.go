@@ -108,6 +108,21 @@ func ErrInvalidIdentifier(raw, expectedGrammar string) *LPSMError {
 	}
 }
 
+// ErrNotInstallable is the typed refusal for listings whose installability is
+// discovery_only: searchable metadata with no proven version or launch line.
+func ErrNotInstallable(listingID, reason string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-NOT-INSTALLABLE",
+		Message:   fmt.Sprintf("listing %s is not installable: %s", listingID, reason),
+		Category:  "LPSM-INSTALL",
+		Retryable: false,
+		Details: map[string]any{
+			"listingId": listingID,
+			"reason":    reason,
+		},
+	}
+}
+
 func ErrPlanStale(planID, reason string) *LPSMError {
 	return &LPSMError{
 		Code:      "LPSM-PLAN-STALE",
@@ -192,6 +207,21 @@ func ErrApprovalExpired(approvalID string) *LPSMError {
 		Retryable: false,
 		Details: map[string]any{
 			"approvalId": approvalID,
+		},
+	}
+}
+
+// ErrApprovalSubjectMismatch reports an approval presented for a subject
+// (plan, capability call, ...) other than the one it was granted for.
+func ErrApprovalSubjectMismatch(approvalID, detail string) *LPSMError {
+	return &LPSMError{
+		Code:      "LPSM-POLICY-APPROVAL-SUBJECT-MISMATCH",
+		Message:   fmt.Sprintf("approval %s does not authorize this action: %s", approvalID, detail),
+		Category:  "LPSM-POLICY",
+		Retryable: false,
+		Details: map[string]any{
+			"approvalId": approvalID,
+			"detail":     detail,
 		},
 	}
 }

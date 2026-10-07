@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/sarv-projects/litespm/internal/buildinfo"
 	"github.com/sarv-projects/litespm/internal/ipc"
 )
 
@@ -445,5 +446,63 @@ func TestFormatInstalledPanelStatusTruthfulness(t *testing.T) {
 	if !sawUnknown || !sawReady || !sawStopped {
 		t.Fatalf("panel did not render all three rows (unknown=%v ready=%v stopped=%v):\n%s",
 			sawUnknown, sawReady, sawStopped, out)
+	}
+}
+
+func TestBridge_MalformedToolArgumentsAreInvalidParams(t *testing.T) {
+	shim := newDaemonBackedShim(t, map[string]ipc.HandlerFunc{
+		"catalog.search": func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+			t.Error("a daemon call must not be made with unparseable arguments")
+			return nil, nil
+		},
+		"install.execute": func(ctx context.Context, params json.RawMessage) (any, *ipc.RPCError) {
+			t.Error("install.execute must not be reached with unparseable arguments")
+			return nil, nil
+		},
+	})
+
+	for _, tool := range []string{
+		"search_catalog", "get_extension", "prepare_install", "request_install",
+		"load_skill", "read_skill_resource", "search_capabilities", "describe_capability",
+		"invoke_capability", "get_invocation", "cancel_invocation",
+	} {
+		for _, bad := range []string{`"not an object"`, `{"query": 5, "id": 5, "planId": 5, "skillId": 5, "path": 5, "capabilityId": 5, "invocationId": 5}`, `[1,2]`} {
+			idRaw := json.RawMessage(`7`)
+			params, _ := json.Marshal(map[string]any{"name": tool, "arguments": json.RawMessage(bad)})
+			resp := shim.HandleRequest(context.Background(), &ipc.Request{
+				JSONRPC: "2.0", ID: &idRaw, Method: "tools/call", Params: params,
+			})
+			if resp == nil || resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+				t.Errorf("%s with %s: expected JSON-RPC -32602, got %+v", tool, bad, resp)
+			}
+		}
+	}
+
+	// A malformed tools/call envelope is also -32602.
+	idRaw := json.RawMessage(`8`)
+	resp := shim.HandleRequest(context.Background(), &ipc.Request{
+		JSONRPC: "2.0", ID: &idRaw, Method: "tools/call", Params: json.RawMessage(`"oops"`),
+	})
+	if resp == nil || resp.Error == nil || resp.Error.Code != ipc.CodeInvalidParams {
+		t.Errorf("malformed envelope: expected -32602, got %+v", resp)
+	}
+}
+
+func TestBridge_ReportsBuildVersion(t *testing.T) {
+	buildinfo.Version = "9.9.9-test"
+	t.Cleanup(func() { buildinfo.Version = "dev" })
+	shim := NewShim("test-host", nil, nil, nil)
+	idRaw := json.RawMessage(`1`)
+	resp := shim.HandleRequest(context.Background(), &ipc.Request{JSONRPC: "2.0", ID: &idRaw, Method: "initialize"})
+	var out struct {
+		ServerInfo struct {
+			Version string `json:"version"`
+		} `json:"serverInfo"`
+	}
+	if err := json.Unmarshal(resp.Result, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.ServerInfo.Version != "9.9.9-test" {
+		t.Errorf("serverInfo.version = %q, want the build version", out.ServerInfo.Version)
 	}
 }

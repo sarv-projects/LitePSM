@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -29,7 +30,22 @@ type Server struct {
 	wg              sync.WaitGroup
 	daemonVersion   string
 	protocolVersion string
+
+	// handshakeTimeout bounds how long a new connection may stay silent (or
+	// slow) before sending daemon.handshake; idleTimeout bounds the gap between
+	// requests afterwards. handlerSem caps handlers running at once across all
+	// connections so one client cannot exhaust the daemon.
+	handshakeTimeout time.Duration
+	idleTimeout      time.Duration
+	handlerSem       chan struct{}
 }
+
+// Defaults for the per-connection read deadlines and the handler bound.
+const (
+	DefaultHandshakeTimeout      = 10 * time.Second
+	DefaultIdleTimeout           = 30 * time.Minute
+	DefaultMaxConcurrentHandlers = 64
+)
 
 // NewServer creates a new IPC JSON-RPC server with baseline handshake registered.
 func NewServer(daemonVersion, protocolVersion string) *Server {
@@ -42,18 +58,26 @@ func NewServer(daemonVersion, protocolVersion string) *Server {
 		cancelCtx:       cancel,
 		daemonVersion:   daemonVersion,
 		protocolVersion: protocolVersion,
+
+		handshakeTimeout: DefaultHandshakeTimeout,
+		idleTimeout:      DefaultIdleTimeout,
+		handlerSem:       make(chan struct{}, DefaultMaxConcurrentHandlers),
 	}
 
 	// Register mandatory initial handshake
 	s.RegisterHandler("daemon.handshake", func(ctx context.Context, params json.RawMessage) (any, *RPCError) {
 		var hs HandshakeParams
-		if len(params) > 0 {
-			if err := json.Unmarshal(params, &hs); err != nil {
-				return nil, &RPCError{
-					Code:    CodeInvalidParams,
-					Message: fmt.Sprintf("invalid handshake params: %v", err),
-				}
+		if len(params) == 0 {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: "invalid handshake params: clientKind is required"}
+		}
+		if err := json.Unmarshal(params, &hs); err != nil {
+			return nil, &RPCError{
+				Code:    CodeInvalidParams,
+				Message: fmt.Sprintf("invalid handshake params: %v", err),
 			}
+		}
+		if strings.TrimSpace(hs.ClientKind) == "" {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: "invalid handshake params: clientKind is required"}
 		}
 
 		return &HandshakeResult{
@@ -64,6 +88,31 @@ func NewServer(daemonVersion, protocolVersion string) *Server {
 	})
 
 	return s
+}
+
+// SetTimeouts overrides the pre-handshake and idle read deadlines. A
+// non-positive value keeps the current setting. Call before Serve.
+func (s *Server) SetTimeouts(handshake, idle time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if handshake > 0 {
+		s.handshakeTimeout = handshake
+	}
+	if idle > 0 {
+		s.idleTimeout = idle
+	}
+}
+
+// SetMaxConcurrentHandlers bounds concurrently running handlers. Requests
+// beyond the bound are answered with CodeRateLimited rather than queued. A
+// non-positive n keeps the current bound. Call before Serve.
+func (s *Server) SetMaxConcurrentHandlers(n int) {
+	if n <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handlerSem = make(chan struct{}, n)
 }
 
 // RegisterHandler registers a method handler.
@@ -132,10 +181,32 @@ func (s *Server) handleConnection(conn net.Conn) {
 	cancelFuncs := make(map[string]context.CancelFunc)
 	var cancelMu sync.Mutex
 
+	s.mu.RLock()
+	handshakeTimeout, idleTimeout, sem := s.handshakeTimeout, s.idleTimeout, s.handlerSem
+	s.mu.RUnlock()
+
+	handshaken := false
+	writeRPCError := func(id *json.RawMessage, code int, msg string) {
+		if id == nil {
+			return
+		}
+		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = codec.WriteResponse(&Response{JSONRPC: "2.0", ID: id, Error: &RPCError{Code: code, Message: msg}})
+		_ = conn.SetWriteDeadline(time.Time{})
+	}
+
 	for {
+		// Per-connection read deadline: a connection must handshake promptly,
+		// and an idle one is eventually reclaimed instead of pinning a
+		// goroutine and descriptor forever.
+		if handshaken {
+			_ = conn.SetReadDeadline(time.Now().Add(idleTimeout))
+		} else {
+			_ = conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
+		}
 		req, err := codec.ReadRequest()
 		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrDeadlineExceeded) {
 				return
 			}
 			// Write parse error with deadline
@@ -166,6 +237,36 @@ func (s *Server) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		// The handshake is the connection's first request: every other method
+		// is refused until it has succeeded on this connection.
+		if req.Method == "daemon.handshake" {
+			s.mu.RLock()
+			hsHandler := s.handlers[req.Method]
+			s.mu.RUnlock()
+			result, rpcErr := hsHandler(s.ctx, req.Params)
+			if rpcErr == nil {
+				handshaken = true
+			}
+			if req.ID != nil {
+				resp := &Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
+				if rpcErr == nil {
+					if b, merr := json.Marshal(result); merr != nil {
+						resp.Error = &RPCError{Code: CodeInternalError, Message: fmt.Sprintf("failed to marshal response result: %v", merr)}
+					} else {
+						resp.Result = json.RawMessage(b)
+					}
+				}
+				_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_ = codec.WriteResponse(resp)
+				_ = conn.SetWriteDeadline(time.Time{})
+			}
+			continue
+		}
+		if !handshaken {
+			writeRPCError(req.ID, CodeUnauthorized, "daemon.handshake is required before any other method")
+			continue
+		}
+
 		// Look up handler
 		s.mu.RLock()
 		handler, exists := s.handlers[req.Method]
@@ -187,6 +288,15 @@ func (s *Server) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		// Bound concurrent handlers: shed load with an explicit rate-limit
+		// error instead of spawning without limit.
+		select {
+		case sem <- struct{}{}:
+		default:
+			writeRPCError(req.ID, CodeRateLimited, "too many concurrent requests; retry later")
+			continue
+		}
+
 		// Create cancellable context for this request derived from the server lifecycle context
 		reqCtx, cancel := context.WithCancel(s.ctx)
 		var idKey string
@@ -196,6 +306,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 			if _, exists := cancelFuncs[idKey]; exists {
 				cancelMu.Unlock()
 				cancel()
+				<-sem
 				_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 				_ = codec.WriteResponse(&Response{
 					JSONRPC: "2.0",
@@ -215,6 +326,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		s.wg.Add(1)
 		go func(r *Request, ctx context.Context, idStr string, cancel context.CancelFunc) {
 			defer s.wg.Done()
+			defer func() { <-sem }()
 			// Always release the per-request context, including notifications
 			// (which are never stored in cancelFuncs) so no context leaks.
 			defer cancel()

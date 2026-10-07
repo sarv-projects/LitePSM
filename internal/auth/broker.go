@@ -25,10 +25,54 @@ type AuthBroker struct {
 	sessionsMu sync.RWMutex
 }
 
+// maxTokenResponseBytes bounds OAuth token responses (D9). Token JSON is
+// small; anything larger is a misbehaving endpoint, not a token.
+const maxTokenResponseBytes = 1 << 20
+
+// NewAuthHTTPClient returns the hardened HTTP client for OAuth token traffic
+// (D9): a bounded timeout, a redirect policy that refuses downgrades and
+// loops, and no credentialed cross-origin hops. Callers must still bound
+// response reads with LimitReader.
+func NewAuthHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("oauth redirect refused: too many redirects")
+			}
+			// Refuse https -> http downgrades (credential would travel clear).
+			if len(via) > 0 {
+				prev := via[len(via)-1].URL.Scheme
+				if prev == "https" && req.URL.Scheme != "https" {
+					return fmt.Errorf("oauth redirect refused: https downgrade to %q", req.URL.Scheme)
+				}
+			}
+			return nil
+		},
+	}
+}
+
+// requireHTTPSTokenURL enforces https-only token endpoints (D9), exempting
+// loopback hosts so httptest-based tests and local IdPs keep working.
+func requireHTTPSTokenURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid token URL %q: %w", raw, err)
+	}
+	if strings.EqualFold(u.Scheme, "https") {
+		return nil
+	}
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme == "http" && (host == "127.0.0.1" || host == "localhost" || host == "::1") {
+		return nil
+	}
+	return fmt.Errorf("token endpoint %q refused: https required", raw)
+}
+
 // NewAuthBroker creates a new AuthBroker.
 func NewAuthBroker(db *state.DB, secretStore secrets.SecretStore, httpClient *http.Client) *AuthBroker {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = NewAuthHTTPClient()
 	}
 	return &AuthBroker{
 		db:         db,
@@ -99,6 +143,9 @@ func (b *AuthBroker) StartAuth(ctx context.Context, req AuthStartRequest, listen
 
 // ExchangeToken exchanges an authorization code and PKCE verifier for OAuth tokens.
 func (b *AuthBroker) ExchangeToken(ctx context.Context, tokenURL, clientID, clientSecret, code, redirectURI, verifier string) (*TokenResponse, error) {
+	if err := requireHTTPSTokenURL(tokenURL); err != nil {
+		return nil, err
+	}
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
@@ -122,7 +169,7 @@ func (b *AuthBroker) ExchangeToken(ctx context.Context, tokenURL, clientID, clie
 	}
 	defer httpResp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(httpResp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(httpResp.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read token response: %w", err)
 	}
@@ -150,6 +197,13 @@ func (b *AuthBroker) CompleteAuth(ctx context.Context, sessionID string, tokenRe
 
 	if !ok {
 		return nil, domain.ErrNotFound("auth_session", sessionID)
+	}
+
+	// D9: enforce the session ExpiresAt. An authorization completed after
+	// the loopback window is a replay, not a completion.
+	if !session.ExpiresAt.IsZero() && time.Now().UTC().After(session.ExpiresAt) {
+		return nil, domain.NewError(domain.CodeOAuthCallbackTimeout,
+			fmt.Sprintf("auth session %s expired", sessionID), nil)
 	}
 
 	tokenBytes, err := json.Marshal(tokenRes)
@@ -201,10 +255,19 @@ func (b *AuthBroker) RevokeAuth(ctx context.Context, profileID string) error {
 		return err
 	}
 
-	// Purge secret from OS vault
+	// Purge secret from OS vault. D9: a delete failure is surfaced instead
+	// of swallowed — a revoked profile whose secret survives is a leak.
+	// Not-found means the secret is already gone and is not a failure.
 	ref, err := secrets.ParseSecretRef(prof.SecretRef)
 	if err == nil {
-		_ = b.secrets.Delete(ctx, *ref)
+		if derr := b.secrets.Delete(ctx, *ref); derr != nil {
+			if domain.ErrorCode(derr) != "LPSM-STATE-NOT-FOUND" {
+				// Message check for stores that return plain not-found text.
+				if !strings.Contains(strings.ToLower(derr.Error()), "not found") {
+					return fmt.Errorf("revoke %s: secret delete failed: %w", profileID, derr)
+				}
+			}
+		}
 	}
 
 	// Update SQLite status
@@ -243,6 +306,9 @@ func (b *AuthBroker) RefreshAuth(ctx context.Context, profileID, tokenURL, clien
 		return fmt.Errorf("no refresh token available for profile %s", profileID)
 	}
 
+	if err := requireHTTPSTokenURL(tokenURL); err != nil {
+		return err
+	}
 	// Execute refresh token exchange
 	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
@@ -266,11 +332,12 @@ func (b *AuthBroker) RefreshAuth(ctx context.Context, profileID, tokenURL, clien
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		return fmt.Errorf("token refresh failed with status %d", httpResp.StatusCode)
+		errBody, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
+		return fmt.Errorf("token refresh failed with status %d: %s", httpResp.StatusCode, string(errBody))
 	}
 
 	var freshTokens TokenResponse
-	if err := json.NewDecoder(httpResp.Body).Decode(&freshTokens); err != nil {
+	if err := json.NewDecoder(io.LimitReader(httpResp.Body, maxTokenResponseBytes)).Decode(&freshTokens); err != nil {
 		return fmt.Errorf("failed to decode refreshed tokens: %w", err)
 	}
 

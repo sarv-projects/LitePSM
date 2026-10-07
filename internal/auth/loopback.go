@@ -105,6 +105,10 @@ func (ll *LoopbackListener) handleCallback(w http.ResponseWriter, r *http.Reques
 	if receivedState != ll.stateToken {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = fmt.Fprint(w, "<html><body><h2>Access Denied</h2><p>Invalid or expired state parameter. (CSRF protection)</p></body></html>")
+		// No waiter signal here: a wrong state is a foreign probe/scan, not
+		// the terminal OAuth result. Signalling would let one stray request
+		// poison the pending flow (bad-then-good would return the probe's
+		// error). The waiter keeps waiting for the real redirect.
 		return
 	}
 
@@ -122,6 +126,7 @@ func (ll *LoopbackListener) handleCallback(w http.ResponseWriter, r *http.Reques
 	if receivedCode == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = fmt.Fprint(w, "<html><body><h2>Authentication Error</h2><p>Missing authorization code.</p></body></html>")
+		ll.sendResult(LoopbackResult{Error: domain.NewError(domain.CodeOAuthStateMismatch, "missing authorization code", nil)})
 		return
 	}
 

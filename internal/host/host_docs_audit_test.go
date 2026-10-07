@@ -209,21 +209,43 @@ func TestClineUsesSharedSettingsPath(t *testing.T) {
 
 	t.Run("legacy_file_still_found", func(t *testing.T) {
 		// A client too old to have migrated still reads globalStorage, so an
-		// existing legacy file must win over creating the shared one.
-		legacy := filepath.Join(home, ".config", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json")
-		if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
-			t.Fatal(err)
+		// existing legacy file must win over creating the shared one. The
+		// legacy location is platform-specific (APPDATA on Windows, Library on
+		// macOS, .config on Linux), so resolve it through the same helper the
+		// adapter uses rather than hardcoding the Unix path.
+		legacies := legacyClineSettingsPaths(home)
+		if len(legacies) == 0 {
+			t.Fatal("no legacy cline paths for this platform")
 		}
-		if err := os.WriteFile(legacy, []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		adapter := &ClineAdapter{}
-		got, err := adapter.DetectConfig(context.Background(), "user")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != legacy {
-			t.Errorf("legacy config not found: got %s want %s", got, legacy)
+		// Exercise every legacy candidate: each one must win over the shared
+		// path when it exists. Run sequentially in isolated homes so files
+		// do not leak between candidates.
+		for idx := range legacies {
+			idx := idx
+			t.Run(strings.ReplaceAll(strings.TrimPrefix(filepath.ToSlash(legacies[idx]), filepath.ToSlash(home)+"/"), "/", "_"), func(t *testing.T) {
+				// Use a fresh home per candidate: the shared path must not
+				// exist, and no other legacy file may shadow this one.
+				candidateHome := useTempHome(t)
+				candidateLegacies := legacyClineSettingsPaths(candidateHome)
+				if idx >= len(candidateLegacies) {
+					t.Fatalf("legacy index out of range: %d of %d", idx, len(candidateLegacies))
+				}
+				candidate := candidateLegacies[idx]
+				if err := os.MkdirAll(filepath.Dir(candidate), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(candidate, []byte("{}"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				adapter := &ClineAdapter{}
+				got, err := adapter.DetectConfig(context.Background(), "user")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got != candidate {
+					t.Errorf("legacy config not found: got %s want %s", got, candidate)
+				}
+			})
 		}
 	})
 }

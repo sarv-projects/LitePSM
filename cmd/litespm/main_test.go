@@ -64,6 +64,7 @@ type harness struct {
 	engine     *install.Engine
 	supervisor *provider.Supervisor
 	client     *ipc.Client
+	catClient  *catalog.Client
 }
 
 // newHarness builds the daemon's real handler set over an in-memory pipe.
@@ -103,6 +104,10 @@ func newHarnessWith(t *testing.T, extra []*domain.Listing) *harness {
 		Kind:          domain.KindMCP,
 		Name:          "demo-tool",
 		Summary:       "demo listing for plan tests",
+		// metadata_verified so the plan/install error paths under test are
+		// reached; discovery_only rows are refused earlier (see
+		// TestInstallExecuteRefusesDiscoveryOnly).
+		Installability: domain.InstallabilityMetadataVerified,
 		Versions: []domain.VersionSummary{
 			{Version: "1.0.0", ImmutableRef: "git:1111111111111111111111111111111111111111"},
 			{Version: "2.0.0", ImmutableRef: "git:2222222222222222222222222222222222222222"},
@@ -128,7 +133,7 @@ func newHarnessWith(t *testing.T, extra []*domain.Listing) *harness {
 	listener.conns <- serverConn
 	client := ipc.NewClientFromConn(clientConn)
 
-	h := &harness{paths: paths, db: db, engine: engine, supervisor: supervisor, client: client}
+	h := &harness{paths: paths, db: db, engine: engine, supervisor: supervisor, client: client, catClient: catClient}
 	t.Cleanup(func() {
 		supervisor.StopAll(context.Background())
 		_ = client.Close()
@@ -337,8 +342,9 @@ func TestInstallExecute_ErrorMapping(t *testing.T) {
 			t.Fatalf("prepare_plan failed: %v", err)
 		}
 
+		approvalID := approvePlanAsHuman(t, h.db, &plan)
 		var raw json.RawMessage
-		err := h.client.Call(ctx, "install.execute", map[string]any{"planId": plan.PlanID}, &raw)
+		err := h.client.Call(ctx, "install.execute", map[string]any{"planId": plan.PlanID, "approvalToken": approvalID}, &raw)
 		if code := rpcCode(t, err); code != ipc.CodeInternalError {
 			t.Fatalf("code=%d, want %d (err=%v)", code, ipc.CodeInternalError, err)
 		}
@@ -891,5 +897,23 @@ func TestDoctorExitCode(t *testing.T) {
 				t.Fatalf("doctorExitCode(%s) = %d, want %d", tc.name, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestInstallExecuteRefusesDiscoveryOnly pins Phase 0.1/T3 at the daemon seam:
+// install.execute refuses a discovery_only row with LPSM-NOT-INSTALLABLE.
+func TestInstallExecuteRefusesDiscoveryOnly(t *testing.T) {
+	const id = "mcp:awesome:heuristic-row"
+	h := newHarnessWith(t, []*domain.Listing{{
+		SchemaVersion: 1,
+		ID:            id,
+		Kind:          domain.KindMCP,
+		Name:          "heuristic-row",
+		Summary:       "discovery-only fixture",
+	}})
+	var raw json.RawMessage
+	err := h.client.Call(context.Background(), "install.execute", map[string]any{"listingId": id}, &raw)
+	if err == nil || !strings.Contains(err.Error(), "LPSM-NOT-INSTALLABLE") {
+		t.Fatalf("err = %v, want LPSM-NOT-INSTALLABLE", err)
 	}
 }

@@ -2,8 +2,6 @@ package source
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"sort"
 	"time"
@@ -39,7 +37,6 @@ func (a *ACPAgentAdapter) Ingest(ctx context.Context, snapshotID string) (*Inges
 	}
 
 	now := time.Now().UTC()
-	hasher := sha256.New()
 	var listings []*domain.Listing
 	var versions []*domain.VersionRecord
 
@@ -125,15 +122,18 @@ func (a *ACPAgentAdapter) Ingest(ctx context.Context, snapshotID string) (*Inges
 				IngestedAt:       now,
 			},
 			Status:         status,
+			Installability: domain.InstallabilityMetadataVerified,
 			RawMetadataRef: ag.Repository,
 		}
 
-		hasher.Write([]byte(listingID.String()))
 		listings = append(listings, listing)
 		versions = append(versions, versionRecord)
 	}
 
-	digest := fmt.Sprintf("sha256:%s", hex.EncodeToString(hasher.Sum(nil)))
+	digest, err := domain.ComputeContentDigest(listings, versions)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot content digest: %w", err)
+	}
 
 	return &IngestResult{
 		SourceID:   a.sourceID,

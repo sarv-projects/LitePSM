@@ -26,7 +26,7 @@ func TestLedgerLegacyJSONLoads(t *testing.T) {
 	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l, err := OpenLedger(path)
+	l, err := testLedger(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestLedgerProvenanceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	ledgerPath := filepath.Join(root, "ledger.json")
-	l, _ := OpenLedger(ledgerPath)
+	l, _ := testLedger(t, ledgerPath)
 	if err := l.Add([]LedgerEntry{{
 		SkillName:     "pdf",
 		DestDir:       dir,
@@ -70,7 +70,7 @@ func TestLedgerProvenanceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reopened, err := OpenLedger(ledgerPath)
+	reopened, err := testLedger(t, ledgerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestRemoveScopeMismatchRefused(t *testing.T) {
 	writeSkill(t, projectDir)
 	writeSkill(t, globalDir)
 
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	if err := l.Add([]LedgerEntry{
 		{SkillName: "pdf", DestDir: projectDir, Scope: "project"},
 		{SkillName: "pdf", DestDir: globalDir, Scope: "global"},
@@ -142,7 +142,7 @@ func TestRemoveScopeMismatchRefusesLegacyEntry(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "legacy")
 	writeSkill(t, dir)
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	_ = l.Add([]LedgerEntry{{SkillName: "legacy", DestDir: dir}}) // no scope recorded
 
 	outcomes, err := l.RemoveScoped(RemoveOptions{Scope: "project"})
@@ -167,7 +167,7 @@ func TestRemoveRefusesUserAddedFileAndForceOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	_ = l.Add([]LedgerEntry{{SkillName: "pdf", DestDir: dir, Scope: "project", Inventory: prov.Inventory}})
 
 	// User adds a file after install.
@@ -209,7 +209,7 @@ func TestRemoveMatchedInventorySucceeds(t *testing.T) {
 	dir := filepath.Join(root, "pdf")
 	writeSkill(t, dir)
 	prov, _ := CaptureProvenance(dir)
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	_ = l.Add([]LedgerEntry{{SkillName: "pdf", DestDir: dir, Scope: "project", Inventory: prov.Inventory}})
 
 	outcomes, err := l.RemoveScoped(RemoveOptions{Scope: "project"})
@@ -229,7 +229,7 @@ func TestRemoveRefusesSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	_ = l.Add([]LedgerEntry{{SkillName: "linked", DestDir: link, Scope: "project"}})
 
 	for _, force := range []bool{false, true} {
@@ -258,7 +258,7 @@ func TestRemoveRefusesSymlinkInsideDirectory(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	_ = l.Add([]LedgerEntry{{SkillName: "pdf", DestDir: dir, Scope: "project", Inventory: prov.Inventory}})
 
 	// Force must not bypass the symlink refusal.
@@ -282,7 +282,7 @@ func TestRemoveForceDoesNotBypassRepurposedDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	_ = l.Add([]LedgerEntry{{SkillName: "pdf", DestDir: dir, Scope: "project", Inventory: []FileRecord{{Path: "SKILL.md", Size: 8}}}})
 
 	outcomes, err := l.RemoveScoped(RemoveOptions{Scope: "project", Force: true})

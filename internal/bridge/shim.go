@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sarv-projects/litespm/internal/buildinfo"
 	"github.com/sarv-projects/litespm/internal/domain"
 	"github.com/sarv-projects/litespm/internal/ipc"
 )
@@ -80,6 +82,9 @@ func NewShim(hostID string, client *ipc.Client, in io.Reader, out io.Writer) *Sh
 		out = os.Stdout
 	}
 
+	if client != nil {
+		client.SetIdentity("bridge", hostID)
+	}
 	shim := &Shim{
 		client: client,
 		hostID: hostID,
@@ -191,7 +196,7 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 			"protocolVersion": "2026-07-28",
 			"serverInfo": map[string]any{
 				"name":    "litespm-bridge",
-				"version": "0.1.0",
+				"version": buildinfo.Version,
 			},
 			"capabilities": map[string]any{
 				"tools": map[string]any{},
@@ -235,14 +240,18 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 			if req.ID == nil {
 				return nil
 			}
-			errRes := FormatErrorResult(domain.ErrInvalidIdentifier("params", "valid tool call parameters"))
-			resBytes, _ := json.Marshal(errRes)
-			return &ipc.Response{JSONRPC: "2.0", ID: req.ID, Result: resBytes}
+			return &ipc.Response{JSONRPC: "2.0", ID: req.ID, Error: &ipc.RPCError{
+				Code:    ipc.CodeInvalidParams,
+				Message: fmt.Sprintf("invalid tools/call params: %v", err),
+			}}
 		}
 
-		toolResult := s.DispatchTool(ctx, callParams.Name, callParams.Arguments)
+		toolResult, rpcErr := s.dispatchTool(ctx, callParams.Name, callParams.Arguments)
 		if req.ID == nil {
 			return nil
+		}
+		if rpcErr != nil {
+			return &ipc.Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
 		}
 		resBytes, _ := json.Marshal(toolResult)
 		return &ipc.Response{
@@ -267,15 +276,42 @@ func (s *Shim) HandleRequest(ctx context.Context, req *ipc.Request) *ipc.Respons
 }
 
 // DispatchTool routes a tool call to the local daemon IPC client or handler.
+// Malformed tool arguments come back as an error tool result; the stdio
+// protocol path (HandleRequest) reports them as JSON-RPC -32602 instead.
 func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessage) MCPToolResult {
+	res, rpcErr := s.dispatchTool(ctx, name, args)
+	if rpcErr != nil {
+		return FormatErrorResult(domain.ErrInvalidIdentifier("arguments", rpcErr.Message))
+	}
+	return res
+}
+
+// decodeToolArgs unmarshals tool arguments into dst. Absent or null arguments
+// are an empty object; anything else that is not valid for dst is an
+// invalid-params error, never silently ignored.
+func decodeToolArgs(tool string, args json.RawMessage, dst any) *ipc.RPCError {
+	trimmed := bytes.TrimSpace(args)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil
+	}
+	if err := json.Unmarshal(trimmed, dst); err != nil {
+		return &ipc.RPCError{
+			Code:    ipc.CodeInvalidParams,
+			Message: fmt.Sprintf("invalid arguments for tool %q: %v", tool, err),
+		}
+	}
+	return nil
+}
+
+func (s *Shim) dispatchTool(ctx context.Context, name string, args json.RawMessage) (MCPToolResult, *ipc.RPCError) {
 	if !s.knownTool(name) {
-		return FormatErrorResult(domain.ErrNotFound("tool", name))
+		return FormatErrorResult(domain.ErrNotFound("tool", name)), nil
 	}
 	if s.client == nil {
 		// Standalone mode (no daemon connection): the shim holds no capability
 		// data, so every tool fails closed with an explicit error instead of
 		// fabricating success, statuses, or inventory.
-		return standaloneError(name)
+		return standaloneError(name), nil
 	}
 
 	switch name {
@@ -285,7 +321,9 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			Kinds []string `json:"kinds,omitempty"`
 			Limit int      `json:"limit,omitempty"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp struct {
 			Count   int   `json:"count"`
@@ -297,17 +335,19 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"limit": req.Limit,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		outBytes, _ := json.MarshalIndent(resp, "", "  ")
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}, nil
 
 	case "get_extension":
 		var req struct {
 			ID      string `json:"id"`
 			Version string `json:"version,omitempty"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp any
 		err := s.client.Call(ctx, "catalog.get_item", map[string]any{
@@ -315,17 +355,19 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"version": req.Version,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		outBytes, _ := json.MarshalIndent(resp, "", "  ")
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}, nil
 
 	case "prepare_install":
 		var req struct {
 			ID      string `json:"id"`
 			Version string `json:"version,omitempty"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp any
 		err := s.client.Call(ctx, "resolver.prepare_plan", map[string]any{
@@ -333,17 +375,19 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"version": req.Version,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		outBytes, _ := json.MarshalIndent(resp, "", "  ")
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}, nil
 
 	case "request_install":
 		var req struct {
 			PlanID        string `json:"planId"`
 			ApprovalToken string `json:"approvalToken,omitempty"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp any
 		err := s.client.Call(ctx, "install.execute", map[string]any{
@@ -351,10 +395,10 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"approvalToken": req.ApprovalToken,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		outBytes, _ := json.MarshalIndent(resp, "", "  ")
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}, nil
 
 	case "list_installed":
 		var resp struct {
@@ -363,16 +407,18 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 		}
 		err := s.client.Call(ctx, "tools.list", nil, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(resp.Installs)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: FormatInstalledPanel(resp.Installs)}}}, nil
 
 	case "search_capabilities":
 		var req struct {
 			Query string `json:"query"`
 			Limit int    `json:"limit,omitempty"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp any
 		err := s.client.Call(ctx, "capabilities.search", map[string]any{
@@ -380,33 +426,37 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"limit": req.Limit,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		outBytes, _ := json.MarshalIndent(resp, "", "  ")
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}, nil
 
 	case "describe_capability":
 		var req struct {
 			CapabilityID string `json:"capabilityId"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp any
 		err := s.client.Call(ctx, "capabilities.describe", map[string]any{
 			"capabilityId": req.CapabilityID,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		outBytes, _ := json.MarshalIndent(resp, "", "  ")
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}, nil
 
 	case "load_skill":
 		var req struct {
 			SkillID string `json:"skillId"`
 			Version string `json:"version,omitempty"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp struct {
 			SkillID      string `json:"skillId"`
@@ -417,7 +467,7 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"version": req.Version,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		if resp.Instructions == "" {
 			// The daemon answered with no instruction body; report that
@@ -426,16 +476,18 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 				"LPSM-CORE-INTERNAL",
 				fmt.Sprintf("skill %s returned no instructions from the daemon", req.SkillID),
 				map[string]any{"skillId": req.SkillID},
-			))
+			)), nil
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Instructions}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Instructions}}}, nil
 
 	case "read_skill_resource":
 		var req struct {
 			SkillID string `json:"skillId"`
 			Path    string `json:"path"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp struct {
 			Content string `json:"content"`
@@ -445,16 +497,18 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"path":    req.Path,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Content}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: resp.Content}}}, nil
 
 	case "invoke_capability":
 		var req struct {
 			CapabilityID string          `json:"capabilityId"`
 			Arguments    json.RawMessage `json:"arguments"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp struct {
 			Output  string `json:"output"`
@@ -465,34 +519,38 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"arguments":    req.Arguments,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		return MCPToolResult{
 			Content: []MCPContent{{Type: "text", Text: resp.Output}},
 			IsError: resp.IsError,
-		}
+		}, nil
 
 	case "get_invocation":
 		var req struct {
 			InvocationID string `json:"invocationId"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp any
 		err := s.client.Call(ctx, "invocation.get", map[string]any{
 			"invocationId": req.InvocationID,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
 		outBytes, _ := json.MarshalIndent(resp, "", "  ")
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: string(outBytes)}}}, nil
 
 	case "cancel_invocation":
 		var req struct {
 			InvocationID string `json:"invocationId"`
 		}
-		_ = json.Unmarshal(args, &req)
+		if rpcErr := decodeToolArgs(name, args, &req); rpcErr != nil {
+			return MCPToolResult{}, rpcErr
+		}
 
 		var resp struct {
 			Cancelled bool `json:"cancelled"`
@@ -501,12 +559,12 @@ func (s *Shim) DispatchTool(ctx context.Context, name string, args json.RawMessa
 			"invocationId": req.InvocationID,
 		}, &resp)
 		if err != nil {
-			return FormatErrorResult(err)
+			return FormatErrorResult(err), nil
 		}
-		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s cancelled: %v", req.InvocationID, resp.Cancelled)}}}
+		return MCPToolResult{Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("Invocation %s cancelled: %v", req.InvocationID, resp.Cancelled)}}}, nil
 
 	default:
-		return FormatErrorResult(domain.ErrNotFound("tool", name))
+		return FormatErrorResult(domain.ErrNotFound("tool", name)), nil
 	}
 }
 
@@ -517,8 +575,15 @@ func FormatInstalledPanel(items []CapabilityItem) string {
 	sb.WriteString("│                          LiteSPM Capabilities                          │\n")
 	sb.WriteString("├──────────────┬──────────────┬──────────────┬───────────────────────────┤\n")
 	sb.WriteString("│ [MCP SERVERS]│[AGENT SKILLS]│  [PLUGINS]   │")
-	installedHeader := fmt.Sprintf("     [INSTALLED (%d)] ●   ", len(items))
-	sb.WriteString(installedHeader[:27])
+	// The installed-count header is cut to the column width in runes, not
+	// bytes: slicing the byte string at [:27] split the multi-byte `●`
+	// (U+25CF) mid-sequence and emitted invalid UTF-8 whenever the count
+	// grew the prefix past the cut point.
+	headerRunes := []rune(fmt.Sprintf("     [INSTALLED (%d)] ●   ", len(items)))
+	if len(headerRunes) > 27 {
+		headerRunes = headerRunes[:27]
+	}
+	sb.WriteString(string(headerRunes))
 	sb.WriteString("│\n")
 	sb.WriteString("└──────────────┴──────────────┴──────────────┴───────────────────────────┘\n\n")
 

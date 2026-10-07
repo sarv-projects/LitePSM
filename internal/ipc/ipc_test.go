@@ -3,6 +3,7 @@ package ipc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -294,6 +295,7 @@ func TestDuplicateRequestID(t *testing.T) {
 
 	codec := NewLineDelimitedCodec(clientConn)
 	defer clientConn.Close()
+	rawHandshake(t, codec)
 
 	reqID := json.RawMessage(`"req-dup-1"`)
 	req1 := &Request{
@@ -336,5 +338,165 @@ func TestDuplicateRequestID(t *testing.T) {
 	}
 	if resp1.Error != nil {
 		t.Fatalf("first request failed: %+v", resp1.Error)
+	}
+}
+
+// rawHandshake performs daemon.handshake over a raw codec and fails the test on
+// any error.
+func rawHandshake(t *testing.T, codec *LineDelimitedCodec) {
+	t.Helper()
+	id := json.RawMessage(`"hs"`)
+	params, _ := json.Marshal(HandshakeParams{ClientKind: "cli", PID: 1})
+	if err := codec.WriteRequest(&Request{JSONRPC: "2.0", ID: &id, Method: "daemon.handshake", Params: params}); err != nil {
+		t.Fatalf("write handshake: %v", err)
+	}
+	resp, err := codec.ReadResponse()
+	if err != nil || resp.Error != nil {
+		t.Fatalf("handshake failed: %v %+v", err, resp)
+	}
+}
+
+func startRawServer(t *testing.T, configure func(*Server)) (*Server, *LineDelimitedCodec, net.Conn) {
+	t.Helper()
+	server := NewServer("test", "2026-07-28")
+	if configure != nil {
+		configure(server)
+	}
+	listener := newMockListener()
+	go func() { _ = server.Serve(listener) }()
+	serverConn, clientConn := net.Pipe()
+	listener.conns <- serverConn
+	t.Cleanup(func() {
+		_ = clientConn.Close()
+		_ = listener.Close()
+		_ = server.Stop()
+	})
+	return server, NewLineDelimitedCodec(clientConn), clientConn
+}
+
+func TestServerRequiresHandshakeBeforeOtherMethods(t *testing.T) {
+	called := make(chan struct{}, 1)
+	_, codec, _ := startRawServer(t, func(s *Server) {
+		s.RegisterHandler("test.secret", func(ctx context.Context, params json.RawMessage) (any, *RPCError) {
+			called <- struct{}{}
+			return "secret", nil
+		})
+	})
+
+	id := json.RawMessage(`1`)
+	if err := codec.WriteRequest(&Request{JSONRPC: "2.0", ID: &id, Method: "test.secret"}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := codec.ReadResponse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil || resp.Error.Code != CodeUnauthorized {
+		t.Fatalf("expected CodeUnauthorized before handshake, got %+v", resp)
+	}
+	select {
+	case <-called:
+		t.Fatal("handler ran before the handshake")
+	default:
+	}
+
+	// A handshake without clientKind is rejected and does not unlock the conn.
+	id2 := json.RawMessage(`2`)
+	_ = codec.WriteRequest(&Request{JSONRPC: "2.0", ID: &id2, Method: "daemon.handshake", Params: json.RawMessage(`{}`)})
+	resp, _ = codec.ReadResponse()
+	if resp.Error == nil || resp.Error.Code != CodeInvalidParams {
+		t.Fatalf("expected invalid params for empty handshake, got %+v", resp)
+	}
+	id3 := json.RawMessage(`3`)
+	_ = codec.WriteRequest(&Request{JSONRPC: "2.0", ID: &id3, Method: "test.secret"})
+	resp, _ = codec.ReadResponse()
+	if resp.Error == nil || resp.Error.Code != CodeUnauthorized {
+		t.Fatalf("failed handshake must not unlock the connection, got %+v", resp)
+	}
+
+	rawHandshake(t, codec)
+	id4 := json.RawMessage(`4`)
+	_ = codec.WriteRequest(&Request{JSONRPC: "2.0", ID: &id4, Method: "test.secret"})
+	resp, _ = codec.ReadResponse()
+	if resp.Error != nil {
+		t.Fatalf("method must work after handshake: %+v", resp.Error)
+	}
+}
+
+func TestClientHandshakesAutomatically(t *testing.T) {
+	server := NewServer("test", "2026-07-28")
+	server.RegisterHandler("test.ping", func(ctx context.Context, params json.RawMessage) (any, *RPCError) {
+		return "pong", nil
+	})
+	listener := newMockListener()
+	go func() { _ = server.Serve(listener) }()
+	serverConn, clientConn := net.Pipe()
+	listener.conns <- serverConn
+	client := NewClientFromConn(clientConn)
+	t.Cleanup(func() { _ = client.Close(); _ = listener.Close(); _ = server.Stop() })
+
+	var out string
+	if err := client.Call(context.Background(), "test.ping", nil, &out); err != nil || out != "pong" {
+		t.Fatalf("auto-handshake call failed: %q %v", out, err)
+	}
+}
+
+func TestServerHandshakeDeadline(t *testing.T) {
+	_, codec, conn := startRawServer(t, func(s *Server) {
+		s.SetTimeouts(100*time.Millisecond, time.Minute)
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	// A silent connection is closed by the server's read deadline.
+	if _, err := codec.ReadResponse(); err == nil {
+		t.Fatal("expected the server to close a connection that never handshakes")
+	}
+}
+
+func TestServerBoundsConcurrentHandlers(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 4)
+	_, codec, _ := startRawServer(t, func(s *Server) {
+		s.SetMaxConcurrentHandlers(2)
+		s.RegisterHandler("test.block", func(ctx context.Context, params json.RawMessage) (any, *RPCError) {
+			entered <- struct{}{}
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return "done", nil
+		})
+	})
+	rawHandshake(t, codec)
+
+	send := func(n int) {
+		id := json.RawMessage(fmt.Sprintf("%d", n))
+		if err := codec.WriteRequest(&Request{JSONRPC: "2.0", ID: &id, Method: "test.block"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send(1)
+	send(2)
+	<-entered
+	<-entered
+	send(3)
+	resp, err := codec.ReadResponse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil || resp.Error.Code != CodeRateLimited {
+		t.Fatalf("third concurrent request must be rate limited, got %+v", resp)
+	}
+	close(release)
+	for i := 0; i < 2; i++ {
+		if resp, err := codec.ReadResponse(); err != nil || resp.Error != nil {
+			t.Fatalf("in-flight request failed: %v %+v", err, resp)
+		}
+	}
+	// Capacity is released afterwards.
+	send(4)
+	<-entered
+	resp, err = codec.ReadResponse()
+	if err != nil || resp.Error != nil {
+		t.Fatalf("request after release failed: %v %+v", err, resp)
 	}
 }

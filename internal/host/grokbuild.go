@@ -104,8 +104,8 @@ func (a *GrokBuildAdapter) PlanSetup(ctx context.Context, binaryPath string, bac
 }
 
 func (a *GrokBuildAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan) (*HostApplyResult, error) {
-	if err := AtomicWriteFile(plan.ConfigPath, []byte(plan.ProposedContent), 0600); err != nil {
-		return nil, fmt.Errorf("failed to write config %s: %w", plan.ConfigPath, err)
+	if err := ApplyPlanWrite(plan); err != nil {
+		return nil, err
 	}
 
 	return &HostApplyResult{

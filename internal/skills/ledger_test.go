@@ -17,7 +17,7 @@ func writeSkill(t *testing.T, dir string) {
 }
 
 func TestLedgerAddAndList(t *testing.T) {
-	l, err := OpenLedger(filepath.Join(t.TempDir(), "ledger.json"))
+	l, err := testLedger(t, filepath.Join(t.TempDir(), "ledger.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestLedgerAddAndList(t *testing.T) {
 
 func TestLedgerRemoveDeletesRecordedDirs(t *testing.T) {
 	root := t.TempDir()
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 
 	keepDir := filepath.Join(root, "skills", "docx")
 	dropDir := filepath.Join(root, "skills", "pdf")
@@ -84,7 +84,7 @@ func TestLedgerRemoveDeletesRecordedDirs(t *testing.T) {
 // matters most: a path the user has since put their own content in must survive.
 func TestLedgerRemoveRefusesRepurposedDirectory(t *testing.T) {
 	root := t.TempDir()
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 
 	dir := filepath.Join(root, "skills", "pdf")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -118,7 +118,7 @@ func TestLedgerRemoveRefusesRepurposedDirectory(t *testing.T) {
 
 func TestLedgerRemoveAll(t *testing.T) {
 	root := t.TempDir()
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	for _, n := range []string{"a", "b"} {
 		d := filepath.Join(root, n)
 		writeSkill(t, d)
@@ -145,7 +145,7 @@ func TestLedgerRemoveAll(t *testing.T) {
 
 func TestLedgerDryRunChangesNothing(t *testing.T) {
 	root := t.TempDir()
-	l, _ := OpenLedger(filepath.Join(root, "ledger.json"))
+	l, _ := testLedger(t, filepath.Join(root, "ledger.json"))
 	dir := filepath.Join(root, "pdf")
 	writeSkill(t, dir)
 	_ = l.Add([]LedgerEntry{{SkillName: "pdf", DestDir: dir}})
@@ -171,7 +171,7 @@ func TestLedgerCorruptFileIsReported(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	l, _ := OpenLedger(path)
+	l, _ := testLedger(t, path)
 	if _, err := l.All(); err == nil {
 		t.Fatal("a corrupt ledger was silently accepted")
 	}

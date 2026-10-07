@@ -230,10 +230,13 @@ func mergeTOMLEntry(orig, table, block string) (string, error) {
 	return base + "\n\n" + block, nil
 }
 
-// ApplySetup implements HostAdapter.
+// ApplySetup implements HostAdapter. The plan is validated (an empty
+// ProposedContent is never written), checked against the current file
+// (a stale plan is refused, not applied over the intervening edit), and only
+// then written atomically.
 func (a *GenericAdapter) ApplySetup(ctx context.Context, plan *HostChangePlan) (*HostApplyResult, error) {
-	if err := AtomicWriteFile(plan.ConfigPath, []byte(plan.ProposedContent), 0600); err != nil {
-		return nil, fmt.Errorf("failed to write %s: %w", plan.ConfigPath, err)
+	if err := ApplyPlanWrite(plan); err != nil {
+		return nil, err
 	}
 	return &HostApplyResult{
 		HostID:     plan.HostID,

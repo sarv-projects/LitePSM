@@ -2,8 +2,6 @@ package source
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -92,8 +90,6 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 	now := time.Now().UTC()
 	var listings []*domain.Listing
 	var versions []*domain.VersionRecord
-
-	hasher := sha256.New()
 
 	for _, srv := range rawServers {
 		if srv.Name == "" {
@@ -258,13 +254,18 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 				IngestedAt:       now,
 			},
 			Status: status,
+			// Only a registry entry that published a package or remote with a
+			// launch descriptor proved something installable.
+			Installability: mcpInstallability(len(versionSummaries)),
 		}
 
 		listings = append(listings, listing)
-		hasher.Write([]byte(listing.ID))
 	}
 
-	digest := fmt.Sprintf("sha256:%s", hex.EncodeToString(hasher.Sum(nil)))
+	digest, err := domain.ComputeContentDigest(listings, versions)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot content digest: %w", err)
+	}
 
 	return &IngestResult{
 		SourceID:   a.sourceID,
@@ -275,4 +276,13 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 		Digest:     digest,
 		IngestedAt: now,
 	}, nil
+}
+
+// mcpInstallability maps "the registry entry published N versions" to the
+// proven installability class; zero published versions is discovery_only.
+func mcpInstallability(publishedVersions int) domain.Installability {
+	if publishedVersions == 0 {
+		return domain.InstallabilityDiscoveryOnly
+	}
+	return domain.InstallabilityMetadataVerified
 }

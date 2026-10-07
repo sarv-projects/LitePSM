@@ -12,7 +12,13 @@ export interface Listing {
   kind: "mcp" | "skill" | "plugin";
   summary: string;
   category: string;
-  publisher: { name: string; verified: boolean; url?: string; avatarUrl?: string };
+  /**
+   * `verified` is true only for rows read from the publisher's own manifest
+   * (`provenance: "vendor-manifest"`); list-sourced rows are "awesome-list-claim".
+   */
+  publisher: { name: string; verified: boolean; provenance?: string; url?: string; avatarUrl?: string };
+  /** discovery_only rows have no proven version, command or transport. */
+  installability?: "discovery_only" | "metadata_verified" | "runtime_verified" | "litespm_tested";
   transport?: string;
   runtime?: string;
   /**
@@ -22,7 +28,7 @@ export interface Listing {
    * future source may legitimately populate it.
    */
   stars: number | null;
-  version: string;
+  version: string | null;
   /**
    * Publisher-declared host list. Only plugins carry one. MCP servers and
    * skills derive their compatibility from the kind (see lib/hosts.ts
@@ -31,8 +37,8 @@ export interface Listing {
    */
   compatibleHosts?: string[];
   readme?: string;
-  command?: string;
-  args?: string[];
+  command?: string | null;
+  args?: string[] | null;
   skillSource?: string;
   installHint?: string;
   schemaFingerprint?: string;

@@ -202,15 +202,22 @@ Field names follow `internal/ipc/protocol.go` (`HandshakeParams`/`HandshakeResul
 ```
 
 There is **no `sessionId`, `clientType`, or `protocolVersion` request field** — the request uses
-`clientKind`, and protocol version is returned, not proposed. The handler is registered as the
-baseline handshake in `internal/ipc/server.go:48` and accepts any well-formed handshake without
-version gating (version gating, and the `LPSM-IPC-VERSION-INCOMPATIBLE` code, are `DESIGNED`; the
-only `LPSM-IPC-*` constant today is `LPSM-IPC-DAEMON-UNREACHABLE`).
-**Reachability:** `ipc.Client.Handshake` (`internal/ipc/client.go:94-103`) has a single caller —
-`internal/ipc/ipc_test.go:78`. `runBridge` dials and serves without handshaking
-(`cmd/litespm/main.go:344`), so the handshake is a registered contract, not a step that occurs in
-production today ([ARCH/11 §3.1](11-LOCAL-RUNTIME-IPC.md) records the same
-fact).
+`clientKind`, and protocol version is returned, not proposed. `clientKind` is required; an empty
+handshake is `-32602`. The handler is the baseline handshake in `internal/ipc/server.go` and
+accepts any well-formed handshake without version gating (version gating, and the
+`LPSM-IPC-VERSION-INCOMPATIBLE` code, are `DESIGNED`; the only `LPSM-IPC-*` constant today is
+`LPSM-IPC-DAEMON-UNREACHABLE`).
+
+**Enforcement:** the server refuses every method except `daemon.handshake` (and the
+`$/cancelRequest` notification) with `-32001` (`CodeUnauthorized`) until a handshake has succeeded
+on that connection. A connection must complete it within 10 s and may then sit idle for at most
+30 min before the server closes it (per-connection read deadlines, `SetTimeouts`). At most 64
+handlers run at once; further requests get `-32004` (`CodeRateLimited`). `ipc.Client.Call` performs
+the handshake lazily before its first call (identity set with `SetIdentity`; the bridge shim sets
+`bridge` + its host id), and reports the real build version (`internal/buildinfo.Version`, set from
+the ldflags-injected `main.Version`), not a literal. The handshake gates *protocol order*, not
+identity: the socket/pipe permissions remain the only caller authentication, so "authenticated
+IPC" means local-user-only transport, not a per-caller credential.
 
 ### 3.2 Supported IPC Methods (19 application handlers; `daemon.handshake` is §3.1)
 
@@ -218,7 +225,7 @@ Status column = highest honest state per [STATUS.md](../STATUS.md) §1/§4.
 
 | Method | Description | Status |
 |---|---|---|
-| `daemon.handshake` | Baseline connection handshake | `TESTED` (`internal/ipc/server.go:48`); caller is test-only (§3.1) |
+| `daemon.handshake` | Mandatory connection handshake; every other method is refused until it succeeds | `TESTED` (`internal/ipc/server.go`); the client handshakes lazily (§3.1) |
 | `tools.list` | Lists installed capabilities plus read-only detected external host tools | Resolves (`cmd/litespm/main.go:1244`) |
 | `catalog.search` | Queries the local catalog index with filters and limits | Resolves (`:1286`); empty until `catalog sync` succeeds |
 | `catalog.get_item` | Retrieves full listing metadata and version history | Resolves (`:1340`) |

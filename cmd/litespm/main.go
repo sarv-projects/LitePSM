@@ -26,6 +26,7 @@ import (
 	"github.com/sarv-projects/litespm/internal/discover"
 	"github.com/sarv-projects/litespm/internal/doctor"
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/fslock"
 	"github.com/sarv-projects/litespm/internal/host"
 	"github.com/sarv-projects/litespm/internal/install"
 	"github.com/sarv-projects/litespm/internal/ipc"
@@ -80,6 +81,9 @@ func main() {
 
 	case "install", "add", "i":
 		runInstall(os.Args[2:])
+
+	case "approve":
+		runApprove(os.Args[2:])
 
 	case "catalog":
 		if len(os.Args) >= 3 {
@@ -910,13 +914,40 @@ func runInstall(args []string) {
 		os.Exit(1)
 	}
 
+	// Discovery-only rows are searchable metadata, not installable packages.
+	if !listing.IsInstallable() {
+		fmt.Fprintf(os.Stderr, "Install failed: %v\n", domain.ErrNotInstallable(listing.ID,
+			"this listing is discovery-only metadata with no proven artifact"))
+		os.Exit(1)
+	}
+
+	// The person typing this command is the authorization. It is still
+	// recorded: a plan plus an approval with origin human-cli, consumed before
+	// any write, and refunded if the install fails before its effect.
+	var grant *installGrant
+	if listing.Kind == domain.KindSkill || listing.Kind == domain.KindMCP {
+		g, gerr := authorizeHumanInstall(ctx, db, catClient, listing, flags.version, flags.scope)
+		if gerr != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: %v\n", gerr)
+			os.Exit(1)
+		}
+		grant = g
+		ctx = grant.context(ctx)
+	}
+	failInstall := func(err error) {
+		if grant != nil {
+			grant.refund(ctx, db)
+		}
+		fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	if listing.Kind == domain.KindSkill {
 		home, _ := os.UserHomeDir()
 		project, _ := os.Getwd()
 		outcome, err := installSkillFromListing(ctx, db, paths.DataRoot, project, home, listing, versionOrLatest(flags.version), flags.scope, nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
-			os.Exit(1)
+			failInstall(err)
 		}
 		printSkillInstall(outcome)
 		return
@@ -925,13 +956,11 @@ func runInstall(args []string) {
 	if listing.Kind == domain.KindMCP {
 		runtime, runtimeErr := catClient.RuntimeForListing(listing.ID, versionOrLatest(flags.version))
 		if runtimeErr != nil {
-			fmt.Fprintf(os.Stderr, "Install failed: %v\n", domain.ErrArtifactUnavailable(flags.listingID, runtimeErr.Error()))
-			os.Exit(1)
+			failInstall(domain.ErrArtifactUnavailable(flags.listingID, runtimeErr.Error()))
 		}
 		outcome, err := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(flags.version), flags.scope, flags.hosts, flags.force, runtime, flags.envNames)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
-			os.Exit(1)
+			failInstall(err)
 		}
 		printMCPInstall(outcome)
 		return
@@ -1476,7 +1505,7 @@ func runDaemonServe() {
 		fmt.Fprintf(os.Stderr, "Fatal: unable to acquire daemon single-instance lock: %v\n", err)
 		os.Exit(1)
 	}
-	defer releaseLock(lockFile, paths.DaemonLockPath())
+	defer releaseLock(lockFile)
 
 	db, err := state.Open(paths.StateDBPath())
 	if err != nil {
@@ -1769,28 +1798,47 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 			scope = domain.ScopeUser
 		}
 		if listing, lerr := catClient.GetListing(listingID); lerr == nil {
-			if listing.Kind == domain.KindSkill {
-				home, _ := os.UserHomeDir()
-				project, _ := os.Getwd()
-				outcome, ierr := installSkillFromListing(ctx, db, paths.DataRoot, project, home, listing, versionOrLatest(version), scope, nil)
-				if ierr != nil {
-					return nil, installRPCError(ierr)
-				}
-				result := map[string]any{
-					"installId":    outcome.InstallID,
-					"treeDigest":   outcome.ContentDigest,
-					"status":       string(domain.InstallActive),
-					"kind":         string(domain.KindSkill),
-					"skill":        outcome.SkillName,
-					"destinations": outcome.Destinations,
-					"sourceRef":    outcome.SourceRef,
-				}
-				if req.PlanID != "" {
-					result["planId"] = req.PlanID
-				}
-				return result, nil
+			// Discovery-only rows are searchable metadata, not installable.
+			if !listing.IsInstallable() {
+				return nil, installRPCError(domain.ErrNotInstallable(listingID,
+					"discovery-only listing: no authoritative manifest proved a version or launch line"))
 			}
-			if listing.Kind == domain.KindMCP {
+			// Skill and MCP installs are effectful: they need a recorded plan and
+			// a human-recorded approval bound to that plan's hash. The request
+			// reaching this handler is never itself the authorization.
+			if listing.Kind == domain.KindSkill || listing.Kind == domain.KindMCP {
+				grant, authErr := authorizeInstallExecute(ctx, db, req.ListingID, req.Version, req.Scope, req.PlanID, approvalID)
+				if authErr != nil {
+					return nil, authErr
+				}
+				ctx = grant.context(ctx)
+				listingID, version, scope = grant.ListingID, grant.Version, grant.Scope
+				installed := false
+				// A failure before the effect gives the approval back.
+				defer func() {
+					if !installed {
+						grant.refund(ctx, db)
+					}
+				}()
+				if listing.Kind == domain.KindSkill {
+					home, _ := os.UserHomeDir()
+					project, _ := os.Getwd()
+					outcome, ierr := installSkillFromListing(ctx, db, paths.DataRoot, project, home, listing, versionOrLatest(version), scope, nil)
+					if ierr != nil {
+						return nil, installRPCError(ierr)
+					}
+					installed = true
+					return map[string]any{
+						"installId":    outcome.InstallID,
+						"treeDigest":   outcome.ContentDigest,
+						"status":       string(domain.InstallActive),
+						"kind":         string(domain.KindSkill),
+						"skill":        outcome.SkillName,
+						"destinations": outcome.Destinations,
+						"sourceRef":    outcome.SourceRef,
+						"planId":       req.PlanID,
+					}, nil
+				}
 				runtime, rerr := catClient.RuntimeForListing(listingID, versionOrLatest(version))
 				if rerr != nil {
 					return nil, installRPCError(domain.ErrArtifactUnavailable(listingID, rerr.Error()))
@@ -1799,6 +1847,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 				if ierr != nil {
 					return nil, installRPCError(ierr)
 				}
+				installed = true
 				hosts := make([]map[string]any, 0, len(outcome.Hosts))
 				for _, h := range outcome.Hosts {
 					hosts = append(hosts, map[string]any{
@@ -1809,7 +1858,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 						"created":    h.Created,
 					})
 				}
-				result := map[string]any{
+				return map[string]any{
 					"installId":           outcome.InstallID,
 					"status":              string(domain.InstallActive),
 					"kind":                string(domain.KindMCP),
@@ -1818,11 +1867,8 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 					"args":                outcome.Entry.Args,
 					"hosts":               hosts,
 					"configuredTransport": outcome.ClaimedTransport,
-				}
-				if req.PlanID != "" {
-					result["planId"] = req.PlanID
-				}
-				return result, nil
+					"planId":              req.PlanID,
+				}, nil
 			}
 			return nil, installRPCError(domain.ErrArtifactUnavailable(listingID,
 				fmt.Sprintf("the %q install path is not wired yet: the published catalog carries no artifact locator for it", listing.Kind)))
@@ -2396,48 +2442,31 @@ func installRPCError(err error) *ipc.RPCError {
 		return &ipc.RPCError{Code: ipc.CodeUnauthorized, Message: err.Error()}
 	// A name collision is the caller's input being wrong, not an internal
 	// failure: the request named something that already exists.
-	case "LPSM-STATE-NOT-FOUND", "LPSM-DOMAIN-INVALID-ID", "LPSM-STATE-CONFLICT", "LPSM-NAME-CONFLICT", "LPSM-INSTALL-TARGET-UNAVAILABLE":
+	case "LPSM-STATE-NOT-FOUND", "LPSM-DOMAIN-INVALID-ID", "LPSM-STATE-CONFLICT", "LPSM-NAME-CONFLICT", "LPSM-INSTALL-TARGET-UNAVAILABLE", "LPSM-NOT-INSTALLABLE":
 		return &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
 	default:
 		return &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
 	}
 }
 
-func acquireLock(lockPath string) (*os.File, error) {
-	if data, err := os.ReadFile(lockPath); err == nil {
-		pidStr := string(data)
-		if pid, err := strconv.Atoi(pidStr); err == nil {
-			if processAlive(pid) {
-				return nil, fmt.Errorf("active daemon process running with PID %d", pid)
-			}
-		}
-		_ = os.Remove(lockPath)
-	}
-
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+// acquireLock takes the daemon's single-instance lock (E7). Creation is atomic
+// (internal/fslock publishes a complete lock file by hard link), a lock whose
+// recorded pid is dead is reclaimed under a guard, and a live holder is
+// refused with its pid.
+func acquireLock(lockPath string) (*fslock.Lock, error) {
+	l, err := fslock.TryAcquire(lockPath)
 	if err != nil {
+		var busy *fslock.BusyError
+		if errors.As(err, &busy) && busy.PID > 0 {
+			return nil, fmt.Errorf("active daemon process running with PID %d", busy.PID)
+		}
 		return nil, err
 	}
-	_, _ = file.WriteString(fmt.Sprintf("%d", os.Getpid()))
-	_ = file.Sync()
-	return file, nil
+	return l, nil
 }
 
-func releaseLock(f *os.File, lockPath string) {
-	if f != nil {
-		_ = f.Close()
-	}
-	_ = os.Remove(lockPath)
-}
-
-func processAlive(pid int) bool {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if runtime.GOOS != "windows" {
-		err = process.Signal(syscall.Signal(0))
-		return err == nil
-	}
-	return true
+// releaseLock drops the lock only if this process still owns it; a lock that
+// was reclaimed by another daemon is left untouched.
+func releaseLock(l *fslock.Lock) {
+	_ = l.Release()
 }

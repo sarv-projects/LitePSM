@@ -187,7 +187,7 @@ function ExploreContent() {
                 onChange={(e) => setVerifiedOnly(e.target.checked)}
                 className="h-3.5 w-3.5 accent-ink"
               />
-              Verified publishers only
+              Vendor-listed publishers only
             </label>
 
             {hasFilters && (

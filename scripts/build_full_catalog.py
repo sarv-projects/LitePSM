@@ -99,6 +99,40 @@ def clean_desc(text):
         text = text[1:].strip()
     return text.strip()
 
+# INSTALLABILITY / PROVENANCE
+# Every row carries an `installability` class (domain.Installability):
+#   discovery_only    heuristic ingestion (awesome-list markdown, the official
+#                     servers README). The upstream names a repository, not a
+#                     package: no authoritative manifest proved a version, a
+#                     package coordinate, or a launch line. These rows are
+#                     searchable metadata only; `version`, `command` and `args`
+#                     are null and the installer refuses them (LPSM-NOT-INSTALLABLE).
+#   metadata_verified a vendor's own marketplace manifest supplied the row.
+# An earlier revision stamped version "1.0.0" on every row and guessed a launch
+# line from an emoji ("npx -y {repo}-mcp", "uvx {repo}", "cargo run"). Those
+# commands named packages that mostly do not exist; installing one would have
+# executed an attacker-registerable npm/PyPI name. Nothing here guesses one now.
+#
+# `publisher.verified` is likewise no longer a hand-typed allowlist. It is true
+# only when the row was read from the publisher's own repository manifest
+# (`publisher.provenance == "vendor-manifest"`); awesome-list rows are
+# `provenance == "awesome-list-claim"` and never verified. Neither is a LiteSPM
+# security audit.
+PROV_VENDOR = "vendor-manifest"
+PROV_LIST = "awesome-list-claim"
+DISCOVERY_ONLY = "discovery_only"
+METADATA_VERIFIED = "metadata_verified"
+
+
+def publisher_obj(name, url, provenance):
+    return {
+        "name": name,
+        "verified": provenance == PROV_VENDOR,
+        "provenance": provenance,
+        "url": url,
+    }
+
+
 CATEGORY_MAPPING = {
     "databases": "Databases",
     "developer tools": "Developer Tools",
@@ -213,17 +247,21 @@ def build_full_catalog():
                         "kind": "mcp",
                         "summary": desc.strip(),
                         "category": official_cat,
-                        "publisher": {
-                            "name": "modelcontextprotocol",
-                            "verified": True,
-                            "url": "https://github.com/modelcontextprotocol/servers"
-                        },
-                        "transport": "stdio",
-                        "runtime": "typescript",
+                        "publisher": publisher_obj(
+                            "modelcontextprotocol",
+                            "https://github.com/modelcontextprotocol/servers",
+                            PROV_VENDOR,
+                        ),
+                        # The README links a source directory, not a published
+                        # package: the npm name was previously guessed from the
+                        # slug. No manifest proved one, so there is no launch line.
+                        "transport": None,
+                        "runtime": None,
                         "stars": None,
-                        "version": "1.0.0",
-                        "command": "npx",
-                        "args": ["-y", f"@modelcontextprotocol/server-{slug}"]
+                        "version": None,
+                        "command": None,
+                        "args": None,
+                        "installability": DISCOVERY_ONLY,
                     })
 
     # --- Parse punkpeye/awesome-mcp-servers ---
@@ -260,33 +298,16 @@ def build_full_catalog():
                 elif "🐹" in rest:
                     runtime = "go"
 
-                transport = "stdio"
+                # The cloud/house emoji is the list author's claim about where
+                # the server runs, not a transport. It is kept only as a hint
+                # and never as `transport` (see migrate_dataset_transport.py).
+                upstream_transport_hint = None
                 if "☁️" in rest and "🏠" not in rest:
-                    transport = "sse"
+                    upstream_transport_hint = "sse"
 
                 desc = clean_desc(rest)
                 if not desc:
                     desc = f"Model Context Protocol server for {label}."
-
-                verified = owner.lower() in [
-                    "modelcontextprotocol", "anthropic", "github", "cloudflare", "google",
-                    "microsoft", "aws", "docker", "sentry", "supabase", "neon", "redis",
-                    "mongodb", "elastic", "brave", "slackapi", "qdrant", "weaviate"
-                ]
-
-                # Command formulation
-                if runtime == "python":
-                    cmd = "uvx"
-                    args = [repo]
-                elif runtime == "go":
-                    cmd = "go"
-                    args = ["run", f"github.com/{owner}/{repo}"]
-                elif runtime == "rust":
-                    cmd = "cargo"
-                    args = ["run", "--release"]
-                else:
-                    cmd = "npx"
-                    args = ["-y", f"{repo}-mcp" if not repo.endswith("-mcp") else repo]
 
                 items.append({
                     "id": item_id,
@@ -295,18 +316,17 @@ def build_full_catalog():
                     "kind": "mcp",
                     "summary": desc,
                     "category": current_category,
-                    "publisher": {
-                        "name": owner,
-                        "verified": verified,
-                        "url": f"https://github.com/{owner}"
-                    },
-                    "transport": transport,
+                    "publisher": publisher_obj(owner, f"https://github.com/{owner}", PROV_LIST),
+                    # No manifest was read: transport, version, command and args
+                    # are unknown, not defaulted.
+                    "transport": None,
                     **({"upstreamTransportHint": upstream_transport_hint} if upstream_transport_hint else {}),
                     "runtime": runtime,
                     "stars": None,
-                    "version": "1.0.0",
-                    "command": cmd,
-                    "args": args
+                    "version": None,
+                    "command": None,
+                    "args": None,
+                    "installability": DISCOVERY_ONLY,
                 })
 
     # --- Parse VoltAgent/awesome-agent-skills ---
@@ -340,8 +360,6 @@ def build_full_catalog():
                 seen_ids.add(item_id)
 
 
-                verified = owner.lower() in ["anthropics", "openai", "google", "voltagent", "vercel", "cursor", "microsoft"]
-
                 items.append({
                     "id": item_id,
                     "name": slug_name.replace("-", " ").title(),
@@ -349,14 +367,11 @@ def build_full_catalog():
                     "kind": "skill",
                     "summary": desc,
                     "category": skill_category if skill_category != "General" else "Workflow & Playbooks",
-                    "publisher": {
-                        "name": owner,
-                        "verified": verified,
-                        "url": url
-                    },
+                    "publisher": publisher_obj(owner, url, PROV_LIST),
                     "stars": None,
-                    "version": "1.0.0",
-                    "skillSource": url
+                    "version": None,
+                    "skillSource": url,
+                    "installability": DISCOVERY_ONLY,
                 })
 
     # --- Parse vendor plugin marketplaces (registered in internal/source/sources.go) ---
@@ -498,12 +513,14 @@ def build_full_catalog():
                 "kind": "plugin",
                 "summary": desc or f"Plugin '{name}' from {src['publisher']}.",
                 "category": category,
-                "publisher": {"name": src["publisher"], "verified": True, "url": upstream},
+                "publisher": publisher_obj(src["publisher"], upstream, PROV_VENDOR),
                 # The vendor manifests publish no star counts. null means
                 # "not published"; 0 would read as a measured zero.
                 "stars": None,
-                "version": "1.0.0",
+                # Only a version the vendor manifest itself declares.
+                "version": p.get("version") if isinstance(p.get("version"), str) and p.get("version").strip() else None,
                 "compatibleHosts": src["hosts"],
+                "installability": METADATA_VERIFIED,
             }
             if install_hint:
                 row["installHint"] = install_hint
@@ -529,13 +546,11 @@ def build_full_catalog():
                         "kind": "skill",
                         "summary": f"Anthropic example skill '{skill}'.",
                         "category": "Agent Skills",
-                        "publisher": {
-                            "name": "anthropics",
-                            "verified": True,
-                            "url": f"{src['repo']}/tree/main/skills/{skill}",
-                        },
+                        "publisher": publisher_obj(
+                            "anthropics", f"{src['repo']}/tree/main/skills/{skill}", PROV_VENDOR),
                         "stars": None,
-                        "version": "1.0.0",
+                        "version": None,
+                        "installability": METADATA_VERIFIED,
                         "skillSource": f"{src['repo']}/tree/main/skills/{skill}",
                         "installHint": f"npx skills add {src['repo']} --skill {skill}",
                     })
@@ -573,7 +588,9 @@ def build_full_catalog():
     print(f"  Plugins: {plugin_count}")
 
     # Write output to web/data/catalog.json
-    out_path = os.path.join(os.path.dirname(__file__), "..", "web", "data", "catalog.json")
+    out_dir = os.environ.get("CATALOG_OUT_DIR") or os.path.join(os.path.dirname(__file__), "..", "web", "data")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "catalog.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(items, f, indent=2, ensure_ascii=False)
     
@@ -599,7 +616,7 @@ def build_full_catalog():
     import hashlib
     import datetime
 
-    catalog_path = os.path.join(os.path.dirname(__file__), "..", "web", "data", "catalog.json")
+    catalog_path = out_path
     with open(catalog_path, "rb") as f:
         digest = hashlib.sha256(f.read()).hexdigest()
 
@@ -612,10 +629,11 @@ def build_full_catalog():
         else datetime.datetime.now(datetime.timezone.utc)
     )
 
-    bundled_path = os.path.join(os.path.dirname(__file__), "..", "web", "data", "release.json")
+    bundled_path = os.path.join(out_dir, "release.json")
     stats = {}
-    if os.path.exists(bundled_path):
-        with open(bundled_path, "r", encoding="utf-8") as f:
+    seed_path = bundled_path if os.path.exists(bundled_path) else os.path.join(os.path.dirname(__file__), "..", "web", "data", "release.json")
+    if os.path.exists(seed_path):
+        with open(seed_path, "r", encoding="utf-8") as f:
             stats = json.load(f)
 
     stats.update({

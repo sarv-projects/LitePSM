@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
-	"github.com/sarv-projects/litespm/internal/policy"
 	"github.com/sarv-projects/litespm/internal/skills"
 	"github.com/sarv-projects/litespm/internal/state"
 )
@@ -62,6 +61,21 @@ func installSkillFromListing(
 ) (*skillInstallOutcome, error) {
 	if listing.Kind != domain.KindSkill {
 		return nil, fmt.Errorf("installSkillFromListing: %s is kind %q, not skill", listing.ID, listing.Kind)
+	}
+	// Installability gate (Phase 0.1/T3): discovery-only rows are searchable
+	// metadata with no verified source. Refuse rather than fetching an
+	// unproven URL.
+	if !listing.IsInstallable() {
+		return nil, domain.ErrNotInstallable(listing.ID,
+			"this listing is discovery-only metadata with no verified source; no installable artifact was proven")
+	}
+	// Authorization gate: a skill install writes into agent trees, so it runs
+	// only under a consumed approval for a recorded plan (see
+	// install_authz.go). Checked before any network fetch.
+	auth, authorized := installAuthorizationFrom(ctx)
+	if !authorized {
+		return nil, domain.ErrUnauthorized("skill.install",
+			"no recorded plan and approval authorize this install; run `litespm install` or have a human approve the plan with `litespm approve <plan-id>`")
 	}
 	sourceURL := strings.TrimSpace(listing.Source.URL)
 	if sourceURL == "" {
@@ -136,14 +150,19 @@ func installSkillFromListing(
 		return nil, fmt.Errorf("open skill ledger: %w", err)
 	}
 
-	// Consent model, identical to `litespm skills add`: this call is an
-	// explicit install request, which is the authorization for the write. The
-	// policy engine still runs, and a deny stops the install.
-	noted := false
-	checker := enginePolicyChecker(policy.NewEngine(nil, nil), func(_ context.Context, _ skills.PolicyRequest, detail string) bool {
-		if !noted {
-			fmt.Fprintf(os.Stderr, "Policy: skill writes require approval (%s); authorized by this install request.\n", detail)
-			noted = true
+	// The policy engine runs with its real tiers (capability grants from the
+	// state database, the user's deny rules). Its "ask" is answered only by the
+	// approval that was consumed for this install; there is no
+	// "the request itself is the authorization" shortcut.
+	engine, perr := newPolicyEngine(db, dataRoot)
+	if perr != nil {
+		return nil, fmt.Errorf("load policy: %w", perr)
+	}
+	checker := enginePolicyChecker(engine, func(askCtx context.Context, _ skills.PolicyRequest, detail string) bool {
+		got, ok := installAuthorizationFrom(askCtx)
+		if !ok || got.ApprovalID != auth.ApprovalID {
+			fmt.Fprintf(os.Stderr, "Policy: skill writes require approval (%s); no consumed approval for this install.\n", detail)
+			return false
 		}
 		return true
 	})
@@ -178,11 +197,17 @@ func installSkillFromListing(
 
 	now := time.Now().UTC()
 	outcome.InstallID = fmt.Sprintf("inst_%s_%s_%s", scope, safeInstallIDPart(listing.ID), shortDigest(outcome.ContentDigest))
+	installPath := ""
+	if len(outcome.Destinations) > 0 {
+		installPath = outcome.Destinations[0]
+	}
 	rec := &domain.InstallRecord{
 		InstallID:   outcome.InstallID,
 		ListingID:   listing.ID,
+		Kind:        domain.KindSkill,
 		Version:     version,
 		TreeDigest:  outcome.ContentDigest,
+		InstallPath: installPath,
 		Scope:       scope,
 		Status:      domain.InstallActive,
 		InstalledAt: now,
@@ -190,6 +215,24 @@ func installSkillFromListing(
 	}
 	if err := db.SaveInstall(ctx, rec); err != nil {
 		return nil, fmt.Errorf("record install %s: %w", outcome.InstallID, err)
+	}
+	// S2/S4: one component row with a distinct component id, plus one
+	// deployment-ledger row per written skill directory so removal is
+	// ledger-driven and symmetric.
+	if err := db.SaveInstallComponent(ctx, &domain.InstallComponentRecord{
+		InstallID:     outcome.InstallID,
+		Kind:          domain.ComponentSkill,
+		ComponentName: outcome.SkillName,
+		Path:          installPath,
+	}); err != nil {
+		return nil, fmt.Errorf("record the installed component: %w", err)
+	}
+	if orch := newLifecycleOrchestrator(db); orch != nil {
+		for _, dest := range outcome.Destinations {
+			_ = orch.RecordHostWrite(ctx, outcome.InstallID, listing.ID,
+				"skills-ledger", string(scope), dest, "skill-dir",
+				"skills."+outcome.SkillName, "")
+		}
 	}
 	return outcome, nil
 }

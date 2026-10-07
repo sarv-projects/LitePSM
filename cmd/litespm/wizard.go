@@ -241,11 +241,16 @@ func (w *Wizard) applyAgentIntegration(ctx context.Context, adapter host.HostAda
 	fmt.Fprintf(w.out, "\nGenerating integration plan for %s...\n", agent.DisplayName)
 	plan, err := adapter.PlanSetup(ctx, w.binary, backupDir)
 	if err != nil {
-		// If custom path provided, override target config path
-		plan = &host.HostChangePlan{
-			HostID:     agent.AdapterID,
-			ConfigPath: configPath,
-		}
+		// A plan that cannot be built must never be applied: fabricating an
+		// empty plan here used to truncate the user's config to zero bytes
+		// and report success. Fail instead and leave the file untouched.
+		return fmt.Errorf("cannot plan setup for %s (%s): %w", agent.DisplayName, configPath, err)
+	}
+	if plan == nil {
+		return fmt.Errorf("cannot plan setup for %s (%s): adapter returned no plan", agent.DisplayName, configPath)
+	}
+	if plan.ProposedContent == "" {
+		return fmt.Errorf("cannot plan setup for %s (%s): adapter proposed empty content, refusing to write", agent.DisplayName, configPath)
 	}
 	if plan.ConfigPath == "" {
 		plan.ConfigPath = configPath

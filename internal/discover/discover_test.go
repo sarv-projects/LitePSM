@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,9 +21,6 @@ import (
 // which is precisely the bug this fixture exists to catch.
 func buildStrictMCPServer(t *testing.T) string {
 	t.Helper()
-	if _, err := os.Stat(strictServerPath); err == nil {
-		return strictServerPath
-	}
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
 	program := `package main
@@ -78,7 +76,7 @@ func main() {
 				writeErr(out, r.ID, -32002, "server not initialized")
 				continue
 			}
-			write(out, r.ID, map[string]any{"content": []any{map[string]any{"type": "text", "text": "echoed: ok"}}})
+			write(out, r.ID, map[string]any{"content": []any{map[string]any{"type": "text", "text": "echoed: ok canary=[" + os.Getenv("LITESPM_DISCOVER_CANARY") + "] spec=[" + os.Getenv("LITESPM_DISCOVER_SPEC") + "]"}}})
 		default:
 			if r.ID != nil {
 				write(out, r.ID, map[string]any{})
@@ -112,15 +110,23 @@ func writeErr(out *bufio.Writer, id json.RawMessage, code int, msg string) {
 	if err := os.WriteFile(goMod, []byte("module strictsrv\n\ngo 1.22\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	build := exec.Command("go", "build", "-o", strictServerPath, ".")
+	// Hermetic: the binary lives under this test's TempDir (never a fixed
+	// shared path) and carries the platform executable suffix.
+	server := filepath.Join(dir, "strict-mcp-server"+exeSuffix())
+	build := exec.Command("go", "build", "-o", server, ".")
 	build.Dir = dir
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build the strict MCP server: %v\n%s", err, out)
 	}
-	return strictServerPath
+	return server
 }
 
-const strictServerPath = "/tmp/litespm-strict-mcp-test-server"
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
+}
 
 func openState(t *testing.T) *state.DB {
 	t.Helper()
@@ -204,7 +210,7 @@ func TestInvokeCallsTheDiscoveredTool(t *testing.T) {
 		t.Fatalf("Discover: %v", err)
 	}
 
-	result, err := Invoke(ctx, db, found.Capabilities[0].CapabilityID, json.RawMessage(`{"message":"hi"}`))
+	result, err := Invoke(ctx, db, found.Capabilities[0].CapabilityID, json.RawMessage(`{"message":"hi"}`), readOnlyOpt())
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -218,7 +224,7 @@ func TestInvokeCallsTheDiscoveredTool(t *testing.T) {
 
 func TestInvokeRefusesAnUnknownCapability(t *testing.T) {
 	db := openState(t)
-	if _, err := Invoke(context.Background(), db, "not-a-capability-id", nil); err == nil {
+	if _, err := Invoke(context.Background(), db, "not-a-capability-id", nil, readOnlyOpt()); err == nil {
 		t.Fatal("Invoke accepted a capability id that was never discovered")
 	}
 }
@@ -245,7 +251,7 @@ func TestInvokeRefusesAServerWithNoCommandRecorded(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveCapability: %v", err)
 	}
-	_, err := Invoke(ctx, db, string(domain.NewCapabilityID(domain.InstallID(installID), "broken", "echo")), nil)
+	_, err := Invoke(ctx, db, string(domain.NewCapabilityID(domain.InstallID(installID), "broken", "echo")), nil, readOnlyOpt())
 	if err == nil {
 		t.Fatal("Invoke ran a provider with no command")
 	}
@@ -264,5 +270,27 @@ func TestDiscoverRefusesANonStdioTransportRatherThanGuessing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not supported yet") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestStrictServerBuildIsHermeticAndRunnable runs on every OS (no Skip): the
+// fixture binary must live under this test's TempDir (never a fixed /tmp path)
+// and carry the platform executable suffix, or Windows cannot spawn it.
+func TestStrictServerBuildIsHermeticAndRunnable(t *testing.T) {
+	server := buildStrictMCPServer(t)
+	if filepath.Base(filepath.Dir(server)) == filepath.Base(os.TempDir()) {
+		t.Errorf("strict server %q sits directly in the shared temp dir", server)
+	}
+	if !strings.HasPrefix(filepath.Base(server), "strict-mcp-server") {
+		t.Errorf("unexpected fixture name %q", server)
+	}
+	if runtime.GOOS == "windows" && !strings.HasSuffix(server, ".exe") {
+		t.Errorf("windows server binary must end in .exe, got %q", server)
+	}
+	if runtime.GOOS != "windows" && strings.HasSuffix(server, ".exe") {
+		t.Errorf("unix server binary must not end in .exe, got %q", server)
+	}
+	if _, err := os.Stat(server); err != nil {
+		t.Fatalf("built server missing: %v", err)
 	}
 }

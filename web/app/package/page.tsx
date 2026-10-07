@@ -540,12 +540,12 @@ function PackageContent() {
                 </dd>
               </div>
               <div>
-                <dt>Verified</dt>
+                <dt>Publisher listing</dt>
                 <dd>
                   {item.publisher?.verified ? (
                     <VerifiedMark glyph />
                   ) : (
-                    <span className="absent">not marked verified</span>
+                    <span className="absent">third-party list entry</span>
                   )}
                 </dd>
               </div>
