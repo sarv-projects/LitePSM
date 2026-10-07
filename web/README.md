@@ -35,9 +35,14 @@ Only `npm ci` + `npx tsc --noEmit` + `npm run build` are wired into CI
 ```text
 web/
   app/            Next.js App Router pages: /  explore/  agents/  categories/  trending/  package/
+                  Each route is a Server Component (`page.tsx`) that reads `data/catalog.json`
+                  at build time, a thin client wrapper (`*Route.tsx`) that owns the `next/dynamic`
+                  import, and the view (`*View.tsx`) that hydrates from props.
+                  `app/data/catalog.json/route.ts` exports the rows as `/data/catalog.json`
+                  (`force-static`), byte-for-byte from `data/catalog.json`.
   components/     catalog/  hero/  home/  layout/  navigation/  ui/
-  lib/            catalog.ts  hosts.ts  telemetry.ts  search.worker.ts  useCatalogSearch.ts
-                  site.ts  clipboard.ts  format.ts
+  lib/            catalog.ts  catalogData.ts  hosts.ts  telemetry.ts  search.worker.ts
+                  useCatalogSearch.ts  site.ts  clipboard.ts  format.ts
   data/           catalog.json · hosts.json · skill-targets.json · release.json   (build inputs)
   public/v1/      current.json                                                     (runtime fetch)
   out/            static export produced by `npm run build` (gitignored)
@@ -49,11 +54,12 @@ web/
 
 | File | Rows / shape | Read by | Produced by |
 |---|---|---|---|
-| `data/catalog.json` | **5,814** rows (`id`, `name`, `slug`, `kind`, `summary`, `category`, `publisher`, `transport`, `runtime`, `stars`, `version`, `command`, `args`, …) | `lib/catalog.ts`, `lib/search.worker.ts` (MiniSearch index in a Web Worker) | `scripts/build_full_catalog.py` |
+| `data/catalog.json` | **5,814** rows (`id`, `name`, `slug`, `kind`, `summary`, `category`, `publisher`, `transport`, `runtime`, `stars`, `version`, `command`, `args`, …) | **Build time only:** the `page.tsx` Server Components derive counts, facets, section rows and one page of grid rows from it and serialize *those* into the HTML. The rows themselves are never imported by client code — that is what keeps ~3.8 MB out of every JS chunk. | `scripts/build_full_catalog.py` |
+| `/data/catalog.json` | the same bytes, exported by `app/data/catalog.json/route.ts` | fetched at **runtime**, lazily — on the first search, filter or entry lookup (`lib/catalogData.ts`), never on a passive visit. Versioned by `data/release.json`'s `datasetDigest` (`?v=…`) so a CDN cannot answer a newer build with stale rows. | `next build` (route handler reads `data/catalog.json` and writes `out/data/catalog.json`) |
 | `data/hosts.json` | **50** bridge adapters | `lib/hosts.ts` | `scripts/gen_hosts_ts.go` from `internal/host` |
 | `data/skill-targets.json` | **77** skill install targets | `lib/hosts.ts` | `scripts/gen_hosts_ts.go` from `internal/skills` |
 | `data/release.json` | merged stats bundle: dataset stats (`itemCount`, per-kind counts, `hostCompatibility`, `datasetDigest`) + release identity (`releaseId`, `sequence`, `manifestDigest`, `createdAt`) | imported at **build time** (`lib/telemetry.ts`) | **Single writer per key:** `scripts/build_full_catalog.py` merges the dataset stats, `litespm catalog build` stamps the release identity |
-| `public/v1/current.json` | released pointer, `releaseId rel-2026-10-05-01`, `sequence 143`, `itemCount 5814`, `manifestDigest` over `manifest.json` | fetched at **runtime**, `cache: "no-store"` (`lib/telemetry.ts:110`) — the app's **only** network request | `go run ./cmd/litespm catalog build --out web/public` (copied through by `scripts/deploy-pages.sh`, which re-materializes it byte-for-byte) |
+| `public/v1/current.json` | released pointer, `releaseId rel-2026-10-05-01`, `sequence 143`, `itemCount 5814`, `manifestDigest` over `manifest.json` | fetched at **runtime**, `cache: "no-store"` (`lib/telemetry.ts`) — the release-liveness check the header reports on | `go run ./cmd/litespm catalog build --out web/public` (copied through by `scripts/deploy-pages.sh`, which re-materializes it byte-for-byte) |
 
 `stars` is `null` on every row by policy: no upstream source exposes a machine-readable popularity
 figure, so none is published (`ARCH/26` §12.4).
@@ -82,8 +88,9 @@ adjudicated** ([STATUS.md](../STATUS.md) §2).
 
 ## 5. Output & deployment
 
-- `npm run build` → **`web/out/`** (≈4.7 MB: `index.html`, `_next/`, `explore/`, `agents/`,
-  `categories/`, `trending/`, `package/`, `404.html`, `v1/`). Gitignored. The exported `v1/`
+- `npm run build` → **`web/out/`** (`index.html` per route, `_next/`, `404.html`, `data/catalog.json`,
+  and `v1/` copied from `public/v1` — ≈28 MB today, almost all of it the release tree). Gitignored.
+  The exported `v1/`
   carries whatever the last local `catalog build` left in `public/v1/` — the deploy script drops it
   and materializes the released tree instead.
 - `scripts/deploy-pages.sh` → **`pages-dist/`** = `out/` + `_headers` + the byte-for-byte
@@ -107,8 +114,7 @@ The site is public static content. Binding rules:
    could read them.
 2. The only data shipped is the JSON in §3 — public catalog metadata and host paths written as `~`
    or `<project>` placeholders by `gen_hosts_ts.go`.
-3. The app performs **one** network request, same-origin `/v1/current.json`. There is no analytics
-   beacon, no cookie, no `localStorage`, no third-party script.
+3. The app performs **two** same-origin requests, both public static files and no cookies: `/v1/current.json` on load (release liveness), and `/data/catalog.json` **only when a reader searches, filters, sorts, pages or opens an entry** — a passive first visit fetches neither the rows nor any script containing them. Search, the MiniSearch worker and the index all run in the browser; there is no analytics beacon, no `localStorage`, no third-party script.
 4. `scripts/deploy-pages.sh` enforces a file-type allowlist on the staged tree and exits non-zero
    on `.env*`, `.pem`, `.key`, `.db`, `.sqlite*`, `.go` or `.ts` files — but it is manual, so do not
    treat that as CI enforcement.

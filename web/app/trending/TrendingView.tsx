@@ -1,22 +1,28 @@
 "use client";
 
-import React, { useMemo } from "react";
 import Link from "next/link";
 import { Header } from "../../components/navigation/Header";
 import { SiteFooter } from "../../components/layout/SiteFooter";
-import { Listing } from "../../lib/telemetry";
-import {
-  KIND_ORDER,
-  agentFacets,
-  categoryIndex,
-  kindLabel,
-  kindBreakdown,
-  publisherFacets,
-} from "../../lib/catalog";
+import { kindLabel } from "../../lib/catalog";
 import { formatCount } from "../../lib/format";
-import catalogData from "../../data/catalog.json";
 
-const items = catalogData as unknown as Listing[];
+/** One board's worth of precomputed rows — see `app/trending/page.tsx`. */
+export interface TrendingBoards {
+  categories: Array<{ label: string; count: number }>;
+  hosts: Array<{ label: string; count: number }>;
+  publishers: Array<{ label: string; count: number }>;
+  kinds: Array<{ label: string; count: number; kind: "mcp" | "skill" | "plugin" }>;
+}
+
+/**
+ * Coverage boards are counts, not rows: `app/trending/page.tsx` computes them
+ * from the full row set at build time, so this route hydrates from props and
+ * never requests the dataset.
+ */
+export interface TrendingViewProps {
+  total: number;
+  boards: TrendingBoards;
+}
 
 /**
  * A horizontal proportion bar. Used for every board on this page so the reader
@@ -104,25 +110,7 @@ function CountBoard({
   );
 }
 
-export default function CoveragePage() {
-  const boards = useMemo(() => {
-    const categories = categoryIndex(items)
-      .slice(0, 15)
-      .map((c) => ({ label: c.name, count: c.count }));
-
-    const hosts = agentFacets(items)
-      .slice(0, 15)
-      .map((a) => ({ label: a.name, count: a.count }));
-
-    const publishers = publisherFacets(items, 15).map((p) => ({ label: p.name, count: p.count }));
-
-    const kinds = kindBreakdown(items)
-      .map((k) => ({ label: kindLabel(k.kind), count: k.count, kind: k.kind }))
-      .sort((a, b) => b.count - a.count);
-
-    return { categories, hosts, publishers, kinds };
-  }, []);
-
+export default function CoveragePage({ total, boards }: TrendingViewProps) {
   return (
     <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
       <Header />
@@ -131,7 +119,7 @@ export default function CoveragePage() {
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Coverage</h1>
           <p className="t-mono text-[11px] text-ink-3">
-            {formatCount(items.length)} entries · counted, not estimated
+            {formatCount(total)} entries · counted, not estimated
           </p>
         </div>
 

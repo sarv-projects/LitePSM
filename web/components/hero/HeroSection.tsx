@@ -6,12 +6,14 @@ import { copyText } from "../../lib/clipboard";
 import { TelemetryState } from "../../lib/telemetry";
 import { formatCount, shortDigest } from "../../lib/format";
 import { ProportionBar } from "./ProportionBar";
-import { kindBreakdown } from "../../lib/catalog";
 import { Listing } from "../../lib/telemetry";
 
 interface HeroSectionProps {
   telemetry: TelemetryState;
-  items: Listing[];
+  /** Row count in this build, computed server-side and passed as a prop. */
+  total: number;
+  /** Kind shares for the proportion bar — `kindBreakdown(rows)` at build time. */
+  breakdown: Array<{ kind: Listing["kind"]; count: number; share: number }>;
   hostCount: number;
 }
 
@@ -26,11 +28,11 @@ function relativeAge(iso: string | undefined): string | null {
   return new Date(then).toISOString().slice(0, 10);
 }
 
-export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
+export function HeroSection({ telemetry, total, breakdown, hostCount }: HeroSectionProps) {
   const { data, status } = telemetry;
   const [copied, setCopied] = React.useState(false);
 
-  const parts = React.useMemo(() => kindBreakdown(items), [items]);
+  const parts = breakdown;
   // `relativeAge` reads Date.now(), so computing it during render would give the
   // prerendered HTML and the client's first render two different answers
   // ("yesterday" vs "today") and trip a hydration mismatch. It is therefore
@@ -52,7 +54,7 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
     <section className="shell pt-10 pb-8 md:pt-14">
       <div className="border-l-2 border-ink pl-5 md:pl-7">
         <h1 className="t-cond max-w-2xl text-[30px] font-semibold leading-[1.12] tracking-tight text-ink sm:text-[38px]">
-          {formatCount(items.length)} capabilities, one bridge per agent
+          {formatCount(total)} capabilities, one bridge per agent
         </h1>
         <p className="mt-3 max-w-prose text-[14px] leading-relaxed text-ink-2 sm:text-[15px]">
           An index of MCP servers, portable agent skills, and plugins. LiteSPM injects a single
@@ -75,10 +77,10 @@ export function HeroSection({ telemetry, items, hostCount }: HeroSectionProps) {
             this build. Never rendered while loading: "0 capabilities" would be
             a false number, which is the one thing this site must not show.
           */}
-          {status === "ready" && data.counts.all > 0 && data.counts.all !== items.length && (
+          {status === "ready" && data.counts.all > 0 && data.counts.all !== total && (
             <span>
               <span className="t-mono t-tabular text-ink">{formatCount(data.counts.all)}</span> in the release
-              manifest, {formatCount(items.length - data.counts.all)} not yet in this build
+              manifest, {formatCount(total - data.counts.all)} not yet in this build
             </span>
           )}
         </div>

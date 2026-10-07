@@ -44,6 +44,14 @@ export interface Listing {
   schemaFingerprint?: string;
   tools?: Array<{ name: string; description: string; inputSchema?: unknown }>;
   effects?: Array<{ effect: string; declaredBy: string }>;
+  /**
+   * Derived resolution key for `/package/?slug=<key>` — never present in the
+   * wire format. `slug` is not unique, so the key is the slug only where it is
+   * unambiguous and the id otherwise (`withLinkKeys` in lib/catalog). Rows are
+   * keyed here rather than re-deriving global slug counts in every component,
+   * so a row carries its own link target across the server → client boundary.
+   */
+  linkKey?: string;
 }
 
 export interface Telemetry {
@@ -87,18 +95,6 @@ function bundledTelemetry(): Telemetry {
   };
 }
 
-function deriveCounts(listings: Listing[]) {
-  let mcp = 0;
-  let skill = 0;
-  let plugin = 0;
-  for (const l of listings) {
-    if (l.kind === "mcp") mcp += 1;
-    else if (l.kind === "skill") skill += 1;
-    else if (l.kind === "plugin") plugin += 1;
-  }
-  return { all: listings.length, mcp, skill, plugin };
-}
-
 /**
  * Read `/v1/current.json` and report where the numbers on screen came from.
  *
@@ -108,9 +104,20 @@ function deriveCounts(listings: Listing[]) {
  * that has checked nothing — and it falls back to `offline`, with the bundled
  * snapshot, when the request fails. The `data` payload is the bundled manifest
  * from the first render either way, so the counts are never a zero placeholder.
+ *
+ * `counts` are the per-kind totals the page already holds — they arrive as
+ * props from the prerender rather than as a full row set, so this hook does not
+ * need (and must not be given) the 5,825-row catalog just to compare two
+ * numbers. Deps are the primitives, so a fresh object identity per render
+ * cannot re-trigger the fetch.
  */
-export function useTelemetry(listings: Listing[]): TelemetryState {
-  const derived = useMemo(() => deriveCounts(listings), [listings]);
+export function useTelemetry(counts: Telemetry["counts"]): TelemetryState {
+  const { all: allCount, mcp: mcpCount, skill: skillCount, plugin: pluginCount } = counts;
+  const derived = useMemo(
+    () => ({ all: allCount, mcp: mcpCount, skill: skillCount, plugin: pluginCount }),
+    [allCount, mcpCount, skillCount, pluginCount]
+  );
+
   // Seed from the bundled manifest so server-rendered html carries real facts,
   // but with an unverified status: the numbers are known, the liveness is not.
   const [state, setState] = useState<TelemetryState>(() => ({
@@ -183,17 +190,4 @@ export function matchesQuery(item: Listing, q: string): boolean {
     .join(" ")
     .toLowerCase();
   return query.split(/\s+/).every((token) => haystack.includes(token));
-}
-
-/** Distinct categories with counts, ordered by frequency (then name). */
-export function categoryFacets(listings: Listing[], limit = 16): Array<{ name: string; count: number }> {
-  const counts = new Map<string, number>();
-  for (const l of listings) {
-    const key = l.category?.trim();
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return Array.from(counts, ([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-    .slice(0, limit);
 }

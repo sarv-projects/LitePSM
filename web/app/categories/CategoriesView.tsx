@@ -1,20 +1,24 @@
 "use client";
 
-import React, { useMemo } from "react";
 import Link from "next/link";
 import { Header } from "../../components/navigation/Header";
 import { SiteFooter } from "../../components/layout/SiteFooter";
-import { Listing } from "../../lib/telemetry";
-import { categoryIndex, kindLabel } from "../../lib/catalog";
+import { CategoryFacet, kindLabel } from "../../lib/catalog";
 import { formatCount } from "../../lib/format";
-import catalogData from "../../data/catalog.json";
-
-const items = catalogData as unknown as Listing[];
 
 const KIND_ORDER = ["mcp", "skill", "plugin"] as const;
 
-export default function CategoriesPage() {
-  const categories = useMemo(() => categoryIndex(items), []);
+/**
+ * The category index is pure aggregation, so `app/categories/page.tsx` derives
+ * it from the full row set at build time and passes it in. Nothing here needs
+ * the rows themselves: this route never fetches the dataset at all.
+ */
+export interface CategoriesViewProps {
+  total: number;
+  categories: CategoryFacet[];
+}
+
+export default function CategoriesPage({ total, categories }: CategoriesViewProps) {
 
   return (
     <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
@@ -24,7 +28,7 @@ export default function CategoriesPage() {
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Categories</h1>
           <p className="t-mono text-[11px] text-ink-3">
-            {formatCount(categories.length)} categories across {formatCount(items.length)} entries
+            {formatCount(categories.length)} categories across {formatCount(total)} entries
           </p>
         </div>
 

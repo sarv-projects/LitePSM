@@ -31,9 +31,11 @@ const FAQS: Array<{ q: string; a: React.ReactNode }> = [
     q: "Do my API keys leave my machine?",
     a: (
       <>
-        No. Credentials are held in your operating system's native vault. This site is a static export — it
-        fetches exactly one file, <code className="t-mono">/v1/current.json</code>, for release metadata, and
-        runs search entirely in your browser.
+        No. Credentials are held in your operating system&rsquo;s native vault. This site is a static
+        export — it fetches the release manifest <code className="t-mono">/v1/current.json</code>, and
+        the catalog rows <code className="t-mono">/data/catalog.json</code> only once you search,
+        filter or open an entry. Both are same-origin public files, and search runs entirely in your
+        browser.
       </>
     ),
   },
@@ -41,9 +43,11 @@ const FAQS: Array<{ q: string; a: React.ReactNode }> = [
     q: "Is this page's data live?",
     a: (
       <>
-        The listings are a fixed catalog snapshot baked into the build, so every listing is pre-rendered and
-        reachable without JavaScript. Only the release manifest is fetched at runtime, and the header states
-        plainly whether that fetch succeeded.
+        The listings are a fixed catalog snapshot baked into the build, so every listing is
+        pre-rendered and reachable without JavaScript. Only the release manifest is fetched on load —
+        and the header states plainly whether that fetch succeeded. The rows themselves arrive on
+        demand, never as a script on first paint, which is why this page stays a few hundred
+        kilobytes instead of megabytes.
       </>
     ),
   },

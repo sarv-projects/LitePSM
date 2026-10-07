@@ -10,17 +10,47 @@ import { SectionRow } from "../components/catalog/SectionRow";
 import { ClientGrid } from "../components/home/ClientGrid";
 import { FaqSection } from "../components/home/FaqSection";
 import { SiteFooter } from "../components/layout/SiteFooter";
-import { Listing, categoryFacets, useTelemetry } from "../lib/telemetry";
+import { Listing, useTelemetry } from "../lib/telemetry";
 import { useCatalogSearch } from "../lib/useCatalogSearch";
-import { hostUniverse, verifiedItems } from "../lib/catalog";
+import { useCatalog } from "../lib/catalogData";
+import {
+  categoryFacets,
+  deriveKindCounts,
+  homeSections,
+  hostUniverse,
+  kindBreakdown,
+} from "../lib/catalog";
 import { formatCount } from "../lib/format";
-import catalogData from "../data/catalog.json";
 
-const SECTION_SIZE = 8;
+/**
+ * Every field here is computed by `app/page.tsx` — a Server Component — from
+ * `data/catalog.json` at build time, and serialized into the prerendered HTML.
+ * That is what keeps the dataset out of this module: nothing here imports the
+ * rows, so hydration runs off the props alone and the reader sees real content
+ * (counts, facets, four sections, one page of rows) before any dataset request
+ * happens. The full rows arrive later, through `useCatalog`, only when a
+ * search, a filter or "Show more" needs them — and when they do, they are
+ * re-derived with the same helpers the build used, so no number moves.
+ */
+export interface HomeViewProps {
+  total: number;
+  kindCounts: { all: number; mcp: number; skill: number; plugin: number };
+  hostCount: number;
+  breakdown: Array<{ kind: Listing["kind"]; count: number; share: number }>;
+  facets: Array<{ name: string; count: number }>;
+  sections: {
+    official: Listing[];
+    skills: Listing[];
+    plugins: Listing[];
+    tail: Listing[];
+  };
+  /** First page of the grid, in index order — the rows the HTML already has. */
+  gridRows: Listing[];
+}
 
-export default function Home() {
-  const items = catalogData as unknown as Listing[];
-  const telemetry = useTelemetry(items);
+export default function Home(props: HomeViewProps) {
+  const { status, items: full, request } = useCatalog();
+  const telemetry = useTelemetry(props.kindCounts);
 
   const [activeTab, setActiveTab] = useState("all");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -28,53 +58,54 @@ export default function Home() {
 
   const deferredQuery = useDeferredValue(searchQuery);
 
-  const facets = useMemo(() => categoryFacets(items, 18), [items]);
-  const hostCount = useMemo(() => hostUniverse(items).length, [items]);
+  const live = useMemo(() => {
+    if (!full) return null;
+    return {
+      total: full.length,
+      kindCounts: deriveKindCounts(full),
+      hostCount: hostUniverse(full).length,
+      breakdown: kindBreakdown(full),
+      facets: categoryFacets(full, 18),
+      sections: homeSections(full),
+    };
+  }, [full]);
 
-  // Kind tabs count what is actually browsable in this build, not what the
-  // manifest claims. A tab reading "5,185" above a list of 5,814 rows would be
-  // a contradiction the reader has to resolve.
-  const kindCounts = useMemo(
-    () => ({
-      all: items.length,
-      mcp: items.filter((i) => i.kind === "mcp").length,
-      skill: items.filter((i) => i.kind === "skill").length,
-      plugin: items.filter((i) => i.kind === "plugin").length,
-    }),
-    [items]
-  );
+  const total = live ? live.total : props.total;
+  const kindCounts = live ? live.kindCounts : props.kindCounts;
+  const hostCount = live ? live.hostCount : props.hostCount;
+  const breakdown = live ? live.breakdown : props.breakdown;
+  const facets = live ? live.facets : props.facets;
+  const sections = live ? live.sections : props.sections;
 
-  const sections = useMemo(() => {
-    // No popularity ordering exists: the catalog publishes no star, download or
-    // install figures. Each section is alphabetical, which is a fact.
-    const byName = (list: Listing[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
-
-    const official = byName(verifiedItems(items.filter((i) => i.kind === "mcp"))).slice(0, SECTION_SIZE);
-    const skills = byName(items.filter((i) => i.kind === "skill")).slice(0, SECTION_SIZE);
-    const plugins = byName(items.filter((i) => i.kind === "plugin")).slice(0, SECTION_SIZE);
-    // The dataset carries no publish timestamps, so "new" is not derivable.
-    // The tail of the manifest is the only ordering fact that exists.
-    const tail = items.slice(-SECTION_SIZE).reverse();
-
-    return { official, skills, plugins, tail };
-  }, [items]);
-
-  const { results: filteredItems, searching } = useCatalogSearch(items, deferredQuery, {
+  const { results: filteredItems, searching } = useCatalogSearch(full ?? [], deferredQuery, {
     kind: activeTab === "all" ? null : activeTab,
     category: selectedCategory === "all" ? null : selectedCategory,
   });
 
+  const activeFilters =
+    activeTab !== "all" || selectedCategory !== "all" || deferredQuery.trim() !== "";
+
   const isFiltering = searching || deferredQuery !== searchQuery;
-  const browsing = activeTab === "all" && selectedCategory === "all" && deferredQuery.trim() === "";
+  const browsing = !activeFilters;
+  // Until the rows land the grid shows exactly what the HTML already has; a
+  // filter set before then has nothing to filter, so it shows the skeleton
+  // (never the "Nothing matches" state — nothing has been matched against yet).
+  const gridItems = full ? filteredItems : activeFilters ? [] : props.gridRows;
 
   const scrollToCatalog = useCallback(() => {
     document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   const handleTabChange = (tab: string) => {
+    request();
     setActiveTab(tab);
     setSelectedCategory("all");
     scrollToCatalog();
+  };
+
+  const handleCategory = (cat: string) => {
+    request();
+    setSelectedCategory(cat);
   };
 
   const handleClearFilters = () => {
@@ -88,23 +119,26 @@ export default function Home() {
       <Header activeTab={activeTab} setActiveTab={handleTabChange} counts={kindCounts} />
 
       <main id="main" className="flex-1">
-        <HeroSection telemetry={telemetry} items={items} hostCount={hostCount} />
+        <HeroSection telemetry={telemetry} total={total} breakdown={breakdown} hostCount={hostCount} />
 
         <div className="shell pb-6">
           <SearchBar
             query={searchQuery}
-            setQuery={setSearchQuery}
-            totalMatches={deferredQuery ? filteredItems.length : undefined}
-            totalCount={items.length}
+            setQuery={(q) => {
+              request();
+              setSearchQuery(q);
+            }}
+            totalMatches={deferredQuery && full ? filteredItems.length : undefined}
+            totalCount={total}
             className="max-w-2xl"
           />
         </div>
 
         <CategoryRail
           selectedCategory={selectedCategory}
-          onSelectCategory={setSelectedCategory}
+          onSelectCategory={handleCategory}
           facets={facets}
-          total={items.length}
+          total={total}
         />
 
         {browsing && (
@@ -147,9 +181,14 @@ export default function Home() {
 
         <div id="catalog" className="scroll-mt-24">
           <ExtensionGrid
-            items={filteredItems}
+            items={gridItems}
             query={deferredQuery}
+            count={full ? filteredItems.length : total}
             loading={isFiltering}
+            awaiting={status === "loading"}
+            error={status === "error"}
+            onRetry={request}
+            onShowMore={request}
             onClearFilters={handleClearFilters}
             hostCount={hostCount}
           />

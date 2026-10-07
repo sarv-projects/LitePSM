@@ -6,12 +6,18 @@ import { Header } from "../../components/navigation/Header";
 import { SearchBar } from "../../components/navigation/SearchBar";
 import { ExtensionGrid } from "../../components/catalog/ExtensionGrid";
 import { SiteFooter } from "../../components/layout/SiteFooter";
-import { Listing, categoryFacets } from "../../lib/telemetry";
+import { Listing } from "../../lib/telemetry";
 import { useCatalogSearch } from "../../lib/useCatalogSearch";
-import { agentFacets, hostUniverse, kindLabel, matchesHost, sortListings, SortMode } from "../../lib/catalog";
-import catalogData from "../../data/catalog.json";
-
-const items = catalogData as unknown as Listing[];
+import { useCatalog } from "../../lib/catalogData";
+import {
+  agentFacets,
+  categoryFacets,
+  hostUniverse,
+  kindLabel,
+  matchesHost,
+  sortListings,
+  SortMode,
+} from "../../lib/catalog";
 
 const KINDS = ["all", "mcp", "skill", "plugin"] as const;
 const SORTS: Array<{ id: SortMode; label: string }> = [
@@ -24,13 +30,32 @@ const KINDS_SET = new Set<string>(["all", "mcp", "skill", "plugin"]);
 const SORTS_SET = new Set<string>(["index", "name", "publisher"]);
 
 /**
+ * Facets and the first page of rows are computed at build time by
+ * `app/explore/page.tsx` (a Server Component) and arrive as props, so the
+ * prerendered HTML — and hydration — carry no dataset. The full rows are
+ * fetched only when a filter, a sort or a search is actually used; until then
+ * the page is complete, not a skeleton waiting on 3.8 MB.
+ */
+export interface ExploreViewProps {
+  total: number;
+  categories: Array<{ name: string; count: number }>;
+  agents: Array<{ name: string; slug: string; count: number }>;
+  hostCount: number;
+  gridRows: Listing[];
+}
+
+/**
  * Filters are seeded from the query string after mount rather than through
  * `useSearchParams`. Reading search params during render would opt this route
  * out of static prerendering, and the whole point of the build is that the
  * catalog ships as HTML. The trade-off is one frame of the unfiltered state on
  * a deep link, which is cheaper than an empty page.
+ *
+ * A deep link that carries a filter is also the moment the full row set is
+ * requested: the reader asked for a filtered view, so the fetch is not idle
+ * speculation.
  */
-function useQueryFilters() {
+function useQueryFilters(request: () => void) {
   const [filters, setFilters] = useState({
     query: "",
     kind: "all",
@@ -43,37 +68,83 @@ function useQueryFilters() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const sort = p.get("sort") ?? "";
-    setFilters({
+    const next = {
       query: p.get("q") ?? "",
       kind: KINDS_SET.has(p.get("kind") ?? "") ? (p.get("kind") as string) : "all",
-      category: p.get("category") ?? "all",
-      agent: p.get("host") ?? "all",
+      category: p.get("category") ?? "",
+      agent: p.get("host") ?? "",
       verifiedOnly: p.get("verified") === "1",
       sort: SORTS_SET.has(sort) ? (sort as SortMode) : "index",
+    };
+    const seeded =
+      next.query !== "" ||
+      next.kind !== "all" ||
+      next.category !== "" ||
+      next.agent !== "" ||
+      next.verifiedOnly ||
+      next.sort !== "index";
+    setFilters({
+      query: next.query,
+      kind: next.kind,
+      category: next.category || "all",
+      agent: next.agent || "all",
+      verifiedOnly: next.verifiedOnly,
+      sort: next.sort,
     });
-  }, []);
+    if (seeded) request();
+  }, [request]);
 
   return [filters, setFilters] as const;
 }
 
-function ExploreContent() {
-  const [filters, setFilters] = useQueryFilters();
+function ExploreContent(props: ExploreViewProps) {
+  const { status, items: full, request } = useCatalog();
+  const [filters, setFilters] = useQueryFilters(request);
   const { query, kind, category, agent, verifiedOnly, sort } = filters;
 
-  const setQuery = (q: string) => setFilters((f) => ({ ...f, query: q }));
-  const setKind = (k: string) => setFilters((f) => ({ ...f, kind: k }));
-  const setCategory = (c: string) => setFilters((f) => ({ ...f, category: c }));
-  const setAgent = (a: string) => setFilters((f) => ({ ...f, agent: a }));
-  const setVerifiedOnly = (v: boolean) => setFilters((f) => ({ ...f, verifiedOnly: v }));
-  const setSort = (s: SortMode) => setFilters((f) => ({ ...f, sort: s }));
+  const setQuery = (q: string) => {
+    request();
+    setFilters((f) => ({ ...f, query: q }));
+  };
+  const setKind = (k: string) => {
+    request();
+    setFilters((f) => ({ ...f, kind: k }));
+  };
+  const setCategory = (c: string) => {
+    request();
+    setFilters((f) => ({ ...f, category: c }));
+  };
+  const setAgent = (a: string) => {
+    request();
+    setFilters((f) => ({ ...f, agent: a }));
+  };
+  const setVerifiedOnly = (v: boolean) => {
+    request();
+    setFilters((f) => ({ ...f, verifiedOnly: v }));
+  };
+  const setSort = (s: SortMode) => {
+    request();
+    setFilters((f) => ({ ...f, sort: s }));
+  };
 
   const deferredQuery = useDeferredValue(query);
 
-  const categories = useMemo(() => categoryFacets(items, 200), []);
-  const agents = useMemo(() => agentFacets(items), []);
-  const hostCount = useMemo(() => hostUniverse(items).length, []);
+  const live = useMemo(() => {
+    if (!full) return null;
+    return {
+      total: full.length,
+      categories: categoryFacets(full, 200),
+      agents: agentFacets(full),
+      hostCount: hostUniverse(full).length,
+    };
+  }, [full]);
 
-  const { results, searching } = useCatalogSearch(items, deferredQuery, {
+  const total = live ? live.total : props.total;
+  const categories = live ? live.categories : props.categories;
+  const agents = live ? live.agents : props.agents;
+  const hostCount = live ? live.hostCount : props.hostCount;
+
+  const { results, searching } = useCatalogSearch(full ?? [], deferredQuery, {
     kind: kind === "all" ? null : kind,
     category: category === "all" ? null : category,
   });
@@ -89,6 +160,10 @@ function ExploreContent() {
 
   const hasFilters =
     query !== "" || kind !== "all" || category !== "all" || agent !== "all" || verifiedOnly || sort !== "index";
+
+  // Same rule as Home: rows from the prerender until the dataset lands, an
+  // empty set (skeleton) for a filter that has nothing to run against yet.
+  const gridItems = full ? filtered : hasFilters ? [] : props.gridRows;
 
   const clear = () => {
     setQuery("");
@@ -108,7 +183,7 @@ function ExploreContent() {
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h1 className="t-cond text-[24px] font-semibold tracking-tight text-ink">Explore</h1>
             <p className="t-mono text-[11px] text-ink-3">
-              {items.length.toLocaleString("en-US")} entries · {categories.length} categories ·{" "}
+              {total.toLocaleString("en-US")} entries · {categories.length} categories ·{" "}
               {hostCount} hosts
             </p>
           </div>
@@ -117,8 +192,8 @@ function ExploreContent() {
             <SearchBar
               query={query}
               setQuery={setQuery}
-              totalMatches={deferredQuery ? filtered.length : undefined}
-              totalCount={items.length}
+              totalMatches={deferredQuery && full ? filtered.length : undefined}
+              totalCount={total}
             />
           </div>
 
@@ -201,9 +276,14 @@ function ExploreContent() {
 
         <div className="pt-7">
           <ExtensionGrid
-            items={filtered}
+            items={gridItems}
             query={deferredQuery}
+            count={full ? filtered.length : total}
             loading={searching}
+            awaiting={status === "loading"}
+            error={status === "error"}
+            onRetry={request}
+            onShowMore={request}
             onClearFilters={clear}
             hostCount={hostCount}
             toolbar={
@@ -234,6 +314,6 @@ function ExploreContent() {
   );
 }
 
-export default function ExplorePage() {
-  return <ExploreContent />;
+export default function ExplorePage(props: ExploreViewProps) {
+  return <ExploreContent {...props} />;
 }

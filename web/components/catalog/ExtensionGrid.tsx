@@ -1,52 +1,119 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { SearchX } from "lucide-react";
+import { SearchX, RotateCw } from "lucide-react";
 import { ExtensionCard } from "./ExtensionCard";
 import { Listing } from "../../lib/telemetry";
+import { GRID_PAGE } from "../../lib/catalog";
 import { formatCount } from "../../lib/format";
 
 interface ExtensionGridProps {
   items: Listing[];
   query: string;
+  /**
+   * Entry count for the header line. The prerendered view starts with one page
+   * of rows, so `items.length` would say "48 entries" over a catalog of 5,825;
+   * the caller passes the authoritative count instead.
+   */
+  count?: number;
   loading?: boolean;
+  /**
+   * The full row set is being fetched (first search, first filter, first sort).
+   * Distinct from `loading`: it starts on the interaction itself, so the empty
+   * state must never flash "Nothing matches" before the rows have even been
+   * requested.
+   */
+  awaiting?: boolean;
+  /** The dataset fetch failed — say so instead of implying "no matches". */
+  error?: boolean;
+  onRetry?: () => void;
   onClearFilters?: () => void;
+  /**
+   * Fired by "Show more". On the prerendered page the browser only holds one
+   * page of rows, so this is where the full row set is requested — the reader
+   * asked for more, which is the interaction that justifies the fetch.
+   */
+  onShowMore?: () => void;
   /** Rendered above the rows; the caller owns the sort control. */
   toolbar?: React.ReactNode;
   hostCount?: number;
 }
 
-const PAGE = 48;
 const SUGGESTIONS = ["postgres", "github", "playwright", "browser", "memory", "docx"];
+
+/**
+ * The row-set request failed. Never dressed up as "no matches": a failed
+ * request and an empty result are different facts, and telling a reader the
+ * catalog has nothing for them when it could not be read at all would be a
+ * lie the UI is in a position to avoid. `inline` is the variant shown above
+ * rows that are still on screen (a failed "show more"), the other replaces an
+ * empty result set (a failed filter).
+ */
+function CatalogError({ onRetry, inline }: { onRetry?: () => void; inline?: boolean }) {
+  return (
+    <div className={inline ? "mb-4 border border-rule-2 bg-sunken px-4 py-3" : "border-b border-rule py-14"}>
+      <div className="flex max-w-prose flex-col items-start gap-3">
+        <RotateCw className="h-6 w-6 text-ink-3" aria-hidden="true" />
+        <h3 className="text-[15px] font-semibold">The catalog rows could not be loaded</h3>
+        <p className="text-[13px] text-ink-2">
+          {inline
+            ? "Search, filters and “show more” need the full snapshot, and that request failed — so they are unavailable right now. The rows below are the prerendered page, and their links still work."
+            : "Filtering and search need the full snapshot, and that request failed. Nothing has been searched, so this is not a “no matches” answer."}
+        </p>
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="btn btn-solid mt-2">
+            Try again
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function ExtensionGrid({
   items,
   query,
+  count,
   loading,
+  awaiting,
+  error,
+  onRetry,
   onClearFilters,
+  onShowMore,
   toolbar,
   hostCount,
 }: ExtensionGridProps) {
-  const [visible, setVisible] = useState(PAGE);
+  const [visible, setVisible] = useState(GRID_PAGE);
 
+  // One page of rows per query. Deliberately NOT reset when `items` changes:
+  // the first change is the lazy dataset upgrade (the rows a reader asked for
+  // arriving), and sending them back to 48 rows after they clicked "Show more"
+  // would throw away the click that triggered it.
   useEffect(() => {
-    setVisible(PAGE);
-  }, [query, items]);
+    setVisible(GRID_PAGE);
+  }, [query]);
 
-  // Only show skeleton rows if the (already deferred) result stays empty. A
-  // search that is fast should never flash a loading state.
-  const [showSkeleton, setShowSkeleton] = useState(false);
+  // A slow *search* keeps the previous rows for 180ms before skeletonising (a
+  // fast search must never flash a loading state); a dataset fetch has no rows
+  // to keep, so it skeletonises on the same frame it starts.
+  const [searchSkeleton, setSearchSkeleton] = useState(false);
   useEffect(() => {
     if (!loading) {
-      setShowSkeleton(false);
+      setSearchSkeleton(false);
       return;
     }
-    const t = window.setTimeout(() => setShowSkeleton(true), 180);
+    const t = window.setTimeout(() => setSearchSkeleton(true), 180);
     return () => window.clearTimeout(t);
   }, [loading]);
 
+  const reported = count ?? items.length;
   const shown = useMemo(() => items.slice(0, visible), [items, visible]);
-  const remaining = items.length - shown.length;
+  const remaining = reported - shown.length;
+  const showSkeleton = shown.length === 0 && (Boolean(awaiting) || searchSkeleton);
+  const showMore = () => {
+    setVisible((v) => v + GRID_PAGE);
+    onShowMore?.();
+  };
 
   return (
     <section className="shell pb-16">
@@ -56,11 +123,16 @@ export function ExtensionGrid({
             {query ? `Results for “${query}”` : "All capabilities"}
           </h2>
           <span className="t-mono t-tabular text-[12px] text-ink-3" aria-live="polite">
-            {formatCount(items.length)} {items.length === 1 ? "entry" : "entries"}
+            {formatCount(reported)} {reported === 1 ? "entry" : "entries"}
           </span>
         </div>
         {toolbar}
       </div>
+
+      {/* A failed fetch is reported beside the rows it left untouched, not
+          silently swallowed: an inert "Show more" would be a failure the reader
+          has no way to diagnose. */}
+      {error && shown.length > 0 && <CatalogError onRetry={onRetry} inline />}
 
       {shown.length > 0 ? (
         <>
@@ -79,15 +151,17 @@ export function ExtensionGrid({
 
           {remaining > 0 && (
             <div className="flex items-center justify-center gap-3 pt-6">
-              <button type="button" onClick={() => setVisible((v) => v + PAGE)} className="btn">
-                Show {formatCount(Math.min(PAGE, remaining))} more
+              <button type="button" onClick={showMore} className="btn">
+                Show {formatCount(Math.min(GRID_PAGE, remaining))} more
               </button>
               <span className="t-mono t-tabular text-[11px] text-ink-3">
-                {formatCount(shown.length)} of {formatCount(items.length)}
+                {formatCount(shown.length)} of {formatCount(reported)}
               </span>
             </div>
           )}
         </>
+      ) : error ? (
+        <CatalogError onRetry={onRetry} />
       ) : showSkeleton ? (
         <ul className="pt-px" aria-hidden="true">
           {Array.from({ length: 8 }).map((_, i) => (

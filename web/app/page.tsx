@@ -1,27 +1,45 @@
-"use client";
-
-import dynamic from "next/dynamic";
-import { Suspense } from "react";
+import catalogData from "../data/catalog.json";
+import type { Listing } from "../lib/telemetry";
+import {
+  categoryFacets,
+  deriveKindCounts,
+  GRID_PAGE,
+  homeSections,
+  hostUniverse,
+  kindBreakdown,
+  withLinkKeys,
+} from "../lib/catalog";
+import type { HomeViewProps } from "./HomeView";
+import HomeRoute from "./HomeRoute";
 
 /**
- * Route-level split for the catalog.
+ * This page is a **Server Component on purpose**.
  *
- * `HomeView` statically imports `data/catalog.json` (≈2.8 MB of rows), so
- * importing it directly from this file would put that chunk in this route's
- * synchronous script set. Loading it through `next/dynamic` keeps it in one
- * shared async chunk: the framework and layout hydrate first and the catalog
- * arrives separately, at low fetch priority, for every route that renders rows.
+ * `data/catalog.json` (~3.8 MB) is imported here, which is the only place it
+ * is ever imported from: server code runs at build time during static export,
+ * so its import lands in the server bundle and never in a browser chunk. What
+ * crosses the boundary is `HomeViewProps` — counts, facets, four sections of
+ * eight rows and one page of grid rows, a few dozen kilobytes — serialized
+ * beside the prerendered HTML it describes.
  *
- * `ssr: true` is deliberate — the prerendered HTML still contains the real
- * sections, and React keeps that server HTML in place across the suspended
- * hydration rather than swapping in the `null` fallback.
+ * The view itself is loaded through `HomeRoute`, a thin client wrapper that
+ * owns the `next/dynamic` import, so the catalog UI stays in an async chunk
+ * and the route's First Load JS stays at the framework + layout baseline. The
+ * browser hydrates from the props and requests the full row set only when a
+ * search, a filter or "Show more" asks for it — see `lib/catalogData.ts`.
  */
-const HomeView = dynamic(() => import("./HomeView"), { ssr: true });
-
 export default function Home() {
-  return (
-    <Suspense fallback={null}>
-      <HomeView />
-    </Suspense>
-  );
+  const items = withLinkKeys(catalogData as unknown as Listing[]);
+
+  const props: HomeViewProps = {
+    total: items.length,
+    kindCounts: deriveKindCounts(items),
+    hostCount: hostUniverse(items).length,
+    breakdown: kindBreakdown(items),
+    facets: categoryFacets(items, 18),
+    sections: homeSections(items),
+    gridRows: items.slice(0, GRID_PAGE),
+  };
+
+  return <HomeRoute {...props} />;
 }

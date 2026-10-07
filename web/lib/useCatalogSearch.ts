@@ -88,7 +88,13 @@ export function useCatalogSearch(
   const lastKeyRef = useRef<string | null>(null);
 
   // Create the worker lazily on the client and seed it with the catalog.
+  // `indexed` gates it on a non-empty row set: the rows arrive with the lazy
+  // dataset fetch, so before the first interaction there is nothing to index —
+  // and building (or even downloading) a MiniSearch worker for an empty set
+  // would put the search engine itself back on the first-visit path.
+  const indexed = listings.length > 0;
   useEffect(() => {
+    if (!indexed) return;
     if (typeof window === "undefined" || typeof Worker === "undefined") {
       setMode("fallback");
       return;
@@ -145,7 +151,7 @@ export function useCatalogSearch(
       worker.terminate();
       workerRef.current = null;
     };
-  }, []);
+  }, [indexed]);
 
   // Drive searches from listing/query/filter changes, debounced.
   useEffect(() => {

@@ -1,21 +1,39 @@
-"use client";
-
-import dynamic from "next/dynamic";
-import { Suspense } from "react";
+import catalogData from "../../data/catalog.json";
+import type { Listing } from "../../lib/telemetry";
+import {
+  agentFacets,
+  categoryIndex,
+  kindBreakdown,
+  kindLabel,
+  publisherFacets,
+  withLinkKeys,
+} from "../../lib/catalog";
+import type { TrendingViewProps } from "./TrendingView";
+import TrendingRoute from "./TrendingRoute";
 
 /**
- * Route-level split for the catalog — see `web/app/page.tsx`. `TrendingView`
- * owns the 2.8 MB `data/catalog.json` import; keeping it behind `next/dynamic`
- * leaves it out of this route's synchronous script set while `ssr: true` keeps
- * the prerendered HTML (and React's server HTML across the suspended
- * hydration) intact.
+ * Server Component: the coverage boards are counts over the full snapshot,
+ * computed at build time. Rows are never rendered here, so the browser gets a
+ * few hundred bytes of board data and no reason to fetch the dataset at all.
  */
-const TrendingView = dynamic(() => import("./TrendingView"), { ssr: true });
-
 export default function TrendingPage() {
-  return (
-    <Suspense fallback={null}>
-      <TrendingView />
-    </Suspense>
-  );
+  const items = withLinkKeys(catalogData as unknown as Listing[]);
+
+  const props: TrendingViewProps = {
+    total: items.length,
+    boards: {
+      categories: categoryIndex(items)
+        .slice(0, 15)
+        .map((c) => ({ label: c.name, count: c.count })),
+      hosts: agentFacets(items)
+        .slice(0, 15)
+        .map((a) => ({ label: a.name, count: a.count })),
+      publishers: publisherFacets(items, 15).map((p) => ({ label: p.name, count: p.count })),
+      kinds: kindBreakdown(items)
+        .map((k) => ({ label: kindLabel(k.kind), count: k.count, kind: k.kind }))
+        .sort((a, b) => b.count - a.count),
+    },
+  };
+
+  return <TrendingRoute {...props} />;
 }

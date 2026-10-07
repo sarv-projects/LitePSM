@@ -1,22 +1,23 @@
 "use client";
 
-import React, { useMemo } from "react";
 import Link from "next/link";
 import { SquareTerminal, Check } from "lucide-react";
 import { Header } from "../../components/navigation/Header";
 import { SiteFooter } from "../../components/layout/SiteFooter";
-import { Listing } from "../../lib/telemetry";
-import { agentFacets, hostUniverse } from "../../lib/catalog";
 import { HOSTS, resolveHost } from "../../lib/hosts";
 import { formatCount } from "../../lib/format";
-import catalogData from "../../data/catalog.json";
 
-const items = catalogData as unknown as Listing[];
+/**
+ * Host coverage is an aggregate: `app/agents/page.tsx` derives it from the
+ * full row set at build time. This route never needs the rows themselves and
+ * therefore never fetches the dataset.
+ */
+export interface AgentsViewProps {
+  hostCount: number;
+  agents: Array<{ name: string; slug: string; count: number }>;
+}
 
-export default function AgentsPage() {
-  const agents = useMemo(() => agentFacets(items), []);
-  const hostCount = useMemo(() => hostUniverse(items).length, []);
-
+export default function AgentsPage({ hostCount, agents }: AgentsViewProps) {
   return (
     <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
       <Header />

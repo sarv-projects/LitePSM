@@ -9,31 +9,43 @@ import { Listing } from "../../lib/telemetry";
 import { HOSTS, bridgeSnippet, hostPath, PlatformOS } from "../../lib/hosts";
 import { copyText } from "../../lib/clipboard";
 import { formatCount } from "../../lib/format";
-import { hostUniverse, kindLabel, listingHref, sortListings } from "../../lib/catalog";
+import { kindLabel, listingHref, sortListings } from "../../lib/catalog";
 import { hostsFor } from "../../lib/hosts";
 import { VerifiedMark } from "../../components/catalog/PublisherMark";
-import catalogData from "../../data/catalog.json";
+import { useCatalog } from "../../lib/catalogData";
 import { SITE_URL } from "../../lib/site";
 
-const items = catalogData as unknown as Listing[];
-
-const HOST_TOTAL = hostUniverse(items).length;
 const INSTALL_COMMAND_PREFIX = "litespm install ";
 
 /**
- * Lookup is built once at module scope, and only unambiguous slugs are
- * registered - see `listingHref` in lib/catalog for why 121 slugs cannot be
- * used as keys. Ids are always unique and always resolve.
+ * What `/package/` needs from the catalog, and all it needs before a reader
+ * actually asks for an entry. The index shell below is what the route
+ * prerenders; the detail view resolves from `?slug=`, which can only be
+ * answered from the full row set — so this route fetches `data/catalog.json`
+ * when (and only when) a slug is present. A bare `/package/` visit ships no
+ * catalog rows at all.
  */
-const BY_KEY = new Map<string, Listing>();
-for (const item of items) BY_KEY.set(item.id, item);
-for (const item of items) {
-  if (!BY_KEY.has(item.slug)) BY_KEY.set(item.slug, item);
+export interface PackageViewProps {
+  /** Row count of this build's snapshot, for the index copy. */
+  total: number;
+  /** `hostUniverse(rows).length` at build time — the coverage denominator. */
+  hostTotal: number;
+  /** First twelve rows in index order: the list the static shell renders. */
+  indexRows: Listing[];
 }
 
-function findItem(key: string | null | undefined): Listing | null {
-  if (!key) return null;
-  return BY_KEY.get(key) ?? null;
+/**
+ * Lookup is built once over the fetched row set, and only unambiguous slugs
+ * are registered as keys - see `listingHref` in lib/catalog for why 121 slugs
+ * cannot be used as keys. Ids are always unique and always resolve.
+ */
+function buildLookup(rows: Listing[]): Map<string, Listing> {
+  const byKey = new Map<string, Listing>();
+  for (const row of rows) byKey.set(row.id, row);
+  for (const row of rows) {
+    if (!byKey.has(row.slug)) byKey.set(row.slug, row);
+  }
+  return byKey;
 }
 
 /** A data field that may legitimately be missing in the snapshot. */
@@ -68,8 +80,19 @@ function CopyButton({ text, label, message }: { text: string; label: string; mes
  * The prerendered body of `/package/`. Detail content is keyed off `?slug=`,
  * so the static shell explains the route and links onward instead of shipping
  * an empty frame.
+ *
+ * `note` is rendered only on the client (a deep link resolved after mount), so
+ * it never appears in — and never mismatches — the prerendered HTML.
  */
-function PackageIndexShell() {
+function PackageIndexShell({
+  total,
+  indexRows,
+  note,
+}: {
+  total: number;
+  indexRows: Listing[];
+  note?: React.ReactNode;
+}) {
   return (
     <main id="main" className="shell flex-1 py-16">
       <div className="max-w-prose">
@@ -79,11 +102,13 @@ function PackageIndexShell() {
         </h1>
         <p className="mt-2.5 text-[13px] leading-relaxed text-ink-2">
           A detail page is requested as <code className="t-mono">/package/?slug=&lt;key&gt;</code> against a
-          single bundled catalog of {formatCount(items.length)} entries. Emitting one static file per entry
-          would mean {formatCount(items.length)} files, so instead the index ships as one page and the entry
-          resolves in the browser. The key is the entry&rsquo;s slug, or its catalog id where the slug is shared
-          by more than one entry.
+          single catalog snapshot of {formatCount(total)} entries. Emitting one static file per entry
+          would mean {formatCount(total)} files, so instead the index ships as one page and the entry
+          resolves in the browser from the rows it fetches on demand. The key is the entry&rsquo;s slug,
+          or its catalog id where the slug is shared by more than one entry.
         </p>
+
+        {note}
 
         <div className="section-head mt-9">
           <h2>Start of the catalog snapshot</h2>
@@ -92,9 +117,7 @@ function PackageIndexShell() {
           </Link>
         </div>
         <ul>
-          {sortListings(items, "index")
-            .slice(0, 12)
-            .map((item) => (
+          {indexRows.map((item) => (
               <li key={item.id}>
                 <Link
                   href={listingHref(item)}
@@ -122,7 +145,7 @@ function PackageIndexShell() {
   );
 }
 
-function NotFound() {
+function NotFound({ total }: { total: number }) {
   return (
     <main id="main" className="shell flex-1 py-20">
       <div className="flex max-w-prose flex-col items-start gap-3">
@@ -131,7 +154,7 @@ function NotFound() {
           That entry is not in this catalog snapshot
         </h1>
         <p className="text-[13px] leading-relaxed text-ink-2">
-          Package pages resolve from a single bundled catalog of {formatCount(items.length)} entries. This
+          Package pages resolve from a single catalog snapshot of {formatCount(total)} entries. This
           slug is not in it — it may have been renamed, withdrawn, or published after this build.
         </p>
         <Link href="/explore/" className="btn btn-solid mt-2">
@@ -148,8 +171,12 @@ function NotFound() {
  * bailing into a Suspense boundary. With 5,814 entries the detail pages stay on
  * a single `?slug=` route - `generateStaticParams` would emit thousands of
  * files, which the static host cannot serve.
+ *
+ * A slug is also the signal that the full row set is needed: the request fires
+ * in the same effect that reads the parameter, so the fetch starts on the first
+ * client frame rather than one render later. A bare `/package/` never asks.
  */
-function useSlugParam(): { slug: string | null; resolved: boolean } {
+function useSlugParam(request: () => void): { slug: string | null; resolved: boolean } {
   const [state, setState] = useState<{ slug: string | null; resolved: boolean }>({
     slug: null,
     resolved: false,
@@ -160,15 +187,18 @@ function useSlugParam(): { slug: string | null; resolved: boolean } {
     // parameter" as resolved-with-nothing so a bare /package/ shows the route
     // index rather than an unresolved placeholder.
     const param = new URLSearchParams(window.location.search).get("slug");
+    if (param) request();
     setState({ slug: param, resolved: true });
-  }, []);
+  }, [request]);
 
   return state;
 }
 
-function PackageContent() {
-  const { slug, resolved } = useSlugParam();
-  const item = useMemo(() => findItem(slug), [slug]);
+function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
+  const { status, items: full, request } = useCatalog();
+  const { slug, resolved } = useSlugParam(request);
+  const lookup = useMemo(() => (full ? buildLookup(full) : null), [full]);
+  const item = useMemo(() => (slug && lookup ? lookup.get(slug) ?? null : null), [slug, lookup]);
 
   const [activeHost, setActiveHost] = useState("claude-code");
   const [platformOs, setPlatformOs] = useState<PlatformOS>("linux");
@@ -179,17 +209,16 @@ function PackageContent() {
   }, []);
 
   const host = HOSTS.find((h) => h.id === activeHost) ?? HOSTS[0];
-  const hostTotal = HOST_TOTAL;
 
   const snippet = item ? bridgeSnippet(host, "litespm", platformOs) : "";
 
   const related = useMemo(() => {
-    if (!item) return [];
+    if (!item || !full) return [];
     return sortListings(
-      items.filter((i) => i.id !== item.id && i.category === item.category),
+      full.filter((i) => i.id !== item.id && i.category === item.category),
       "index"
     ).slice(0, 6);
-  }, [item]);
+  }, [item, full]);
 
   // Pre-hydration, and when the route is visited bare, we cannot know which
   // entry is wanted. Both cases get the route index: a described frame with
@@ -198,17 +227,50 @@ function PackageContent() {
     return (
       <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
         <Header />
-        <PackageIndexShell />
+        <PackageIndexShell total={total} indexRows={indexRows} />
         <SiteFooter />
       </div>
     );
   }
 
   if (!item) {
+    // Three honest states, never a premature "not found": the index shell
+    // stays on screen while the snapshot is still being fetched (it is what
+    // this route prerendered, so the DOM does not flash), a failed fetch says
+    // so with a retry, and only a completed snapshot may declare a key absent.
+    if (status === "ready") {
+      return (
+        <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+          <Header />
+          <NotFound total={total} />
+          <SiteFooter />
+        </div>
+      );
+    }
+    const pending = status === "loading" || status === "idle";
     return (
       <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
         <Header />
-        <NotFound />
+        <PackageIndexShell
+          total={total}
+          indexRows={indexRows}
+          note={
+            pending ? (
+              <p className="t-mono mt-6 text-[12px] text-ink-3" role="status">
+                Loading “{slug}”…
+              </p>
+            ) : (
+              <div className="mt-6 border border-rule-2 bg-sunken px-4 py-3">
+                <p className="text-[13px] text-ink-2">
+                  The catalog rows could not be fetched, so this key cannot be resolved either way.
+                </p>
+                <button type="button" onClick={request} className="btn btn-solid mt-2">
+                  Try again
+                </button>
+              </div>
+            )
+          }
+        />
         <SiteFooter />
       </div>
     );
@@ -659,6 +721,6 @@ function PackageContent() {
   );
 }
 
-export default function PackagePage() {
-  return <PackageContent />;
+export default function PackagePage(props: PackageViewProps) {
+  return <PackageContent {...props} />;
 }
