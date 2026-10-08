@@ -40,6 +40,11 @@ type emittedHost struct {
 	Projected bool   `json:"projectOnly,omitempty"`
 	DocsURL   string `json:"docsUrl,omitempty"`
 	Generic   bool   `json:"generic"`
+	// Remote marks a host whose registry row carries a verified remote (URL)
+	// MCP entry spelling (host.RemoteEntrySpecFor). Absent on every host that
+	// must refuse a remote install, so the site can state the capability
+	// without restating the matrix.
+	Remote bool `json:"remote,omitempty"`
 }
 
 func main() {
@@ -74,6 +79,12 @@ func main() {
 		if keyPath, shape, ok := host.EntryLayout(a); ok {
 			row.KeyPath = keyPath
 			row.Shape = shape
+		}
+		// The remote (URL) capability comes from the same query install and
+		// copy use (host.RemoteEntrySpecFor), so the emitted flag can never
+		// disagree with what the binary will actually write.
+		if _, ok := host.RemoteEntrySpecFor(d.HostID); ok {
+			row.Remote = true
 		}
 		if p, err := a.DetectConfig(ctx, domain.ScopeUser); err == nil && p != "" {
 			row.UserPath = tidyPath(p)

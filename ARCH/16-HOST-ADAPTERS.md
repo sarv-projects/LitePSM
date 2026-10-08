@@ -269,6 +269,43 @@ it was read from.
     write, so a typo fails at the command line rather than as a reference that can
     never resolve.
 
+#### 3.7.4 Remote (URL) server entries
+
+An MCP listing whose version record carries an **endpoint** instead of a command installs as a
+URL-only entry — one transport, spelled exactly the way that host spells it:
+
+*   **Endpoint selection happens at ingestion, never at install.** The producer picks one endpoint
+    from the registry server's own `remotes[]` (first `streamable-http`, else the first entry —
+    multiple endpoints per server are the norm upstream) and publishes it as `url` + `transport`
+    only after `publishable_endpoint()` accepts it statically (https or loopback-http, no
+    credentials, no fragment, default port, no non-public IP literal:
+    `scripts/build_full_catalog.py:586-651`, row emission `:696-723`); `internal/catalogbuild`
+    carries `url` into `RuntimeDescriptor.Endpoint` (`dataset.go:45`, `:329-341`). Nothing at
+    install time fetches, probes or guesses a URL. As of this writing the dataset on disk and the
+    live release were both built **before** that producer change, so no published row carries `url`
+    yet ([STATUS.md](../STATUS.md) §3) — the path below is implemented and tested, not yet fed by a
+    release.
+*   **8 of 50 hosts are verified capable:** the six bespoke adapters (`claude-code`, `cline`,
+    `opencode`, `codex`, `pi-agent`, `grok-build`) plus the two data rows whose exact remote entry
+    object was read from the row's `DocsURL` (`cursor`, `zed`).
+    `TestRemoteCapabilityMatrixCounts` pins the counts at exactly 8 capable / 42 refused, so an
+    accidental mass-enable (or an un-evidenced spec) fails the test instead of silently changing
+    what installs write.
+*   **The honesty rule.** A `RemoteEntrySpec` may be set only when the *entire* entry object — URL
+    key, discriminator key and its values, and which transports the host accepts — was read from
+    that host's own documentation or repository; a URL key glimpsed in a doc is evidence of a URL
+    key, not of a complete entry shape (`internal/host/target.go:99-135`). A guessed spec writes an
+    entry the host silently ignores, which is worse than refusing.
+*   **Everything else refuses, fail-closed.** `host.RemoteEntrySpecFor` is the single capability
+    query that plan-time filtering, install and copy all resolve through
+    (`internal/host/entry_install.go:368-387`): the other 42 targets answer "no spec" and receive
+    `LPSM-HOST-REMOTE-UNSUPPORTED` — never a fallback to a stdio write, never a guessed URL key.
+    The plan applies the same rule per host: a LiteSPM-chosen default set is filtered to capable
+    hosts with every drop reported, while an explicit `--host` set is never filtered — an incapable
+    named host fails by name (`cmd/litespm/main.go:2638-2714`). The endpoint itself is checked by
+    the shared egress guard at plan time (`ARCH/05` §3.1), so an unsafe URL never reaches an
+    approval prompt or a config file.
+
 ---
 
 ## 4. In-Agent `/marketplace` Experience & Capability Browser

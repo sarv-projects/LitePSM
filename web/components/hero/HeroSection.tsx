@@ -94,7 +94,7 @@ export function HeroSection({ telemetry, total, breakdown, hostCount }: HeroSect
           <code className="t-mono min-w-0 flex-1 truncate text-[12px] text-dark-ink select-all">
             npm install -g litespm &amp;&amp; litespm
           </code>
-          <button type="button" onClick={onCopy} aria-label="Copy quickstart command" className="btn !h-6 shrink-0 !px-2">
+          <button type="button" onClick={onCopy} aria-label="Copy quickstart command" className="btn h-6! shrink-0 px-2!">
             {copied ? (
               <>
                 <Check className="h-3 w-3 text-ink" aria-hidden="true" />
@@ -147,7 +147,7 @@ function ReleaseStamp({
 
   return (
     <div
-      className="inline-flex items-center gap-2 rounded-full border border-rule bg-surface px-3 py-1 text-[12px] text-ink-2 shadow-sm"
+      className="inline-flex items-center gap-2 rounded-full border border-rule bg-surface px-3 py-1 text-[12px] text-ink-2 shadow-xs"
       title={technicalInfo ? `Release verification: ${technicalInfo}` : undefined}
     >
       {status === "loading" && (

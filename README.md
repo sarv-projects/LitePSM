@@ -369,9 +369,9 @@ litespm                                  interactive setup wizard (no network fe
 litespm setup | init                     same as `litespm`
 litespm version                          version + protocol + build target
 litespm search <query>                   search the local catalog index
-litespm install <id> [--version <v>] [--scope user|project] [--workspace <id>]
-                                         records a plan + human approval; skills and MCP servers
-                                         install, plugins need artifact wiring (STATUS.md)
+litespm install <id> [--version <v>] [--scope user|project]
+                                          records a plan + human approval; skills and MCP servers
+                                          install, plugins need artifact wiring (STATUS.md)
 litespm uninstall [--dry-run]            remove the bridge entry from every host config
 litespm catalog sync                     fetch the release pointer (live origin — STATUS.md §2)
 litespm daemon serve                     start the supervisor + IPC engine

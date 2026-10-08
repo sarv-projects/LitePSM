@@ -128,6 +128,11 @@ type TargetCaps struct {
 	// documented spelling for a forwarded variable, so an entry carrying
 	// EnvNames cannot be represented there honestly.
 	CanForwardEnv bool
+	// Remote is host.RemoteEntrySpecFor(to): the target's verified remote
+	// (URL) entry spelling, or nil when the target cannot express one. A
+	// remote source row against a nil Remote is reported unsupported
+	// ("not copyable") — never rendered as a stdio entry, never dropped.
+	Remote *host.RemoteEntrySpec
 	// ExistingMCP are the target's current MCP entries, by name.
 	ExistingMCP map[string]host.HostServerEntry
 	// SkillDir is the target's skill directory; empty means the target has no
@@ -346,8 +351,40 @@ func planMCPItem(plan *CopyPlan, src *Source, tgt *TargetCaps, m SourceMCP, stra
 	if err := host.ValidateServerEntryName(entry.Name); err != nil {
 		return unsupported(fmt.Sprintf("LPSM-COPY-002: %v", err))
 	}
-	if entry.Command == "" {
-		return unsupported("LPSM-COPY-002: the source entry has no command to run")
+	// One entry, one transport: an IR with neither command nor endpoint names
+	// nothing to run, and one with both would leave the target to choose.
+	if entry.Command == "" && entry.Endpoint == "" {
+		return unsupported("LPSM-COPY-002: the source entry has no command to run and no endpoint (URL) to connect to")
+	}
+	if entry.Command != "" && entry.Endpoint != "" {
+		return unsupported(fmt.Sprintf(
+			"LPSM-COPY-002: the source entry %q names both a command and a remote endpoint; an entry is one transport", item.ID))
+	}
+	if entry.Endpoint != "" {
+		// Remote support check: the target must have a verified remote
+		// spelling AND must accept this transport. Either miss is the
+		// explicit not-copyable refusal — the row is reported with its
+		// reason, and Writable() never includes it, so nothing is written.
+		if tgt.Remote == nil {
+			return unsupported(fmt.Sprintf(
+				"LPSM-COPY-002: %s is not copyable to %s: that host cannot express a remote (URL) MCP entry "+
+					"(no URL key or transport discriminator was ever verified for it), and copy never rewrites a remote entry as stdio",
+				item.ID, tgt.To))
+		}
+		if !tgt.Remote.Supports(entry.Transport) {
+			return unsupported(fmt.Sprintf(
+				"LPSM-COPY-002: %s is not copyable to %s: transport %q is not one that host documents for a remote entry (it supports %v)",
+				item.ID, tgt.To, entry.Transport, tgt.Remote.Transports))
+		}
+		// No host documents a name→header mapping for remote entries, so
+		// forwarded variables cannot travel with a URL (they are still listed
+		// under Needs for the user to bind out of band).
+		if len(entry.EnvNames) > 0 {
+			return unsupported(fmt.Sprintf(
+				"LPSM-COPY-002: %s could not carry the forwarded variables %s to %s: a remote (URL) entry has no documented "+
+					"environment field on any host; the names remain listed under Needs",
+				item.ID, strings.Join(entry.EnvNames, ", "), tgt.To))
+		}
 	}
 	if len(entry.EnvNames) > 0 && !tgt.CanForwardEnv {
 		return unsupported(fmt.Sprintf(
@@ -355,12 +392,21 @@ func planMCPItem(plan *CopyPlan, src *Source, tgt *TargetCaps, m SourceMCP, stra
 			tgt.To, strings.Join(entry.EnvNames, ", ")))
 	}
 
-	// Translate: a shape change is the only translation there is (D-028 —
-	// the IR is the same object on both sides).
+	// Translate: a stdio shape change is the only translation there is
+	// (D-028 — the IR is the same object on both sides). A remote entry is
+	// written through the TARGET's own remote spelling, so its argv shape is
+	// irrelevant: there is nothing to translate, and reporting one would
+	// describe an argv change that never happens.
 	writeAction := ActionDirect
-	if src.EntryShape != "" && tgt.EntryShape != "" && src.EntryShape != tgt.EntryShape {
+	if entry.Endpoint == "" &&
+		src.EntryShape != "" && tgt.EntryShape != "" && src.EntryShape != tgt.EntryShape {
 		writeAction = ActionTranslated
 		item.TargetDiff = shapeChange(src.EntryShape, tgt.EntryShape)
+	}
+	// L2 ("does the command resolve on this machine") is a stdio question; a
+	// remote entry has no command to resolve, so only L1 is declared for it.
+	if entry.Endpoint != "" {
+		item.Verify = []string{VerifyL1Config}
 	}
 
 	// Conflict detection by name, classification by fingerprint.

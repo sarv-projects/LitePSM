@@ -25,7 +25,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -33,6 +35,7 @@ import (
 	"github.com/sarv-projects/litespm/internal/catalog"
 	"github.com/sarv-projects/litespm/internal/config"
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/host"
 	"github.com/sarv-projects/litespm/internal/ipc"
 	"github.com/sarv-projects/litespm/internal/policy"
 	"github.com/sarv-projects/litespm/internal/state"
@@ -204,20 +207,25 @@ func recordHumanApproval(ctx context.Context, db *state.DB, plan *domain.Install
 // command, so the consent is theirs; it is still recorded as a plan plus a
 // human-cli approval, consumed before any write, so every install has the same
 // auditable shape as an agent-path install.
-func authorizeHumanInstall(ctx context.Context, db *state.DB, catClient *catalog.Client, listing *domain.Listing, version string, scope domain.InstallScope) (*installGrant, error) {
-	plan, rpcErr := buildInstallPlan(ctx, catClient, listing.ID, version, scope, listing)
+//
+// The second return value lists the hosts the plan dropped from an
+// auto-chosen target set (always empty for an explicit --host set, which
+// fails instead, and for stdio runtimes): the caller prints them so the user
+// sees exactly which hosts the approval covers.
+func authorizeHumanInstall(ctx context.Context, db *state.DB, catClient *catalog.Client, listing *domain.Listing, version string, scope domain.InstallScope, mcpBinding *mcpInstallBinding) (*installGrant, []hostCapabilityDrop, error) {
+	plan, droppedHosts, rpcErr := buildInstallPlan(ctx, catClient, listing.ID, version, scope, listing, mcpBinding)
 	if rpcErr != nil {
-		return nil, fmt.Errorf("plan install: %s", rpcErr.Message)
+		return nil, nil, fmt.Errorf("plan install: %s", rpcErr.Message)
 	}
 	if err := db.SavePlan(ctx, plan); err != nil {
-		return nil, fmt.Errorf("record plan %s: %w", plan.PlanID, err)
+		return nil, nil, fmt.Errorf("record plan %s: %w", plan.PlanID, err)
 	}
 	approvalID, err := recordHumanApproval(ctx, db, plan)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := db.ConsumeApproval(ctx, approvalID, approvalSubjectInstallPlan, plan.PlanHash); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	resolved := plan.Resolved.Version
 	if resolved == "" {
@@ -226,7 +234,7 @@ func authorizeHumanInstall(ctx context.Context, db *state.DB, catClient *catalog
 	return &installGrant{
 		Plan: plan, ApprovalID: approvalID, Origin: approvalActorHumanCLI,
 		ListingID: plan.Request.ListingID, Version: resolved, Scope: plan.Request.TargetScope,
-	}, nil
+	}, droppedHosts, nil
 }
 
 // newPolicyEngine builds the policy engine with its real tiers: capability
@@ -308,11 +316,7 @@ func runApprove(args []string) {
 	}
 
 	fmt.Printf("Plan %s\n", plan.PlanID)
-	fmt.Printf("  listing : %s\n", plan.Request.ListingID)
-	fmt.Printf("  version : %s\n", firstNonEmpty(plan.Resolved.Version, plan.Request.RequestedVersion, "latest"))
-	fmt.Printf("  scope   : %s\n", plan.Request.TargetScope)
-	fmt.Printf("  effects : %s\n", strings.Join(plan.Effects, ", "))
-	fmt.Printf("  expires : %s\n", plan.ExpiresAt.UTC().Format(time.RFC3339))
+	writeApprovalPrompt(os.Stdout, plan)
 	fmt.Print("Type 'yes' to approve this install: ")
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	if strings.ToLower(strings.TrimSpace(line)) != "yes" {
@@ -326,6 +330,49 @@ func runApprove(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("Approved. Approval token (single use, expires in at most %d minutes):\n%s\n", int(maxHumanApprovalTTL.Minutes()), id)
+}
+
+// writeApprovalPrompt prints the body a human reviews before typing "yes":
+// what will be installed, where it will land, and — MANDATORILY — the exact
+// runtime it will run. A command line is printed when the sealed descriptor
+// carries a command; an `endpoint : "…" (transport)` line when it carries an
+// endpoint. An endpoint plan that printed no runtime line would be approving
+// the URL blind (B1 research §2.4, PART 4 Step 3.4), so the only skip is a
+// descriptor with NEITHER — which the plan gate refuses before a plan exists.
+//
+// It writes to w so the exact bytes can be pinned by a golden test.
+func writeApprovalPrompt(w io.Writer, plan *domain.InstallPlan) {
+	fmt.Fprintf(w, "  listing : %s\n", plan.Request.ListingID)
+	fmt.Fprintf(w, "  version : %s\n", firstNonEmpty(plan.Resolved.Version, plan.Request.RequestedVersion, "latest"))
+	fmt.Fprintf(w, "  scope   : %s\n", plan.Request.TargetScope)
+	fmt.Fprintf(w, "  effects : %s\n", strings.Join(plan.Effects, ", "))
+	var printedRuntime bool
+	var printedOptions bool
+	for _, change := range plan.HostChanges {
+		fmt.Fprintf(w, "  target  : %s -> %s (%s)\n", change.HostID, change.ConfigPath, change.EntryKey)
+		if printedRuntime || change.ValueJSON == "" {
+			continue
+		}
+		var value mcpInstallPlanValue
+		if json.Unmarshal([]byte(change.ValueJSON), &value) != nil {
+			continue
+		}
+		switch {
+		case strings.TrimSpace(value.Runtime.Command) != "":
+			fmt.Fprintf(w, "  command : %q %q\n", value.Runtime.Command, value.Runtime.Args)
+		case strings.TrimSpace(value.Runtime.Endpoint) != "":
+			fmt.Fprintf(w, "  endpoint : %q (%s)\n", value.Runtime.Endpoint,
+				firstNonEmpty(strings.TrimSpace(value.Runtime.Type), host.TransportStreamableHTTP))
+		default:
+			continue // neither: the plan gate rejects such a plan before this prompt
+		}
+		printedRuntime = true
+		if !printedOptions {
+			fmt.Fprintf(w, "  options : force=%t env-names=%q\n", value.Force, value.EnvNames)
+			printedOptions = true
+		}
+	}
+	fmt.Fprintf(w, "  expires : %s\n", plan.ExpiresAt.UTC().Format(time.RFC3339))
 }
 
 func firstNonEmpty(vals ...string) string {

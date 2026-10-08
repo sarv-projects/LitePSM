@@ -29,7 +29,8 @@ const (
 	// InstallabilityDiscoveryOnly: searchable metadata; no proven artifact.
 	InstallabilityDiscoveryOnly Installability = "discovery_only"
 	// InstallabilityMetadataVerified: an authoritative upstream manifest
-	// supplied the version and launch/source data.
+	// supplied the version and launch/source data (command+args for stdio,
+	// an endpoint for a remote server).
 	InstallabilityMetadataVerified Installability = "metadata_verified"
 	// InstallabilityRuntimeVerified: the launch line was observed to start.
 	InstallabilityRuntimeVerified Installability = "runtime_verified"

@@ -116,7 +116,7 @@ func seedListMachine(t *testing.T) listSeed {
 	// One capability, two deployments: the same MCP server registered in both
 	// agents. This is the row the counting rule is about.
 	ctx := context.Background()
-	if _, err := installMCPFromListing(ctx, db, dataRoot, mcpListing(seedMCPListing, "demo-mcp"),
+	if _, err := installMCPFromListing(authorizedTestContext(), db, dataRoot, mcpListing(seedMCPListing, "demo-mcp"),
 		"1.0.0", domain.ScopeUser, []string{"claude-code", "codex"}, false, stdioRuntime(), nil); err != nil {
 		t.Fatalf("seed MCP install: %v", err)
 	}

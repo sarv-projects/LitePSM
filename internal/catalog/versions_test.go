@@ -10,6 +10,7 @@ import (
 
 	"github.com/sarv-projects/litespm/internal/catalogbuild"
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/resolver"
 )
 
 // compileReleaseWithRuntime builds a release whose single listing publishes a
@@ -142,5 +143,96 @@ func TestVersionRecordsLatestUsesSemver(t *testing.T) {
 	}
 	if records[0].Version != "1.10.0" {
 		t.Fatalf("latest = %q, want 1.10.0", records[0].Version)
+	}
+}
+
+// componentVersionSegment returns the version segment of a component id —
+// `<listing-id>@<version>#<kind>/<name>` — the way the release publishes it.
+func componentVersionSegment(t *testing.T, id string) string {
+	t.Helper()
+	at, hash := strings.Index(id, "@"), strings.Index(id, "#")
+	if at < 0 || hash <= at {
+		t.Fatalf("component id %q is not of the form <listing>@<version>#<kind>/<name>", id)
+	}
+	return id[at+1 : hash]
+}
+
+// TestVersionLessListingRoundTripsThroughRelease pins the release convention
+// that version-less resolution (recommendation A2) depends on, end to end:
+// a dataset row with no version converts to a listing with `Versions: []` and
+// a version record whose `version` is "", every component id of that record
+// embeds the "discovery" literal, and both facts survive CompileRelease →
+// sync → index unchanged. The segment is compared against
+// resolver.ImplicitVersion — written from the other side of the boundary —
+// so either convention drifting fails this test first.
+func TestVersionLessListingRoundTripsThroughRelease(t *testing.T) {
+	const listingID = "skill:aaron-he-zhu:aaron-marketing-skills"
+	dataset := `[{
+		"id": "skill:aaron-he-zhu:aaron-marketing-skills",
+		"kind": "skill",
+		"name": "Aaron Marketing Skills",
+		"slug": "aaron-marketing-skills",
+		"summary": "Production-grade agent playbook for aaron-he-zhu/aaron-marketing-skills",
+		"category": "Community Skills",
+		"publisher": {"name": "aaron-he-zhu", "url": "https://github.com/aaron-he-zhu/aaron-marketing-skills"},
+		"version": "",
+		"installability": "discovery_only"
+	}]`
+	rows, err := catalogbuild.ParseDataset([]byte(dataset))
+	if err != nil {
+		t.Fatalf("ParseDataset: %v", err)
+	}
+	listings, versions, err := catalogbuild.ConvertDataset(rows, "rel-test-vless", "", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("ConvertDataset: %v", err)
+	}
+	if len(listings[0].Versions) != 0 {
+		t.Fatalf("Versions = %+v, want [] for a row that publishes no version", listings[0].Versions)
+	}
+	if versions[0].Version != "" {
+		t.Fatalf("record version = %q, want the honest empty value", versions[0].Version)
+	}
+	if got := componentVersionSegment(t, versions[0].Components[0].ID); got != resolver.ImplicitVersion {
+		t.Fatalf("component id embeds %q, but the resolver pins %q — the two conventions have drifted",
+			got, resolver.ImplicitVersion)
+	}
+
+	// Round-trip the shape through a compiled release and the client's real
+	// sync path: both facts must survive publication and re-loading byte-stable.
+	compiled, err := catalogbuild.CompileRelease("rel-test-vless", 8, nil, listings, versions, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("CompileRelease: %v", err)
+	}
+	files := map[string][]byte{}
+	for path, data := range compiled.Files {
+		files[path] = data
+	}
+	server := serveFiles(t, files)
+	defer server.Close()
+
+	client := NewClient(server.URL, t.TempDir(), server.Client())
+	if _, err := client.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	got, err := client.GetListing(listingID)
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if len(got.Versions) != 0 {
+		t.Fatalf("synced listing Versions = %+v, want []", got.Versions)
+	}
+	rec, err := client.VersionRecordFor(listingID, "")
+	if err != nil {
+		t.Fatalf("VersionRecordFor: %v", err)
+	}
+	if rec.Version != "" {
+		t.Errorf("synced record version = %q, want %q", rec.Version, "")
+	}
+	if len(rec.Components) == 0 {
+		t.Fatal("synced record lost its components")
+	}
+	if seg := componentVersionSegment(t, rec.Components[0].ID); seg != resolver.ImplicitVersion {
+		t.Errorf("synced component id embeds %q, want %q", seg, resolver.ImplicitVersion)
 	}
 }

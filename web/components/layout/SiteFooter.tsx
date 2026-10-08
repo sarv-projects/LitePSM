@@ -56,7 +56,7 @@ export function SiteFooter() {
               </Link>
             </li>
             <li>
-              <a href="/v1/current.json" className="link touch-link t-mono !text-[12px]">
+              <a href="/v1/current.json" className="link touch-link t-mono text-[12px]!">
                 /v1/current.json
               </a>
             </li>
@@ -121,7 +121,7 @@ export function SiteFooter() {
               href={REPO}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn h-7 !text-[11px]"
+              className="btn h-7 text-[11px]!"
             >
               GitHub repository
             </a>

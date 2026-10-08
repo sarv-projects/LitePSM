@@ -235,6 +235,35 @@ func TestBuildCatalogReleaseMaterializeReproducesBytes(t *testing.T) {
 	}
 }
 
+func TestBuildCatalogReleaseMaterializeRejectsChangedDataset(t *testing.T) {
+	dataset := writeBuildDataset(t)
+	releaseDir := t.TempDir()
+	prevPath := filepath.Join(releaseDir, "v1", "current.json")
+	if _, _, err := buildCatalogRelease(catalogBuildOptions{
+		datasetPath: dataset, outDir: releaseDir, prevPath: prevPath,
+		createdAt: "2026-10-05T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("release build: %v", err)
+	}
+
+	changedDataset := strings.Replace(buildTestDataset, "A demo MCP server", "Changed MCP server", 1)
+	if err := os.WriteFile(dataset, []byte(changedDataset), 0o644); err != nil {
+		t.Fatalf("change dataset: %v", err)
+	}
+
+	outDir := t.TempDir()
+	if _, _, err := buildCatalogRelease(catalogBuildOptions{
+		datasetPath: dataset, outDir: outDir, prevPath: prevPath, materialize: true,
+	}); err == nil || !strings.Contains(err.Error(), "does not match released pointer digest") {
+		t.Fatalf("materializing changed inputs should fail on digest mismatch, got %v", err)
+	}
+	if entries, err := os.ReadDir(outDir); err != nil {
+		t.Fatalf("read output dir: %v", err)
+	} else if len(entries) != 0 {
+		t.Fatalf("failed materialization wrote output: %v", entries)
+	}
+}
+
 func TestParseBuildCreatedAt(t *testing.T) {
 	explicit, err := parseBuildCreatedAt("2026-10-05T12:00:00Z")
 	if err != nil {

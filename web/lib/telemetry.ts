@@ -17,7 +17,18 @@ export interface Listing {
    * (`provenance: "vendor-manifest"`); list-sourced rows are "awesome-list-claim".
    */
   publisher: { name: string; verified: boolean; provenance?: string; url?: string; avatarUrl?: string };
-  /** discovery_only rows have no proven version, command or transport. */
+  /**
+   * The `domain.SourceID` this row was ingested from (K002 provenance), e.g.
+   * `feed:punkpeye-awesome-mcp-servers`, `git:claude-plugins-official`,
+   * `builtin:mcp-registry`. Rows are namespaced by their source in `id`, so a
+   * cross-source id collision keeps the first-ingested (authoritative for the
+   * fields it carries) source and `source` names that winner.
+   */
+  source?: string;
+  /** discovery_only rows have no proven command or transport; a version
+   * appears only when the upstream itself published one (the Official MCP
+   * Registry publishes versions and package coordinates, never a launch
+   * line), so a version here never means "installable". */
   installability?: "discovery_only" | "metadata_verified" | "runtime_verified" | "litespm_tested";
   transport?: string;
   runtime?: string;

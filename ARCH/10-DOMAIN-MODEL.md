@@ -261,15 +261,15 @@ type CapabilityGrant struct {
     CreatedAt            time.Time        `json:"createdAt"`
 }
 ```
-**Never written in production.** `SaveCapabilityGrant`
-(`internal/state/repositories.go:451`) has no non-test caller, so the
-`capability_grants` table is empty in every real run and **`ExpiresAt` is never
-set on a real grant** — the expiry clause in `GetActiveGrant` (`expires_at
-IS NULL OR expires_at > CURRENT_TIMESTAMP`, `internal/state/repositories.go:475-481`)
-and the grant query in `internal/policy` (`internal/policy/engine.go:261-266`)
-therefore match nothing today. The struct, its writer, and its readers are
-`IMPLEMENTED`; production grant issuance is `DESIGNED`
-([STATUS.md](../STATUS.md) §4).
+**Written in production — but never with an expiry.** `SaveCapabilityGrant`
+(`internal/state/repositories.go:894`) has a non-test caller (`cmd/litespm/grant.go:87`), so the
+`capability_grants` table is not empty in a real run and the policy gate can match a row. The row
+that writer produces sets no `ExpiresAt`, so **`ExpiresAt` is `NULL` on every real grant** and the
+expiry clause (`expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP`, at
+`internal/state/repositories.go:933` and again in the policy engine's own grant query,
+`internal/policy/engine.go:503`) always takes the `IS NULL` branch; `GetActiveGrant`
+(`:928-933`) still has only test callers. Grant issuance is therefore `WIRED`; grant *expiry* is
+`DESIGNED` ([STATUS.md](../STATUS.md) §4).
 
 ### 2.9 EffectDeclaration & Provenance
 Effects describe side-effects of a component or tool with unambiguous classification provenance:
@@ -344,4 +344,4 @@ Computed by `ComputeSchemaFingerprint(jsonSchema []byte)` (`internal/domain/cano
 ```text
 schemaFingerprint = "sha256:" + hex( SHA-256( JCS( tool.InputSchema ) ) )
 ```
-If an upstream server alters its parameter types, adds required parameters, or modifies property descriptions, `schemaFingerprint` changes immediately. The value is what `CapabilityGrant.SchemaFingerprint` binds to (§2.8) and what `mcpclient.FingerprintSchema` / `DetectDrift` recompute (`internal/mcpclient/probe.go:20,67`); drift detection is `WIRED` — `internal/discover.Invoke` re-probes the server and refuses a call whose fingerprint no longer matches what was discovered ([STATUS.md](../STATUS.md) §4) — while the *grant* half (invalidating a stored `CapabilityGrant`) is `IMPLEMENTED`, because `SaveCapabilityGrant` has no non-test caller.
+If an upstream server alters its parameter types, adds required parameters, or modifies property descriptions, `schemaFingerprint` changes immediately. The value is what `CapabilityGrant.SchemaFingerprint` binds to (§2.8) and what `mcpclient.FingerprintSchema` / `DetectDrift` recompute (`internal/mcpclient/probe.go:20,67`); drift detection is `WIRED` — `internal/discover.Invoke` re-probes the server and refuses a call whose fingerprint no longer matches what was discovered ([STATUS.md](../STATUS.md) §4) — while the *grant* half (invalidating a stored `CapabilityGrant`) is reached as well: `internal/policy.checkCapabilityGrant` reads the grant row and denies on drift (`internal/policy/engine.go:494-560`), and grant rows are written in production by `litespm grant` (`cmd/litespm/grant.go:87`).

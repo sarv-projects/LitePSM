@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -16,7 +17,7 @@ import (
 )
 
 // authorizedTestContext stands in for a context built after a consumed
-// approval, for tests that call installSkillFromListing directly.
+// approval, for tests that call a gated installer directly.
 func authorizedTestContext() context.Context {
 	return withInstallAuthorization(context.Background(), installAuthorization{
 		Origin: approvalActorHumanCLI, ApprovalID: "appr_unit_test", PlanID: "plan_unit_test",
@@ -255,7 +256,7 @@ func TestAuthorizeHumanInstall_RecordsHumanCLIApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	grant, err := authorizeHumanInstall(ctx, h.db, h.catClient, listing, "1.0.0", domain.ScopeUser)
+	grant, _, err := authorizeHumanInstall(ctx, h.db, h.catClient, listing, "1.0.0", domain.ScopeUser, nil)
 	if err != nil {
 		t.Fatalf("authorizeHumanInstall: %v", err)
 	}
@@ -317,5 +318,158 @@ func TestOpenCLIPolicyEngine_LoadsRealTiers(t *testing.T) {
 	}
 	if _, _, err := openCLIPolicyEngine(dataRoot); err == nil {
 		t.Fatal("a malformed deny-rules file must fail closed, not be ignored")
+	}
+}
+
+// --- B1 Phase 3 Step 3.4: the approval prompt must show the runtime --------
+
+// approvalPromptFixture builds an install plan the way buildInstallPlan does,
+// with the runtime sealed into every host change's ValueJSON.
+func approvalPromptFixture(expires time.Time, valueJSONs ...string) *domain.InstallPlan {
+	hostIDs := []string{"codex"}
+	if len(valueJSONs) == 2 {
+		hostIDs = []string{"codex", "claude-code"}
+	}
+	paths := map[string]string{
+		"codex":       "/home/user/.codex/config.toml",
+		"claude-code": "/home/user/.claude.json",
+	}
+	entries := []string{"remote-demo"}
+	plan := &domain.InstallPlan{
+		PlanID: "plan_01234567890123456789012345",
+		Request: domain.PlanRequest{
+			ListingID:   "mcp:example:remote-demo",
+			TargetScope: domain.ScopeUser,
+		},
+		Resolved:  domain.PlanResolved{Version: "1.0.0"},
+		Effects:   []string{"package.install", "host.config.write", "network.outbound"},
+		ExpiresAt: expires,
+	}
+	for i, vj := range valueJSONs {
+		hostID := hostIDs[0]
+		if len(hostIDs) == 2 {
+			hostID = hostIDs[i]
+		}
+		entryKey := entries[0]
+		plan.HostChanges = append(plan.HostChanges, domain.HostChange{
+			HostID:     hostID,
+			ConfigPath: paths[hostID],
+			Action:     "register_command",
+			EntryKey:   entryKey,
+			ValueJSON:  vj,
+		})
+	}
+	return plan
+}
+
+// A human approving an endpoint plan must SEE the endpoint. This is the exact
+// stdout of `litespm approve <plan-id>` for a remote listing: the endpoint line
+// is mandatory and carries the transport, because a plan that printed no
+// runtime line would be approving the URL blind.
+func TestApprovalPromptPrintsEndpointForRemotePlan(t *testing.T) {
+	expires := time.Date(2026, time.October, 8, 12, 0, 0, 0, time.UTC)
+	plan := approvalPromptFixture(expires, mcpInstallPlanValueJSON(&mcpInstallBinding{
+		Hosts:   []string{"codex"},
+		Runtime: &domain.RuntimeDescriptor{Type: "streamable-http", Endpoint: "https://mcp.example.com/mcp"},
+	}))
+
+	var buf bytes.Buffer
+	writeApprovalPrompt(&buf, plan)
+
+	want := `  listing : mcp:example:remote-demo
+  version : 1.0.0
+  scope   : user
+  effects : package.install, host.config.write, network.outbound
+  target  : codex -> /home/user/.codex/config.toml (remote-demo)
+  endpoint : "https://mcp.example.com/mcp" (streamable-http)
+  options : force=false env-names=[]
+  expires : 2026-10-08T12:00:00Z
+`
+	if got := buf.String(); got != want {
+		t.Errorf("approval prompt is not the golden text\n got: %q\nwant: %q", got, want)
+	}
+
+	// With several targets the runtime line is printed exactly once, and it is
+	// never skipped: an endpoint plan must never render with no runtime line.
+	two := approvalPromptFixture(expires,
+		mcpInstallPlanValueJSON(&mcpInstallBinding{
+			Hosts:   []string{"codex"},
+			Runtime: &domain.RuntimeDescriptor{Type: "streamable-http", Endpoint: "https://mcp.example.com/mcp"},
+		}),
+		mcpInstallPlanValueJSON(&mcpInstallBinding{
+			Hosts:   []string{"claude-code"},
+			Runtime: &domain.RuntimeDescriptor{Type: "streamable-http", Endpoint: "https://mcp.example.com/mcp"},
+		}),
+	)
+	buf.Reset()
+	writeApprovalPrompt(&buf, two)
+	got := buf.String()
+	if n := strings.Count(got, `endpoint : "https://mcp.example.com/mcp" (streamable-http)`); n != 1 {
+		t.Errorf("endpoint line printed %d times, want exactly 1:\n%s", n, got)
+	}
+	if n := strings.Count(got, "  target  : "); n != 2 {
+		t.Errorf("target lines = %d, want 2:\n%s", n, got)
+	}
+	if !strings.Contains(got, "  target  : claude-code -> /home/user/.claude.json (remote-demo)") {
+		t.Errorf("second target missing:\n%s", got)
+	}
+}
+
+// The stdio prompt is unchanged: the command line still prints, with the
+// options that bind it.
+func TestApprovalPromptStillPrintsCommandForStdioPlan(t *testing.T) {
+	expires := time.Date(2026, time.October, 8, 12, 0, 0, 0, time.UTC)
+	plan := approvalPromptFixture(expires, mcpInstallPlanValueJSON(&mcpInstallBinding{
+		Hosts:    []string{"claude-code"},
+		Runtime:  &domain.RuntimeDescriptor{Type: "stdio", Command: "npx", Args: []string{"-y", "demo-mcp"}},
+		EnvNames: []string{"API_TOKEN"},
+		Force:    true,
+	}))
+	plan.Request.ListingID = "mcp:example:demo-mcp"
+	plan.Effects = []string{"package.install", "host.config.write"}
+	plan.HostChanges[0].HostID = "claude-code"
+	plan.HostChanges[0].ConfigPath = "/home/user/.claude.json"
+	plan.HostChanges[0].EntryKey = "demo-mcp"
+
+	var buf bytes.Buffer
+	writeApprovalPrompt(&buf, plan)
+
+	want := `  listing : mcp:example:demo-mcp
+  version : 1.0.0
+  scope   : user
+  effects : package.install, host.config.write
+  target  : claude-code -> /home/user/.claude.json (demo-mcp)
+  command : "npx" ["-y" "demo-mcp"]
+  options : force=true env-names=["API_TOKEN"]
+  expires : 2026-10-08T12:00:00Z
+`
+	if got := buf.String(); got != want {
+		t.Errorf("stdio approval prompt is not the golden text\n got: %q\nwant: %q", got, want)
+	}
+	if strings.Contains(buf.String(), "endpoint :") {
+		t.Errorf("a stdio plan printed an endpoint line:\n%s", buf.String())
+	}
+}
+
+// A plan whose host changes carry no runtime (a skill install) prints no
+// runtime line and no options line — the only legitimate skip, and the plan
+// gate rejects such a shape for MCP before a prompt can exist.
+func TestApprovalPromptSkipsRuntimeOnlyWhenNoneIsSealed(t *testing.T) {
+	expires := time.Date(2026, time.October, 8, 12, 0, 0, 0, time.UTC)
+	plan := &domain.InstallPlan{
+		PlanID:    "plan_01234567890123456789012345",
+		Request:   domain.PlanRequest{ListingID: "skill:example:demo-skill", TargetScope: domain.ScopeProject},
+		Resolved:  domain.PlanResolved{Version: "1.0.0"},
+		Effects:   []string{"package.install", "filesystem.write"},
+		ExpiresAt: expires,
+	}
+	var buf bytes.Buffer
+	writeApprovalPrompt(&buf, plan)
+	got := buf.String()
+	if strings.Contains(got, "command :") || strings.Contains(got, "endpoint :") || strings.Contains(got, "options :") {
+		t.Errorf("a runtime-less plan printed a runtime or options line:\n%s", got)
+	}
+	if !strings.Contains(got, "  expires : 2026-10-08T12:00:00Z") {
+		t.Errorf("prompt lost its expiry line:\n%s", got)
 	}
 }

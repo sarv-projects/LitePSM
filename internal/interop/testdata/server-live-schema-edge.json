@@ -1,0 +1,73 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.litespm.schema-edge/fixture",
+  "description": "Hand-written fixture pinning the 2025-12-11 schema members no live entry happened to publish at capture time: fileSha256, runtimeHint, packageArguments, environmentVariables values and remote header values. The sentinel strings below must never appear anywhere in import's output.",
+  "title": "schema edge fixture",
+  "version": "9.9.9",
+  "websiteUrl": "https://example.invalid/edge",
+  "repository": {
+    "url": "https://github.com/litespm/schema-edge",
+    "source": "github",
+    "id": "repo-id-12345",
+    "subfolder": "packages/edge"
+  },
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "com.litespm.schema-edge/fixture",
+      "version": "9.9.9",
+      "fileSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "runtimeHint": "npx",
+      "registryBaseUrl": "https://example.invalid/registry",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "SENTINEL_PACKAGE_ARG_NEVER_LAUNCHED"
+        },
+        {
+          "type": "named",
+          "name": "--out",
+          "value": "SENTINEL_NAMED_ARG_NEVER_LAUNCHED",
+          "isRequired": true,
+          "format": "filepath"
+        }
+      ],
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "SENTINEL_RUNTIME_ARG_NEVER_LAUNCHED"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "EDGE_API_KEY",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string",
+          "value": "hunter2-never-printed"
+        },
+        {
+          "name": "EDGE_MODEL",
+          "format": "string",
+          "value": "hunter2-never-printed"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://edge.example.invalid/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "isSecret": true,
+          "value": "hunter2-never-printed"
+        }
+      ]
+    }
+  ]
+}

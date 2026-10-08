@@ -110,12 +110,14 @@ var KnownSources = []SourceDef{
 		ManifestPaths: []string{".grok-plugin/marketplace.json"},
 		Format:        "grok-marketplace.json",
 	},
-	// The two directory sources are walked by the dataset producer
+	// The directory sources are walked by the dataset producer
 	// (scripts/build_full_catalog.py): sitemap in, one record per
 	// capability. They carry no git manifest paths -- skills.sh serves
 	// SKILL.md frontmatter through its download API, mcpservers.org page
 	// metadata through public Wayback Machine replays (its own API paths
-	// are robots-disallowed). RepoURL stays empty because neither source
+	// are robots-disallowed), and mcpmarket.com serves its own listing
+	// pages directly (robots.txt allows them and sets Crawl-delay: 1;
+	// only /api/ is disallowed). RepoURL stays empty because none of them
 	// is ingested from a git repository.
 	{
 		ID:        domain.SourceID("feed:skills-sh"),
@@ -127,6 +129,12 @@ var KnownSources = []SourceDef{
 		ID:        domain.SourceID("feed:mcpservers-org"),
 		Name:      "MCPServers.org directory",
 		Publisher: "mcpservers.org",
+		Format:    "directory-html",
+	},
+	{
+		ID:        domain.SourceID("feed:mcpmarket-com"),
+		Name:      "MCP Market directory",
+		Publisher: "mcpmarket.com",
 		Format:    "directory-html",
 	},
 }

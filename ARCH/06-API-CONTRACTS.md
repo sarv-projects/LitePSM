@@ -330,8 +330,11 @@ Two behavioural rules survive any status change:
     fingerprint before the tool is called, and re-computes the tool's schema fingerprint first: a
     schema that changed since discovery is refused outright ("re-run discovery before invoking
     it"), never called (`internal/discover/discover.go:358-373`). The grant-based invalidation half
-    of [ARCH/05 §5](05-SECURITY.md#5-capability-schema-drift-defense) is still `IMPLEMENTED`, not
-    reached: `SaveCapabilityGrant` has no non-test caller, so no grant exists to invalidate.
+    of [ARCH/05 §5](05-SECURITY.md#5-capability-schema-drift-defense) is reached too: gate 2
+    re-evaluates the grant against the fingerprint the server serves right now
+    (`internal/discover/discover.go:371-373` → `internal/policy/engine.go:494-560`), and grant rows
+    are written in production by `litespm grant` (`cmd/litespm/grant.go:87`). What still has no
+    production writer is the `audit_events` row that would record the resulting denial.
 
 ---
 

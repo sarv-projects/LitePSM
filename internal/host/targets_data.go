@@ -102,6 +102,14 @@ func firstExisting(candidates ...string) string {
 	return ""
 }
 
+// remoteNotVerifiedNote is appended to the Note of every Tier D row: a row
+// whose remote (URL) entry object was never fetched. The note is the paper
+// trail for why `Remote` is nil on that row even where the Note already hints
+// at a URL key elsewhere — enabling one is a separate evidence task (fetch the
+// DocsURL, record the exact entry object in Note, set Remote, add a golden
+// test), never a guess. See the B1 acceptance matrix, PART 1 §1.4.
+const remoteNotVerifiedNote = " remote: not verified — no URL entry object was ever read from this row's DocsURL, so remote (URL) installs are refused for this host (LPSM-HOST-REMOTE-UNSUPPORTED)."
+
 // verifiedBridgeTargets is the data-driven target registry.
 var verifiedBridgeTargets = []BridgeTarget{
 	{
@@ -119,7 +127,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".aider-desk"},
 		DetectBinaries: []string{"aider-desk"},
 		DocsURL:        "https://aiderdesk.hotovo.com/docs/agent-mode/mcp-servers",
-		Note:           "Project scope merges over user scope.",
+		Note:           "Project scope merges over user scope." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "amp", Name: "Amp", Format: FormatJSON,
@@ -178,7 +186,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		},
 		DetectPaths: []string{".astrbot"},
 		DocsURL:     "https://github.com/AstrBotDevs/AstrBot/wiki/en-use-mcp",
-		Note:        "A chat-bot framework, not a coding agent. Path verified in vendor source: <root>/data/mcp_server.json where root is ASTRBOT_ROOT else cwd (packaged desktop runtime: ~/.astrbot).",
+		Note:        "A chat-bot framework, not a coding agent. Path verified in vendor source: <root>/data/mcp_server.json where root is ASTRBOT_ROOT else cwd (packaged desktop runtime: ~/.astrbot)." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "augment", Name: "Augment", Format: FormatJSON,
@@ -188,18 +196,26 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".augment"},
 		DetectBinaries: []string{"auggie"},
 		DocsURL:        "https://docs.augmentcode.com/cli/integrations",
-		Note:           "Targets the Auggie CLI config; the IDE extension stores MCP separately.",
+		Note:           "Targets the Auggie CLI config; the IDE extension stores MCP separately." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "cursor", Name: "Cursor", Format: FormatJSON,
 		UserKey: []string{"mcpServers"}, ProjectKey: []string{"mcpServers"},
-		Shape:          ShapeObject,
+		Shape: ShapeObject,
+		// Remote shape read from this row's DocsURL: a bare {"url": …} member
+		// ("Remote Server // MCP server using HTTP or SSE"); the host infers
+		// the transport from the endpoint, so there is no type token to write
+		// and both streamable-http and sse are expressible as a bare url.
+		Remote: &RemoteEntrySpec{
+			URLKey:     "url",
+			Transports: []string{TransportStreamableHTTP, TransportSSE},
+		},
 		UserPath:       func(home string) string { return filepath.Join(home, ".cursor", "mcp.json") },
 		ProjectPath:    func(root string) string { return filepath.Join(root, ".cursor", "mcp.json") },
 		DetectPaths:    []string{".cursor"},
 		DetectBinaries: []string{"agent"},
 		DocsURL:        "https://cursor.com/docs/mcp",
-		Note:           "Strict JSON (no comments). IDE and the Cursor CLI share this one file.",
+		Note:           "Strict JSON (no comments). IDE and the Cursor CLI share this one file. Remote (URL) entries are a bare url member (host infers streamable-http vs sse from the endpoint); verified against DocsURL 2026-10-08.",
 	},
 	{
 		ID: "deepagents", Name: "Deep Agents", Format: FormatJSON,
@@ -210,7 +226,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".deepagents"},
 		DetectBinaries: []string{"dcode"},
 		DocsURL:        "https://docs.langchain.com/oss/deepagents/code/mcp-tools",
-		Note:           "Project-level MCP is default-deny trust-gated by the host.",
+		Note:           "Project-level MCP is default-deny trust-gated by the host." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "devin", Name: "Devin", Format: FormatJSON,
@@ -226,7 +242,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".config/devin"},
 		DetectBinaries: []string{"devin"},
 		DocsURL:        "https://docs.devin.ai/cli/extensibility/mcp/configuration",
-		Note:           "MCP moved out of config.json into dedicated mcp_config.json files. The legacy Cascade agent also reads windsurf's config, which is this same file.",
+		Note:           "MCP moved out of config.json into dedicated mcp_config.json files. The legacy Cascade agent also reads windsurf's config, which is this same file." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "droid", Name: "Droid", Format: FormatJSON,
@@ -237,7 +253,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".factory"},
 		DetectBinaries: []string{"droid"},
 		DocsURL:        "https://docs.factory.ai/harness/mcp",
-		Note:           "Three-level precedence (user, folder, project); user wins per server name.",
+		Note:           "Three-level precedence (user, folder, project); user wins per server name." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "firebender", Name: "Firebender", Format: FormatJSON,
@@ -247,7 +263,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		ProjectPath: func(root string) string { return filepath.Join(root, "firebender.json") },
 		DetectPaths: []string{".firebender"},
 		DocsURL:     "https://docs.firebender.com/context/mcp/overview",
-		Note:        "Vendor docs contradict themselves (mcp.json vs firebender.json); the syntax reference and config-locations section agree on firebender.json.",
+		Note:        "Vendor docs contradict themselves (mcp.json vs firebender.json); the syntax reference and config-locations section agree on firebender.json." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "forgecode", Name: "ForgeCode", Format: FormatJSON,
@@ -265,7 +281,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{"forge"},
 		DetectBinaries: []string{"forge"},
 		DocsURL:        "https://github.com/tailcallhq/forgecode",
-		Note:           "Other settings live in ~/forge/.forge.toml; MCP is .mcp.json; FORGE_CONFIG relocates the whole base dir (incl. the MCP file).",
+		Note:           "Other settings live in ~/forge/.forge.toml; MCP is .mcp.json; FORGE_CONFIG relocates the whole base dir (incl. the MCP file)." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "fx", Name: "fx", Format: FormatJSON,
@@ -277,7 +293,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".fx"},
 		DetectBinaries: []string{"fx"},
 		DocsURL:        "https://fx.sh/docs/capabilities/mcp",
-		Note:           "Key is \"mcp\" (legacy mcpServers still accepted). Entry uses a combined command array.",
+		Note:           "Key is \"mcp\" (legacy mcpServers still accepted). Entry uses a combined command array." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "gemini-cli", Name: "Gemini CLI", Format: FormatJSON,
@@ -293,7 +309,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".gemini"},
 		DetectBinaries: []string{"gemini"},
 		DocsURL:        "https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md",
-		Note:           "GEMINI_CLI_HOME redirects the whole state dir. Also has a global \"mcp\" allow/exclude object we do not touch.",
+		Note:           "GEMINI_CLI_HOME redirects the whole state dir. Also has a global \"mcp\" allow/exclude object we do not touch." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "github-copilot", Name: "GitHub Copilot CLI", Format: FormatJSON,
@@ -311,7 +327,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".copilot"},
 		DetectBinaries: []string{"copilot"},
 		DocsURL:        "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers",
-		Note:           "Project scope beats user scope; .mcp.json beats .github/mcp.json.",
+		Note:           "Project scope beats user scope; .mcp.json beats .github/mcp.json." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "iflow-cli", Name: "iFlow CLI", Format: FormatJSON,
@@ -322,7 +338,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".iflow"},
 		DetectBinaries: []string{"iflow"},
 		DocsURL:        "https://github.com/iflow-ai/iflow-cli",
-		Note:           "Vendor docs list two conflicting layouts (settings.json vs .iflow/mcp/config.json); settings.json is what we target. Vendor shut the product down 2026-04-17 (README banner); the target stays so existing installs remain manageable.",
+		Note:           "Vendor docs list two conflicting layouts (settings.json vs .iflow/mcp/config.json); settings.json is what we target. Vendor shut the product down 2026-04-17 (README banner); the target stays so existing installs remain manageable." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "jazz", Name: "Jazz", Format: FormatJSON,
@@ -333,7 +349,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".jazz"},
 		DetectBinaries: []string{"jazz"},
 		DocsURL:        "https://github.com/lvndry/jazz",
-		Note:           "Uses the universal .agents/mcp.json. Enable/disable state lives in a separate config we do not touch.",
+		Note:           "Uses the universal .agents/mcp.json. Enable/disable state lives in a separate config we do not touch." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "junie", Name: "Junie", Format: FormatJSON,
@@ -344,7 +360,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".junie"},
 		DetectBinaries: []string{"junie"},
 		DocsURL:        "https://junie.jetbrains.com/docs/junie-cli-mcp-configuration.html",
-		Note:           "Note the nested mcp/ directory. Legacy flat ~/.junie/mcp.json also referenced.",
+		Note:           "Note the nested mcp/ directory. Legacy flat ~/.junie/mcp.json also referenced." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "kimchi", Name: "Kimchi", Format: FormatJSON,
@@ -354,7 +370,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".config/kimchi"},
 		DetectBinaries: []string{"kimchi"},
 		DocsURL:        "https://docs.kimchi.dev/docs/coding-mcp-servers",
-		Note:           "No documented env override for the harness path.",
+		Note:           "No documented env override for the harness path." + remoteNotVerifiedNote,
 	},
 	{
 		// Kilo documents kilo.jsonc as a supported filename; that is the reason to
@@ -371,7 +387,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".config/kilo", ".kilo", ".kilocode"},
 		DetectBinaries: []string{"kilo"},
 		DocsURL:        "https://kilo.ai/docs/automate/mcp/using-in-cli",
-		Note:           "Key is \"mcp\" and entries use {type:local, command:[argv]}.",
+		Note:           "Key is \"mcp\" and entries use {type:local, command:[argv]}." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "kimi-code-cli", Name: "Kimi Code CLI", Format: FormatJSON,
@@ -387,7 +403,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".kimi-code", ".kimi"},
 		DetectBinaries: []string{"kimi"},
 		DocsURL:        "https://kimi.com/code/docs/en/kimi-code-cli/customization/mcp.html",
-		Note:           "Directory is .kimi-code, not .kimi.",
+		Note:           "Directory is .kimi-code, not .kimi." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "kiro-cli", Name: "Kiro CLI", Format: FormatJSON,
@@ -407,7 +423,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".kiro"},
 		DetectBinaries: []string{"kiro-cli"},
 		DocsURL:        "https://kiro.dev/docs/mcp/configuration",
-		Note:           "CLI registry mode documents a different, flatter path set; we target the general settings path.",
+		Note:           "CLI registry mode documents a different, flatter path set; we target the general settings path." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "kode", Name: "Kode", Format: FormatJSON,
@@ -426,7 +442,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".kode"},
 		DetectBinaries: []string{"kode"},
 		DocsURL:        "https://github.com/shareAI-lab/Kode-cli",
-		Note:           "Project file .mcp.json; global map lives in ~/.kode.json (or <KODE_CONFIG_DIR>/config.json when that env is set).",
+		Note:           "Project file .mcp.json; global map lives in ~/.kode.json (or <KODE_CONFIG_DIR>/config.json when that env is set)." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "crush", Name: "Crush", Format: FormatJSON,
@@ -461,12 +477,20 @@ var verifiedBridgeTargets = []BridgeTarget{
 		ProjectPath: func(root string) string { return filepath.Join(root, ".zcode", "config.json") },
 		DetectPaths: []string{".zcode"},
 		DocsURL:     "https://zcode.z.ai/en/docs/mcp-services",
-		Note:        "Nested mcp.servers. A .zcode config fully suppresses a .agents config in the same scope.",
+		Note:        "Nested mcp.servers. A .zcode config fully suppresses a .agents config in the same scope." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "zed", Name: "Zed", Format: FormatJSON,
 		UserKey: []string{"context_servers"}, ProjectKey: []string{"context_servers"},
 		Shape: ShapeObject, TolerateComments: true,
+		// Remote shape read from this row's DocsURL: {"url": "https://…",
+		// "headers": …} with no type token. Only the HTTP example is
+		// documented there, so sse is deliberately NOT in Transports —
+		// an sse install to Zed is refused (LPSM-HOST-REMOTE-UNSUPPORTED).
+		Remote: &RemoteEntrySpec{
+			URLKey:     "url",
+			Transports: []string{TransportStreamableHTTP},
+		},
 		UserPath: func(home string) string {
 			if ad := windowsAppData(); ad != "" {
 				return filepath.Join(ad, "Zed", "settings.json")
@@ -480,7 +504,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".config/zed", ".local/share/zed"},
 		DetectBinaries: []string{"zed"},
 		DocsURL:        "https://zed.dev/docs/ai/mcp",
-		Note:           "Key is \"context_servers\" (NOT mcpServers). settings.json is JSONC; comments are preserved on write. macOS reads ~/Library/Application Support/Zed/settings.json.",
+		Note:           "Key is \"context_servers\" (NOT mcpServers). settings.json is JSONC; comments are preserved on write. macOS reads ~/Library/Application Support/Zed/settings.json. Remote (URL) entries are a bare url member (streamable-http only; sse is not documented and is refused); verified against DocsURL 2026-10-08.",
 	},
 	{
 		ID: "bob", Name: "IBM Bob", Format: FormatJSON,
@@ -490,7 +514,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		ProjectPath: func(root string) string { return filepath.Join(root, ".bob", "mcp.json") },
 		DetectPaths: []string{".bob"},
 		DocsURL:     "https://bob.ibm.com/docs/ide/configuration/mcp/mcp-in-bob",
-		Note:        "Project overrides global on name conflict. No documented env override for the settings dir.",
+		Note:        "Project overrides global on name conflict. No documented env override for the settings dir." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "codearts-agent", Name: "CodeArts Agent", Format: FormatJSON,
@@ -506,7 +530,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		},
 		DetectPaths: []string{".codeartsdoer"},
 		DocsURL:     "https://support.huaweicloud.com/intl/en-us/usermanual-cli/codeartsagent_cli_0035.html",
-		Note:        "Three deviations from the common shape: key is \"mcp\", command is an argv ARRAY, and the env key is \"environment\".",
+		Note:        "Three deviations from the common shape: key is \"mcp\", command is an argv ARRAY, and the env key is \"environment\"." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "codebuddy", Name: "CodeBuddy", Format: FormatJSON,
@@ -528,7 +552,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".codebuddy"},
 		DetectBinaries: []string{"codebuddy", "cbc"},
 		DocsURL:        "https://codebuddy.ai/docs/cli/mcp",
-		Note:           "JSONC. Read order: .mcp.json -> mcp.json (deprecated) -> ~/.codebuddy.json (legacy).",
+		Note:           "JSONC. Read order: .mcp.json -> mcp.json (deprecated) -> ~/.codebuddy.json (legacy)." + remoteNotVerifiedNote,
 	},
 	{
 		// The vendor's documented .codestudio/mcp.json sample contains // comments.
@@ -538,7 +562,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		ProjectPath: func(root string) string { return filepath.Join(root, ".codestudio", "mcp.json") },
 		DetectPaths: []string{".codestudio"},
 		DocsURL:     "https://ej2.syncfusion.com/angular/documentation/mcp",
-		Note:        "Workspace-only (no user-scope path is documented) and the key is \"servers\", not mcpServers.",
+		Note:        "Workspace-only (no user-scope path is documented) and the key is \"servers\", not mcpServers." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "command-code", Name: "Command Code", Format: FormatJSON,
@@ -549,7 +573,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".commandcode"},
 		DetectBinaries: []string{"cmd", "cmdc", "command-code"},
 		DocsURL:        "https://commandcode.ai/docs/mcp",
-		Note:           "Three scopes: local (projects/<slug>/mcp.json) > project > user. OAuth secrets are stripped into mcp-tokens.json.",
+		Note:           "Three scopes: local (projects/<slug>/mcp.json) > project > user. OAuth secrets are stripped into mcp-tokens.json." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "cortex", Name: "Cortex Code", Format: FormatJSON,
@@ -559,7 +583,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".snowflake/cortex"},
 		DetectBinaries: []string{"cortex"},
 		DocsURL:        "https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-mcp",
-		Note:           "Credentials are migrated to the OS keychain on first connect and stripped from mcp.json.",
+		Note:           "Credentials are migrated to the OS keychain on first connect and stripped from mcp.json." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "openhands", Name: "OpenHands", Format: FormatJSON,
@@ -574,7 +598,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".openhands"},
 		DetectBinaries: []string{"openhands"},
 		DocsURL:        "https://docs.openhands.dev/overview/model-context-protocol",
-		Note:           "Current releases IGNORE legacy config.toml [mcp]; JSON replaced TOML at 1.0.0.",
+		Note:           "Current releases IGNORE legacy config.toml [mcp]; JSON replaced TOML at 1.0.0." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "pochi", Name: "Pochi", Format: FormatJSON,
@@ -585,7 +609,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".pochi"},
 		DetectBinaries: []string{"pochi"},
 		DocsURL:        "https://docs.getpochi.com/mcp",
-		Note:           "Key is \"mcp\", not mcpServers. JSONC.",
+		Note:           "Key is \"mcp\", not mcpServers. JSONC." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "posit-assistant", Name: "Posit Assistant", Format: FormatJSON,
@@ -595,7 +619,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		ProjectPath: func(root string) string { return filepath.Join(root, ".posit", "assistant", "settings.json") },
 		DetectPaths: []string{".posit/assistant", ".positai"},
 		DocsURL:     "https://assistant.posit.co/docs/reference/mcp-servers/",
-		Note:        "Product-level file, NOT the IDE's settings.json. Entries use an argv command array and the \"environment\" env key.",
+		Note:        "Product-level file, NOT the IDE's settings.json. Entries use an argv command array and the \"environment\" env key." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "qoder", Name: "Qoder", Format: FormatJSON,
@@ -613,7 +637,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".qoder"},
 		DetectBinaries: []string{"qoder"},
 		DocsURL:        "https://docs.qoder.com/cli/mcp-servers",
-		Note:           "Targets the Qoder CLI. The Qoder IDE stores MCP separately and is not covered.",
+		Note:           "Targets the Qoder CLI. The Qoder IDE stores MCP separately and is not covered." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "qoder-cn", Name: "Qoder CN", Format: FormatJSON,
@@ -629,7 +653,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".qoder-cn"},
 		DetectBinaries: []string{"qodercn"},
 		DocsURL:        "https://docs.qoder.cn/cli/mcp-reference",
-		Note:           "Separate product. User dir .qoder-cn and env QODERCN_CONFIG_DIR (no underscore), but project paths still use .qoder.",
+		Note:           "Separate product. User dir .qoder-cn and env QODERCN_CONFIG_DIR (no underscore), but project paths still use .qoder." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "qwen-code", Name: "Qwen Code", Format: FormatJSON,
@@ -656,7 +680,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		ProjectPath: func(root string) string { return filepath.Join(root, ".ona", "mcp-config.json") },
 		DetectPaths: []string{".ona"},
 		DocsURL:     "https://ona.com/docs/ona/mcp",
-		Note:        "Repo-local file only; Ona has no documented user-scope MCP config. A cloud platform, not a local CLI.",
+		Note:        "Repo-local file only; Ona has no documented user-scope MCP config. A cloud platform, not a local CLI." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "neovate", Name: "Neovate", Format: FormatJSON,
@@ -669,7 +693,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".neovate"},
 		DetectBinaries: []string{"neovate"},
 		DocsURL:        "https://github.com/neovateai/neovate-code",
-		Note:           "Verified from the product's own source (src/config.ts, src/mcp.ts) rather than docs, which were unreachable. Entries discriminate on a \"type\" field.",
+		Note:           "Verified from the product's own source (src/config.ts, src/mcp.ts) rather than docs, which were unreachable. Entries discriminate on a \"type\" field." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "mux", Name: "Mux (Xum)", Format: FormatJSON,
@@ -689,7 +713,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".rovodev"},
 		DetectBinaries: []string{"acli"},
 		DocsURL:        "https://support.atlassian.com/rovo/docs/connect-to-an-mcp-server-in-rovo-dev-cli/",
-		Note:           "Clean single-file, single-key config. config.yml only points at this file and carries an allowlist we deliberately do not touch.",
+		Note:           "Clean single-file, single-key config. config.yml only points at this file and carries an allowlist we deliberately do not touch." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "tabnine-cli", Name: "Tabnine CLI", Format: FormatJSON,
@@ -701,7 +725,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		DetectPaths:    []string{".tabnine"},
 		DetectBinaries: []string{"tabnine"},
 		DocsURL:        "https://docs.tabnine.com/main/getting-started/tabnine-agent/mcp-intro-and-setup/mcp-server-config",
-		Note:           "mcpServers lives inside a general settings document shared by many features, so only that key is touched. The product is in maintenance mode and deprecated after 2026-12-31.",
+		Note:           "mcpServers lives inside a general settings document shared by many features, so only that key is touched. The product is in maintenance mode and deprecated after 2026-12-31." + remoteNotVerifiedNote,
 	},
 	{
 		ID: "roo", Name: "Roo Code", Format: FormatJSON,
@@ -710,7 +734,7 @@ var verifiedBridgeTargets = []BridgeTarget{
 		ProjectPath: func(root string) string { return filepath.Join(root, ".roo", "mcp.json") },
 		DetectPaths: []string{".roo"},
 		DocsURL:     "https://docs.roocode.com/features/mcp/using-mcp-in-roo",
-		Note:        "Repo-scope only. The IDE stores user-scope servers under VS Code's globalStorage, whose absolute path the vendor docs never print, so we do not guess it.",
+		Note:        "Repo-scope only. The IDE stores user-scope servers under VS Code's globalStorage, whose absolute path the vendor docs never print, so we do not guess it." + remoteNotVerifiedNote,
 	},
 }
 

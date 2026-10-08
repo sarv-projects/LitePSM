@@ -58,7 +58,7 @@ Highest honest state per phase, with the subsystem rows that back it in [STATUS.
 | F — MCP profiles, Secrets & OAuth | `WIRED` (secrets, mcpclient) / `IMPLEMENTED` (auth) | `mcpclient`'s first production importer is `internal/discover`; `auth` still has zero production importers (STATUS §1, §4) |
 | G — Marketplace, `/marketplace`, wizard | `WIRED` for read tools and the web marketplace | `request_install` completes for skills and MCP servers; plugins need artifact ingestion; two bridge tools (`get_invocation`, `cancel_invocation`) answer `-32601` (STATUS §3, §4) |
 | H — Build, Conformance & Packaging | `IMPLEMENTED` | npm wrapper warns and proceeds on a missing checksum entry; `LICENSE`/`NOTICE` are listed in the npm `files` allowlist and staged by `release.yml` before publish, but no publish has occurred yet (STATUS §1) |
-| I — Fixtures, Self-Update & Migrations | `WIRED` (self-update) / `TESTED` (state) | self-update verifies SHA-256 only — **no signature check** (STATUS §1) |
+| I — Fixtures, Self-Update & Migrations | `WIRED` (self-update) / `TESTED` (state) | self-update verifies SHA-256 fail-closed and then the release's keyless Sigstore bundle when one is published; no published tag carries a bundle yet, so updates today are checksum-only with a stated note (STATUS §1) |
 
 **Not yet true, and not claimed here:** a published catalog release tree with a succeeding
 `catalog sync`; an end-to-end agent-driven install; provider autostart; a project manifest +
@@ -132,13 +132,14 @@ that is not met is **not** met, regardless of how much of the deliverable exists
 ### Phase F: MCP Protocol Profiles, Secrets & OAuth
 *   **Deliverables:**
     *   `internal/mcpclient`: dual-protocol client (2026-07-28 Streamable HTTP; 2025-11-25 legacy) — `WIRED`; its first production importer is `internal/discover` (STATUS §4).
-    *   Capability schema fingerprinting and drift invalidation — `IMPLEMENTED`, unreachable until grant rows are written ([ARCH/05 §5](05-SECURITY.md#5-capability-schema-drift-defense)).
+    *   Capability schema fingerprinting and drift invalidation — `IMPLEMENTED` and now reachable: `litespm grant` writes `capability_grants` and `internal/discover` writes provider/capability rows, so a real invocation can trigger a drift denial ([ARCH/05 §5](05-SECURITY.md#5-capability-schema-drift-defense)); the `audit_events` row that would record the denial still has no production writer.
     *   `internal/secrets`: native OS keystore backends (DPAPI `master.key`, macOS Keychain, `secret-tool`), fail-closed open — `WIRED` (STATUS §1).
     *   `internal/auth`: OAuth 2.0 PKCE loopback broker — `IMPLEMENTED`, zero production importers (STATUS §4).
 *   **Gate:** dual-protocol conformance passes against mock MCP servers; synthetic canary tokens confirm zero secret leaks in logs, database dumps, or error responses.
 *   **Current state:** secrets open fail-closed and the doctor runs a canary round-trip, but the
-    conformance gate runs only inside tests; neither `mcpclient` nor `auth` is reachable from a
-    production path.
+    conformance gate runs only inside tests; `mcpclient` **is** reachable from a production path
+    (`internal/discover`, STATUS §4 — stdio for a launched server, the HTTP/legacy profiles for a
+    remote endpoint entry) while `internal/auth` still is not.
 
 ### Phase G: Marketplace Federation, In-Agent `/marketplace` & CLI TUI
 *   **Deliverables:**
@@ -170,7 +171,7 @@ that is not met is **not** met, regardless of how much of the deliverable exists
 ### Phase I: Golden Fixtures, Self-Update & Migrations
 *   **Deliverables:**
     *   Golden host-configuration fixture corpus (`fixtures/hosts/`, `fixtures/source/`).
-    *   `self-update` with fail-closed SHA-256 verification, downgrade guard, and atomic replace (`internal/update`) — `WIRED`. **No signature verification exists.**
+    *   `self-update` with fail-closed SHA-256 verification, Sigstore bundle verification when the release publishes one (`cmd/litespm/main.go:391-438`), downgrade guard, and atomic replace (`internal/update`) — `WIRED`. **No published tag carries a bundle yet**, so the branch exercised today is checksum-only with a stated note.
     *   Transactional migrations with downgrade prevention (`internal/state/migrations.go:57` → `LPSM-STATE-VERSION-INCOMPATIBLE`).
 *   **Gate:** fixture-backed adapter tests pass offline; update without a published checksum is refused; higher-schema databases halt.
 *   **Current state:** the three stated checks hold. The phase does **not** include signed releases —

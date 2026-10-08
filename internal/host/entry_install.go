@@ -29,9 +29,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
 	"github.com/sarv-projects/litespm/internal/envref"
+	"github.com/sarv-projects/litespm/internal/fslock"
 )
 
 // ServerEntry is one MCP server registration as it will appear in a host config.
@@ -42,6 +44,18 @@ type ServerEntry struct {
 	Name    string
 	Command string
 	Args    []string
+	// Endpoint is the remote (URL) MCP server to REGISTER rather than launch.
+	// An entry carries EITHER Command (stdio) OR Endpoint (remote), never both:
+	// an entry is one transport, and a host that received a URL and a command
+	// would start one of them by its own rule, not by ours. Empty for every
+	// stdio entry.
+	Endpoint string
+	// Transport is the registry vocabulary for a remote entry:
+	// "streamable-http" (the default when empty) or "sse". It is only read
+	// when Endpoint is set; the per-host discriminator (`http`,
+	// `streamableHttp`, `remote`, or nothing) is derived from it at write time
+	// and read back into HostServerEntry.Transport.
+	Transport string
 	// Env holds environment values found in an EXISTING config, as literal
 	// key/value pairs. It is populated on read-back and is never written from an
 	// install: an install states variable NAMES (EnvNames) and the config gets a
@@ -49,7 +63,10 @@ type ServerEntry struct {
 	Env map[string]string
 	// EnvNames are the variables the user asked to forward. The reference text is
 	// built per host at write time, because no two hosts spell it the same way and
-	// one host takes no value whatsoever (see internal/envref).
+	// one host takes no value whatsoever (see internal/envref). A remote entry
+	// refuses EnvNames outright: no host documents a mapping from a bare
+	// variable name to a remote-header spelling, so accepting it would write an
+	// entry that looks credentialed and is not.
 	EnvNames []string
 }
 
@@ -74,6 +91,10 @@ type EntryInstallResult struct {
 	// Fingerprint is the hash of the entry as read back from the written
 	// config (see EntryState): the ledger's post-image for this node.
 	Fingerprint string
+	// WrittenDigest binds rollback to the exact whole-file post-image. If a
+	// later step fails after another writer edits the config, compensation must
+	// refuse to overwrite that newer content.
+	WrittenDigest string
 	// PriorEntry is the canonical text of the user-authored entry this call
 	// replaced ("" when none existed); RemoveServerEntry restores it.
 	PriorEntry string
@@ -90,8 +111,16 @@ type entrySpec struct {
 	// KeyPath is the container the server map lives at.
 	KeyPath []string
 	Format  ConfigFormat
-	// Shape decides how the entry itself is expressed.
+	// Shape decides how the entry itself is expressed (stdio axis).
 	Shape EntryShape
+	// Remote is how this host spells a remote (URL) entry, or nil when it
+	// cannot express one. It rides beside Shape because the two axes are
+	// independent: a host with ShapeObject for stdio may still want
+	// type:"streamableHttp" for remote, or no remote spelling at all.
+	Remote *RemoteEntrySpec
+	// HostID is the registry id this spec was resolved for; it exists so a
+	// refusal can name the host the user actually asked for.
+	HostID string
 	// EnvRef is the host's documented environment-forwarding behaviour. A zero
 	// value means no verified behaviour, which is why entrySpecFor records
 	// whether it found one at all rather than assuming every host looks alike.
@@ -142,6 +171,7 @@ func entrySpecForScope(adapter HostAdapter, scope domain.InstallScope) (entrySpe
 			KeyPath: g.Target.keyPathFor(projectScope),
 			Format:  g.Target.Format,
 			Shape:   g.Target.Shape,
+			Remote:  g.Target.Remote,
 		}
 	default:
 		spec, ok := bespokeEntrySpecs[id]
@@ -150,6 +180,7 @@ func entrySpecForScope(adapter HostAdapter, scope domain.InstallScope) (entrySpe
 		}
 		base = spec
 	}
+	base.HostID = id
 	if s, ok := envref.SpecFor(id); ok {
 		base.EnvRef = s
 		base.HasEnvRef = true
@@ -161,41 +192,134 @@ func entrySpecForScope(adapter HostAdapter, scope domain.InstallScope) (entrySpe
 // BridgeTarget. The key paths mirror what each adapter writes for the bridge,
 // and the shapes mirror that host's documented entry requirements (see
 // ARCH/30 §8.1 for where each was confirmed against the vendor).
+//
+// The Remote specs mirror the vendor's own remote-entry objects, each fetched
+// live from the URL in that vendor's evidence row (see the B1 acceptance
+// matrix, PART 1 §1.3, for the exact document per host). They are constructors
+// rather than shared pointers so no caller can mutate one host's spec through
+// another's alias.
 var bespokeEntrySpecs = map[string]entrySpec{
-	"claude-code": {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject},
-	"cline":       {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject},
-	"pi-agent":    {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject},
-	"pi":          {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject},
+	"claude-code": {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject, Remote: claudeRemoteSpec()},
+	"cline":       {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject, Remote: clineRemoteSpec()},
+	"pi-agent":    {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject, Remote: bareURLRemoteSpec(TransportStreamableHTTP)},
+	"pi":          {Format: FormatJSON, KeyPath: []string{"mcpServers"}, Shape: ShapeObject, Remote: bareURLRemoteSpec(TransportStreamableHTTP)},
 	// OpenCode requires `type` and a combined argv array; its `mcp` container is
 	// a flat map of server entries (there is no nested `servers` object).
-	"opencode":   {Format: FormatJSON, KeyPath: []string{"mcp"}, Shape: ShapeLocalArray},
-	"codex":      {Format: FormatTOML, KeyPath: []string{"mcp_servers"}, Shape: ShapeObject},
-	"grok":       {Format: FormatTOML, KeyPath: []string{"mcp_servers"}, Shape: ShapeObject},
-	"grok-build": {Format: FormatTOML, KeyPath: []string{"mcp_servers"}, Shape: ShapeObject},
+	"opencode":   {Format: FormatJSON, KeyPath: []string{"mcp"}, Shape: ShapeLocalArray, Remote: opencodeRemoteSpec()},
+	"codex":      {Format: FormatTOML, KeyPath: []string{"mcp_servers"}, Shape: ShapeObject, Remote: bareURLRemoteSpec(TransportStreamableHTTP)},
+	"grok":       {Format: FormatTOML, KeyPath: []string{"mcp_servers"}, Shape: ShapeObject, Remote: bareURLRemoteSpec(TransportStreamableHTTP)},
+	"grok-build": {Format: FormatTOML, KeyPath: []string{"mcp_servers"}, Shape: ShapeObject, Remote: bareURLRemoteSpec(TransportStreamableHTTP)},
+}
+
+// claudeRemoteSpec — Claude Code: {"type":"http","url":"https://…"}; `type` is
+// mandatory (a url with no type is a configuration error the host skips and
+// reports), and `type` ∈ http | sse | ws.
+func claudeRemoteSpec() *RemoteEntrySpec {
+	return &RemoteEntrySpec{
+		URLKey: "url", TypeKey: "type", TypeValue: "http", SSEValue: "sse",
+		Transports: []string{TransportStreamableHTTP, TransportSSE},
+	}
+}
+
+// clineRemoteSpec — Cline: {"type":"streamableHttp","url":"https://…"};
+// omitting `type` defaults to the LEGACY sse transport, so writing no
+// discriminator would silently register the wrong transport.
+func clineRemoteSpec() *RemoteEntrySpec {
+	return &RemoteEntrySpec{
+		URLKey: "url", TypeKey: "type", TypeValue: "streamableHttp", SSEValue: "sse",
+		Transports: []string{TransportStreamableHTTP, TransportSSE},
+	}
+}
+
+// opencodeRemoteSpec — OpenCode: {"type":"remote","url":"https://…"}; the
+// published schema defines no sse value, so sse is refused here.
+func opencodeRemoteSpec() *RemoteEntrySpec {
+	return &RemoteEntrySpec{
+		URLKey: "url", TypeKey: "type", TypeValue: "remote",
+		Transports: []string{TransportStreamableHTTP},
+	}
+}
+
+// bareURLRemoteSpec — the hosts whose documented remote entry is a bare `url`
+// member with no discriminator (Codex, Grok Build, Pi, Cursor, Zed): the host
+// infers the transport from the endpoint itself. sse is only listed where the
+// vendor docs actually document it for URL entries (Cursor); Codex documents
+// the key as streamable-HTTP-only and Pi explicitly rejects sse.
+func bareURLRemoteSpec(transports ...string) *RemoteEntrySpec {
+	return &RemoteEntrySpec{URLKey: "url", Transports: transports}
+}
+
+// RemoteUnsupportedCode is the typed refusal for a remote (URL) operation a
+// host cannot express. It names the host, the transport and the reason, and
+// never falls back to "write it as stdio" or to a guessed URL key.
+const RemoteUnsupportedCode = "LPSM-HOST-REMOTE-UNSUPPORTED"
+
+// remoteTypeValue resolves the discriminator to write for a remote entry, or
+// refuses. hostID names the host in the refusal; spec is nil when the host
+// declares no remote spelling at all.
+func remoteTypeValue(hostID string, spec *RemoteEntrySpec, transport string) (string, error) {
+	want := normalizeRemoteTransport(transport)
+	if spec == nil {
+		return "", fmt.Errorf("%s: host %q cannot express a remote (URL) MCP entry: no URL key or transport "+
+			"discriminator was ever verified for it, so a remote install there would be refused fail-closed rather than guessed",
+			RemoteUnsupportedCode, hostID)
+	}
+	if !spec.Supports(want) {
+		return "", fmt.Errorf("%s: host %q cannot express transport %q for a remote (URL) MCP entry (it documents %v)",
+			RemoteUnsupportedCode, hostID, want, spec.Transports)
+	}
+	switch want {
+	case TransportSSE:
+		if spec.TypeKey != "" && strings.TrimSpace(spec.SSEValue) == "" {
+			return "", fmt.Errorf("%s: host %q requires a discriminator for sse but the spec records none; refusing rather than writing a bare url",
+				RemoteUnsupportedCode, hostID)
+		}
+		return spec.SSEValue, nil
+	default:
+		return spec.TypeValue, nil
+	}
 }
 
 // entryValue renders the entry in the host's own shape.
-func (s entrySpec) entryValue(e ServerEntry) any {
+//
+// A remote entry renders ONLY the URL key plus its discriminator — never
+// command, args or env — because a remote entry is a different transport, not
+// a stdio entry with a funny command. The discriminator is resolved through
+// remoteTypeValue, so an unsupported transport fails here as well as at the
+// write gate: the typeless-url hazard (Claude Code skips it, Cline silently
+// defaults it to legacy sse) can never be rendered by accident.
+func (s entrySpec) entryValue(e ServerEntry) (any, error) {
+	if s.Remote != nil && strings.TrimSpace(e.Endpoint) != "" {
+		typeValue, err := remoteTypeValue(s.HostID, s.Remote, e.Transport)
+		if err != nil {
+			return nil, err
+		}
+		out := map[string]any{s.Remote.URLKey: e.Endpoint}
+		if s.Remote.TypeKey != "" {
+			out[s.Remote.TypeKey] = typeValue
+		}
+		return out, nil
+	}
 	switch s.Shape {
 	case ShapeLocalArray:
 		argv := append([]string{e.Command}, e.Args...)
 		out := map[string]any{"type": "local", "command": argv}
 		s.addEnvFields(out, e)
-		return out
+		return out, nil
 	case ShapeStdioTyped:
 		out := map[string]any{"type": "stdio", "command": e.Command, "args": e.Args}
 		s.addEnvFields(out, e)
-		return out
+		return out, nil
 	case ShapeCommandString:
 		parts := append([]string{quoteCommandArg(e.Command)}, e.Args...)
-		return strings.Join(parts, " ")
+		return strings.Join(parts, " "), nil
 	default:
 		out := map[string]any{"command": e.Command}
 		if len(e.Args) > 0 {
 			out["args"] = e.Args
 		}
 		s.addEnvFields(out, e)
-		return out
+		return out, nil
 	}
 }
 
@@ -209,6 +333,13 @@ func (s entrySpec) entryValue(e ServerEntry) any {
 // as if it were the credential.
 // EnvForwarding reports whether a host can express forwarded variables at all,
 // and returns its verified rules when it can.
+//
+// It is a per-HOST capability (stdio entries only): a remote (URL) entry
+// refuses EnvNames outright, because no host documents a mapping from a bare
+// variable name to a remote-header spelling (Codex takes `bearer_token_env_var`,
+// Pi/Grok take `${VAR}` inside `headers`, OpenCode takes `{env:VAR}`).
+// InstallServerEntry enforces that refusal; callers that only hold a host id
+// still get the stdio answer here.
 //
 // Two different things make a host unable, and they are reported separately
 // because the user's next step differs. A host whose entry shape is a bare
@@ -234,6 +365,27 @@ func EnvForwarding(hostID string) (envref.Spec, bool) {
 	return spec.EnvRef, true
 }
 
+// RemoteEntrySpecFor is the single capability query for "can this host express
+// a remote (URL) MCP entry, and in what spelling?". Plan-time target filtering,
+// install, and copy all resolve the capability through this one function, so
+// three call sites can never disagree about which hosts are capable: ok=false
+// means the host is refused, fail-closed, with no fallback to a stdio write or
+// a guessed URL key.
+//
+// The returned spec is a copy of the registry's, so a caller cannot mutate the
+// compiled-in table through it.
+func RemoteEntrySpecFor(hostID string) (RemoteEntrySpec, bool) {
+	adapter, err := GetAdapter(hostID)
+	if err != nil {
+		return RemoteEntrySpec{}, false
+	}
+	spec, ok := entrySpecFor(adapter)
+	if !ok || spec.Remote == nil {
+		return RemoteEntrySpec{}, false
+	}
+	return *spec.Remote, true
+}
+
 func (s entrySpec) addEnvFields(out map[string]any, e ServerEntry) {
 	if len(e.EnvNames) > 0 && s.HasEnvRef && s.EnvRef.Style == envref.StyleEnvNameList {
 		out[s.EnvRef.NameListField] = envref.SortedNames(e.EnvNames)
@@ -245,13 +397,31 @@ func (s entrySpec) addEnvFields(out map[string]any, e ServerEntry) {
 }
 
 // tomlEntryBlock renders a `[mcp_servers.<name>]` table for a server entry.
-func (s entrySpec) tomlEntryBlock(name string, e ServerEntry) string {
+//
+// A remote entry renders ONLY its URL key (plus a discriminator when the host
+// documents one) — never command, args or env — for the same reason
+// entryValue does: a remote entry is one transport, spelled the way this host
+// spells it.
+func (s entrySpec) tomlEntryBlock(name string, e ServerEntry) (string, error) {
+	header := strings.Join(append(append([]string{}, s.KeyPath...), name), ".")
+	if s.Remote != nil && strings.TrimSpace(e.Endpoint) != "" {
+		typeValue, err := remoteTypeValue(s.HostID, s.Remote, e.Transport)
+		if err != nil {
+			return "", err
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "[%s]\n%s = %q\n", header, s.Remote.URLKey, e.Endpoint)
+		if s.Remote.TypeKey != "" {
+			fmt.Fprintf(&b, "%s = %q\n", s.Remote.TypeKey, typeValue)
+		}
+		return b.String(), nil
+	}
 	quoted := make([]string, 0, len(e.Args))
 	for _, a := range e.Args {
 		quoted = append(quoted, fmt.Sprintf("%q", a))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "[%s]\ncommand = %q\n", strings.Join(append(append([]string{}, s.KeyPath...), name), "."), e.Command)
+	fmt.Fprintf(&b, "[%s]\ncommand = %q\n", header, e.Command)
 	if len(quoted) > 0 {
 		fmt.Fprintf(&b, "args = [%s]\n", strings.Join(quoted, ", "))
 	}
@@ -272,7 +442,7 @@ func (s entrySpec) tomlEntryBlock(name string, e ServerEntry) string {
 		sortStrings(keys)
 		fmt.Fprintf(&b, "%s = { %s }\n", s.EnvRef.Field, joinTOMLPairs(keys, m))
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 func sortStrings(s []string) {
@@ -380,8 +550,26 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 	if err := ValidateServerEntryName(entry.Name); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(entry.Command) == "" {
-		return nil, fmt.Errorf("server %q has no command to run", entry.Name)
+	// One entry, one transport. An entry with neither launch line nor endpoint
+	// names nothing to connect to; an entry with both would leave the host to
+	// pick which one it honours, by its own rule rather than ours.
+	hasCommand := strings.TrimSpace(entry.Command) != ""
+	hasEndpoint := strings.TrimSpace(entry.Endpoint) != ""
+	switch {
+	case !hasCommand && !hasEndpoint:
+		return nil, fmt.Errorf("server %q has no command to run and no remote endpoint to connect to", entry.Name)
+	case hasCommand && hasEndpoint:
+		return nil, fmt.Errorf("server %q names both a command and a remote endpoint; an entry is one transport — "+
+			"register either a stdio command or a URL, not both", entry.Name)
+	}
+	// No host documents a name→header mapping for remote entries (see the
+	// per-host spellings: bearer_token_env_var, ${VAR} in headers, {env:VAR}),
+	// so --env on a remote entry is a refusal, not a silent drop: an entry that
+	// looks credentialed and is not is worse than an honest error.
+	if hasEndpoint && len(entry.EnvNames) > 0 {
+		return nil, fmt.Errorf("LPSM-REMOTE-ENV-REFUSED: --env cannot be forwarded for the remote (URL) entry %q: "+
+			"no host documents how a bare variable name maps to a remote header, so writing it would look credentialed and would not be; "+
+			"add the header to %s's config by hand", entry.Name, hostID)
 	}
 
 	adapter, err := GetAdapter(hostID)
@@ -392,15 +580,37 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 	if !ok {
 		return nil, fmt.Errorf("host %q has no documented MCP entry shape, so a server entry cannot be written to it", hostID)
 	}
+	// Capability gate: a remote entry is written only in the exact spelling
+	// this host's spec verified, or not at all (LPSM-HOST-REMOTE-UNSUPPORTED).
+	// It runs before any file is read, so a refusal never leaves a backup,
+	// a lock or a half-checked config behind.
+	if hasEndpoint {
+		if _, err := remoteTypeValue(spec.HostID, spec.Remote, entry.Transport); err != nil {
+			return nil, err
+		}
+	}
 
 	configPath, err := adapter.DetectConfig(ctx, opts.Scope)
 	if err != nil {
 		return nil, err
 	}
+	// Serialize LiteSPM read/merge/write transactions across processes. The
+	// byte-snapshot check below additionally refuses edits observed before the
+	// final replacement; the lock prevents two LiteSPM writers from both
+	// merging against the same stale image.
+	configLock, err := fslock.Acquire(configPath+hostConfigWriteLockSuffix, fslock.Options{
+		Timeout: 10 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("lock host config %s: %w", configPath, err)
+	}
+	defer func() { _ = configLock.Release() }()
 
 	original := ""
+	var originalBytes []byte
 	created := false
 	if data, readErr := os.ReadFile(configPath); readErr == nil {
+		originalBytes = append([]byte(nil), data...)
 		original = string(data)
 	} else if !os.IsNotExist(readErr) {
 		return nil, fmt.Errorf("read %s: %w", configPath, readErr)
@@ -422,7 +632,10 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 
 	var proposed string
 	if spec.Format == FormatTOML {
-		block := spec.tomlEntryBlock(entry.Name, entry)
+		block, blockErr := spec.tomlEntryBlock(entry.Name, entry)
+		if blockErr != nil {
+			return nil, blockErr
+		}
 		if created {
 			proposed = block
 		} else {
@@ -433,7 +646,11 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 			proposed = merged
 		}
 	} else {
-		merged, mergeErr := mergeJSONEntrySurgicalNamed(original, spec.KeyPath, entry.Name, spec.entryValue(entry))
+		value, valueErr := spec.entryValue(entry)
+		if valueErr != nil {
+			return nil, valueErr
+		}
+		merged, mergeErr := mergeJSONEntrySurgicalNamed(original, spec.KeyPath, entry.Name, value)
 		if mergeErr != nil {
 			return nil, fmt.Errorf("%s: %w", adapter.Descriptor().HostID, mergeErr)
 		}
@@ -464,13 +681,7 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 	// caller's install transaction therefore only ever sees a result that is
 	// either fully written or fully restored.
 	rollbackWrite := func() error {
-		if created {
-			if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("removing newly created %s: %w", configPath, err)
-			}
-			return nil
-		}
-		return RestoreBackup(configPath, backupPath)
+		return rollbackConfigWriteLocked(configPath, backupPath, domain.ComputeBytesDigest([]byte(proposed)))
 	}
 	fail := func(cause error) (*EntryInstallResult, error) {
 		if rbErr := rollbackWrite(); rbErr != nil {
@@ -479,7 +690,7 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 		}
 		return nil, cause
 	}
-	if err := AtomicWriteFile(configPath, []byte(proposed), 0600); err != nil {
+	if err := AtomicWriteFileIfUnchanged(configPath, []byte(proposed), 0600, originalBytes, !created); err != nil {
 		return nil, fmt.Errorf("write %s: %w", configPath, err)
 	}
 
@@ -507,6 +718,7 @@ func InstallServerEntry(ctx context.Context, hostID string, entry ServerEntry, o
 		Replaced:         replaced,
 		Created:          created,
 		Fingerprint:      fingerprintOf(writtenRaw),
+		WrittenDigest:    domain.ComputeBytesDigest(written),
 		PriorEntry:       priorEntry,
 		PriorFingerprint: priorFP,
 		BackupPath:       backupPath,
@@ -565,6 +777,11 @@ type HostServerEntry struct {
 	Name    string
 	Command string
 	Args    []string
+	// Endpoint is the remote (URL) this entry registers instead of a command.
+	// It is kept separate from Command on purpose: copy and capabilities must
+	// never conflate a URL with a launch line (an endpoint entry has no
+	// command, and a stdio entry has no endpoint).
+	Endpoint string
 	// Env is what the config actually stores, which is a reference on a
 	// host that substitutes one and empty on a name-list host that stores no
 	// value. Either way it is a name to resolve, never a secret to read.
@@ -615,6 +832,26 @@ func ListServerEntriesWithValues(ctx context.Context, hostID string, scope domai
 		if m, ok := value.(map[string]any); ok {
 			entry.Command, _ = m["command"].(string)
 			entry.Transport, _ = m["type"].(string)
+			// A remote (URL) entry is read through this host's verified URL key
+			// — never a guessed one. A url member on a host with no Remote spec
+			// stays invisible (Endpoint stays empty and the both-empty skip
+			// below keeps the old behaviour): we do not invent URL keys.
+			if spec.Remote != nil {
+				if u, ok := m[spec.Remote.URLKey].(string); ok {
+					entry.Endpoint = u
+				}
+				if entry.Endpoint != "" {
+					// Transport is the host's own discriminator ("http",
+					// "streamableHttp", "remote", "sse"), or the registry token
+					// when the host infers the transport from the URL alone.
+					entry.Transport = TransportStreamableHTTP
+					if spec.Remote.TypeKey != "" {
+						if v, ok := m[spec.Remote.TypeKey].(string); ok && v != "" {
+							entry.Transport = v
+						}
+					}
+				}
+			}
 			if argv, ok := m["command"].([]any); ok {
 				// ShapeLocalArray hosts store a combined argv array.
 				entry.Command = ""
@@ -674,7 +911,12 @@ func ListServerEntriesWithValues(ctx context.Context, hostID string, scope domai
 				entry.Args = fields[1:]
 			}
 		}
-		if entry.Command == "" {
+		// Skip only when the entry names NEITHER a command nor an endpoint.
+		// The old rule skipped on an empty Command alone, which made every
+		// remote (URL) entry — a valid stdio-less registration — invisible to
+		// copy, capabilities and remove. An entry with no launch line at all
+		// still carries nothing a caller could use, so it stays skipped.
+		if entry.Command == "" && entry.Endpoint == "" {
 			continue
 		}
 		out = append(out, entry)
@@ -689,7 +931,10 @@ func tomlServerEntries(spec entrySpec, content string) []HostServerEntry {
 	var out []HostServerEntry
 	var current *HostServerEntry
 	flush := func() {
-		if current != nil && current.Command != "" {
+		// A table is kept when it names a launch line OR a remote endpoint;
+		// only a table with neither carries nothing a caller could use. The
+		// old Command-only check hid every remote entry from read-back.
+		if current != nil && (current.Command != "" || current.Endpoint != "") {
 			out = append(out, *current)
 		}
 		current = nil
@@ -714,10 +959,37 @@ func tomlServerEntries(spec entrySpec, content string) []HostServerEntry {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
+		// The remote URL/discriminator keys come from this host's verified
+		// spec; when it declares none, the empty case label can only match an
+		// empty key, which the guard inside rejects. A url line on a host with
+		// no Remote spec is therefore never reclassified as a remote entry.
+		urlKey, typeKey := "", ""
+		if spec.Remote != nil {
+			urlKey, typeKey = spec.Remote.URLKey, spec.Remote.TypeKey
+		}
 		switch key {
 		case "command":
 			if unquoted, err := strconv.Unquote(value); err == nil {
 				current.Command = unquoted
+			}
+		case urlKey:
+			if urlKey == "" {
+				break
+			}
+			if unquoted, err := strconv.Unquote(value); err == nil && strings.TrimSpace(unquoted) != "" {
+				if current.Endpoint == "" {
+					// Default first: a discriminator line may appear before or
+					// after the url line, and the later `type` case overrides.
+					current.Transport = TransportStreamableHTTP
+				}
+				current.Endpoint = unquoted
+			}
+		case typeKey:
+			if typeKey == "" {
+				break
+			}
+			if unquoted, err := strconv.Unquote(value); err == nil && strings.TrimSpace(unquoted) != "" {
+				current.Transport = unquoted
 			}
 		case "args":
 			current.Args = parseTOMLStringArray(value)

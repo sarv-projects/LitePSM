@@ -29,18 +29,21 @@ type DatasetPublisher struct {
 // are not decoded here and are never copied into a listing, so a dataset row
 // cannot smuggle an unrepresentable claim past conversion.
 type DatasetRow struct {
-	ID          string           `json:"id"`
-	Kind        string           `json:"kind"`
-	Name        string           `json:"name"`
-	Slug        string           `json:"slug"`
-	Summary     string           `json:"summary"`
-	Category    string           `json:"category"`
-	Publisher   DatasetPublisher `json:"publisher"`
-	Transport   string           `json:"transport"`   // mcp only: stdio | sse
-	Version     string           `json:"version"`     // every row
-	Command     string           `json:"command"`     // mcp only
-	Args        []string         `json:"args"`        // mcp only
-	SkillSource string           `json:"skillSource"` // skill only
+	ID               string           `json:"id"`
+	Kind             string           `json:"kind"`
+	Name             string           `json:"name"`
+	Slug             string           `json:"slug"`
+	Summary          string           `json:"summary"`
+	Category         string           `json:"category"`
+	Publisher        DatasetPublisher `json:"publisher"`
+	Source           string           `json:"source"`           // producer source id when supplied
+	SourceSnapshotID string           `json:"sourceSnapshotId"` // only present when the producer has a real source snapshot id
+	Transport        string           `json:"transport"`        // mcp only: stdio | sse | streamable-http
+	Version          string           `json:"version"`          // every row
+	Command          string           `json:"command"`          // mcp only: stdio launch command
+	Args             []string         `json:"args"`             // mcp only
+	URL              string           `json:"url"`              // mcp only: remote endpoint the publisher declared
+	SkillSource      string           `json:"skillSource"`      // skill only
 	// Installability is the provenance class of the row (domain.Installability
 	// values). Empty means discovery_only: heuristic ingestion never proved a
 	// version or launch line.
@@ -50,7 +53,8 @@ type DatasetRow struct {
 // ParseDataset decodes and validates dataset bytes fail-closed. Every row must
 // carry a domain-valid listing id whose kind segment agrees with the row, a
 // non-empty name and -- for MCP rows that claim more than discovery_only -- the
-// version, command and transport a future install would launch; ids must be
+// version, transport and a launch line a future install would use (command+args
+// for stdio, or the publisher's remote endpoint); ids must be
 // unique. The generator normalizes
 // ids to the same grammar (canonical_id in scripts/build_full_catalog.py), so
 // a violation means the producer and the domain have drifted and the release
@@ -84,26 +88,37 @@ func ParseDataset(raw []byte) ([]DatasetRow, error) {
 		if r.Name == "" {
 			fail("missing name")
 		}
+		if r.Source != "" {
+			if _, err := domain.ParseSourceID(r.Source); err != nil {
+				fail("source is not a valid domain SourceID: %v", err)
+			}
+		}
 		if !domain.Installability(r.Installability).Valid() {
 			fail("unknown installability %q", r.Installability)
 		}
 		// Version and launch line are required only of rows that claim more
 		// than discovery_only: a heuristic row has none to give, and the
-		// generator no longer invents them.
+		// generator no longer invents them. The launch line is EITHER a
+		// stdio command OR the publisher's remote endpoint -- an MCP row
+		// above discovery_only with neither fails, and a discovery_only row
+		// carrying either one fails the same way (both must be proven from
+		// a manifest, never asserted by heuristic ingestion).
 		if domain.Installability(r.Installability).Effective() != domain.InstallabilityDiscoveryOnly {
 			if r.Kind == "mcp" {
 				if r.Version == "" {
 					fail("mcp row claims %s but has no version", r.Installability)
 				}
-				if r.Command == "" {
-					fail("mcp row claims %s but has no launch command", r.Installability)
-				}
 				if r.Transport == "" {
 					fail("mcp row claims %s but has no transport", r.Installability)
+				}
+				if r.Command == "" && r.URL == "" {
+					fail("mcp row claims %s but has no launch line (neither a command nor an endpoint)", r.Installability)
 				}
 			}
 		} else if r.Command != "" {
 			fail("discovery_only row carries a launch command; commands must be proven from a manifest")
+		} else if r.URL != "" {
+			fail("discovery_only row carries a remote endpoint; endpoints must be proven from a manifest")
 		}
 	}
 	if len(problems) > 0 {
@@ -128,9 +143,9 @@ func LoadDataset(path string) ([]DatasetRow, error) {
 	return ParseDataset(raw)
 }
 
-// DatasetSnapshotID derives the provenance snapshot identity from the
-// dataset's content: identical bytes always yield the identical id, so a
-// listing's provenance names exactly the input that produced it.
+// DatasetSnapshotID derives a deterministic identity for a dataset input's
+// bytes. It is a build-input fingerprint, not an upstream SourceSnapshot ID;
+// row provenance must use DatasetRow.SourceSnapshotID when supplied.
 func DatasetSnapshotID(dataset []byte) string {
 	sum := sha256.Sum256(dataset)
 	return "snap-" + hex.EncodeToString(sum[:8])
@@ -140,7 +155,10 @@ func DatasetSnapshotID(dataset []byte) string {
 // records CompileRelease consumes.
 //
 // Every claim written here is one the dataset can support:
-//   - provenance points at snapshotID and releaseID (where the row came from);
+//   - sourceId comes from the producer's explicit source field when present;
+//   - sourceSnapshotId is copied only from a per-row upstream snapshot id. The
+//     dataset-wide input fingerprint is not an upstream snapshot and is not
+//     attached to individual rows;
 //   - verification level is "unverified" -- the dataset carries no audit
 //     evidence, so no stronger level may be asserted;
 //   - MCP components are SupportUnknown because installing a catalog-sourced
@@ -148,12 +166,12 @@ func DatasetSnapshotID(dataset []byte) string {
 //     components are SupportYes because the shipped skills lifecycle installs
 //     and loads them today;
 //   - popularity, host-compatibility, and star figures are not invented.
-func ConvertDataset(rows []DatasetRow, releaseID, snapshotID string, ingestedAt time.Time) ([]*domain.Listing, []*domain.VersionRecord, error) {
+func ConvertDataset(rows []DatasetRow, releaseID, _datasetInputID string, ingestedAt time.Time) ([]*domain.Listing, []*domain.VersionRecord, error) {
 	listings := make([]*domain.Listing, 0, len(rows))
 	versions := make([]*domain.VersionRecord, 0, len(rows))
 
 	for _, row := range rows {
-		listing, version, err := convertRow(row, releaseID, snapshotID, ingestedAt)
+		listing, version, err := convertRow(row, releaseID, ingestedAt)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -163,20 +181,34 @@ func ConvertDataset(rows []DatasetRow, releaseID, snapshotID string, ingestedAt 
 	return listings, versions, nil
 }
 
-func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Time) (*domain.Listing, *domain.VersionRecord, error) {
+func convertRow(row DatasetRow, releaseID string, ingestedAt time.Time) (*domain.Listing, *domain.VersionRecord, error) {
 	lid, err := domain.ParseListingID(row.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("convert %q: %w", row.ID, err)
 	}
 
-	// <kind>:<source-id>:<upstream-id>, where source-id itself may contain a
-	// colon (4+ segments). domain.ListingID.SourceID/UpstreamID only handle
-	// the 4+ segment form, so split here instead of relying on them.
-	parts := strings.SplitN(row.ID, ":", 3)
-	sourceID, rawUpstream := parts[1], parts[2]
+	idParts := strings.Split(row.ID, ":")
+	rawUpstream := idParts[2]
+	encodedSource := ""
+	if len(idParts) >= 4 {
+		encodedSource = idParts[1] + ":" + idParts[2]
+		rawUpstream = strings.Join(idParts[3:], ":")
+	}
 	upstream, err := url.PathUnescape(rawUpstream)
 	if err != nil {
 		return nil, nil, fmt.Errorf("convert %q: upstream id is not decodable: %w", row.ID, err)
+	}
+	sourceID := row.Source
+	if sourceID == "" {
+		// Older data may not carry the producer's source field. Preserve an
+		// ID-encoded SourceID only when the listing ID actually contains the
+		// full domain SourceID form; otherwise leave it unknown rather than
+		// treating a publisher namespace as a fetch source.
+		if encodedSource != "" {
+			if _, parseErr := domain.ParseSourceID(encodedSource); parseErr == nil {
+				sourceID = encodedSource
+			}
+		}
 	}
 
 	sourceURL := row.Publisher.URL
@@ -233,7 +265,7 @@ func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Ti
 			Level: "unverified",
 		},
 		Provenance: domain.ProvenanceRecord{
-			SourceSnapshotID: snapshotID,
+			SourceSnapshotID: row.SourceSnapshotID,
 			IngestedAt:       ingestedAt,
 			CatalogReleaseID: releaseID,
 		},
@@ -244,7 +276,7 @@ func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Ti
 	version := &domain.VersionRecord{
 		ListingID:        row.ID,
 		Version:          versionForRecord,
-		SourceSnapshotID: snapshotID,
+		SourceSnapshotID: row.SourceSnapshotID,
 		Artifacts:        []domain.ArtifactRef{},
 		Components:       components,
 		Dependencies:     []domain.DependencyConstraint{},
@@ -261,9 +293,13 @@ func convertRow(row DatasetRow, releaseID, snapshotID string, ingestedAt time.Ti
 }
 
 // datasetComponents derives the per-kind component lists. MCP rows carry their
-// launch line (command/args/transport) into a RuntimeDescriptor ONLY when the
-// dataset proves one; discovery-only rows (no proven command) produce a
-// component with no runtime so no installer can invent a launch line.
+// launch line into a RuntimeDescriptor ONLY when the dataset proves one: a
+// stdio command+args, or -- for a remote row -- the publisher's endpoint and
+// its transport. Discovery-only rows (no proven launch line) produce a
+// component with no runtime so no installer can invent a launch line. When a
+// row carries both, stdio wins: a real command is a local install and the
+// endpoint is unused (no published row carries both today -- the producer
+// writes an endpoint only when command/args are null).
 func datasetComponents(row DatasetRow, lid domain.ListingID) ([]domain.ComponentSummary, []domain.Component, error) {
 	// Component IDs embed a version; discovery-only rows carry no proven
 	// version, so the ID uses the literal "discovery" rather than inventing
@@ -275,17 +311,38 @@ func datasetComponents(row DatasetRow, lid domain.ListingID) ([]domain.Component
 	switch domain.ListingKind(row.Kind) {
 	case domain.KindMCP:
 		if row.Command == "" {
-			// No proven launch line: honest absence, not an empty command.
+			if row.URL == "" {
+				// No proven launch line: honest absence, not an empty command.
+				return []domain.ComponentSummary{{Kind: domain.ComponentMCPProvider, Name: "server"}},
+					[]domain.Component{{
+						ID:   string(domain.NewComponentID(lid, versionForID, domain.ComponentMCPProvider, "server")),
+						Kind: domain.ComponentMCPProvider,
+						Name: "server",
+						// Runtime is nil: RuntimeForListing fails closed.
+						Runtime:         nil,
+						DeclaredEffects: []domain.EffectDeclaration{},
+						// Not "yes": resolving and installing this launch line from
+						// the catalog is not wired yet (STATUS.md install row).
+						SupportedByLiteSPM: domain.SupportUnknown,
+					}}, nil
+			}
+			// Remote (URL) row: the launch line is the endpoint itself -- no
+			// process is spawned, the client connects. ParseDataset required
+			// a transport alongside the URL, so the descriptor carries the
+			// published transport verbatim ("streamable-http", "sse") and
+			// the endpoint the egress guard re-checks at connect time.
 			return []domain.ComponentSummary{{Kind: domain.ComponentMCPProvider, Name: "server"}},
 				[]domain.Component{{
 					ID:   string(domain.NewComponentID(lid, versionForID, domain.ComponentMCPProvider, "server")),
 					Kind: domain.ComponentMCPProvider,
 					Name: "server",
-					// Runtime is nil: RuntimeForListing fails closed.
-					Runtime:         nil,
+					Runtime: &domain.RuntimeDescriptor{
+						Type:     row.Transport,
+						Endpoint: row.URL,
+					},
 					DeclaredEffects: []domain.EffectDeclaration{},
-					// Not "yes": resolving and installing this launch line from
-					// the catalog is not wired yet (STATUS.md install row).
+					// Not "yes": registering a remote entry in a host config
+					// is not wired yet (STATUS.md install row).
 					SupportedByLiteSPM: domain.SupportUnknown,
 				}}, nil
 		}

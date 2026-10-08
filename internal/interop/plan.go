@@ -100,14 +100,21 @@ type ForeignRecord struct {
 }
 
 // ForeignPackage is one server.json `packages[]` coordinate, kept whole:
-// registry type, namespace-qualified package name, version, digest and
-// transport are the registry's namespace-verification assertion material.
+// registry type, the registry-qualified package coordinate (the live
+// schema's `identifier`, the legacy `name`), version, digests, transport,
+// runtime hint and environment variable NAMES are the registry's
+// namespace-verification assertion material. `command` is never a field
+// here: HasCommand reports only that the *document* declared one (the
+// legacy spelling), and the live schema publishes no command at all — a
+// coordinate or a runtimeHint is never promoted into a launch line.
 type ForeignPackage struct {
 	RegistryType string   `json:"registryType"`
 	Name         string   `json:"name"`
 	Version      string   `json:"version,omitempty"`
-	Digest       string   `json:"digest,omitempty"`
+	Digest       string   `json:"digest,omitempty"`     // legacy: sha256:<hex>
+	FileSha256   string   `json:"fileSha256,omitempty"` // live: bare 64 lowercase hex
 	Transport    string   `json:"transport,omitempty"`
+	RuntimeHint  string   `json:"runtimeHint,omitempty"` // a hint, never a command
 	EnvNames     []string `json:"envNames,omitempty"`
 	HasCommand   bool     `json:"hasCommand,omitempty"`
 }
@@ -157,8 +164,14 @@ func (r ForeignRecord) String() string {
 		if p.Digest != "" {
 			s += " digest=" + p.Digest
 		}
+		if p.FileSha256 != "" {
+			s += " fileSha256=" + p.FileSha256
+		}
 		if p.Transport != "" {
 			s += " transport=" + p.Transport
+		}
+		if p.RuntimeHint != "" {
+			s += " runtimeHint=" + p.RuntimeHint
 		}
 		if len(p.EnvNames) > 0 {
 			s += " env=[" + strings.Join(p.EnvNames, ",") + "]"

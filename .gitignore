@@ -43,3 +43,6 @@ __pycache__/
 
 # Local browser console logs (test scratch)
 .playwright-mcp/
+
+# Deepwork progress is session-local; see .ignore for agent visibility.
+.slim/deepwork/

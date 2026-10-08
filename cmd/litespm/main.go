@@ -204,6 +204,8 @@ func printUsage() {
 // for any supported platform binary.
 const defaultUpdateDownloadLimit = 64 << 20
 
+const selfUpdateDownloadTimeout = 2 * time.Minute
+
 func selfUpdateUsage() {
 	fmt.Println(`Usage: litespm self-update [--force]
 
@@ -308,26 +310,11 @@ func runSelfUpdate(args []string) {
 
 	stagingDir := paths.StagingPath()
 	fmt.Printf("Downloading %s...\n", downloadURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create update request: %v\n", err)
-		os.Exit(1)
-	}
-	resp, err := http.DefaultClient.Do(req)
+	downloadCtx, cancelDownload := context.WithTimeout(ctx, selfUpdateDownloadTimeout)
+	payload, err := downloadUpdatePayload(downloadCtx, http.DefaultClient, downloadURL, maxDownload)
+	cancelDownload()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to download update: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "Update download returned HTTP %d\n", resp.StatusCode)
-		os.Exit(1)
-	}
-
-	payload, err := readBounded(resp.Body, maxDownload)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read update payload: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -351,6 +338,29 @@ func runSelfUpdate(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("LiteSPM updated to v%s.\n", status.LatestVersion)
+}
+
+func downloadUpdatePayload(ctx context.Context, client *http.Client, rawURL string, limit int64) ([]byte, error) {
+	if client == nil {
+		return nil, fmt.Errorf("update download HTTP client is nil")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create update request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download returned HTTP %d", resp.StatusCode)
+	}
+	payload, err := readBounded(resp.Body, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read update payload: %w", err)
+	}
+	return payload, nil
 }
 
 // releaseDownloadTarget selects the platform binary URL and its mandatory
@@ -924,11 +934,10 @@ func runSearch(query string) {
 
 // installFlags holds the parsed command line for `litespm install`.
 type installFlags struct {
-	listingID   string
-	version     string
-	scope       domain.InstallScope
-	workspaceID string
-	showHelp    bool
+	listingID string
+	version   string
+	scope     domain.InstallScope
+	showHelp  bool
 	// hosts names the agent hosts to register an MCP server with. Empty means
 	// every host whose LiteSPM bridge verifies as registered.
 	hosts []string
@@ -943,7 +952,7 @@ type installFlags struct {
 	frozen bool
 }
 
-const installUsage = "Usage: litespm install <listing-id> [--version <ver>] [--scope user|project] [--workspace <id>]\n" +
+const installUsage = "Usage: litespm install <listing-id> [--version <ver>] [--scope user|project]\n" +
 	"                     [--host <host-id>]... [--env <VAR>]... [--force] [--frozen]\n\n" +
 	"  --host   register an MCP server with this agent host (repeatable). Default: every\n" +
 	"           host where 'litespm host setup' has been run.\n" +
@@ -989,8 +998,7 @@ func parseInstallFlags(args []string) (installFlags, error) {
 			if i+1 >= len(args) {
 				return flags, fmt.Errorf("flag %s requires a value", arg)
 			}
-			i++
-			flags.workspaceID = args[i]
+			return flags, fmt.Errorf("%s is not supported: workspace targeting is not implemented", arg)
 		case "--host":
 			if i+1 >= len(args) {
 				return flags, fmt.Errorf("flag %s requires a value", arg)
@@ -1111,15 +1119,44 @@ func runInstall(args []string) {
 	// The person typing this command is the authorization. It is still
 	// recorded: a plan plus an approval with origin human-cli, consumed before
 	// any write, and refunded if the install fails before its effect.
+	var mcpBinding *mcpInstallBinding
+	if listing.Kind == domain.KindMCP {
+		runtime, runtimeErr := catClient.RuntimeForListing(listing.ID, versionOrLatest(flags.version))
+		if runtimeErr != nil {
+			fmt.Fprintf(os.Stderr, "Install failed: %v\n", domain.ErrArtifactUnavailable(flags.listingID, runtimeErr.Error()))
+			os.Exit(1)
+		}
+		targetHosts := flags.hosts
+		if len(targetHosts) == 0 {
+			targetHosts = host.RegisteredBridgeHosts(ctx, flags.scope)
+		}
+		mcpBinding = &mcpInstallBinding{
+			Hosts:    uniqueHostIDs(targetHosts),
+			Runtime:  runtime,
+			EnvNames: append([]string(nil), flags.envNames...),
+			Force:    flags.force,
+			// Only an explicit --host set is the user's own: it is never
+			// filtered for capability (an incapable host fails by name), while
+			// the default set is LiteSPM's choice and is filtered to the hosts
+			// that can actually express this runtime's transport.
+			ExplicitHosts: len(flags.hosts) > 0,
+		}
+	}
 	var grant *installGrant
 	if listing.Kind == domain.KindSkill || listing.Kind == domain.KindMCP {
-		g, gerr := authorizeHumanInstall(ctx, db, catClient, listing, flags.version, flags.scope)
+		g, droppedHosts, gerr := authorizeHumanInstall(ctx, db, catClient, listing, flags.version, flags.scope, mcpBinding)
 		if gerr != nil {
 			fmt.Fprintf(os.Stderr, "Install failed: %v\n", gerr)
 			os.Exit(1)
 		}
 		grant = g
 		ctx = grant.context(ctx)
+		// The plan sealed the hosts that WILL be written; say out loud which
+		// registered hosts were dropped from the default set and why, so the
+		// target set can never shrink silently.
+		for _, d := range droppedHosts {
+			fmt.Printf("Note: host %q will not be written: %s\n", d.HostID, d.Reason)
+		}
 	}
 	failInstall := func(err error) {
 		if grant != nil {
@@ -1141,11 +1178,12 @@ func runInstall(args []string) {
 	}
 
 	if listing.Kind == domain.KindMCP {
-		runtime, runtimeErr := catClient.RuntimeForListing(listing.ID, versionOrLatest(flags.version))
-		if runtimeErr != nil {
-			failInstall(domain.ErrArtifactUnavailable(flags.listingID, runtimeErr.Error()))
+		plannedBinding, err := mcpInstallBindingFromPlan(ctx, grant.Plan, listing, flags.scope)
+		if err != nil {
+			failInstall(err)
 		}
-		outcome, err := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(flags.version), flags.scope, flags.hosts, flags.force, runtime, flags.envNames)
+		outcome, err := installMCPFromListing(ctx, db, paths.DataRoot, listing, grant.Version, flags.scope,
+			plannedBinding.Hosts, plannedBinding.Force, plannedBinding.Runtime, plannedBinding.EnvNames)
 		if err != nil {
 			failInstall(err)
 		}
@@ -1312,6 +1350,10 @@ func buildCatalogRelease(opts catalogBuildOptions) (*catalogbuild.BuildOutput, s
 	output, err := catalogbuild.CompileRelease(releaseID, sequence, []string{snapshotID}, listings, versions, createdAt)
 	if err != nil {
 		return nil, "", err
+	}
+	if opts.materialize && output.ManifestDigest != prev.ManifestDigest {
+		return nil, "", fmt.Errorf("materialized manifest digest %s does not match released pointer digest %s; refusing to reuse immutable release %q",
+			output.ManifestDigest, prev.ManifestDigest, prev.ReleaseID)
 	}
 	if err := output.WriteToDirectory(opts.outDir); err != nil {
 		return nil, "", fmt.Errorf("write release tree to %s: %w", opts.outDir, err)
@@ -1925,7 +1967,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 				Message: fmt.Sprintf("listing %s not found in the local catalog index: %v", req.ID, err)}
 		}
 
-		plan, rpcErr := buildInstallPlan(ctx, catClient, req.ID, req.Version, scope, listing)
+		plan, droppedHosts, rpcErr := buildInstallPlan(ctx, catClient, req.ID, req.Version, scope, listing, nil)
 		if rpcErr != nil {
 			return nil, rpcErr
 		}
@@ -1934,7 +1976,7 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 			return nil, &ipc.RPCError{Code: ipc.CodeInternalError,
 				Message: fmt.Sprintf("failed to persist plan %s: %v", plan.PlanID, err)}
 		}
-		return plan, nil
+		return preparePlanResult{InstallPlan: plan, DroppedHosts: droppedHosts}, nil
 	})
 
 	// 5. install.execute installs a package. A planId (the shape the bridge
@@ -2020,11 +2062,12 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 						"planId":       req.PlanID,
 					}, nil
 				}
-				runtime, rerr := catClient.RuntimeForListing(listingID, versionOrLatest(version))
-				if rerr != nil {
-					return nil, installRPCError(domain.ErrArtifactUnavailable(listingID, rerr.Error()))
+				mcpBinding, berr := mcpInstallBindingFromPlan(ctx, grant.Plan, listing, scope)
+				if berr != nil {
+					return nil, installRPCError(berr)
 				}
-				outcome, ierr := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(version), scope, nil, false, runtime, nil)
+				outcome, ierr := installMCPFromListing(ctx, db, paths.DataRoot, listing, versionOrLatest(version), scope,
+					mcpBinding.Hosts, mcpBinding.Force, mcpBinding.Runtime, mcpBinding.EnvNames)
 				if ierr != nil {
 					return nil, installRPCError(ierr)
 				}
@@ -2040,12 +2083,18 @@ func registerCoreHandlers(server *ipc.Server, db *state.DB, catClient *catalog.C
 					})
 				}
 				return map[string]any{
-					"installId":           outcome.InstallID,
-					"status":              string(domain.InstallActive),
-					"kind":                string(domain.KindMCP),
-					"entryName":           outcome.Entry.Name,
-					"command":             outcome.Entry.Command,
-					"args":                outcome.Entry.Args,
+					"installId": outcome.InstallID,
+					"status":    string(domain.InstallActive),
+					"kind":      string(domain.KindMCP),
+					"entryName": outcome.Entry.Name,
+					"command":   outcome.Entry.Command,
+					"args":      outcome.Entry.Args,
+					// A remote entry has no command: endpoint and transport are
+					// the launch line, and they must be in the response or an
+					// agent reading `command: ""` sees success-with-nothing
+					// (internal/bridge request_install renders this verbatim).
+					"endpoint":            outcome.Entry.Endpoint,
+					"transport":           entryTransportLabel(outcome.Entry),
 					"hosts":               hosts,
 					"configuredTransport": outcome.ClaimedTransport,
 					"planId":              req.PlanID,
@@ -2558,11 +2607,123 @@ func (p *catalogResolutionProvider) GetListingVersions(ctx context.Context, list
 	if err != nil {
 		return nil, err
 	}
+	// Verbatim: the provider never invents a version string. A listing that
+	// publishes no versions comes back empty, and the resolver — not this
+	// adapter — pins it to the release's implicit version
+	// (resolver.ImplicitVersion), so no synthesized value can reach the plan.
 	metas := make([]resolver.ListingVersionMetadata, 0, len(listing.Versions))
 	for _, v := range listing.Versions {
 		metas = append(metas, resolver.ListingVersionMetadata{Version: v.Version})
 	}
 	return metas, nil
+}
+
+// hostCapabilityDrop is one host that LiteSPM left OUT of a plan's target set
+// because it cannot express the runtime's transport. The drops are reported —
+// in the CLI output and in the resolver.prepare_plan response — so a target set
+// can never shrink silently (B1 research §1.5).
+type hostCapabilityDrop struct {
+	HostID string `json:"hostId"`
+	// Reason is the capability refusal itself, without repeating the host id:
+	// it always names the typed code LPSM-HOST-REMOTE-UNSUPPORTED.
+	Reason string `json:"reason"`
+}
+
+// remoteHostCapabilityReason answers "can this host receive a remote (URL)
+// entry carrying this registry transport?". "" means yes; anything else is the
+// capability refusal to report (filtered from a default set, or failed by name
+// for an explicit --host). It resolves through host.RemoteEntrySpecFor — the
+// single capability query plan-time filtering, install and copy all share — so
+// three call sites can never disagree about which hosts are capable.
+func remoteHostCapabilityReason(hostID, transport string) string {
+	spec, ok := host.RemoteEntrySpecFor(hostID)
+	if !ok {
+		return fmt.Sprintf("cannot express a remote (URL) MCP entry (%s: no URL entry spelling was ever verified for this host)",
+			host.RemoteUnsupportedCode)
+	}
+	if !spec.Supports(transport) {
+		return fmt.Sprintf("cannot express a %q remote (URL) MCP entry (%s: the host documents no such transport for a URL entry)",
+			transport, host.RemoteUnsupportedCode)
+	}
+	return ""
+}
+
+// planRuntimeGates enforces every plan-time rule for an MCP runtime before a
+// plan is sealed, and returns the host set the plan may target plus the
+// capability drops made while choosing it:
+//
+//   - one launch line: a command XOR an endpoint, never both, never neither;
+//   - for a remote endpoint: --env is refused (LPSM-REMOTE-ENV-REFUSED) and
+//     the static egress guard runs (LPSM-EGRESS-BLOCKED) — no plan and no
+//     approval prompt exists for an unsafe URL;
+//   - the target set: an explicit --host set is NOT filtered (an incapable
+//     host fails by name with LPSM-INSTALL-TARGET-UNAVAILABLE), while the
+//     default set is filtered to capable hosts and the drops are reported;
+//   - a default set in which NO host is capable fails closed with the same
+//     typed error, carrying every host's capability reason.
+//
+// A stdio runtime keeps the historical target-set rules unchanged.
+func planRuntimeGates(id string, binding *mcpInstallBinding, explicit bool) ([]string, []hostCapabilityDrop, *ipc.RPCError) {
+	if binding == nil || binding.Runtime == nil {
+		return nil, nil, installRPCError(domain.ErrArtifactUnavailable(id,
+			"no published runtime descriptor was resolved for this plan"))
+	}
+	hosts := append([]string(nil), binding.Hosts...)
+	command := strings.TrimSpace(binding.Runtime.Command)
+	endpoint := strings.TrimSpace(binding.Runtime.Endpoint)
+	switch {
+	case command == "" && endpoint == "":
+		return nil, nil, installRPCError(domain.ErrArtifactUnavailable(id,
+			"the published runtime descriptor names neither a command nor an endpoint, so there is nothing to register"))
+	case command != "" && endpoint != "":
+		return nil, nil, installRPCError(domain.ErrArtifactUnavailable(id,
+			"the published runtime descriptor names both a command and an endpoint; an entry is one transport"))
+	}
+	if endpoint == "" {
+		return hosts, nil, nil // stdio: unchanged target-set rules
+	}
+	if len(binding.EnvNames) > 0 {
+		return nil, nil, installRPCError(remoteEnvRefusal(id, ""))
+	}
+	if err := checkRemoteEndpoint(endpoint); err != nil {
+		return nil, nil, installRPCError(err)
+	}
+	transport := host.RegistryRemoteTransport(binding.Runtime.Type)
+	kept := make([]string, 0, len(hosts))
+	var drops []hostCapabilityDrop
+	for _, hostID := range hosts {
+		reason := remoteHostCapabilityReason(hostID, transport)
+		if reason == "" {
+			kept = append(kept, hostID)
+			continue
+		}
+		if explicit {
+			// The user named this host with --host: it is not filtered away,
+			// it fails — by name, with the capability reason.
+			return nil, nil, installRPCError(domain.ErrInstallTargetUnavailable(fmt.Sprintf("host %q %s", hostID, reason)))
+		}
+		drops = append(drops, hostCapabilityDrop{HostID: hostID, Reason: reason})
+	}
+	if len(kept) == 0 && len(hosts) > 0 {
+		reasons := make([]string, 0, len(drops))
+		for _, d := range drops {
+			reasons = append(reasons, fmt.Sprintf("host %q %s", d.HostID, d.Reason))
+		}
+		return nil, nil, installRPCError(domain.ErrInstallTargetUnavailable(fmt.Sprintf(
+			"none of the configured agent hosts can receive this remote (URL) MCP entry for transport %s: %s",
+			strconv.Quote(transport), strings.Join(reasons, "; "))))
+	}
+	return kept, drops, nil
+}
+
+// preparePlanResult is the resolver.prepare_plan response: the sealed plan,
+// inlined so a caller that decodes into domain.InstallPlan sees exactly the
+// document it always did, plus the capability drops LiteSPM made while
+// choosing an auto target set. A UI that wants the drops reads droppedHosts;
+// a client that ignores them still gets a complete plan.
+type preparePlanResult struct {
+	*domain.InstallPlan
+	DroppedHosts []hostCapabilityDrop `json:"droppedHosts,omitempty"`
 }
 
 // buildInstallPlan resolves the requested listing with the real resolver and
@@ -2575,16 +2736,20 @@ func (p *catalogResolutionProvider) GetListingVersions(ctx context.Context, list
 // established here stays empty: preconditions.runtimesFound in particular is
 // a claim that a runtime was observed on this machine, and nothing in this
 // path probes the machine, so it is never filled from declared requirements.
-func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, version string, scope domain.InstallScope, listing *domain.Listing) (*domain.InstallPlan, *ipc.RPCError) {
+//
+// The returned drop list names every host removed from an auto-chosen target
+// set because it cannot express the runtime's transport (always empty for a
+// stdio runtime and for an explicit --host set, which fails by name instead).
+func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, version string, scope domain.InstallScope, listing *domain.Listing, mcpBinding *mcpInstallBinding) (*domain.InstallPlan, []hostCapabilityDrop, *ipc.RPCError) {
 	r := resolver.NewResolver(&catalogResolutionProvider{client: catClient})
 	res, err := r.Resolve(ctx, id, version)
 	if err != nil {
-		return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		return nil, nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
 	}
 
 	planID, err := newPlanID()
 	if err != nil {
-		return nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
+		return nil, nil, &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}
 	}
 
 	// The published version record for the selected version: the only place
@@ -2593,14 +2758,33 @@ func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, versio
 	// and every consumer below treats nil as empty rather than as an error.
 	versionRec := versionRecordFor(catClient, id, res.SelectedVersions[id])
 
-	// The default install targets for this scope: hosts whose LiteSPM bridge
-	// verifies as registered. installMCPFromListing resolves the same list at
-	// execution time, so this is the set the approval is being asked about
-	// (an explicit --host at install time names a host outside this list; the
-	// plan records the scope default, not a future flag).
+	// MCP callers pass the resolved default or explicit host set into the plan;
+	// execution uses only that persisted target set.
 	var targetHosts []string
+	var droppedHosts []hostCapabilityDrop
 	if listing != nil && listing.Kind == domain.KindMCP {
-		targetHosts = host.RegisteredBridgeHosts(ctx, scope)
+		explicit := false
+		if mcpBinding == nil {
+			// The bridge/agent path never names hosts: LiteSPM chooses the
+			// default set (every registered bridge host) and filters it.
+			mcpBinding = &mcpInstallBinding{Hosts: host.RegisteredBridgeHosts(ctx, scope)}
+		} else {
+			explicit = mcpBinding.ExplicitHosts
+		}
+		if mcpBinding.Runtime == nil {
+			runtime, runtimeErr := catClient.RuntimeForListing(id, catalogRecordVersion(res.SelectedVersions[id]))
+			if runtimeErr != nil {
+				return nil, nil, &ipc.RPCError{Code: ipc.CodeInternalError,
+					Message: domain.ErrArtifactUnavailable(id, runtimeErr.Error()).Error()}
+			}
+			mcpBinding.Runtime = runtime
+		}
+		kept, drops, gateErr := planRuntimeGates(id, mcpBinding, explicit)
+		if gateErr != nil {
+			return nil, nil, gateErr
+		}
+		targetHosts = kept
+		droppedHosts = drops
 	}
 
 	now := time.Now().UTC()
@@ -2624,7 +2808,7 @@ func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, versio
 		// probes the machine — the resolver publishes no runtime requirements
 		// either (its nodes carry versions and dependencies only).
 		Preconditions:   domain.PlanPreconditions{},
-		HostChanges:     hostChangesFor(ctx, listing, scope, targetHosts),
+		HostChanges:     hostChangesFor(ctx, listing, scope, targetHosts, mcpBinding),
 		RequestedAccess: requestedAccessFor(versionRec),
 	}
 
@@ -2647,23 +2831,38 @@ func buildInstallPlan(ctx context.Context, catClient *catalog.Client, id, versio
 
 	planHash, err := domain.ComputePlanHash(plan)
 	if err != nil {
-		return nil, &ipc.RPCError{Code: ipc.CodeInternalError,
+		return nil, nil, &ipc.RPCError{Code: ipc.CodeInternalError,
 			Message: fmt.Sprintf("failed to compute plan hash: %v", err)}
 	}
 	plan.PlanHash = planHash
-	return plan, nil
+	return plan, droppedHosts, nil
+}
+
+// catalogRecordVersion maps the resolver's output to the version key the
+// catalog publishes records under. The resolver names a version-less listing
+// with the release's implicit pin (resolver.ImplicitVersion — the literal the
+// listing's component ids embed), while the release publishes that listing's
+// version record under the empty version. Translating the key here means a
+// version-less plan and a version-less lock entry read the catalog's real
+// record instead of missing it and falling back to "not knowable".
+func catalogRecordVersion(selected string) string {
+	if selected == resolver.ImplicitVersion {
+		return ""
+	}
+	return selected
 }
 
 // versionRecordFor returns the catalog's published version record for a
 // listing's selected version, or nil when there is none (an index that was
 // never synced, a listing whose versions were never recorded). Callers treat
 // nil as "not knowable" and leave the dependent plan fields empty rather than
-// substituting a guess.
+// substituting a guess. The resolver's implicit pin resolves to the record a
+// version-less listing actually publishes (see catalogRecordVersion).
 func versionRecordFor(catClient *catalog.Client, id, version string) *domain.VersionRecord {
 	if catClient == nil || id == "" {
 		return nil
 	}
-	rec, err := catClient.VersionRecordFor(id, version)
+	rec, err := catClient.VersionRecordFor(id, catalogRecordVersion(version))
 	if err != nil {
 		return nil
 	}
@@ -2671,19 +2870,30 @@ func versionRecordFor(catClient *catalog.Client, id, version string) *domain.Ver
 }
 
 // declaresRemoteTransport reports whether any component of the version record
-// declares an sse or http runtime — i.e. the server is reached over the
-// network rather than spawned locally. A record that publishes no runtime
-// declares nothing, so it yields false instead of a default.
+// declares a remote runtime — i.e. the server is reached over the network
+// rather than spawned locally. Both axes count: the registry/host transport
+// vocabulary the descriptor may carry (sse, http, streamable-http, remote) and
+// the shape itself (an endpoint with no command IS a network destination, even
+// if the type token were missing or unfamiliar). A record that publishes no
+// runtime declares nothing, so it yields false instead of a default.
 func declaresRemoteTransport(rec *domain.VersionRecord) bool {
 	if rec == nil {
 		return false
 	}
 	for _, comp := range rec.Components {
-		if comp.Runtime == nil {
+		rt := comp.Runtime
+		if rt == nil {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(comp.Runtime.Type)) {
-		case "sse", "http":
+		switch strings.ToLower(strings.TrimSpace(rt.Type)) {
+		case "sse", "http", "streamable-http", "remote":
+			return true
+		}
+		// Endpoint-only: the launch line is a URL, so the install necessarily
+		// involves outbound traffic whatever the catalog chose to call it. A
+		// descriptor that also carries a command is the stdio-wins case and
+		// declares nothing extra.
+		if strings.TrimSpace(rt.Endpoint) != "" && strings.TrimSpace(rt.Command) == "" {
 			return true
 		}
 	}
@@ -2695,7 +2905,8 @@ func declaresRemoteTransport(rec *domain.VersionRecord) bool {
 //
 //	kind mcp    -> package.install, host.config.write when this scope has at
 //	               least one target host, network.outbound when the published
-//	               runtime claims an sse or http transport;
+//	               runtime is a remote one (sse/http/streamable-http/remote,
+//	               or an endpoint with no command);
 //	kind skill  -> package.install, filesystem.write for the skill files it
 //	               lays down;
 //	anything else -> package.install only: the catalog publishes no artifact
@@ -2705,6 +2916,12 @@ func declaresRemoteTransport(rec *domain.VersionRecord) bool {
 // effects are the same vocabulary the engine evaluates. Where an effect lands
 // (which host config, which directory) is recorded structurally in hostChanges,
 // not encoded into the effect name.
+//
+// network.outbound here is the CONSENT DOCUMENT (what the approver sees). The
+// policy engine's input deliberately does not carry a targeted
+// network.outbound for an endpoint — see authorizeMCPInstallPolicy and
+// B1 research §2.6 Decision 6: policy invariant 3 would deny a loopback or
+// unparseable target unconditionally, with no way for the user to consent.
 func planEffects(listing *domain.Listing, rec *domain.VersionRecord, targetHosts []string) []string {
 	effects := []string{string(policy.EffectPackageInstall)}
 	if listing == nil {
@@ -2730,9 +2947,9 @@ func planEffects(listing *domain.Listing, rec *domain.VersionRecord, targetHosts
 // documented `register_command` for an MCP server entry, and EntryKey is the
 // name the server is stored under — which is derivable from the listing, and
 // left empty (rather than dropped or guessed) if the listing has no usable
-// name. The written entry's value is not known until install time, so
-// ValueJSON stays empty.
-func hostChangesFor(ctx context.Context, listing *domain.Listing, scope domain.InstallScope, targetHosts []string) []domain.HostChange {
+// name. MCP plans also seal the runtime and install options into each host
+// change's ValueJSON.
+func hostChangesFor(ctx context.Context, listing *domain.Listing, scope domain.InstallScope, targetHosts []string, binding *mcpInstallBinding) []domain.HostChange {
 	if listing == nil || listing.Kind != domain.KindMCP || len(targetHosts) == 0 {
 		return nil
 	}
@@ -2753,6 +2970,7 @@ func hostChangesFor(ctx context.Context, listing *domain.Listing, scope domain.I
 			ConfigPath: configPath,
 			Action:     "register_command",
 			EntryKey:   entryKey,
+			ValueJSON:  mcpInstallPlanValueJSON(binding),
 		})
 	}
 	return changes
@@ -2818,8 +3036,11 @@ func installRPCError(err error) *ipc.RPCError {
 	case "LPSM-POLICY-UNAUTHORIZED", "LPSM-POLICY-APPROVAL-CONSUMED", "LPSM-POLICY-APPROVAL-EXPIRED":
 		return &ipc.RPCError{Code: ipc.CodeUnauthorized, Message: err.Error()}
 	// A name collision is the caller's input being wrong, not an internal
-	// failure: the request named something that already exists.
-	case "LPSM-STATE-NOT-FOUND", "LPSM-DOMAIN-INVALID-ID", "LPSM-STATE-CONFLICT", "LPSM-NAME-CONFLICT", "LPSM-INSTALL-TARGET-UNAVAILABLE", "LPSM-NOT-INSTALLABLE":
+	// failure: the request named something that already exists. An endpoint
+	// the egress guard refuses, and --env on a remote entry, are the same
+	// shape of mistake: the request asked for something LiteSPM will not do.
+	case "LPSM-STATE-NOT-FOUND", "LPSM-DOMAIN-INVALID-ID", "LPSM-STATE-CONFLICT", "LPSM-NAME-CONFLICT", "LPSM-INSTALL-TARGET-UNAVAILABLE", "LPSM-NOT-INSTALLABLE",
+		"LPSM-EGRESS-BLOCKED", "LPSM-REMOTE-ENV-REFUSED":
 		return &ipc.RPCError{Code: ipc.CodeInvalidParams, Message: err.Error()}
 	default:
 		return &ipc.RPCError{Code: ipc.CodeInternalError, Message: err.Error()}

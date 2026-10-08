@@ -90,7 +90,7 @@ export function LandingHero({
     <section className="shell hero-glow pb-10 pt-9 md:pb-14 md:pt-14">
       <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)] lg:gap-12">
         <div className="enter-rise">
-          <h1 className="max-w-[16ch] text-[34px] font-semibold leading-[1.06] tracking-[-0.025em] text-ink sm:text-[44px] lg:text-[54px]">
+          <h1 className="max-w-[16ch] text-[34px] font-semibold leading-[1.06] tracking-tight text-ink sm:text-[44px] lg:text-[54px]">
             Give your AI more abilities.
           </h1>
 
@@ -141,7 +141,7 @@ export function LandingHero({
                 type="button"
                 onClick={onCopy}
                 aria-label="Copy the install command"
-                className="btn shrink-0 !border-dark-rule !bg-dark-2 !text-dark-ink"
+                className="btn shrink-0 border-dark-rule! bg-dark-2! text-dark-ink!"
               >
                 {copied ? (
                   <>

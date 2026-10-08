@@ -4,18 +4,27 @@ package interop
 //
 // The parse shape and its semantic mapping are reused from
 // internal/source/mcp_registry.go — the same MCPRegistryServerSchema the
-// catalog source adapter decodes, the same single-object-or-array probe,
-// the same meaning for packages[] (artifact) and remotes[] (endpoint).
-// What import adds on top of the adapter is strictness and honesty: the
-// adapter SKIPS nameless or versionless rows while ingesting a feed
-// (thousands of rows, one bad one must not sink the run); an import file
-// is the user's own input, so required fields are enforced (004), path
-// traversal in names is refused (003), and a package that publishes no
-// version is REPORTED instead of skipped.
+// catalog source adapter decodes (the 2025-12-11 live schema and its
+// legacy spelling), the same single-object-or-array probe, the same meaning
+// for packages[] (artifact) and remotes[] (endpoint). What import adds on
+// top of the adapter is strictness and honesty: the adapter SKIPS
+// nameless or versionless rows while ingesting a feed (thousands of rows,
+// one bad one must not sink the run); an import file is the user's own
+// input, so required fields are enforced (004), path traversal in names is
+// refused (003), and a package that publishes no version is REPORTED
+// instead of skipped.
+//
+// The live registry publishes package coordinates (identifier,
+// registryType, transport object), environment variable NAMES, at most a
+// runtimeHint (~1% of entries) and package-argument declarations — never a
+// launch line. Nothing in this file turns those into a command: `command`
+// is only ever reported from a document that itself declares one (the
+// legacy spelling), arguments are reported as counts, and environment and
+// header VALUES are never decoded at all.
 //
 // Namespace-verification assertions (ARCH/31 #19) are preserved, not
 // flattened: the publisher (the party the registry verified) and every
-// registry-qualified package coordinate (registryType + name, e.g.
+// registry-qualified package coordinate (registryType + identifier, e.g.
 // `@modelcontextprotocol/server-postgres`) stay distinct fields of the
 // foreign record — the listing id carries the server name only, and the
 // assertions ride along in the plan output instead of being collapsed
@@ -32,9 +41,11 @@ import (
 )
 
 // serverKnownKeys are the fields of internal/source's server.json schema.
-// Anything outside it (license, version, $schema, the registry's own
-// identifier/verification extras, …) becomes a reported warning, never a
-// silent drop.
+// Anything outside it (license, version, $schema, websiteUrl, icons, the
+// registry's own _meta extras, …) becomes a reported warning, never a
+// silent drop — the 2025-12-11 schema declares its members additive (no
+// additionalProperties: false), so an unrecognised member is reported and
+// tolerated, never a refusal.
 var serverKnownKeys = map[string]bool{
 	"name": true, "title": true, "description": true, "repository": true,
 	"homepage": true, "categories": true, "keywords": true, "publisher": true,
@@ -42,7 +53,7 @@ var serverKnownKeys = map[string]bool{
 }
 
 // ParseServerJSON normalizes a server.json document (single object or an
-// array of them, the registry's two wire shapes).
+// array of them, the registry's two server.json wire shapes).
 func ParseServerJSON(data []byte) (*Doc, error) {
 	if err := ValidateInput(data); err != nil {
 		return nil, err
@@ -56,6 +67,17 @@ func ParseServerJSON(data []byte) (*Doc, error) {
 			return nil, err
 		}
 	case '{':
+		// The registry API's list response ({"servers":[{"server":…}],
+		// "metadata":…}) is not a server.json document: it is a paginated
+		// collection whose entries are *versions* of the same servers (the
+		// live response holds several versions per name), so importing it
+		// as one file would force LiteSPM to pick a version the document
+		// set did not let it pick. Refuse it with the shape named instead
+		// of failing on an incidental field.
+		if source.IsRegistryListEnvelope(data) {
+			return nil, errorf(ErrCodeSchema,
+				"this document is a registry API list response (a \"servers\" array), not a server.json document: save one server document — or an array of the server objects the response lists — and import that")
+		}
 		raws = []json.RawMessage{data}
 	default:
 		return nil, errorf(ErrCodeSchema,
@@ -75,7 +97,7 @@ func ParseServerJSON(data []byte) (*Doc, error) {
 		}
 		doc.Entries = append(doc.Entries, *entry)
 		for _, pkg := range entry.Foreign.Packages {
-			if pkg.Digest != "" {
+			if pkg.Digest != "" || pkg.FileSha256 != "" {
 				hasDigest = true
 			}
 		}
@@ -124,7 +146,15 @@ func parseServerEntry(idx int, raw json.RawMessage, seen map[string]bool) (*Entr
 	}
 	checkKnownKeys(generic, serverKnownKeys, where, warnings)
 
-	rec := ForeignRecord{Source: srv.Repository, Status: srv.Status}
+	rec := ForeignRecord{Source: srv.Repository.URL, SourceType: srv.Repository.Source, Status: srv.Status}
+	// repository members the record has no field for are reported, not
+	// silently dropped (the URL and hosting service are imported above).
+	if id := strings.TrimSpace(srv.Repository.ID); id != "" {
+		rec.Notes = append(rec.Notes, fmt.Sprintf("repository id %s (reported only, not written)", id))
+	}
+	if sub := strings.TrimSpace(srv.Repository.Subfolder); sub != "" {
+		rec.Notes = append(rec.Notes, fmt.Sprintf("repository subfolder %s (reported only, not written)", sub))
+	}
 	if srv.Publisher != nil {
 		rec.Publisher = strings.TrimSpace(srv.Publisher.Name)
 		rec.PublisherURL = strings.TrimSpace(srv.Publisher.URL)
@@ -142,31 +172,80 @@ func parseServerEntry(idx int, raw json.RawMessage, seen map[string]bool) (*Entr
 	var constraint string
 	for i, pkg := range srv.Packages {
 		pwhere := fmt.Sprintf("%s.packages[%d]", where, i)
-		if strings.TrimSpace(pkg.Name) == "" {
-			return nil, errorf(ErrCodeSchema, "%s.name is required", pwhere)
+		// The live schema requires `identifier`; the legacy spelling is
+		// `name`. Either satisfies the coordinate requirement — a package
+		// with neither declares nothing to import.
+		coord := pkg.Coordinate()
+		coordField := "identifier"
+		if pkg.Identifier == "" {
+			coordField = "name"
 		}
-		if err := checkSafeField(pwhere+".name", pkg.Name); err != nil {
+		if coord == "" {
+			return nil, errorf(ErrCodeSchema, "%s.identifier is required (the package coordinate; legacy documents use \"name\")", pwhere)
+		}
+		if err := checkSafeField(pwhere+"."+coordField, coord); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(pkg.RegistryType) == "" {
-			return nil, errorf(ErrCodeSchema, "%s.registryType is required (npm, pypi, cargo, oci or mcpb)", pwhere)
+			return nil, errorf(ErrCodeSchema, "%s.registryType is required (npm, pypi, cargo, oci, nuget or mcpb)", pwhere)
 		}
 		if pkg.Digest != "" && !shaPref.MatchString(pkg.Digest) {
 			return nil, errorf(ErrCodeSchema, "%s.digest %q is not \"sha256:\" followed by 64 lowercase hex characters",
 				pwhere, pkg.Digest)
 		}
+		if pkg.FileSha256 != "" && !hex64.MatchString(pkg.FileSha256) {
+			return nil, errorf(ErrCodeSchema, "%s.fileSha256 %q is not 64 lowercase hex characters",
+				pwhere, pkg.FileSha256)
+		}
+		// Env NAMES come from both spellings: the legacy `env` map and the
+		// live `environmentVariables[]`. Values are never decoded by either
+		// path — a live entry may declare none at all, and the ones it
+		// declares may be secrets.
 		envNames := sortedKeys(pkg.Env)
+		if len(pkg.EnvironmentVariables) > 0 {
+			seen := map[string]bool{}
+			for _, n := range envNames {
+				seen[n] = true
+			}
+			for _, kv := range pkg.EnvironmentVariables {
+				name := strings.TrimSpace(kv.Name)
+				if name == "" || seen[name] {
+					continue
+				}
+				seen[name] = true
+				envNames = append(envNames, name)
+			}
+			sort.Strings(envNames)
+		}
 		fp := ForeignPackage{
 			RegistryType: pkg.RegistryType,
-			Name:         pkg.Name,
+			Name:         coord,
 			Version:      strings.TrimSpace(pkg.Version),
 			Digest:       pkg.Digest,
-			Transport:    pkg.Transport,
+			FileSha256:   pkg.FileSha256,
+			RuntimeHint:  strings.TrimSpace(pkg.RuntimeHint),
+			Transport:    pkg.Transport.TransportType(),
 			EnvNames:     envNames,
-			HasCommand:   pkg.Command != "" || len(pkg.Args) > 0,
+			// True only when the document itself declared a command
+			// (legacy spelling). The live schema has no command field, so
+			// no live package can ever set this — and nothing here derives
+			// one from registryType, identifier or runtimeHint.
+			HasCommand: pkg.Command != "" || len(pkg.Args) > 0,
 		}
 		if fp.Transport != "" && !knownTransport(fp.Transport) {
 			*warnings = append(*warnings, fmt.Sprintf("%s.transport %q is not stdio/http/sse; recorded as declared", pwhere, fp.Transport))
+		}
+		if pkg.Transport.URL != "" {
+			*warnings = append(*warnings, fmt.Sprintf("%s.transport.url %q is reported, not imported", pwhere, pkg.Transport.URL))
+		}
+		// Arguments are reported as counts: with no executable declared
+		// there is nothing for them to attach to, and rendering them would
+		// read like a launch line LiteSPM invented.
+		if len(pkg.PackageArguments) > 0 {
+			*warnings = append(*warnings, fmt.Sprintf("%s declares %d packageArguments but names no executable; the count is reported, never a launch line", pwhere, len(pkg.PackageArguments)))
+		}
+		if len(pkg.RuntimeArguments) > 0 {
+			*warnings = append(*warnings, fmt.Sprintf("%s declares %d runtimeArguments but names no executable; the count is reported, never a launch line", pwhere, len(pkg.RuntimeArguments)))
 		}
 		rec.Packages = append(rec.Packages, fp)
 		if fp.Version == "" {
@@ -186,14 +265,29 @@ func parseServerEntry(idx int, raw json.RawMessage, seen map[string]bool) (*Entr
 		if strings.TrimSpace(rem.URL) == "" {
 			return nil, errorf(ErrCodeSchema, "%s.url is required", rwhere)
 		}
-		if strings.TrimSpace(rem.Transport) == "" {
-			return nil, errorf(ErrCodeSchema, "%s.transport is required (http or sse)", rwhere)
+		// The live schema requires `type`; the legacy spelling is
+		// `transport`. Either satisfies the requirement — neither is a
+		// licence to guess the endpoint's transport.
+		rtransport := rem.TransportType()
+		if rtransport == "" {
+			return nil, errorf(ErrCodeSchema, "%s.type is required (streamable-http or sse; legacy documents use \"transport\")", rwhere)
 		}
-		if !knownTransport(rem.Transport) && rem.Transport != "http" {
-			*warnings = append(*warnings, fmt.Sprintf("%s.transport %q is not stdio/http/sse; recorded as declared", rwhere, rem.Transport))
+		if !knownTransport(rtransport) && rtransport != "http" {
+			*warnings = append(*warnings, fmt.Sprintf("%s.transport %q is not stdio/http/sse; recorded as declared", rwhere, rtransport))
+		}
+		// Header NAMES would be record material; header VALUES may be
+		// credentials and are never decoded by the schema structs at all.
+		if len(rem.Headers) > 0 {
+			names := make([]string, 0, len(rem.Headers))
+			for _, h := range rem.Headers {
+				if n := strings.TrimSpace(h.Name); n != "" {
+					names = append(names, n)
+				}
+			}
+			*warnings = append(*warnings, fmt.Sprintf("%s declares header names [%s]; header values are never imported (they may carry credentials)", rwhere, strings.Join(names, ", ")))
 		}
 		rec.Remotes = append(rec.Remotes, ForeignRemote{
-			URL: rem.URL, Transport: rem.Transport, AuthType: rem.AuthType,
+			URL: rem.URL, Transport: rtransport, AuthType: rem.AuthType,
 		})
 	}
 

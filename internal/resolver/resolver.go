@@ -91,9 +91,6 @@ func (r *Resolver) Resolve(ctx context.Context, rootListingID string, rootConstr
 		if err != nil {
 			return fmt.Errorf("failed to fetch versions for listing %s: %w", id, err)
 		}
-		if len(availVersions) == 0 {
-			return domain.ErrResolveConflict(id, "no versions available in catalog")
-		}
 
 		// Sort available versions descending (highest version first)
 		type parsedVerMeta struct {
@@ -115,6 +112,22 @@ func (r *Resolver) Resolve(ctx context.Context, rootListingID string, rootConstr
 		// Find the best version matching aggregated constraint
 		effectiveConstraint := constraints[id]
 		var matchedMeta *ListingVersionMetadata
+		if len(availVersions) == 0 {
+			// A listing that publishes no versions has exactly one honest
+			// resolution: the release's implicit pin — the literal its own
+			// component ids already embed (ImplicitVersion). The pin satisfies
+			// only constraints that do not name a different version: a
+			// wildcard (empty / "*" / "latest") or an explicit request for the
+			// pin itself. A real semver range against a version-less listing
+			// still fails closed below — nothing is synthesized to make it
+			// match, and no fabricated version (0.0.0) reaches the plan.
+			implicit := Version{Raw: ImplicitVersion, Implicit: true}
+			if !effectiveConstraint.Matches(implicit) {
+				return domain.ErrResolveConflict(id, fmt.Sprintf(
+					"listing publishes no versions, so constraint %q cannot be satisfied", effectiveConstraint.Raw))
+			}
+			matchedMeta = &ListingVersionMetadata{Version: ImplicitVersion}
+		}
 		for _, p := range parsedList {
 			if effectiveConstraint.Matches(p.ver) {
 				matchedMeta = &p.meta
@@ -123,6 +136,8 @@ func (r *Resolver) Resolve(ctx context.Context, rootListingID string, rootConstr
 		}
 
 		if matchedMeta == nil {
+			// Unreachable for a version-less listing (handled above); a
+			// listing that does publish versions simply has no match.
 			return domain.ErrResolveConflict(id, fmt.Sprintf("unresolvable version conflict with constraint %q", effectiveConstraint.Raw))
 		}
 

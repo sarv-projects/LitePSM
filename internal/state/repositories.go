@@ -685,11 +685,17 @@ func ProviderMode(transport string) (string, error) {
 // to start the provider, and nothing else. The previous writer put the argument
 // list in runtime_adapter and the auth profile id in launch_spec_json, so a
 // provider row described a program that did not exist.
+//
+// Endpoint is the remote (URL) provider's dial target — the same row, the same
+// blob, a second (omitempty) key: adding it needs no migration, and a record
+// written before it existed still unmarshals unchanged (Endpoint stays "" and
+// the stdio launch line is all the row describes).
 type launchSpec struct {
 	Command    string            `json:"command"`
 	Args       []string          `json:"args,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
 	WorkingDir string            `json:"workingDir,omitempty"`
+	Endpoint   string            `json:"endpoint,omitempty"`
 }
 
 // SaveProvider stores supervised MCP provider configuration.
@@ -710,7 +716,13 @@ func (db *DB) SaveProvider(ctx context.Context, p *domain.ProviderRecord) error 
 			return fmt.Errorf("provider %s has an unreadable EnvJSON: %w", p.ProviderID, err)
 		}
 	}
-	spec, err := json.Marshal(launchSpec{Command: p.Command, Args: args, Env: env, WorkingDir: p.WorkingDir})
+	spec, err := json.Marshal(launchSpec{
+		Command:    p.Command,
+		Args:       args,
+		Env:        env,
+		WorkingDir: p.WorkingDir,
+		Endpoint:   p.Endpoint,
+	})
 	if err != nil {
 		return err
 	}
@@ -790,6 +802,10 @@ func (db *DB) GetProvider(ctx context.Context, providerID string) (*domain.Provi
 	}
 	rec.Command = spec.Command
 	rec.WorkingDir = spec.WorkingDir
+	// The endpoint must come back or a remote Invoke could not rebuild the
+	// spec Discover stored; a record written before the field existed simply
+	// reads "" here, exactly as it did.
+	rec.Endpoint = spec.Endpoint
 	if len(spec.Args) > 0 {
 		if b, err := json.Marshal(spec.Args); err == nil {
 			rec.ArgsJSON = string(b)

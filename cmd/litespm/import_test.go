@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sarv-projects/litespm/internal/interop"
 	"github.com/sarv-projects/litespm/internal/manifest"
 )
 
@@ -212,6 +213,97 @@ constraint = "0.9.0"
 	}
 	if !found {
 		t.Error("imported require missing after rewrite")
+	}
+}
+
+func TestImportApplyRejectsStaleManifestSnapshot(t *testing.T) {
+	dir := tempProject(t)
+	manifestPath := filepath.Join(dir, "litespm.toml")
+	original := `schemaVersion = 1
+
+[project]
+name = "demo"
+defaultScope = "project"
+
+[[requires]]
+id = "skill:git:vercel-labs-agent-skills:frontend-design"
+constraint = "0.9.0"
+`
+	if err := os.WriteFile(manifestPath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := readImportManifestSnapshot(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(importFixture("skills-lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := interop.Parse(interop.FormatSkillsLock, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.SourcePath = importFixture("skills-lock.json")
+	plan := interop.BuildPlan(doc, manifestPath, snapshot.manifest)
+
+	concurrentEdit := strings.Replace(original, `name = "demo"`, `name = "edited by user"`, 1)
+	if err := os.WriteFile(manifestPath, []byte(concurrentEdit), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var code int
+	stderr := captureImportStderr(t, func() {
+		code = writeImportPlan(&out, plan, dir, snapshot)
+	})
+	if code != 1 || !strings.Contains(stderr, "LPSM-IMPORT-008") {
+		t.Fatalf("stale plan should be refused (code=%d stderr=%q)", code, stderr)
+	}
+	after, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != concurrentEdit {
+		t.Fatalf("stale import overwrote the concurrent edit:\n%s", after)
+	}
+}
+
+func TestImportApplyRejectsManifestCreatedAfterPlan(t *testing.T) {
+	dir := tempProject(t)
+	manifestPath := filepath.Join(dir, "litespm.toml")
+	snapshot, err := readImportManifestSnapshot(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(importFixture("skills-lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := interop.Parse(interop.FormatSkillsLock, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.SourcePath = importFixture("skills-lock.json")
+	plan := interop.BuildPlan(doc, manifestPath, nil)
+
+	concurrentFile := "schemaVersion = 1\n\n[project]\nname = \"concurrent\"\ndefaultScope = \"project\"\n"
+	if err := os.WriteFile(manifestPath, []byte(concurrentFile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var code int
+	stderr := captureImportStderr(t, func() {
+		code = writeImportPlan(&out, plan, dir, snapshot)
+	})
+	if code != 1 || !strings.Contains(stderr, "LPSM-IMPORT-008") {
+		t.Fatalf("new target should invalidate the create plan (code=%d stderr=%q)", code, stderr)
+	}
+	after, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != concurrentFile {
+		t.Fatalf("stale create plan overwrote the newly-created manifest:\n%s", after)
 	}
 }
 

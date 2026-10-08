@@ -42,11 +42,20 @@ func SupportedKind(kind string) bool {
 // exists only so classification can happen once, here; it is never copied into
 // the IR.
 type SourceMCP struct {
-	Name     string
-	Command  string
-	Args     []string
-	Env      map[string]string
-	EnvNames []string
+	Name    string
+	Command string
+	Args    []string
+	// Endpoint is the remote (URL) this entry registers instead of launching
+	// a process. A source entry carries Command OR Endpoint, never both.
+	Endpoint string
+	// Transport is the transport of a remote entry. It may arrive in HOST
+	// vocabulary (the discriminator read back from the config: "http",
+	// "streamableHttp", "remote") or registry vocabulary; NormalizeMCP maps it
+	// through host.RegistryRemoteTransport, so both spellings of the same fact
+	// classify identically.
+	Transport string
+	Env       map[string]string
+	EnvNames  []string
 }
 
 // SourceSkill is one skill as found on the source agent: its name, the
@@ -106,12 +115,27 @@ type SkillRecord struct {
 func NormalizeMCP(src SourceMCP) (host.ServerEntry, []string) {
 	class := ClassifyEnv(src.Env, src.EnvNames)
 	entry := host.ServerEntry{
-		Name:     strings.TrimSpace(src.Name),
-		Command:  strings.TrimSpace(src.Command),
-		Args:     append([]string{}, src.Args...),
-		EnvNames: append([]string{}, class.Refs...),
+		Name:    strings.TrimSpace(src.Name),
+		Command: strings.TrimSpace(src.Command),
+		Args:    append([]string{}, src.Args...),
+		// A remote entry's endpoint flows into the IR verbatim, and its
+		// transport is normalised to the registry vocabulary so a source that
+		// said "http" and a plan that says "streamable-http" are the same
+		// fact (and fingerprint the same).
+		Endpoint:  strings.TrimSpace(src.Endpoint),
+		Transport: remoteTransportOf(src.Endpoint, src.Transport),
+		EnvNames:  append([]string{}, class.Refs...),
 	}
 	return entry, class.Needs()
+}
+
+// remoteTransportOf maps a remote entry's transport onto the registry
+// vocabulary, leaving stdio entries (no endpoint) with no transport at all.
+func remoteTransportOf(endpoint, transport string) string {
+	if strings.TrimSpace(endpoint) == "" {
+		return ""
+	}
+	return host.RegistryRemoteTransport(transport)
 }
 
 // IRFromHostEntry rebuilds the IR from an entry as read back out of a config
@@ -120,22 +144,38 @@ func NormalizeMCP(src SourceMCP) (host.ServerEntry, []string) {
 // describes the same portable facts.
 func IRFromHostEntry(e host.HostServerEntry) host.ServerEntry {
 	class := ClassifyEnv(e.Env, e.EnvNames)
-	return host.ServerEntry{
+	entry := host.ServerEntry{
 		Name:     strings.TrimSpace(e.Name),
 		Command:  strings.TrimSpace(e.Command),
 		Args:     append([]string{}, e.Args...),
 		EnvNames: append([]string{}, class.Refs...),
 	}
+	// A remote entry read back out of a config keeps its endpoint, and its
+	// host discriminator (`http`, `streamableHttp`, `remote`, `sse`) is mapped
+	// to the registry vocabulary — otherwise a Claude Code remote entry would
+	// fingerprint differently from the same entry expressed for Cursor, and
+	// the L1 read-back after a write would never match the plan.
+	if ep := strings.TrimSpace(e.Endpoint); ep != "" {
+		entry.Endpoint = ep
+		entry.Transport = host.RegistryRemoteTransport(e.Transport)
+	}
+	return entry
 }
 
 // Fingerprint is the canonical identity of one IR entry: "sha256:" over the
-// command, the argument vector and the forwarded names in sorted order.
+// command, the argument vector, the endpoint and the forwarded names in sorted
+// order.
 //
 // It is the single comparison used everywhere copy asks "are these the
 // same?": conflict classification (identical → unchanged, different →
 // conflict) and the L1 read-back after a write (entry fingerprint equals the
 // plan's entry). It hashes only portable facts, so no secret can enter it —
 // literal values are gone before this function is reached.
+//
+// The endpoint and transport are part of the identity: without them a remote
+// entry and a stdio entry registered under the same name would compare
+// "identical" while describing opposite transports. Both fields are omitted
+// when empty, so every existing stdio fingerprint is byte-stable.
 func Fingerprint(e host.ServerEntry) string {
 	args := append([]string{}, e.Args...)
 	names := append([]string{}, e.EnvNames...)
@@ -147,10 +187,13 @@ func Fingerprint(e host.ServerEntry) string {
 	}
 	sort.Strings(names)
 	payload, err := json.Marshal(struct {
-		Command  string   `json:"command"`
-		Args     []string `json:"args"`
-		EnvNames []string `json:"envNames"`
-	}{Command: e.Command, Args: args, EnvNames: names})
+		Command   string   `json:"command"`
+		Args      []string `json:"args"`
+		EnvNames  []string `json:"envNames"`
+		Endpoint  string   `json:"endpoint,omitempty"`
+		Transport string   `json:"transport,omitempty"`
+	}{Command: e.Command, Args: args, EnvNames: names,
+		Endpoint: strings.TrimSpace(e.Endpoint), Transport: strings.TrimSpace(e.Transport)})
 	if err != nil {
 		// json.Marshal on this shape cannot fail; keep the failure honest
 		// rather than returning an empty (colliding) fingerprint.

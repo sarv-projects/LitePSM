@@ -98,7 +98,7 @@ export function SearchBar({
         indigo outline is 5.49:1, on the dark surface 3.30:1 against what it
         sits on. 48px tall so the clear button can be a full 44px target.
       */}
-      <div className="flex h-12 items-center gap-2 border-2 border-ink bg-surface px-2.5 transition-colors duration-state ease-out focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent">
+      <div className="flex h-12 items-center gap-2 border-2 border-ink bg-surface px-2.5 transition-colors duration-state ease-out focus-within:outline-solid focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent">
         <Search className="h-4 w-4 shrink-0 text-ink-3" aria-hidden="true" />
         <input
           ref={inputRef}
@@ -110,7 +110,7 @@ export function SearchBar({
           autoComplete="off"
           aria-describedby={totalMatches !== undefined ? `${labelId}-count` : undefined}
           placeholder={resolvedPlaceholder}
-          className="h-full w-full min-w-0 self-stretch bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-3"
+          className="h-full w-full min-w-0 self-stretch bg-transparent text-[14px] text-ink outline-hidden placeholder:text-ink-3"
         />
 
         {query ? (
@@ -120,7 +120,7 @@ export function SearchBar({
                 {formatCount(totalMatches)} found
               </span>
             )}
-            <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="btn !px-2">
+            <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="btn px-2!">
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </span>

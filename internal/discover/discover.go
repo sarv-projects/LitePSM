@@ -20,13 +20,36 @@
 // `invocation.cancel` keep failing closed with that reason. `provider.invoke`
 // itself is synchronous, which is what ARCH/06 §4 and the Bridge tool contract
 // (`invoke_capability` -> `{output, isError}`) already specify.
+//
+// # Remote (URL) providers
+//
+// A provider is either a local command or a remote endpoint — an entry is one
+// transport. A remote spec dials its endpoint through mcpclient's own
+// connectors, which wrap every HTTP client in internal/egress (scheme,
+// destination, redirect and checked-dial rules run on every request); this
+// package deliberately builds no http.Client of its own, because two policies
+// would drift and the guard is the only thing standing between a stored URL
+// and the link-local metadata service.
+//
+// The rows rule does not change for a remote provider: capability rows are
+// written only after a complete, successful listing. An endpoint that refuses
+// authentication or cannot be reached returns a typed error
+// (LPSM-PROVIDER-REMOTE-AUTH / LPSM-PROVIDER-REMOTE-CONNECT, or the guard's
+// LPSM-EGRESS-BLOCKED) and writes NOTHING — no provider row, no capability
+// rows — so an entry that was never connected to has no invented health state
+// to render (Decision 8: an unconnected remote entry reads as unknown, never
+// as a fabricated ready light).
 package discover
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -178,6 +201,54 @@ type ProviderSpec struct {
 	// `${VAR:-fallback}` is expanded by some hosts and left alone by others.
 	HostID    string
 	Transport string
+	// Endpoint is the remote (URL) MCP server to dial instead of launching a
+	// process. An entry is one transport, so a spec carries EITHER Command
+	// (stdio) OR Endpoint (remote), never both — the same rule the host config
+	// writer enforces (internal/host InstallServerEntry). Empty for every stdio
+	// provider; non-empty makes the spec remote regardless of which side
+	// filled it.
+	Endpoint string
+}
+
+// Remote failure codes. domain has no remote-connect/auth code today and
+// internal/domain belongs to another lane, so the codes are minted here
+// through domain.NewError (which derives the category from the code). Both
+// satisfy schemas/errors.schema.json's ^LPSM-[A-Z]+-[A-Z0-9_-]+$ pattern.
+const (
+	// CodeRemoteAuth is a remote endpoint that answered HTTP 401/403: the URL
+	// is right and the credentials are missing or wrong. Reporting it as a
+	// connection failure would send the operator debugging a network that is
+	// fine — the most common remote MCP outcome is a protected endpoint, not
+	// a broken one.
+	CodeRemoteAuth = "LPSM-PROVIDER-REMOTE-AUTH"
+	// CodeRemoteConnect is a remote endpoint that could not be reached or did
+	// not complete the MCP exchange: dial/TLS/timeout failure, a non-auth
+	// HTTP status, or a protocol error.
+	CodeRemoteConnect = "LPSM-PROVIDER-REMOTE-CONNECT"
+)
+
+// httpStatusPattern matches mcpclient's non-2xx wrapping ("http error %d: …").
+// The status is the only structured fact that error carries, so the
+// auth/connection split reads it out of the chain.
+var httpStatusPattern = regexp.MustCompile(`http error (\d{3})`)
+
+// httpStatusOf walks err's wrap chain for mcpclient's HTTP status.
+func httpStatusOf(err error) (int, bool) {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if m := httpStatusPattern.FindStringSubmatch(e.Error()); m != nil {
+			if n, convErr := strconv.Atoi(m[1]); convErr == nil {
+				return n, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// isRemoteSpec reports whether the spec dials an endpoint instead of spawning
+// a process. The endpoint is the authority: it is the fact the host config
+// read back, and a stdio spec never carries one.
+func isRemoteSpec(spec ProviderSpec) bool {
+	return strings.TrimSpace(spec.Endpoint) != ""
 }
 
 // DiscoveredProvider is what a probe found.
@@ -208,6 +279,40 @@ func sanitizeIDPart(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
+// validateTarget is the "an entry is one transport" gate every session-opening
+// entry point runs (Discover, Invoke, and dial as the last line of defence
+// before a spawn or a connection). label is the already-formatted provider the
+// error must name: the quoted component name for a spec, the provider id for a
+// row read back from state.
+//
+// A spec naming NEITHER a command nor an endpoint is corrupt state: there is
+// nothing to dial or spawn, so the honest answer is a refusal, not a silent
+// no-op. A spec naming BOTH is ambiguous — whichever one gets checked first
+// would hide the other — so it is refused at the same gate the host config
+// writer makes (internal/host InstallServerEntry).
+func validateTarget(spec ProviderSpec, label string) error {
+	hasCommand := strings.TrimSpace(spec.Command) != ""
+	hasEndpoint := isRemoteSpec(spec)
+	switch {
+	case hasCommand && hasEndpoint:
+		return ambiguousTargetError(label)
+	case hasEndpoint:
+		return nil
+	case hasCommand:
+		// A stdio command with a remote transport is refused later, at dial,
+		// where the "nothing recorded to dial" refusal has always lived.
+		return nil
+	default:
+		return fmt.Errorf("provider %s has no command to run and no endpoint (URL) to connect to", label)
+	}
+}
+
+// ambiguousTargetError is the shared "an entry is one transport" refusal for a
+// spec/row that names both a command and an endpoint.
+func ambiguousTargetError(label string) error {
+	return fmt.Errorf("provider %s records both a command and an endpoint; an entry is one transport", label)
+}
+
 // Discover probes a running server and persists its provider and capability rows.
 //
 // A probe failure is returned, not swallowed: the caller decides whether an
@@ -215,8 +320,11 @@ func sanitizeIDPart(s string) string {
 // are written only after a complete, successful listing, so a server that dies
 // mid-probe cannot leave a half-discovered capability set behind.
 func Discover(ctx context.Context, db *state.DB, spec ProviderSpec, opts ...Option) (*DiscoveredProvider, error) {
-	if strings.TrimSpace(spec.Command) == "" {
-		return nil, fmt.Errorf("provider %q has no command to run", spec.ComponentName)
+	// One transport, and it must name a target: a stdio spec needs a command,
+	// a remote spec an endpoint. Neither case is corrupt state, and dialling
+	// (or spawning) nothing would report success for a server that never ran.
+	if err := validateTarget(spec, fmt.Sprintf("%q", spec.ComponentName)); err != nil {
+		return nil, err
 	}
 
 	session, cleanup, err := dial(ctx, spec, newOptions(opts).supervisor)
@@ -227,7 +335,9 @@ func Discover(ctx context.Context, db *state.DB, spec ProviderSpec, opts ...Opti
 
 	tools, err := mcpclient.ProbeProvider(ctx, session)
 	if err != nil {
-		return nil, err
+		// Rows are written only below, after a complete listing: a failed
+		// remote probe classifies to a typed error and leaves ZERO rows.
+		return nil, classifyRemoteFailure(spec, err)
 	}
 	if len(tools) == 0 {
 		return nil, fmt.Errorf("provider %q exposed no tools", spec.ComponentName)
@@ -247,13 +357,16 @@ func Discover(ctx context.Context, db *state.DB, spec ProviderSpec, opts ...Opti
 		ProviderID:    providerID,
 		InstallID:     spec.InstallID,
 		ComponentName: spec.ComponentName,
-		Transport:     transportOrDefault(spec.Transport),
-		Command:       spec.Command,
-		ArgsJSON:      string(argsJSON),
-		EnvJSON:       envJSON,
-		Status:        "active",
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		Transport:     storedTransport(spec),
+		// The endpoint rides into launch_spec_json so a later Invoke can
+		// rebuild this exact remote spec without re-reading the host config.
+		Endpoint:  spec.Endpoint,
+		Command:   spec.Command,
+		ArgsJSON:  string(argsJSON),
+		EnvJSON:   envJSON,
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
 	}); err != nil {
 		return nil, fmt.Errorf("record provider: %w", err)
 	}
@@ -327,6 +440,7 @@ func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments js
 		InstallID:     provider.InstallID,
 		ComponentName: component,
 		Command:       provider.Command,
+		Endpoint:      provider.Endpoint,
 		Transport:     provider.Transport,
 	}
 	if provider.ArgsJSON != "" {
@@ -339,7 +453,17 @@ func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments js
 			return nil, fmt.Errorf("provider %s has an unreadable environment: %w", providerID, err)
 		}
 	}
-	if spec.Command == "" {
+	// One transport, one target: a row naming both is corrupt/ambiguous
+	// state, and a row naming neither gives dial nothing to open. A remote row
+	// is named as such (endpoint, not command) so the refusal tells the
+	// operator which fact is missing.
+	switch {
+	case strings.TrimSpace(spec.Command) != "" && isRemoteSpec(spec):
+		return nil, ambiguousTargetError(providerID)
+	case strings.TrimSpace(spec.Command) == "" && !isRemoteSpec(spec):
+		if isRemoteTransport(spec.Transport) {
+			return nil, fmt.Errorf("provider %s has no endpoint recorded; re-run discovery", providerID)
+		}
 		return nil, fmt.Errorf("provider %s has no command recorded; re-run discovery", providerID)
 	}
 
@@ -358,7 +482,7 @@ func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments js
 	// changed under us is a hard stop, not a warning.
 	current, err := mcpclient.ProbeProvider(ctx, session)
 	if err != nil {
-		return nil, err
+		return nil, classifyRemoteFailure(spec, err)
 	}
 	for _, tool := range current {
 		if tool.NativeName != toolName {
@@ -378,6 +502,11 @@ func Invoke(ctx context.Context, db *state.DB, capabilityID string, arguments js
 		}
 		result, err := session.CallTool(ctx, toolName, arguments)
 		if err != nil {
+			if isRemoteSpec(spec) {
+				// A transport failure against an endpoint names the endpoint
+				// and the auth/connection cause instead of a bare text error.
+				return nil, classifyRemoteFailure(spec, err)
+			}
 			return nil, fmt.Errorf("tool %q failed: %w", toolName, err)
 		}
 		return &InvokeResult{Output: flattenContent(result.Content), IsError: result.IsError}, nil
@@ -435,15 +564,32 @@ func resolveEnv(spec ProviderSpec) map[string]string {
 	return out
 }
 
-// dial starts the server through the provider supervisor (process-group /
-// job-object isolation, minimal environment) and completes an MCP session over
-// its stdio pipes. The returned cleanup closes the session and terminates the
-// process tree.
+// dial opens an MCP session with the provider.
+//
+// A spec with an endpoint dials it remotely through mcpclient's guarded
+// connectors (internal/egress runs on every request; this package never builds
+// an http.Client itself). A spec without one starts the server through the
+// provider supervisor (process-group / job-object isolation, minimal
+// environment) and completes an MCP session over its stdio pipes. The returned
+// cleanup closes the session and, for a stdio dial, terminates the process
+// tree; for a remote dial it closes the HTTP session (releasing a legacy
+// server-side session with DELETE when one was assigned).
 func dial(ctx context.Context, spec ProviderSpec, sup *provider.Supervisor) (mcpclient.ClientSession, func(), error) {
+	if isRemoteSpec(spec) {
+		if strings.TrimSpace(spec.Command) != "" {
+			// Defence in depth: Discover and Invoke validate first, but a
+			// spawn-and-dial split would let the host pick which transport
+			// it honours, so refuse at the boundary that actually connects.
+			return nil, nil, ambiguousTargetError(fmt.Sprintf("%q", spec.ComponentName))
+		}
+		return dialRemote(ctx, spec)
+	}
 	if !isStdioTransport(spec.Transport) {
-		// The catalog publishes no remote endpoint for any row, so this is
-		// unreachable today; it fails loudly rather than pretending to dial.
-		return nil, nil, fmt.Errorf("provider %q uses transport %q, which is not supported yet",
+		// A remote transport with no endpoint records nothing to dial. The
+		// catalog/host read-back path always carries both together, so this
+		// is a hand-edited or half-written record: it fails loudly rather
+		// than pretending to dial (or falling back to a spawn).
+		return nil, nil, fmt.Errorf("provider %q uses transport %q, which is not supported yet without a recorded endpoint",
 			spec.ComponentName, spec.Transport)
 	}
 	if sup == nil {
@@ -474,11 +620,154 @@ func dial(ctx context.Context, spec ProviderSpec, sup *provider.Supervisor) (mcp
 	return session, cleanup, nil
 }
 
+// remoteConnector is the mcpclient connector a remote transport selects.
+type remoteConnector int
+
+const (
+	connectorStreamableHTTP remoteConnector = iota
+	connectorLegacy
+)
+
+// remoteConnectorFor maps a transport onto the connector that speaks it. The
+// vocabulary is every spelling the remote path can actually receive: the
+// registry tokens a host config reads back through
+// host.RegistryRemoteTransport ("streamable-http", "sse"), the providers.mode
+// values a stored row reads back ("remote-http", "legacy-sse"), and the
+// per-host discriminator a config may carry literally ("http",
+// "streamableHttp", "remote"). A token outside that closed set is a refusal —
+// never a guess about what the endpoint speaks.
+func remoteConnectorFor(transport string) (remoteConnector, error) {
+	switch v := strings.ToLower(strings.TrimSpace(transport)); v {
+	case "", "streamable-http", "remote-http", "http", "https", "streamablehttp", "remote":
+		return connectorStreamableHTTP, nil
+	case "sse", "legacy-sse":
+		return connectorLegacy, nil
+	default:
+		return 0, fmt.Errorf("transport %q is not supported yet for a remote (URL) provider", transport)
+	}
+}
+
+// isRemoteTransport reports whether t names a remote transport. The empty
+// string is not remote — it is the stdio default — so it shares
+// remoteConnectorFor's closed set but not its default.
+func isRemoteTransport(t string) bool {
+	if strings.TrimSpace(t) == "" {
+		return false
+	}
+	_, err := remoteConnectorFor(t)
+	return err == nil
+}
+
+// dialRemote connects to a remote (URL) endpoint.
+//
+// The HTTP client is mcpclient's own: ConnectStreamableHTTP/ConnectLegacy wrap
+// a nil client through internal/egress's remote policy (https-only with a
+// loopback-http exception, checked-IP dial, at most 3 same-origin redirect
+// hops, private addresses off). Building a raw http.Client here would put a
+// second, weaker policy between a stored URL and the network.
+//
+// The modern connector performs no I/O at construction (the 2026-07-28
+// profile is stateless: no initialize, no session id), so a streamable-http
+// refusal surfaces from the first probe; the legacy connector handshakes
+// eagerly, so its refusal surfaces here. Both are classified the same way.
+func dialRemote(ctx context.Context, spec ProviderSpec) (mcpclient.ClientSession, func(), error) {
+	endpoint := strings.TrimSpace(spec.Endpoint)
+	connector, err := remoteConnectorFor(spec.Transport)
+	if err != nil {
+		return nil, nil, fmt.Errorf("provider %q: %w", spec.ComponentName, err)
+	}
+	switch connector {
+	case connectorLegacy:
+		client, lerr := mcpclient.ConnectLegacy(ctx, endpoint, nil, nil)
+		if lerr != nil {
+			return nil, nil, classifyRemoteFailure(spec, lerr)
+		}
+		return client, func() { _ = client.CloseSession() }, nil
+	default:
+		client, cerr := mcpclient.ConnectStreamableHTTP(ctx, endpoint, nil, nil)
+		if cerr != nil {
+			return nil, nil, classifyRemoteFailure(spec, cerr)
+		}
+		return client, func() { _ = client.CloseSession() }, nil
+	}
+}
+
+// classifyRemoteFailure turns a transport-level failure against a remote
+// endpoint into a typed error that names the endpoint, the component and the
+// cause:
+//
+//   - LPSM-EGRESS-BLOCKED passes through with the endpoint recorded: the SSRF
+//     guard refused BEFORE any connection was made, and a caller must be able
+//     to tell a policy refusal from an unreachable server. The guard's own
+//     reason ("host … is in an address range that is never permitted") is
+//     preserved, which is also the evidence that nothing dialled.
+//   - HTTP 401/403 becomes LPSM-PROVIDER-REMOTE-AUTH.
+//   - anything else becomes LPSM-PROVIDER-REMOTE-CONNECT (dial/TLS/timeout,
+//     non-auth status, protocol failure).
+//
+// A spec with no endpoint returns err untouched: a stdio spawn failure is not
+// a remote failure and keeps its local wording.
+func classifyRemoteFailure(spec ProviderSpec, err error) error {
+	if err == nil || !isRemoteSpec(spec) {
+		return err
+	}
+	endpoint := strings.TrimSpace(spec.Endpoint)
+
+	var guard *domain.LPSMError
+	if errors.As(err, &guard) && guard != nil && guard.Code == egressBlockedCode {
+		return guard.
+			WithDetail("endpoint", endpoint).
+			WithDetail("component", spec.ComponentName)
+	}
+
+	details := map[string]any{
+		"endpoint":  endpoint,
+		"component": spec.ComponentName,
+		"transport": strings.TrimSpace(spec.Transport),
+		"cause":     err.Error(),
+	}
+	if status, ok := httpStatusOf(err); ok && (status == http.StatusUnauthorized || status == http.StatusForbidden) {
+		e := domain.NewError(CodeRemoteAuth,
+			fmt.Sprintf("remote endpoint %s refused authentication (HTTP %d)", endpoint, status), details)
+		e.Details["status"] = status
+		e.Cause = err
+		return e
+	}
+	e := domain.NewError(CodeRemoteConnect,
+		fmt.Sprintf("remote endpoint %s could not complete the MCP exchange", endpoint), details)
+	e.Cause = err
+	return e
+}
+
+// egressBlockedCode is domain.ErrEgressBlocked's machine code; named here so
+// the classification reads as a reference, not a literal to retype.
+const egressBlockedCode = "LPSM-EGRESS-BLOCKED"
+
 func transportOrDefault(t string) string {
 	if strings.TrimSpace(t) == "" {
 		return "stdio"
 	}
 	return t
+}
+
+// storedTransport is the transport the providers row records for a spec.
+//
+// For a remote spec it is always LiteSPM's own registry vocabulary, never the
+// host's discriminator spelling and never the stdio default: state.SaveProvider
+// maps that vocabulary onto the providers.mode CHECK, so storing a host token
+// like "streamableHttp" verbatim would fail the mode mapping, while
+// transportOrDefault's "" → "stdio" would write a row whose mode says local
+// while its endpoint says remote — a row Invoke would then refuse as a stdio
+// provider with no command. For a stdio spec the recorded transport is
+// unchanged.
+func storedTransport(spec ProviderSpec) string {
+	if isRemoteSpec(spec) {
+		if connector, err := remoteConnectorFor(spec.Transport); err == nil && connector == connectorLegacy {
+			return "sse"
+		}
+		return "streamable-http"
+	}
+	return transportOrDefault(spec.Transport)
 }
 
 // isStdioTransport accepts both vocabularies in play: the transport names the

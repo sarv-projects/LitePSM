@@ -307,7 +307,7 @@ function ExploreContent(props: ExploreViewProps) {
                   id="explore-sort"
                   value={sort}
                   onChange={(e) => setSort(e.target.value as SortMode)}
-                  className="field !py-0 text-[12px]"
+                  className="field py-0! text-[12px]"
                 >
                   {SORTS.map((s) => (
                     <option key={s.id} value={s.id}>

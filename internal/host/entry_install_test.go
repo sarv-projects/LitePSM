@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sarv-projects/litespm/internal/domain"
@@ -104,6 +105,148 @@ func TestInstallServerEntryRefusesCollisions(t *testing.T) {
 	after, _ = os.ReadFile(claudeFile)
 	if !strings.Contains(string(after), "-y") || strings.Contains(string(after), "my-own-server") {
 		t.Errorf("forced install did not replace the entry:\n%s", after)
+	}
+}
+
+func TestAtomicWriteFileIfUnchangedRejectsConcurrentEdit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("user edit"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicWriteFileIfUnchanged(path, []byte("merged"), 0o600, []byte("original"), true); err == nil {
+		t.Fatal("stale config snapshot was written over a concurrent edit")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != "user edit" {
+		t.Fatalf("concurrent edit was overwritten: %q", after)
+	}
+}
+
+func TestAtomicWriteFileIfUnchangedRefusesUnexpectedCreate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("created concurrently"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicWriteFileIfUnchanged(path, []byte("replacement"), 0o600, nil, false); err == nil {
+		t.Fatal("unexpectedly replaced a file created after the absent snapshot")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != "created concurrently" {
+		t.Fatalf("concurrent create was overwritten: %q", after)
+	}
+}
+
+func TestConcurrentInstallServerEntriesPreserveBothMerges(t *testing.T) {
+	home := entryHome(t)
+	configPath := filepath.Join(home, ".claude.json")
+	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"mine":{"command":"npx"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errCh := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, name := range []string{"alpha", "beta"} {
+		name := name
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := InstallServerEntry(context.Background(), "claude-code", ServerEntry{
+				Name: name, Command: "npx", Args: []string{"-y", name},
+			}, EntryInstallOptions{Scope: domain.ScopeUser, BackupDir: t.TempDir()})
+			errCh <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent entry install failed: %v", err)
+		}
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{`"alpha"`, `"beta"`, `"mine"`} {
+		if !strings.Contains(string(data), name) {
+			t.Errorf("merged config lost %s: %s", name, data)
+		}
+	}
+}
+
+func TestRollbackConfigWriteDoesNotOverwriteEditsAfterInstall(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		created bool
+		changed bool
+	}{
+		{name: "restore unchanged existing config"},
+		{name: "preserve edited existing config", changed: true},
+		{name: "remove unchanged created config", created: true},
+		{name: "preserve edited created config", created: true, changed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := entryHome(t)
+			configPath := filepath.Join(home, ".claude.json")
+			original := []byte(`{"theme":"dark","mcpServers":{"mine":{"command":"npx"}}}`)
+			if !tc.created {
+				if err := os.WriteFile(configPath, original, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := InstallServerEntry(context.Background(), "claude-code", ServerEntry{
+				Name: "demo", Command: "npx", Args: []string{"-y", "demo"},
+			}, EntryInstallOptions{Scope: domain.ScopeUser, BackupDir: filepath.Join(home, "backups")})
+			if err != nil {
+				t.Fatalf("InstallServerEntry: %v", err)
+			}
+
+			var edited []byte
+			if tc.changed {
+				written, err := os.ReadFile(configPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				edited = append(written, []byte("\n// concurrent user edit\n")...)
+				if err := os.WriteFile(configPath, edited, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err = RollbackConfigWrite(result.ConfigPath, result.BackupPath, result.WrittenDigest)
+			if tc.changed {
+				if err == nil {
+					t.Fatal("rollback unexpectedly overwrote a later config edit")
+				}
+				if got, readErr := os.ReadFile(configPath); readErr != nil || string(got) != string(edited) {
+					t.Fatalf("later edit was not preserved: got %q, read error %v", got, readErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("rollback unchanged config: %v", err)
+			}
+			if tc.created {
+				if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+					t.Fatalf("created config still exists after rollback: %v", err)
+				}
+			} else if got, err := os.ReadFile(configPath); err != nil || string(got) != string(original) {
+				t.Fatalf("pre-install config was not restored: got %q, err %v", got, err)
+			}
+		})
 	}
 }
 

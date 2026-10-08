@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/fslock"
 )
 
 // EntryState is one server entry as currently present in a host config.
@@ -200,6 +202,13 @@ func RemoveServerEntry(ctx context.Context, hostID, name string, scope domain.In
 	if err != nil {
 		return nil, err
 	}
+	configLock, err := fslock.Acquire(configPath+hostConfigWriteLockSuffix, fslock.Options{
+		Timeout: 10 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("lock host config %s: %w", configPath, err)
+	}
+	defer func() { _ = configLock.Release() }()
 	res := &EntryRemoveResult{HostID: adapter.Descriptor().HostID, ConfigPath: configPath}
 
 	data, err := os.ReadFile(configPath)
@@ -210,6 +219,7 @@ func RemoveServerEntry(ctx context.Context, hostID, name string, scope domain.In
 		}
 		return nil, fmt.Errorf("read %s: %w", configPath, err)
 	}
+	originalBytes := append([]byte(nil), data...)
 	original := string(data)
 
 	// Try the container the install wrote to first, then every documented
@@ -273,7 +283,7 @@ func RemoveServerEntry(ctx context.Context, hostID, name string, scope domain.In
 	if err != nil {
 		return nil, err
 	}
-	if err := AtomicWriteFile(configPath, []byte(proposed), 0600); err != nil {
+	if err := AtomicWriteFileIfUnchanged(configPath, []byte(proposed), 0600, originalBytes, true); err != nil {
 		return nil, fmt.Errorf("write %s: %w", configPath, err)
 	}
 	res.BackupPath = backupPath

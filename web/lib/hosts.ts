@@ -57,6 +57,11 @@ interface GeneratedHost {
   projectOnly?: boolean;
   docsUrl?: string;
   generic: boolean;
+  /** True when the registry has a verified remote (URL) MCP entry spelling
+   *  for this host (host.RemoteEntrySpecFor); absent means a remote install
+   *  there is refused fail-closed. Deliberately not part of HostShape: remote
+   *  is an axis beside the stdio entry shape, not a fifth shape. */
+  remote?: boolean;
 }
 
 /**

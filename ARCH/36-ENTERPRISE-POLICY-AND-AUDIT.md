@@ -131,7 +131,7 @@ Rules:
 
 * **SBOM:** CycloneDX and SPDX, generated from the lock ([32 §4.1](32-MANIFEST-LOCK-INTEROP.md)); the SBOM digest is recorded and attested.
 * **Build provenance:** SLSA-style provenance for released binaries and packages, describing source, builder, and inputs.
-* **Signing:** Sigstore/cosign for releases and (later) packages; signed tags. Self-update verifies SHA-256 only today, with **no** signature check ([22 §3](22-PLATFORM-RELEASE-MIGRATIONS.md), [STATUS.md](../STATUS.md) §1).
+* **Signing:** Sigstore/cosign for releases and (later) packages; signed tags. Self-update verifies SHA-256 fail-closed and then the release's keyless bundle **when the release publishes one** — a bundle that fails aborts, none falls back to checksum-only with a stated note, and `LITESPM_REQUIRE_SIGNED_UPDATE=1` refuses it (`cmd/litespm/main.go:391-438`); no published tag carries a bundle yet ([22 §3](22-PLATFORM-RELEASE-MIGRATIONS.md), [STATUS.md](../STATUS.md) §1).
 * **Rule:** a signature/provenance field is `unavailable` until a real verifier produces `verified`/`failed`. No fabricated green.
 
 ---
@@ -166,5 +166,5 @@ This is a legitimate differentiator once it exists; it is `DESIGNED` and must no
 * Lock, SBOM, provenance digests: [32 — Manifest, Lockfile & Interop](32-MANIFEST-LOCK-INTEROP.md).
 * Ledger and replay input: [33 — Deployment Ledger & Reconciliation](33-DEPLOYMENT-LEDGER-RECONCILIATION.md).
 * Receipts and invocation audit: [34 — Runtime, Invocation & Receipts](34-RUNTIME-INVOCATION-RECEIPTS.md).
-* Release verification today (SHA-256 only): [22 — Platform, Release & Migrations](22-PLATFORM-RELEASE-MIGRATIONS.md).
+* Release verification today (SHA-256 fail-closed + the release's Sigstore bundle when one is published; no published tag carries one yet): [22 — Platform, Release & Migrations](22-PLATFORM-RELEASE-MIGRATIONS.md).
 * Error taxonomy, audit log, `doctor`: [20 — Errors, Audit & Doctor](20-ERRORS-AUDIT-DOCTOR.md).

@@ -18,7 +18,7 @@ Inspired by the design of `mcpmarket.com`, LiteSPM Market is a static web applic
 ## 1. Design Vision & Aesthetic Standards
 
 LiteSPM Market adheres to an engineering-focused, high-performance aesthetic:
-*   **Typography:** IBM Plex Sans for UI, Plex Condensed for dense table names, Plex Mono for machine-readable content (commands, counts, slugs). No dark mode: single paper/surface theme.
+*   **Typography:** IBM Plex Sans for UI, Plex Condensed for dense table names, Plex Mono for machine-readable content (commands, counts, slugs). Theme is system/light/dark: one control cycles the choice (`web/components/navigation/ThemeToggle.tsx`), it persists in `localStorage` under `litespm-theme`, and a pre-paint inline script writes `data-theme` on `<html>` (`web/app/layout.tsx`) so CSS resolves `system` through `prefers-color-scheme` (`web/app/globals.css`). The default choice is `system`, which follows the OS preference.
 *   **Header:** Opaque sticky bar (no blur layer — blur over ruled tables costs paint on scroll). Skip link for keyboard users.
 *   **Instant Responsiveness:** Client-side filtering with deferred query values; MiniSearch index owned by a Web Worker (`web/lib/search.worker.ts`) with in-thread fallback (`web/lib/useCatalogSearch.ts`).
 *   **Keyboard-First Navigation:** `Cmd+K`/`Ctrl+K` or `/` focuses search (`web/components/navigation/SearchBar.tsx`); cards are single focusable links with visible focus rings.
@@ -31,7 +31,7 @@ LiteSPM Market adheres to an engineering-focused, high-performance aesthetic:
 web/
   ├── components/
   │   ├── navigation/
-  │   │   ├── Header.tsx              # Sticky opaque nav, Explore/Agents/Categories/Coverage, kind tabs
+  │   │   ├── Header.tsx              # Sticky opaque nav: wordmark, Explore/Agents/Categories/Coverage rail, search affordance, theme toggle, Install CTA
   │   │   └── SearchBar.tsx           # Omni-search with Cmd+K and `/` shortcuts, clear button
   │   ├── hero/
   │   │   ├── HeroSection.tsx         # Telemetry badge, headline, quickstart copy
@@ -83,7 +83,7 @@ rows it has not asked for.
 ## 3. Key UI Elements
 
 ### 3.1 Header & Dynamic Telemetry Badge
-*   **Sticky Header:** Displays the LiteSPM logo, primary navigation links (**Explore**, **Agents**, **Categories**, **Coverage** → `/trending/`), kind tabs (All/MCP servers/Agent skills/Plugins with live counts), and a GitHub link.
+*   **Sticky Header:** One 48 px bar on every route (`web/components/navigation/Header.tsx`): the LiteSPM wordmark, the primary navigation links (**Explore**, **Agents**, **Categories**, **Coverage** → `/trending/`), a search affordance that deep-links to `/explore/?focus=search`, the theme toggle, and the **Install LiteSPM** CTA. There are no kind tabs and no GitHub link in the header — kind filtering is what `/explore` is for (`--stack-top`, the sticky offset used by the filter bars, is keyed to this 48 px height).
 *   **Release Stamp (`web/components/hero/HeroSection.tsx` → `ReleaseStamp`):** a status pill in the hero whose text is the *observed* state of a real `GET /v1/current.json`, never a hard-coded liveness claim:
     *   **`loading`** (the first render, prerendered HTML included): `Checking release…` — the bundled manifest proves what this build shipped, not that the origin still serves it.
     *   **`ready`** (the fetch answered 2xx): `Live catalog · Updated {relativeAge(createdAt)}`, with `releaseId · seq · manifestDigest` in the `title`. `relativeAge` reads the client clock, so it is computed after mount rather than during render (a `Date.now()` in render would hydrate to a different string than the server printed).
@@ -118,7 +118,7 @@ Clicking any card opens the canonical detail page (query route; `slug` when glob
 
 *   **Framework (Frozen):** **Next.js 15.1.7 (App Router with `output: 'export'`, `trailingSlash: true`, `images.unoptimized`)** and React 19.
 *   **Static Generation:** Query-route detail pages (`/package/?slug=`); no per-item `generateStaticParams` (5,814 items vs 20k Pages file limit — see ARCH/26 §6.3).
-*   **Styling:** Tailwind CSS 3.4 with CSS variables, single theme; `tailwind-merge` + `clsx` for class composition.
+*   **Styling:** Tailwind CSS 3.4 with CSS variables for the light palette plus the dark overrides keyed to `data-theme`/`prefers-color-scheme` (`web/app/globals.css`); `tailwind-merge` + `clsx` for class composition.
 *   **Component Primitives:** Local primitives only (`CountUp`, `Toast`); no Radix dependency (`web/package.json`).
 *   **Icons:** Lucide React.
 *   **Search Engine:** MiniSearch 7.2 in a dedicated Web Worker over the static catalog, with in-thread fallback; `date-fns` for relative recency.

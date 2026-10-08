@@ -54,6 +54,38 @@ Earlier drafts of this section sketched helper methods (`collectConstraints`,
 `selectBestVersionIntersect`) that do not exist in the package; the signature above is the
 authoritative one.
 
+### 1.2 Version-less listings resolve to the release's implicit pin (2026-10-08)
+
+A listing that publishes no versions — `listing.Versions == []`, which is 5,811 of the 5,825
+listings in `rel-2026-10-07-01` — used to fail inside `Resolve` with `LPSM-RESOLVE-CONFLICT`
+("no versions available in catalog"). Recommendation A2 changed the resolver contract as follows:
+
+*   **The pin is the release's existing implicit version**, `resolver.ImplicitVersion`
+    (`"discovery"`, declared in `internal/resolver/semver.go`) — the literal
+    `internal/catalogbuild/dataset.go` (`versionForID`) already embeds in every component id of
+    such a listing (`<listing-id>@discovery#<kind>/<name>`), while the version record's own
+    `version` stays `""`. Nothing is synthesized: no fabricated version (e.g. `0.0.0`) reaches
+    `plan.Resolved.Version`, the plan hash, or an install record.
+*   **It satisfies only constraints that do not name a different version:** the wildcards (empty,
+    `*`, `latest`) and an explicit request for the literal — the `install --frozen` round trip of
+    a locked version-less entry. A real semver range against a version-less listing still fails
+    closed with `LPSM-RESOLVE-CONFLICT`; the pin compares below every published version
+    (including `0.0.0`), so it can never satisfy `>=x.y.z`. A listing that does publish versions
+    resolves exactly as before — the pin is never selected for it, and asking for it of a
+    versioned listing is a conflict, not an alias for "latest".
+*   **Catalog reads still use the published record.** The plan/lock adapter
+    (`catalogRecordVersion` / `versionRecordFor` in `cmd/litespm/main.go`) translates the pin
+    back to the empty version the release publishes the record under, so a version-less plan and
+    a version-less lock entry read the catalog's real record (components, declared permissions)
+    instead of degrading to "not knowable".
+*   **Hash-persisted contract — nothing already persisted is invalidated.** A version-less
+    listing could never produce an `InstallPlan` or a lock entry before this change (resolution
+    always failed first), and every previously resolvable listing resolves to an identical
+    selection, so every stored `planHash` still recomputes and every committed `litespm.lock`
+    still passes `--check`. From this change `litespm lock` records `version: "discovery"` for a
+    version-less manifest entry where it previously failed, and `install --frozen` replays that
+    entry as an exact pin request.
+
 ---
 
 ## 2. Safe Extraction Pipeline

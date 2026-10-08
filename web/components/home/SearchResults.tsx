@@ -1,12 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { SearchX, RotateCw } from "lucide-react";
 import { CapabilityCard } from "../catalog/CapabilityCard";
 import type { Listing } from "../../lib/telemetry";
 import type { AgentChoice } from "../../lib/landing";
 import { formatCount } from "../../lib/format";
+
+const RESULTS_PAGE_SIZE = 24;
 
 /**
  * The hero search's result surface — cards, because this is a discovery page,
@@ -46,17 +48,34 @@ export function SearchResults({
 }: SearchResultsProps) {
   const reported = count ?? items.length;
   const showSkeleton = items.length === 0 && awaiting;
+  const [page, setPage] = useState<{ query: string; limit: number }>({
+    query,
+    limit: RESULTS_PAGE_SIZE,
+  });
+  // Tie pagination to the visible query so a new search starts at its first
+  // page immediately, without waiting for an effect to reset component state.
+  const visibleLimit = page.query === query ? page.limit : RESULTS_PAGE_SIZE;
+  const visibleItems = items.slice(0, visibleLimit);
+  const remaining = Math.max(0, items.length - visibleItems.length);
 
   return (
-    <section className="shell band" aria-labelledby="results-title" aria-live="polite">
+    <section className="shell band" aria-labelledby="results-title">
       <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-rule pb-3">
         <div className="min-w-0">
           <h2 id="results-title" className="text-[18px] font-semibold tracking-tight text-ink">
             {query ? <>Results for &ldquo;{query}&rdquo;</> : "Search the catalog"}
           </h2>
-          <p className="mt-0.5 text-[12.5px] text-ink-3">
-            <span className="t-mono t-tabular text-ink">{formatCount(reported)}</span> of{" "}
+          <p
+            className="mt-0.5 text-[12.5px] text-ink-3"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            Showing{" "}
+            <span className="t-mono t-tabular text-ink">{formatCount(visibleItems.length)}</span> of{" "}
+            <span className="t-mono t-tabular text-ink">{formatCount(reported)}</span> results ·{" "}
             <span className="t-mono t-tabular">{formatCount(total)}</span> entries
+            {loading && " · updating results…"}
             {awaiting && " · loading the full snapshot…"}
             {error && " · the snapshot could not be loaded"}
           </p>
@@ -89,7 +108,7 @@ export function SearchResults({
 
       {items.length > 0 ? (
         <ul className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <li key={item.id}>
               <CapabilityCard item={item} agent={agent} className="h-full" />
             </li>
@@ -119,6 +138,24 @@ export function SearchResults({
           </button>
         </div>
       ) : null}
+
+      {remaining > 0 && (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={() =>
+              setPage((current) => ({
+                query,
+                limit:
+                  (current.query === query ? current.limit : RESULTS_PAGE_SIZE) + RESULTS_PAGE_SIZE,
+              }))
+            }
+            className="btn"
+          >
+            Show {formatCount(Math.min(RESULTS_PAGE_SIZE, remaining))} more
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -87,7 +87,7 @@ the code is defined and whether production code actually emits it today.
 | `LPSM-INSTALL-TARGET-UNAVAILABLE` | `errors.go:281` | No — nothing to install into (no host set up); `cmd/litespm/install_mcp.go`. Mapped to `InvalidParams` |
 | `LPSM-NAME-CONFLICT` | `errors.go:267` | No — an install refuses to overwrite a name the user already registered; `internal/host/entry_install.go` and `cmd/litespm/install_mcp.go`. Mapped to `InvalidParams`, because the remedy (`--force`) belongs to the caller |
 | `LPSM-ARTIFACT-UNAVAILABLE` | `errors.go:288` | Yes — no-fetchable-artifact paths: `cmd/litespm/install_skill.go` (skill source gaps), `cmd/litespm/main.go` (unsupported kind, missing runtime descriptor), `internal/artifact/fetcher.go` (missing locator or archive type) |
-| `LPSM-EGRESS-BLOCKED` | `errors.go:283` | Yes — `internal/artifact/fetcher.go` (non-HTTPS scheme, URL credentials, SSRF ranges, redirect cap/downgrade). The fetcher itself has **no production caller yet** (no artifact locators in the catalog) |
+| `LPSM-EGRESS-BLOCKED` | `errors.go:283` | Yes — from the shared guard `internal/egress` (catalog sync, remote-MCP dials in `internal/mcpclient` via `internal/discover`, and plan-time `checkRemoteEndpoint` in `cmd/litespm/install_mcp.go`), plus `internal/artifact/fetcher.go` (non-HTTPS scheme, URL credentials, SSRF ranges, redirect cap/downgrade). The artifact fetcher itself still has **no production caller yet** (no artifact locators in the catalog) |
 
 ---
 

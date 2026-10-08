@@ -175,7 +175,7 @@ newline-terminated frames, `MaxMessageSize = 16 MiB`
 the caller (`internal/ipc/client.go:110-114`), and ID-less notifications.
 
 The daemon registers `daemon.handshake` plus 19 application methods
-(`cmd/litespm/main.go:1244-1750`): `tools.list`, `catalog.search`,
+(`cmd/litespm/main.go:1817-2502`, inside `registerCoreHandlers`): `tools.list`, `catalog.search`,
 `catalog.get_item`, `resolver.prepare_plan`, `install.execute`, `install.remove`,
 `skills.list`, `skills.load_body`, `skills.read_resource`,
 `capabilities.search`, `capabilities.describe`, `provider.probe`,

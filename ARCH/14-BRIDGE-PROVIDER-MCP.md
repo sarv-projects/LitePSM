@@ -208,19 +208,24 @@ marks the handle `running` without enforcing `TimeoutSec`
 
 LiteSPM speaks both protocol profiles itself — `go.mod` carries **no** MCP SDK
 dependency. This package is `WIRED`: its first production importer is
-`internal/discover`, which dials an installed server over `ConnectStdio`,
-probes its tools and calls one ([STATUS.md](../STATUS.md) §4). The HTTP and
-legacy constructors are still reached only from tests, because the catalog
-publishes no URL.
+`internal/discover`, which spawns a launched server over `ConnectStdio`,
+probes its tools and calls one — and, when the installed entry carries a
+remote endpoint, dials that endpoint over `ConnectStreamableHTTP` or
+`ConnectLegacy` instead (`dialRemote`, `internal/discover/discover.go:673-692`),
+probes its tools and calls one ([STATUS.md](../STATUS.md) §4). Both HTTP
+constructors are built through the shared egress guard (`egress.WrapClient`,
+`client_2026.go:66`, `client_legacy.go:50`; policy `ARCH/05` §3.1). What no
+*published* listing reaches yet is the remote half: no dataset row carries a
+`url`.
 
 ### 3.1 Constructors and probes (exact signatures)
 
 ```go
 func ConnectStdio(ctx context.Context, in io.Reader, out io.Writer) (*StdioClient, error)            // client_stdio.go:26
 func ConnectStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string,
-        httpClient *http.Client) (*StreamableHTTPClient, error)                                     // client_2026.go:24
+        httpClient *http.Client) (*StreamableHTTPClient, error)                                     // client_2026.go:65
 func ConnectLegacy(ctx context.Context, endpoint string, headers map[string]string,
-        httpClient *http.Client) (*LegacyClient, error)                                             // client_legacy.go:27
+        httpClient *http.Client) (*LegacyClient, error)                                             // client_legacy.go:49
 
 func FingerprintSchema(schema json.RawMessage) (string, error)                                       // probe.go:20
 func ProbeProvider(ctx context.Context, session ClientSession) ([]DiscoveredCapability, error)       // probe.go:25
@@ -237,29 +242,30 @@ All three constructors satisfy one `ClientSession` interface
 
 *   **Stateless per call:** one HTTP `POST` per JSON-RPC request, with
     protocol version, client identity, and clamped capabilities in a top-level
-    `_meta` field (`types.go:53-59`, `client_2026.go:63-76`); the modern client
+    `_meta` field (`types.go:53-59`, `client_2026.go:102-115`); the modern client
     performs no `initialize` handshake at all.
 *   **Header mirroring:** `Mcp-Method`, `Mcp-Name` (when a tool is called), and
     `Mcp-Protocol-Version` are set on every request
-    (`client_2026.go:91-95`).
+    (`client_2026.go:135-138`).
 *   **No streaming reader:** `sendRequest` reads the complete response body
     (bounded at 16 MiB) — chunked/SSE response consumption is not implemented
-    (`client_2026.go:113`).
+    (`client_2026.go:174`).
 *   **Subscriptions:** `SubscribeToListChanges` issues a single
     `subscriptions/listen` request for `types: ["tools"]` and returns; it does
-    not maintain a notification channel (`client_2026.go:168-173`).
+    not maintain a notification channel (`client_2026.go:283-288`).
 *   **Clamped caps:** roots and sampling are deliberately `nil`
     (`types.go:79-85`).
 
 ### 3.3 Legacy Profile (2025-11-25)
 
 *   **Stateful handshake:** `initialize` / `notifications/initialized` is
-    performed inside `ConnectLegacy` (`client_legacy.go:27-44`, `:54-98`) before
-    the first call.
+    performed by `performHandshake` (`client_legacy.go:96-156`), called from
+    `ConnectLegacy` (`:60`) before the first call and re-run after a session
+    error (`:228-231`).
 *   **Transport is HTTP POST only.** `postRPC` and `postNotification` POST to
-    the same endpoint (`client_legacy.go:100-159`); **no SSE transport
+    the same endpoint through `postRPCRaw` (`client_legacy.go:158-272`); **no SSE transport
     exists**, and `SubscribeToListChanges` is a no-op returning `nil`
-    (`client_legacy.go:214-216`).
+    (`client_legacy.go:326-331`).
 *   `ModeLegacySSE` remains a value of the persisted `providers.mode`
     CHECK constraint (`internal/state/migrations/001_initial_schema.sql:159`,
     value declared at `internal/provider/configured.go:12`), i.e. a schema

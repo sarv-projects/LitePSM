@@ -53,6 +53,102 @@ const (
 	ShapeCommandString EntryShape = "command-string"
 )
 
+// The registry vocabulary for a remote (URL) MCP entry's transport. Host
+// vocabularies differ per row (`http`, `streamableHttp`, `remote`, or no
+// discriminator at all); these two tokens are what LiteSPM speaks, and the
+// mapping onto a host's own spelling is explicit and closed — a token the host
+// cannot express is a refusal, never a guess (LPSM-HOST-REMOTE-UNSUPPORTED).
+const (
+	TransportStreamableHTTP = "streamable-http"
+	TransportSSE            = "sse"
+)
+
+// remoteTransportVocab is the closed set RemoteEntrySpec.Transports may
+// declare. Kept as data so the validation test and the writer share one list.
+var remoteTransportVocab = []string{TransportStreamableHTTP, TransportSSE}
+
+// normalizeRemoteTransport maps the caller's transport onto the registry
+// vocabulary: the empty string defaults to streamable-http (the transport the
+// official registry publishes in practice), and anything else is passed
+// through so an unknown token fails the capability check instead of being
+// silently upgraded.
+func normalizeRemoteTransport(transport string) string {
+	if strings.TrimSpace(transport) == "" {
+		return TransportStreamableHTTP
+	}
+	return strings.TrimSpace(transport)
+}
+
+// RegistryRemoteTransport maps a transport value READ BACK from a host config
+// onto the registry vocabulary. Host discriminators (`http` for Claude Code,
+// `streamableHttp` for Cline, `remote` for OpenCode) all mean streamable-http;
+// `sse` means sse. An unrecognised discriminator is returned unchanged so the
+// capability check downstream fails closed rather than assuming a transport
+// the catalog never asked for.
+func RegistryRemoteTransport(hostTransport string) string {
+	switch v := strings.TrimSpace(hostTransport); v {
+	case TransportSSE:
+		return TransportSSE
+	case "", "http", "streamableHttp", "remote", TransportStreamableHTTP:
+		return TransportStreamableHTTP
+	default:
+		return v
+	}
+}
+
+// RemoteEntrySpec is how ONE host spells a remote (URL) MCP entry — an entry
+// that names an endpoint instead of launching a process.
+//
+// It is deliberately a separate axis from EntryShape: a host's stdio shape
+// (`object`, `local-array`, …) says nothing about how it discriminates a URL
+// entry, and modelling remote as a fifth EntryShape would force one enum to
+// express both axes (and break web/lib/hosts.ts's closed HostShape union) for
+// no gain. A nil Remote means the host cannot express a URL entry at all —
+// absence is the refusal.
+//
+// Honesty rule (the same rule the row's DocsURL lives by): a Remote spec must
+// only be set when the EXACT entry object was read from the row's DocsURL or
+// repository — the URL key, the discriminator key, its values and which
+// transports the host accepts. A field name glimpsed in a doc is evidence of a
+// URL key, not of a complete entry shape; the row stays Remote-free (Tier B in
+// the B1 acceptance matrix) until the whole object is pinned. A guessed spec
+// writes an entry the host silently ignores, which is worse than refusing.
+type RemoteEntrySpec struct {
+	// URLKey is the key holding the endpoint: "url", "serverUrl", "httpUrl".
+	URLKey string
+	// TypeKey is the discriminator key ("" when the host infers the transport
+	// from the URL alone).
+	TypeKey string
+	// TypeValue is the value written for streamable-http ("http",
+	// "streamableHttp", "remote", …). Only meaningful when TypeKey is set.
+	TypeValue string
+	// SSEValue is the value written for the sse discriminator, and only makes
+	// sense when TypeKey is set. A bare-URL host (no discriminator) infers the
+	// transport from the endpoint itself, so it may declare sse in Transports
+	// while writing no SSEValue at all.
+	SSEValue string
+	// Transports is the registry vocabulary this host can express, e.g.
+	// {streamable-http} or {streamable-http, sse}. It is the authority the
+	// writer checks: a transport outside this list is refused, never rendered
+	// as a bare URL or a defaulted type.
+	Transports []string
+}
+
+// Supports reports whether the host can express the registry transport.
+// An empty transport counts as streamable-http (the default the writer uses).
+func (r *RemoteEntrySpec) Supports(transport string) bool {
+	if r == nil {
+		return false
+	}
+	want := normalizeRemoteTransport(transport)
+	for _, t := range r.Transports {
+		if t == want {
+			return true
+		}
+	}
+	return false
+}
+
 // BridgeTarget is the verified, per-agent description of an MCP config.
 type BridgeTarget struct {
 	ID   string
@@ -75,6 +171,16 @@ type BridgeTarget struct {
 	ProjectKey []string
 	// Shape is how one server entry is written.
 	Shape EntryShape
+
+	// Remote is how this host spells a remote (URL) MCP entry, or nil when it
+	// cannot express one — in which case a remote install, copy or plan for
+	// this host is refused fail-closed (LPSM-HOST-REMOTE-UNSUPPORTED), never
+	// rendered as a stdio entry and never written with a guessed URL key.
+	//
+	// The honesty rule above applies verbatim: Remote may only be set when the
+	// exact entry object was read from this row's DocsURL or repository. An
+	// unverified row keeps Remote nil and records the gap in Note.
+	Remote *RemoteEntrySpec
 
 	// FlatKey marks a host whose container is a single literal member name that
 	// happens to contain a dot, rather than a chain of nested objects. Amp is the

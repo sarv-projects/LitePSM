@@ -295,10 +295,11 @@ func TestKnownSources(t *testing.T) {
 	}
 	// Directory sources (producer-walked, no git manifest): publisher and
 	// format must be present, manifest paths and repo URL must be empty --
-	// claiming a git manifest neither source has would be a lie.
+	// claiming a git manifest none of them has would be a lie.
 	for _, id := range []domain.SourceID{
 		"feed:skills-sh",
 		"feed:mcpservers-org",
+		"feed:mcpmarket-com",
 	} {
 		def, ok := LookupSource(id)
 		if !ok {

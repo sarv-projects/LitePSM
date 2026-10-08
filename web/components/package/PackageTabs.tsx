@@ -128,11 +128,11 @@ function OverviewPanel({ item }: { item: Listing }) {
 
       <dl className="spec-list">
         <SpecRow label="Catalog id">
-          <span className="t-mono !text-[12px]">{item.id}</span>
+          <span className="t-mono text-[12px]!">{item.id}</span>
         </SpecRow>
         <SpecRow label="Kind">{kindLabel(item.kind)}</SpecRow>
         <SpecRow label="Category">
-          <span className="t-mono !text-[12px]">{item.category}</span>
+          <span className="t-mono text-[12px]!">{item.category}</span>
         </SpecRow>
         <SpecRow label="Publisher">
           {item.publisher?.url && /^https?:\/\//i.test(item.publisher.url) ? (
@@ -146,7 +146,7 @@ function OverviewPanel({ item }: { item: Listing }) {
         </SpecRow>
         <SpecRow label="Version">
           {item.version ? (
-            <span className="t-mono !text-[12px]">{item.version}</span>
+            <span className="t-mono text-[12px]!">{item.version}</span>
           ) : (
             <Absent text="not published" />
           )}
@@ -199,45 +199,45 @@ function CapabilitiesPanel({ item }: { item: Listing }) {
       <dl className="spec-list">
         <SpecRow label="Tools">
           {item.tools?.length ? (
-            <span className="t-mono !text-[12px]">{item.tools.length} declared</span>
+            <span className="t-mono text-[12px]!">{item.tools.length} declared</span>
           ) : (
             <Absent />
           )}
         </SpecRow>
         <SpecRow label="Access effects">
           {item.effects?.length ? (
-            <span className="t-mono !text-[12px]">{item.effects.length} declared</span>
+            <span className="t-mono text-[12px]!">{item.effects.length} declared</span>
           ) : (
             <Absent text="not yet published" />
           )}
         </SpecRow>
         <SpecRow label="Runtime">
           {item.runtime ? (
-            <span className="t-mono !text-[12px]">{item.runtime}</span>
+            <span className="t-mono text-[12px]!">{item.runtime}</span>
           ) : (
             <Absent text={item.kind === "mcp" ? "unspecified" : "not applicable"} />
           )}
         </SpecRow>
         <SpecRow label="Transport">
           {item.transport ? (
-            <span className="t-mono !text-[12px]">{item.transport}</span>
+            <span className="t-mono text-[12px]!">{item.transport}</span>
           ) : (
             <Absent text={item.kind === "mcp" ? "unspecified" : "not applicable"} />
           )}
         </SpecRow>
         <SpecRow label="Launch line">
-          {launch ? <span className="t-mono break-all !text-[12px]">{launch}</span> : <Absent text="unspecified" />}
+          {launch ? <span className="t-mono break-all text-[12px]!">{launch}</span> : <Absent text="unspecified" />}
         </SpecRow>
         <SpecRow label="Host command">
           {item.installHint ? (
-            <span className="t-mono break-all !text-[12px]">{item.installHint}</span>
+            <span className="t-mono break-all text-[12px]!">{item.installHint}</span>
           ) : (
             <Absent text={item.kind === "plugin" ? "unspecified" : "not applicable"} />
           )}
         </SpecRow>
         <SpecRow label="Skill source">
           {item.skillSource ? (
-            <span className="t-mono break-all !text-[12px]">{item.skillSource}</span>
+            <span className="t-mono break-all text-[12px]!">{item.skillSource}</span>
           ) : (
             <Absent text={item.kind === "skill" ? "unspecified" : "not applicable"} />
           )}
@@ -408,31 +408,31 @@ function VersionsPanel({
         </div>
         <dl className="spec-list mt-3">
           <SpecRow label="Release">
-            <span className="t-mono !text-[12px]">
+            <span className="t-mono text-[12px]!">
               {typeof release.releaseId === "string" ? release.releaseId : <Absent text="unspecified" />}
             </span>
           </SpecRow>
           <SpecRow label="Sequence">
             {typeof release.sequence === "number" ? (
-              <span className="t-mono t-tabular !text-[12px]">{release.sequence}</span>
+              <span className="t-mono t-tabular text-[12px]!">{release.sequence}</span>
             ) : (
               <Absent text="unspecified" />
             )}
           </SpecRow>
           <SpecRow label="Built">
-            <span className="t-mono !text-[12px]">
+            <span className="t-mono text-[12px]!">
               {createdAt ? createdAt.replace("T", " ").replace("Z", " UTC") : <Absent text="unspecified" />}
             </span>
           </SpecRow>
           <SpecRow label="Dataset digest">
-            <span className="t-mono !text-[12px]">
+            <span className="t-mono text-[12px]!">
               {shortDigest(typeof release.datasetDigest === "string" ? release.datasetDigest : undefined) ?? (
                 <Absent text="unspecified" />
               )}
             </span>
           </SpecRow>
           <SpecRow label="Manifest digest">
-            <span className="t-mono !text-[12px]">
+            <span className="t-mono text-[12px]!">
               {shortDigest(typeof release.manifestDigest === "string" ? release.manifestDigest : undefined) ?? (
                 <Absent text="unspecified" />
               )}
@@ -485,15 +485,15 @@ function SourcePanel({ item }: { item: Listing }) {
           )}
         </SpecRow>
         <SpecRow label="Source class">
-          <span className="t-mono !text-[12px]">
+          <span className="t-mono text-[12px]!">
             {item.publisher?.provenance === "vendor-manifest" ? "vendor-manifest" : "awesome-list-claim"}
           </span>
         </SpecRow>
         <SpecRow label="Slug">
-          <span className="t-mono !text-[12px]">{item.slug}</span>
+          <span className="t-mono text-[12px]!">{item.slug}</span>
         </SpecRow>
         <SpecRow label="This page">
-          <span className="t-mono break-all !text-[12px]">{canonical}</span>
+          <span className="t-mono break-all text-[12px]!">{canonical}</span>
         </SpecRow>
       </dl>
     </div>
@@ -524,6 +524,23 @@ export interface PackageTabsProps {
  */
 export function PackageTabs({ item, agent, hostTotal, snapshot, active, onChange }: PackageTabsProps) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const renderPanel = (tab: PackageTabId): React.ReactNode => {
+    switch (tab) {
+      case "overview":
+        return <OverviewPanel item={item} />;
+      case "capabilities":
+        return <CapabilitiesPanel item={item} />;
+      case "compatibility":
+        return <CompatibilityPanel item={item} agent={agent} hostTotal={hostTotal} />;
+      case "security":
+        return <SecurityPanel item={item} />;
+      case "versions":
+        return <VersionsPanel item={item} total={snapshot.total} versioned={snapshot.versioned} />;
+      case "source":
+        return <SourcePanel item={item} />;
+    }
+  };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const i = TABS.findIndex((t) => t.id === active);
@@ -575,24 +592,19 @@ export function PackageTabs({ item, agent, hostTotal, snapshot, active, onChange
         ))}
       </div>
 
-      <div
-        role="tabpanel"
-        id={`pkg-panel-${active}`}
-        aria-labelledby={`pkg-tab-${active}`}
-        tabIndex={0}
-        className="mt-5"
-      >
-        {active === "overview" && <OverviewPanel item={item} />}
-        {active === "capabilities" && <CapabilitiesPanel item={item} />}
-        {active === "compatibility" && (
-          <CompatibilityPanel item={item} agent={agent} hostTotal={hostTotal} />
-        )}
-        {active === "security" && <SecurityPanel item={item} />}
-        {active === "versions" && (
-          <VersionsPanel item={item} total={snapshot.total} versioned={snapshot.versioned} />
-        )}
-        {active === "source" && <SourcePanel item={item} />}
-      </div>
+      {TABS.map((tab) => (
+        <div
+          key={tab.id}
+          role="tabpanel"
+          id={`pkg-panel-${tab.id}`}
+          aria-labelledby={`pkg-tab-${tab.id}`}
+          tabIndex={0}
+          hidden={active !== tab.id}
+          className="mt-5"
+        >
+          {renderPanel(tab.id)}
+        </div>
+      ))}
     </section>
   );
 }

@@ -117,7 +117,7 @@ export function ExtensionGrid({
 
   return (
     <section className="shell pb-16">
-      <div className="section-head sticky top-[var(--stack-top)] z-20 -mx-px bg-paper/95 px-px backdrop-blur-sm">
+      <div className="section-head sticky top-[var(--stack-top)] z-20 -mx-px bg-paper/95 px-px backdrop-blur-xs">
         <div className="flex min-w-0 items-baseline gap-3">
           <h2>
             {query ? `Results for “${query}”` : "All capabilities"}

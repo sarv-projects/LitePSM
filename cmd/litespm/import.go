@@ -31,7 +31,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/sarv-projects/litespm/internal/fslock"
+	"github.com/sarv-projects/litespm/internal/host"
 	"github.com/sarv-projects/litespm/internal/interop"
 	"github.com/sarv-projects/litespm/internal/manifest"
 )
@@ -201,22 +204,17 @@ func runImportTo(out io.Writer, args []string) int {
 
 	// ---- target manifest: the project one if it exists (walking up, the
 	// same rule `lock` uses), otherwise a new litespm.toml in dir.
-	targetPath, exists, terr := resolveImportTarget(dir)
+	targetPath, _, terr := resolveImportTarget(dir)
 	if terr != nil {
 		fmt.Fprintf(os.Stderr, "import: %v\n", terr)
 		return 1
 	}
-	var existing *manifest.Manifest
-	if exists {
-		m, merr := manifest.Load(targetPath)
-		if merr != nil {
-			fmt.Fprintf(os.Stderr, "import: cannot merge into %s: %v\n", targetPath, merr)
-			return 1
-		}
-		existing = m
+	snapshot, merr := readImportManifestSnapshot(targetPath)
+	if merr != nil {
+		fmt.Fprintf(os.Stderr, "import: cannot merge into %s: %v\n", targetPath, merr)
+		return 1
 	}
-
-	plan := interop.BuildPlan(doc, targetPath, existing)
+	plan := interop.BuildPlan(doc, targetPath, snapshot.manifest)
 
 	// ---- the plan prints unconditionally, before any decision.
 	interactive := !flags.jsonOut && isTerminal(os.Stdin) && isTerminal(os.Stdout)
@@ -224,7 +222,7 @@ func runImportTo(out io.Writer, args []string) int {
 		// JSON is emitted once, at the outcome: approved runs report the
 		// write, everything else reports the preview. Refusals print the
 		// preview first (applied=false) and fail on stderr.
-		return importJSONOutcome(out, plan, flags, interactive)
+		return importJSONOutcome(out, plan, flags, interactive, dir, snapshot)
 	}
 
 	plan.Render(out)
@@ -257,12 +255,12 @@ func runImportTo(out io.Writer, args []string) int {
 			return 1
 		}
 	}
-	return writeImportPlan(out, plan, dir, exists, existing)
+	return writeImportPlan(out, plan, dir, snapshot)
 }
 
 // importJSONOutcome emits the single machine-readable plan document for a
 // --json run and returns its exit code.
-func importJSONOutcome(out io.Writer, plan *interop.Plan, flags importFlags, interactive bool) int {
+func importJSONOutcome(out io.Writer, plan *interop.Plan, flags importFlags, interactive bool, dir string, snapshot importManifestSnapshot) int {
 	approval := interop.Approval{
 		Apply: flags.apply, Yes: flags.yes, JSONOut: flags.jsonOut,
 		DryRun: flags.dryRun, Interactive: interactive,
@@ -288,17 +286,7 @@ func importJSONOutcome(out io.Writer, plan *interop.Plan, flags importFlags, int
 		// JSON document, never half a write's chatter (writeImportPlan's
 		// failures go to stderr, never into the JSON stream).
 		var scratch bytes.Buffer
-		dir, err := importPlanDir(plan)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "import: %v\n", err)
-			return 1
-		}
-		exists, existing, err := importExisting(plan.TargetPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "import: %v\n", err)
-			return 1
-		}
-		if code := writeImportPlan(&scratch, plan, dir, exists, existing); code != 0 {
+		if code := writeImportPlan(&scratch, plan, dir, snapshot); code != 0 {
 			return code
 		}
 		payload, _ := plan.JSON(true)
@@ -310,17 +298,39 @@ func importJSONOutcome(out io.Writer, plan *interop.Plan, flags importFlags, int
 // writeImportPlan performs the approved write: manifest merged, written
 // (append for adds-only, canonical rewrite when a change forces it), and a
 // one-line result plus the honest next step printed to out.
-func writeImportPlan(out io.Writer, plan *interop.Plan, dir string, exists bool, existing *manifest.Manifest) int {
+func writeImportPlan(out io.Writer, plan *interop.Plan, dir string, snapshot importManifestSnapshot) int {
 	if plan.Actionable() == 0 {
 		fmt.Fprintln(out, "\nNothing to apply: every imported entry is already present in the manifest.")
 		return 0
 	}
-	content, err := renderImportedManifest(plan, dir, exists, existing)
+	lockPath := filepath.Join(filepath.Dir(plan.TargetPath), "."+filepath.Base(plan.TargetPath)+".litespm-import.lock")
+	lock, err := fslock.Acquire(lockPath, fslock.Options{Timeout: 10 * time.Second})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "import: lock target %s: %v\n", plan.TargetPath, err)
+		return 1
+	}
+	defer func() { _ = lock.Release() }()
+	currentTarget, _, err := resolveImportTarget(dir)
+	if err != nil || filepath.Clean(currentTarget) != filepath.Clean(plan.TargetPath) {
+		fmt.Fprintf(os.Stderr, "import: LPSM-IMPORT-008: manifest target changed after planning; rerun import to review the current project manifest\n")
+		return 1
+	}
+	if err := verifyImportManifestSnapshot(plan.TargetPath, snapshot); err != nil {
+		fmt.Fprintf(os.Stderr, "import: %v\n", err)
+		return 1
+	}
+	content, err := renderImportedManifest(plan, dir, snapshot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "import: %v\n", err)
 		return 1
 	}
-	if err := os.WriteFile(plan.TargetPath, []byte(content), 0o644); err != nil {
+	// Recheck immediately before replacement. The atomic writer avoids exposing
+	// a truncated manifest to readers; the snapshot check refuses a stale merge.
+	if err := verifyImportManifestSnapshot(plan.TargetPath, snapshot); err != nil {
+		fmt.Fprintf(os.Stderr, "import: %v\n", err)
+		return 1
+	}
+	if err := host.AtomicWriteFileIfUnchanged(plan.TargetPath, []byte(content), 0o644, snapshot.data, snapshot.exists); err != nil {
 		fmt.Fprintf(os.Stderr, "import: write %s: %v\n", plan.TargetPath, err)
 		return 1
 	}
@@ -340,31 +350,46 @@ func resolveImportTarget(dir string) (string, bool, error) {
 	return filepath.Join(dir, manifest.ManifestFileNames[0]), false, nil
 }
 
-// importExisting re-reads the target manifest at apply time (the plan may
-// have been printed a moment earlier). A target that stopped existing
-// between preview and approval is reported, not guessed around.
-func importExisting(targetPath string) (bool, *manifest.Manifest, error) {
-	if _, err := os.Stat(targetPath); err != nil {
-		if os.IsNotExist(err) {
-			return false, nil, nil
-		}
-		return false, nil, fmt.Errorf("stat %s: %w", targetPath, err)
-	}
-	m, err := manifest.Load(targetPath)
-	if err != nil {
-		return false, nil, fmt.Errorf("cannot merge into %s: %w", targetPath, err)
-	}
-	return true, m, nil
+type importManifestSnapshot struct {
+	exists   bool
+	data     []byte
+	manifest *manifest.Manifest
 }
 
-// importPlanDir returns the project directory the plan writes into.
-func importPlanDir(plan *interop.Plan) (string, error) {
-	dir := filepath.Dir(plan.TargetPath)
-	info, err := os.Stat(dir)
-	if err != nil || !info.IsDir() {
-		return "", fmt.Errorf("project directory %s is unavailable: %v", dir, err)
+func readImportManifestSnapshot(targetPath string) (importManifestSnapshot, error) {
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return importManifestSnapshot{}, nil
+		}
+		return importManifestSnapshot{}, fmt.Errorf("read %s: %w", targetPath, err)
 	}
-	return dir, nil
+	m, err := manifest.Parse(data)
+	if err != nil {
+		return importManifestSnapshot{}, fmt.Errorf("cannot merge into %s: %w", targetPath, err)
+	}
+	m.SourcePath = targetPath
+	return importManifestSnapshot{exists: true, data: data, manifest: m}, nil
+}
+
+func verifyImportManifestSnapshot(targetPath string, snapshot importManifestSnapshot) error {
+	current, err := os.ReadFile(targetPath)
+	if snapshot.exists {
+		if err != nil {
+			return fmt.Errorf("LPSM-IMPORT-008: target manifest %s changed after planning; rerun import to review the current file", targetPath)
+		}
+		if !bytes.Equal(current, snapshot.data) {
+			return fmt.Errorf("LPSM-IMPORT-008: target manifest %s changed after planning; rerun import to review the current file", targetPath)
+		}
+		return nil
+	}
+	if err == nil {
+		return fmt.Errorf("LPSM-IMPORT-008: target manifest %s appeared after planning; rerun import to review the current file", targetPath)
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("check target manifest %s: %w", targetPath, err)
+	}
+	return nil
 }
 
 // renderImportedManifest produces the exact bytes the approved plan writes.
@@ -375,7 +400,7 @@ func importPlanDir(plan *interop.Plan) (string, error) {
 //	rewrites (a constraint changed): merge into the loaded manifest and
 //	  marshal canonically — the preview already warned that comments and
 //	  unrecognized lines are not preserved.
-func renderImportedManifest(plan *interop.Plan, dir string, exists bool, existing *manifest.Manifest) (string, error) {
+func renderImportedManifest(plan *interop.Plan, dir string, snapshot importManifestSnapshot) (string, error) {
 	// Collect the requires this import adds or changes.
 	var adds, changes []manifest.Require
 	for _, e := range plan.Entries {
@@ -388,7 +413,7 @@ func renderImportedManifest(plan *interop.Plan, dir string, exists bool, existin
 		}
 	}
 
-	if !exists {
+	if !snapshot.exists {
 		m := &manifest.Manifest{
 			SchemaVersion: manifest.SchemaVersion,
 			ProjectName:   importProjectName(dir),
@@ -400,13 +425,9 @@ func renderImportedManifest(plan *interop.Plan, dir string, exists bool, existin
 	}
 
 	if plan.TargetState == interop.TargetExtend {
-		original, err := os.ReadFile(plan.TargetPath)
-		if err != nil {
-			return "", fmt.Errorf("read %s: %w", plan.TargetPath, err)
-		}
 		var b strings.Builder
-		b.Write(original)
-		if len(original) > 0 && original[len(original)-1] != '\n' {
+		b.Write(snapshot.data)
+		if len(snapshot.data) > 0 && snapshot.data[len(snapshot.data)-1] != '\n' {
 			b.WriteByte('\n')
 		}
 		for _, req := range adds {
@@ -416,6 +437,7 @@ func renderImportedManifest(plan *interop.Plan, dir string, exists bool, existin
 	}
 
 	// Rewrite: merge changes in place, append adds, marshal canonically.
+	existing := snapshot.manifest
 	merged := *existing
 	merged.Requires = append([]manifest.Require(nil), existing.Requires...)
 	for _, req := range changes {

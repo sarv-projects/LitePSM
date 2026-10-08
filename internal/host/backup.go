@@ -1,13 +1,19 @@
 package host
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/fslock"
 )
+
+const hostConfigWriteLockSuffix = ".litespm-config.lock"
 
 // CreateAtomicBackup writes a byte-for-byte copy of originalPath into backupDir before any edits.
 func CreateAtomicBackup(originalPath, backupDir, hostID string) (string, error) {
@@ -52,6 +58,97 @@ func CreateAtomicBackup(originalPath, backupDir, hostID string) (string, error) 
 //     user deliberately shared (or a test fixture at 0644) into a private
 //     one; a new file still gets 0600.
 func AtomicWriteFile(targetPath string, data []byte, perm os.FileMode) error {
+	return atomicWriteFile(targetPath, data, perm, nil, false, false)
+}
+
+// AtomicWriteFileIfUnchanged stages data and replaces targetPath only if its
+// current bytes still match the snapshot used to prepare the update. This is an
+// optimistic compare-before-replace guard for host config read/merge/write;
+// writers that do not coordinate through LiteSPM can still race the final
+// filesystem compare and rename.
+func AtomicWriteFileIfUnchanged(targetPath string, data []byte, perm os.FileMode, expected []byte, expectedExists bool) error {
+	return atomicWriteFile(targetPath, data, perm, expected, expectedExists, true)
+}
+
+// RollbackConfigWrite restores a config pre-image only while the file still
+// contains the exact post-image written by LiteSPM. If a user or another tool
+// edited the config after the install write, rollback refuses to erase that
+// change. An empty backupPath means the install created the config, so the
+// verified post-image is removed instead.
+func RollbackConfigWrite(targetPath, backupPath, expectedDigest string) error {
+	if expectedDigest == "" {
+		return fmt.Errorf("refusing to roll back %s without a post-write digest", targetPath)
+	}
+	lock, err := fslock.Acquire(targetPath+hostConfigWriteLockSuffix, fslock.Options{Timeout: 10 * time.Second})
+	if err != nil {
+		return fmt.Errorf("lock host config %s for rollback: %w", targetPath, err)
+	}
+	defer func() { _ = lock.Release() }()
+	return rollbackConfigWriteLocked(targetPath, backupPath, expectedDigest)
+}
+
+// rollbackConfigWriteLocked is for a caller that already holds the per-config
+// LiteSPM lock, such as InstallServerEntry's local failure compensation.
+func rollbackConfigWriteLocked(targetPath, backupPath, expectedDigest string) error {
+	resolved, err := resolveAtomicTarget(targetPath)
+	if err != nil {
+		return err
+	}
+	current, err := os.ReadFile(resolved)
+	if err != nil {
+		return fmt.Errorf("read host config %s for rollback: %w", targetPath, err)
+	}
+	if domain.ComputeBytesDigest(current) != expectedDigest {
+		return fmt.Errorf("host config %s changed after LiteSPM wrote it; refusing to overwrite the newer contents", targetPath)
+	}
+
+	if backupPath == "" {
+		// Re-resolve and recheck immediately before remove. The LiteSPM lock
+		// excludes our other writers; this final comparison also catches most
+		// edits by tools that do not honor it.
+		currentTarget, err := resolveAtomicTarget(targetPath)
+		if err != nil {
+			return err
+		}
+		if filepath.Clean(currentTarget) != filepath.Clean(resolved) {
+			return fmt.Errorf("host config target %s changed during rollback", targetPath)
+		}
+		latest, err := os.ReadFile(resolved)
+		if err != nil || domain.ComputeBytesDigest(latest) != expectedDigest {
+			return fmt.Errorf("host config %s changed during rollback; refusing to remove it", targetPath)
+		}
+		if err := os.Remove(resolved); err != nil {
+			return fmt.Errorf("remove config created by this install %s: %w", targetPath, err)
+		}
+		return nil
+	}
+
+	preimage, err := os.ReadFile(backupPath)
+	if err != nil {
+		return fmt.Errorf("read pre-install backup %s: %w", backupPath, err)
+	}
+	return AtomicWriteFileIfUnchanged(targetPath, preimage, 0600, current, true)
+}
+
+func resolveAtomicTarget(targetPath string) (string, error) {
+	fi, err := os.Lstat(targetPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect host config target %s: %w", targetPath, err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		return targetPath, nil
+	}
+	link, err := os.Readlink(targetPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve host config symlink %s: %w", targetPath, err)
+	}
+	if !filepath.IsAbs(link) {
+		link = filepath.Join(filepath.Dir(targetPath), link)
+	}
+	return link, nil
+}
+
+func atomicWriteFile(targetPath string, data []byte, perm os.FileMode, expected []byte, expectedExists, compare bool) error {
 	resolved := targetPath
 	if fi, err := os.Lstat(targetPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		link, err := os.Readlink(targetPath)
@@ -105,6 +202,40 @@ func AtomicWriteFile(targetPath string, data []byte, perm os.FileMode) error {
 	if err := os.Chmod(tmpName, effective); err != nil {
 		_ = os.Remove(tmpName)
 		return err
+	}
+	if compare {
+		currentResolved := targetPath
+		if fi, err := os.Lstat(targetPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			link, err := os.Readlink(targetPath)
+			if err != nil {
+				_ = os.Remove(tmpName)
+				return fmt.Errorf("resolving symlink %s before replacement: %w", targetPath, err)
+			}
+			if !filepath.IsAbs(link) {
+				link = filepath.Join(filepath.Dir(targetPath), link)
+			}
+			currentResolved = link
+		} else if err != nil && !os.IsNotExist(err) {
+			_ = os.Remove(tmpName)
+			return fmt.Errorf("checking target %s before replacement: %w", targetPath, err)
+		}
+		if filepath.Clean(currentResolved) != filepath.Clean(resolved) {
+			_ = os.Remove(tmpName)
+			return fmt.Errorf("target %s changed while preparing the write", targetPath)
+		}
+		current, err := os.ReadFile(resolved)
+		if expectedExists {
+			if err != nil || !bytes.Equal(current, expected) {
+				_ = os.Remove(tmpName)
+				return fmt.Errorf("target %s changed while preparing the write", targetPath)
+			}
+		} else if err == nil || !os.IsNotExist(err) {
+			_ = os.Remove(tmpName)
+			if err != nil {
+				return fmt.Errorf("checking target %s before replacement: %w", targetPath, err)
+			}
+			return fmt.Errorf("target %s appeared while preparing the write", targetPath)
+		}
 	}
 	if err := os.Rename(tmpName, resolved); err != nil {
 		_ = os.Remove(tmpName)

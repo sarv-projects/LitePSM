@@ -32,7 +32,7 @@ sit at the repository root. Status columns state the highest honest evidence sta
 | [04 — Client and Installation](04-CLIENT-INSTALL.md) | CLI commands, interactive wizard, agent auto-detection, local CAS store | Normative |
 | [05 — Security, Trust, and Credentials](05-SECURITY.md) | Privilege boundaries, archive limits, SSRF protection, nested MCP clamping, drift defense | Normative |
 | [06 — API and Package Contracts](06-API-CONTRACTS.md) | Immutable static releases, Plan v2, local IPC protocol, Bridge MCP tool surface | Normative |
-| [07 — Architecture Decisions (ADRs)](07-DECISIONS.md) | Accepted architectural decision records (D-001 through D-025) | Normative |
+| [07 — Architecture Decisions (ADRs)](07-DECISIONS.md) | Accepted architectural decision records (D-001 through D-031) | Normative |
 | [08 — Delivery Plan](08-DELIVERY.md) | Staged delivery phases (Phase A through Phase I) and automated acceptance gates | Informative |
 | [09 — Research Ledger](09-RESEARCH.md) | Pinned primary sources, MCP 2026-07-28 protocol, ecosystem caveats | Informative |
 
@@ -47,7 +47,7 @@ sit at the repository root. Status columns state the highest honest evidence sta
 | [14 — Bridge, Provider Supervisor & MCP](14-BRIDGE-PROVIDER-MCP.md) | Stdio Bridge shim, provider supervisor, Job Objects, dual-protocol MCP client | Normative |
 | [15 — Policy & Approvals Engine](15-POLICY-APPROVALS.md) | 17-action effect taxonomy, PolicyInput/Decision, approval channels, schema-drift invalidation | Normative |
 | [16 — Host Adapters & In-Agent UX](16-HOST-ADAPTERS.md) | HostAdapter interface, auto-detection, fallback prompt, Codex/Claude/Grok/OpenCode/Cline adapters, `/marketplace` | Normative for the `HostAdapter` contract and adapter registry; status-qualified elsewhere — §2 records advisory discovery as offline today and §5 (`/marketplace` registration) is `DESIGNED` |
-| [17 — Source, Artifact & Runtime Adapters](17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) | Real `source.Adapter` contract, the eight compiled source adapters and `internal/artifact` exports, plus `DESIGNED` fetcher/runtime interfaces | Normative for the `source.Adapter`/`artifact` contract; `DESIGNED` for the fetcher/runtime split |
+| [17 — Source, Artifact & Runtime Adapters](17-SOURCE-ARTIFACT-RUNTIME-ADAPTERS.md) | Real `source.Adapter` contract, the eight compiled source adapters and `internal/artifact` exports, plus the compiled fetcher/runtime interfaces (no production caller) | Normative for the `source.Adapter`/`artifact` contract; `IMPLEMENTED` (unwired) for the fetcher/runtime split |
 | [18 — Catalog Builder, Releases & Search](18-CATALOG-BUILDER-RELEASE-SEARCH.md) | Deterministic CI builder, `/v1/releases/` immutable layout, manifest digests, search ranking; shard/`index.json`/`items`/`metadata.json` tree is `DESIGNED` | Normative for the client path + search contract; `DESIGNED` for the unbuilt shard tree |
 | [19 — Secrets & OAuth Broker](19-SECRETS-OAUTH.md) | OS SecretStore backends (master key protected by `secret-tool`, `/usr/bin/security`, or DPAPI — no WinCred binding exists), loopback PKCE OAuth | Normative for the `SecretStore` contract and platform backends; §3 (OAuth broker) is `IMPLEMENTED`, not `WIRED` |
 | [20 — Errors, Audit & Doctor](20-ERRORS-AUDIT-DOCTOR.md) | `LPSM-*` error taxonomy, CLI exit codes (0–70), audit event logging, `litespm doctor` | Normative |
@@ -89,7 +89,7 @@ sit at the repository root. Status columns state the highest honest evidence sta
 ## 3. Glossary & Core Architectural Concepts
 
 *   **LiteSPM Daemon:** The single-writer, persistent local background process running on the user's workstation. It holds exclusive write locks on SQLite (`state.db`), supervises provider child processes, evaluates policy, brokers OS secrets, and executes atomic journaled operations.
-*   **LiteSPM Bridge (Shim):** A lightweight, stateless MCP stdio server registered with a host agent (e.g., Codex, Claude Code). It translates host MCP JSON-RPC requests into local IPC calls to the LiteSPM Daemon — reachability is limited by OS-level ACLs (Windows Named Pipe DACL / Unix socket `0600`), with no peer-authentication handshake — and exits cleanly when the host closes stdio.
+*   **LiteSPM Bridge (Shim):** A lightweight, stateless MCP stdio server registered with a host agent (e.g., Codex, Claude Code). It translates host MCP JSON-RPC requests into local IPC calls to the LiteSPM Daemon — reachability is limited by OS-level ACLs (Windows Named Pipe DACL / Unix socket `0600`) **and** by same-uid peer authentication, which the daemon performs before reading the first request (`SO_PEERCRED`/`LOCAL_PEERCRED`; a uid mismatch is refused with `-32001`, `internal/ipc/peer.go:152`, `internal/ipc/server.go:200-205`) — and exits cleanly when the host closes stdio.
 *   **Listing:** A normalized discovery record published in the static catalog representing an upstream plugin, skill, MCP server, or connector.
 *   **Artifact:** The physical software bundle (tarball, zip, git tree, or container image) retrieved from an upstream publisher.
 *   **Content-Addressed Storage (CAS):** Local immutable storage indexed strictly by SHA-256 content digest, preventing in-place corruption and enabling safe rollbacks.

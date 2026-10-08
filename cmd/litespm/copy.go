@@ -432,12 +432,20 @@ func readCopySource(ctx context.Context, paths *config.PlatformPaths,
 			return nil, fmt.Errorf("list MCP entries of %s: %w", d.HostID, err)
 		}
 		for _, e := range entries {
+			// Endpoint and Transport are the remote half of the IR: a source
+			// remote entry must arrive in the plan with its URL, or the copy
+			// would write a stdio entry for a server that has no command.
+			// Transport may be the host's own discriminator ("http",
+			// "streamableHttp", "remote"); NormalizeMCP maps it to the
+			// registry vocabulary so both sides of the copy agree.
 			src.MCP = append(src.MCP, porting.SourceMCP{
-				Name:     e.Name,
-				Command:  e.Command,
-				Args:     e.Args,
-				Env:      e.Env,
-				EnvNames: e.EnvNames,
+				Name:      e.Name,
+				Command:   e.Command,
+				Args:      e.Args,
+				Endpoint:  e.Endpoint,
+				Transport: e.Transport,
+				Env:       e.Env,
+				EnvNames:  e.EnvNames,
 			})
 		}
 	} else {
@@ -538,6 +546,14 @@ func readCopyTarget(ctx context.Context, paths *config.PlatformPaths,
 		Display:        d.DisplayName,
 		ExistingMCP:    map[string]host.HostServerEntry{},
 		ExistingSkills: map[string]porting.TargetSkill{},
+	}
+	// The target's remote (URL) capability comes from the one capability
+	// query install also uses, so the plan can never promise a write install
+	// would refuse. nil is the fail-closed answer: a remote source row against
+	// this target is reported "not copyable" with its reason, never rendered
+	// as a stdio entry.
+	if remoteSpec, ok := host.RemoteEntrySpecFor(d.HostID); ok {
+		tgt.Remote = &remoteSpec
 	}
 	if keyPath, shape, ok := host.EntryLayout(adapter); ok && keyPath != "" {
 		tgt.HasEntrySpec = true

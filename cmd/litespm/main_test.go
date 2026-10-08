@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,6 +79,16 @@ func newHarness(t *testing.T) *harness {
 // install.execute for kinds other than the seeded MCP listing.
 func newHarnessWith(t *testing.T, extra []*domain.Listing) *harness {
 	t.Helper()
+	return newHarnessWithCatalog(t, extra, nil)
+}
+
+// newHarnessWithCatalog is newHarnessWith plus the published version records
+// those listings resolve against. The plan builder and RuntimeForListing read
+// the version record (never the listing) for the launch line, so a fixture
+// listing with a remote (URL) runtime needs its record seeded here — the
+// catalog side of every test stays fixture-driven, with no network.
+func newHarnessWithCatalog(t *testing.T, extra []*domain.Listing, extraRecords []*domain.VersionRecord) *harness {
+	t.Helper()
 	tempDir := t.TempDir()
 	paths := &config.PlatformPaths{
 		ConfigRoot:  filepath.Join(tempDir, "config"),
@@ -115,6 +127,24 @@ func newHarnessWith(t *testing.T, extra []*domain.Listing) *harness {
 	}}
 	seed = append(seed, extra...)
 	catClient.IndexListings(seed)
+	versionRecords := []*domain.VersionRecord{
+		{
+			ListingID: testListingID,
+			Version:   "1.0.0",
+			Components: []domain.Component{{Runtime: &domain.RuntimeDescriptor{
+				Type: "stdio", Command: "npx", Args: []string{"-y", "demo-tool"},
+			}}},
+		},
+		{
+			ListingID: testListingID,
+			Version:   "2.0.0",
+			Components: []domain.Component{{Runtime: &domain.RuntimeDescriptor{
+				Type: "stdio", Command: "npx", Args: []string{"-y", "demo-tool@2"},
+			}}},
+		},
+	}
+	versionRecords = append(versionRecords, extraRecords...)
+	catClient.IndexVersionRecords(versionRecords)
 
 	store, err := secrets.NewMemorySecretStore()
 	if err != nil {
@@ -173,9 +203,9 @@ func TestParseInstallFlags(t *testing.T) {
 					t.Errorf("unexpected flags: %+v", f)
 				}
 			}},
-		{name: "all flags", args: []string{"--version", "1.2.3", "--scope", "project", "-w", "ws_1", "some:listing:id"},
+		{name: "all supported flags", args: []string{"--version", "1.2.3", "--scope", "project", "some:listing:id"},
 			check: func(t *testing.T, f installFlags) {
-				if f.version != "1.2.3" || f.scope != domain.ScopeProject || f.workspaceID != "ws_1" || f.listingID != "some:listing:id" {
+				if f.version != "1.2.3" || f.scope != domain.ScopeProject || f.listingID != "some:listing:id" {
 					t.Errorf("unexpected flags: %+v", f)
 				}
 			}},
@@ -187,6 +217,7 @@ func TestParseInstallFlags(t *testing.T) {
 		{name: "invalid scope", args: []string{"--scope", "global", "listing"}, wantErr: true},
 		{name: "missing scope value", args: []string{"listing", "--scope"}, wantErr: true},
 		{name: "missing version value", args: []string{"listing", "--version"}, wantErr: true},
+		{name: "unsupported workspace targeting", args: []string{"listing", "--workspace", "ws_1"}, wantErr: true},
 		{name: "extra positional", args: []string{"one", "two"}, wantErr: true},
 	}
 
@@ -356,7 +387,7 @@ func TestInstallExecute_ErrorMapping(t *testing.T) {
 		}
 	})
 
-	t.Run("valid plan for a kind without an artifact locator fails explicitly", func(t *testing.T) {
+	t.Run("MCP plan without configured hosts fails closed", func(t *testing.T) {
 		var plan domain.InstallPlan
 		if err := h.client.Call(ctx, "resolver.prepare_plan", map[string]any{"id": testListingID, "version": "1.0.0"}, &plan); err != nil {
 			t.Fatalf("prepare_plan failed: %v", err)
@@ -365,10 +396,10 @@ func TestInstallExecute_ErrorMapping(t *testing.T) {
 		approvalID := approvePlanAsHuman(t, h.db, &plan)
 		var raw json.RawMessage
 		err := h.client.Call(ctx, "install.execute", map[string]any{"planId": plan.PlanID, "approvalToken": approvalID}, &raw)
-		if code := rpcCode(t, err); code != ipc.CodeInternalError {
-			t.Fatalf("code=%d, want %d (err=%v)", code, ipc.CodeInternalError, err)
+		if code := rpcCode(t, err); code != ipc.CodeInvalidParams {
+			t.Fatalf("code=%d, want %d (err=%v)", code, ipc.CodeInvalidParams, err)
 		}
-		if !strings.Contains(err.Error(), "LPSM-ARTIFACT-UNAVAILABLE") {
+		if !strings.Contains(err.Error(), "LPSM-INSTALL-TARGET-UNAVAILABLE") {
 			t.Errorf("unexpected failure reason: %v", err)
 		}
 
@@ -714,6 +745,23 @@ func TestReleaseDownloadTarget(t *testing.T) {
 			t.Fatal("expected an error for nil release info")
 		}
 	})
+}
+
+func TestDownloadUpdatePayloadHonorsDeadline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := downloadUpdatePayload(ctx, server.Client(), server.URL, 1024); err == nil {
+		t.Fatal("stalled update body unexpectedly completed without the request deadline")
+	}
 }
 
 func TestReadBounded(t *testing.T) {

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/sarv-projects/litespm/internal/egress"
 )
 
 // StreamableHTTPClient implements the MCP 2026-07-28 modern stateless profile
@@ -33,11 +35,35 @@ type StreamableHTTPClient struct {
 	clientInfo ClientInfo
 }
 
-// ConnectStreamableHTTP creates a modern MCP 2026-07-28 client connected to a Streamable HTTP endpoint.
-func ConnectStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, httpClient *http.Client) (*StreamableHTTPClient, error) {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 60 * time.Second}
+// remoteEgressPolicy is the egress posture for remote (URL) MCP endpoints:
+// https-only with a loopback-http exception (a local dev endpoint — and the
+// hermetic httptest doubles — keep working), at most 3 redirect hops,
+// same-origin redirects only (a remote client may carry Authorization/session
+// headers, which a cross-host hop would forward — Decision 3), private
+// addresses refused by default (Decision 4: AllowPrivate is the
+// consent opt-in wired by a later phase), no configured exception host,
+// checked-IP dial, and the historical 60s client timeout. Response bodies
+// stay bounded at 16 MiB, matching the reads in sendRequest/postRPCRaw.
+func remoteEgressPolicy() egress.Policy {
+	return egress.Policy{
+		AllowLoopbackHTTP:   true,
+		MaxRedirects:        3,
+		SameOriginRedirects: true,
+		AllowPrivate:        false,
+		AllowedPrivateHost:  "",
+		Timeout:             60 * time.Second,
+		MaxBodyBytes:        16 << 20,
 	}
+}
+
+// ConnectStreamableHTTP creates a modern MCP 2026-07-28 client connected to a Streamable HTTP endpoint.
+//
+// A nil httpClient builds a guarded client (fail-closed default: scheme,
+// destination and redirect policy enforced at every layer); a
+// caller-supplied client is wrapped in the same guard rather than trusted —
+// the same pattern catalog.NewClientWithTimeout has always applied.
+func ConnectStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, httpClient *http.Client) (*StreamableHTTPClient, error) {
+	httpClient = egress.WrapClient(httpClient, remoteEgressPolicy())
 
 	c := &StreamableHTTPClient{
 		endpoint:   endpoint,

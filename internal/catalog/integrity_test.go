@@ -18,6 +18,14 @@ import (
 // compileSampleRelease builds a real release from the sample listings so the
 // pointer, manifest, and listings always agree — mutations of the served
 // pointer are then the only way to make them disagree.
+//
+// createdAt is pinned rather than time.Now(): helpers here compile the same
+// fixture several times independently (pointerFor and signedReleaseFiles each
+// call this), and CompileRelease stamps createdAt at RFC3339 second precision
+// into the manifest. Two compiles that straddle a wall-clock second boundary
+// would otherwise disagree about the manifest digest and fail the digest chain
+// with LPSM-VERIFY-CHECKSUM-MISMATCH — a flake with no product defect behind
+// it. A fixed instant keeps every compile in this package byte-identical.
 func compileSampleRelease(t *testing.T, releaseID string, sequence int) *catalogbuild.BuildOutput {
 	t.Helper()
 	listings := sampleListings()
@@ -25,7 +33,8 @@ func compileSampleRelease(t *testing.T, releaseID string, sequence int) *catalog
 	for _, listing := range listings {
 		versions = append(versions, &domain.VersionRecord{ListingID: listing.ID, Version: "1.0.0"})
 	}
-	compiled, err := catalogbuild.CompileRelease(releaseID, sequence, nil, listings, versions, time.Now().UTC())
+	createdAt := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+	compiled, err := catalogbuild.CompileRelease(releaseID, sequence, nil, listings, versions, createdAt)
 	if err != nil {
 		t.Fatalf("CompileRelease: %v", err)
 	}

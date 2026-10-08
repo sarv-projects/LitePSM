@@ -37,7 +37,7 @@ LiteSPM provides both an interactive terminal interface for humans and a structu
 │     ├── load_skill(id) / read_skill_resource(...)    — resolves        │
 │     ├── prepare_install(id, version) -> InstallPlan  — resolves        │
 │     ├── request_install(planId, approvalToken)       — completes for    │
-│     │     skills (installs files); MCP/plugin need artifact source       │
+│     │     skills (files), MCP (host entry); plugins need a locator       │
 │     └── search_capabilities / describe_capability /                    │
 │           invoke_capability / get_invocation /                         │
 │           cancel_invocation                      — JSON-RPC -32601     │
@@ -51,11 +51,13 @@ LiteSPM provides both an interactive terminal interface for humans and a structu
 > argument — use `litespm host setup <host-id>` for scripted setup).
 >
 > **Remote archive install resolution is not wired.** `litespm install <listing-id> [--version <ver>]
-> [--scope user|project] [--workspace <id>]` resolves the listing from the local catalog index and
-> routes by kind: **skills install for real** (fetch → ledger → record), MCP/plugin fail closed with
-> `LPSM-ARTIFACT-UNAVAILABLE` because the published catalog carries no artifact locator for them.
-> The earlier in-memory synthetic archive is gone; the bridge's `request_install` completes for
-> skills and fails closed for the rest ([STATUS.md](../STATUS.md) §3).
+> [--scope user|project]` resolves the listing from the local catalog index and
+> routes by kind: **skills install for real** (fetch → ledger → record), and **MCP servers register
+> their published launch descriptor in approved host configs**. Plugins still fail closed with
+> `LPSM-ARTIFACT-UNAVAILABLE` because the catalog carries no plugin artifact locator. The earlier
+> in-memory synthetic archive is gone; the bridge's `request_install` completes for skills and MCP
+> servers, and fails closed for plugins ([STATUS.md](../STATUS.md) §3). `--workspace` is rejected:
+> workspace-targeted installation is not implemented.
 
 ---
 
@@ -220,8 +222,7 @@ What actually happens today:
     (`cmd/litespm/wizard.go:138-143`).
 *   In-agent `/marketplace` reads resolve against the **local catalog index**, refreshed only by an
     explicit `litespm catalog sync` (which succeeds against the live origin — STATUS §2).
-*   `litespm update` / `self-update` updates the **binary** (`internal/update`, SHA-256 only, no
-    signature check), not installed capabilities.
+*   `litespm update` / `self-update` updates the **binary** (`internal/update` SHA-256 fail-closed, plus the release's keyless Sigstore bundle when one is published — `cmd/litespm/main.go:391-438`; no published tag carries a bundle yet), not installed capabilities.
 
 ### 5.2 Update Delta Evaluation — `DESIGNED`
 There is no `litespm update <listing-id>` command today (any such invocation is parsed as the

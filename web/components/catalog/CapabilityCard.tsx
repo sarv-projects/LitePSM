@@ -75,7 +75,7 @@ export function CapabilityCard({ item, agent, className = "" }: CapabilityCardPr
             <Link
               href={listingHref(item)}
               aria-label={`${item.name}. ${detail}`}
-              className="after:absolute after:inset-0 after:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
             >
               {item.name}
             </Link>

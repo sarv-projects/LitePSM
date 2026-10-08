@@ -1,18 +1,18 @@
 {
-  "agentSkillsCount": 1108,
+  "agentSkillsCount": 1111,
   "createdAt": "2026-10-07T08:41:57Z",
-  "datasetDigest": "sha256:e1a497a7aceacdfd6b638414684967a28070cb05d95e7fb9ad9faca24839306f",
+  "datasetDigest": "sha256:489f78bcdf3d0d7790c7fe82e424b46737c391ed84eda5bdf830a4cf5442526a",
   "hostCompatibility": {
     "mcp": "all-bridge-adapters",
     "skill": "all-skill-targets",
     "plugin": "publisher-declared"
   },
-  "itemCount": 5825,
+  "itemCount": 46166,
   "manifestDigest": "sha256:8b3ef60d2c2ba0fcea72c8673729ea531dd1973c432282598953367a53681621",
-  "mcpServersCount": 4079,
+  "mcpServersCount": 44417,
   "pluginsCount": 638,
   "releaseId": "rel-2026-10-07-01",
   "sequence": 145,
-  "statsUpdatedAt": "2026-10-07T08:53:16Z",
-  "totalCapabilities": 5825
+  "statsUpdatedAt": "2026-10-07T19:45:16Z",
+  "totalCapabilities": 46166
 }

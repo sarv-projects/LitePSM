@@ -33,9 +33,9 @@ func TestInstallRejectsUnusableEnvNamesBeforeWriting(t *testing.T) {
 	before, _ := os.ReadFile(configPath)
 
 	for _, bad := range []string{"has space", "2LEADING", "has-dash", "has.dot"} {
-		_, err := installMCPFromListing(t.Context(), db, t.TempDir(),
+		_, err := installMCPFromListing(authorizedTestContext(), db, t.TempDir(),
 			mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
-			nil, false, stdioRuntime(), []string{bad})
+			[]string{"claude-code"}, false, stdioRuntime(), []string{bad})
 		if err == nil {
 			t.Errorf("--env %q was accepted", bad)
 			continue
@@ -44,9 +44,9 @@ func TestInstallRejectsUnusableEnvNamesBeforeWriting(t *testing.T) {
 			t.Errorf("--env %q rejected with an error that does not name it: %v", bad, err)
 		}
 	}
-	if _, err := installMCPFromListing(t.Context(), db, t.TempDir(),
+	if _, err := installMCPFromListing(authorizedTestContext(), db, t.TempDir(),
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
-		nil, false, stdioRuntime(), []string{"A", "A"}); err == nil {
+		[]string{"claude-code"}, false, stdioRuntime(), []string{"A", "A"}); err == nil {
 		t.Error("a duplicated variable name was accepted; it would collapse to one entry")
 	}
 
@@ -63,7 +63,7 @@ func TestInstallRefusesEnvForUnverifiedHost(t *testing.T) {
 	_, configPath := homeWithBridge(t)
 	before, _ := os.ReadFile(configPath)
 
-	_, err := installMCPFromListing(t.Context(), db, t.TempDir(),
+	_, err := installMCPFromListing(authorizedTestContext(), db, t.TempDir(),
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"windsurf"}, false, stdioRuntime(), []string{"GITHUB_TOKEN"})
 	if err == nil {
@@ -85,7 +85,7 @@ func TestInstallRefusesEnvForShapeThatCannotCarryIt(t *testing.T) {
 	db := openTestState(t)
 	homeWithBridge(t)
 
-	_, err := installMCPFromListing(t.Context(), db, t.TempDir(),
+	_, err := installMCPFromListing(authorizedTestContext(), db, t.TempDir(),
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"mux"}, false, stdioRuntime(), []string{"GITHUB_TOKEN"})
 	if err == nil {

@@ -199,7 +199,7 @@ func buildHelpCatalog() map[string]commandHelp {
 			Purpose:   "Install a capability, or remove one install surgically.",
 			Synopsis: []string{
 				"litespm install <listing-id> [--version <ver>] [--scope user|project]",
-				"               [--workspace <id>] [--host <host-id>]... [--env <VAR>]...",
+				"               [--host <host-id>]... [--env <VAR>]...",
 				"               [--force] [--frozen]",
 				"litespm install remove <installId>",
 			},
@@ -532,14 +532,14 @@ func buildHelpCatalog() map[string]commandHelp {
 			Group:     "SYSTEM",
 			Purpose:   "List, search and describe the tools discovered from installed MCP servers.",
 			Synopsis: []string{
-				"litespm capabilities list [--host <id>]... [--limit <n>]",
-				"litespm capabilities search <query> [--host <id>]... [--limit <n>]",
+				"litespm capabilities list [--limit <n>]",
+				"litespm capabilities search <query> [--limit <n>]",
 				"litespm capabilities describe --capability <id>",
 				"litespm capabilities refresh [--host <id>]...",
 			},
 			Does: []string{
 				"`refresh` starts each installed MCP server LiteSPM registered and records the tools it actually exposes; `list` and `search` read those recorded rows; `describe` prints one tool's input schema and the command behind it.",
-				"`--host` restricts the probe to named agents (repeatable); the default is every agent with a verified bridge entry.",
+				"`refresh --host` restricts probing to named agents (repeatable); the default is every agent with a verified bridge entry. `--host` is not accepted by `list` or `search` because discovered rows are stored per provider, not per host.",
 			},
 			DoesNot: []string{
 				"Nothing is probed until you run `refresh`: an empty list means nothing has been discovered yet, not that you have no tools.",

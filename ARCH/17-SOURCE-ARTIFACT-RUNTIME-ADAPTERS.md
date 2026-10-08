@@ -1,8 +1,8 @@
 # Source, Artifact & Runtime Adapters
 
-Status: **Normative for the `source.Adapter` / `internal/artifact` contract; `DESIGNED` for the artifact-fetcher and runtime-adapter split below.**
+Status: **Normative for the `source.Adapter` / `internal/artifact` contract; `IMPLEMENTED` for `HTTPArchiveFetcher` and the `internal/runtime` launch-planning registry — both compile and are unit-tested, neither has a non-test caller (`WIRED` is false). `DESIGNED` remains for the unwritten `GitTreeFetcher` strategy and for runtime materialisation.**
 
-This document separates three concerns: **metadata ingestion** (build-time, source adapters), **byte retrieval** (client-side), and **process execution** (client-side). Only the first is compiled today. The other two are specified as target interfaces and must not be described as implemented.
+This document separates three concerns: **metadata ingestion** (build-time, source adapters), **byte retrieval** (client-side), and **process execution** (client-side). All three are compiled today; **none of them is `WIRED`** — the source adapters have test-only callers (`ARCH/03` §1), and the fetcher and runtime packages have no non-test caller at all. Roles 2 and 3 are `IMPLEMENTED` — types and tests exist, no production code calls them — and must not be described as live.
 
 ---
 
@@ -17,16 +17,16 @@ This document separates three concerns: **metadata ingestion** (build-time, sour
                                     │ normalized Listings / VersionRecords
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ 2. Artifact Fetcher (byte retrieval — DESIGNED)                        │
-│    Target: download raw archive bytes from declared locators.          │
-│    Verify cryptographic digests; NEVER execute install scripts.        │
+│ 2. Artifact Fetcher (byte retrieval — IMPLEMENTED, unwired)            │
+│    HTTPArchiveFetcher: downloads raw archive bytes from                │
+│    a declared locator, verifies digests, never runs scripts.           │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ verified bytes / CAS tree
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ 3. Runtime Adapter (process execution — DESIGNED)                      │
-│    Target: check local runtime prerequisites; build argv LaunchSpec.   │
-│    Hand off to the Provider Supervisor.                                │
+│ 3. Runtime Adapter (process execution — IMPLEMENTED, unwired)          │
+│    internal/runtime: probes toolchains (PATH lookup) and               │
+│    plans an argv Launch; hands off to the supervisor.                  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -132,16 +132,24 @@ version artifact refs. Its end-to-end behaviour is pinned by
 `internal/artifact/fetcher_test.go` and `test/archive_install_e2e_test.go` (download → verify →
 extract → CAS install). Wiring it in is gated on the catalog carrying artifact locators.
 
-Target strategies (remaining work): `GitTreeFetcher` (shallow commit-pinned clone, canonical tree
-digest). Both are data-only and MUST NOT execute package code. The lockfile
+Target strategy still to be written: `GitTreeFetcher` (shallow commit-pinned clone, canonical tree
+digest). It is data-only and MUST NOT execute package code. The lockfile
 ([32](32-MANIFEST-LOCK-INTEROP.md)) records the artifact SHA-256 and CAS tree digest this layer is
 required to reproduce.
 
 ---
 
-## 5. Runtime Adapter Interface — `DESIGNED`
+## 5. Runtime Adapter Interface — launch planning `IMPLEMENTED`, materialisation `DESIGNED`
 
-Target interface (no `internal/runtime` package exists today):
+The package **does** exist: `internal/runtime/runtime.go` (its package doc cites this section)
+compiles the model (`Kind` for node/python/native/oci/remote, `Spec`, `Launch`), a three-method
+`Adapter` interface, a `Registry` with five adapters (`NodeAdapter`, `PythonAdapter`,
+`NativeAdapter`, `OCIAdapter`, `RemoteAdapter`), and the digest-pin rule for OCI. Availability
+probing is PATH lookup only and `Plan` never executes package code. Its sole caller is
+`internal/runtime/runtime_test.go`, so the package is `IMPLEMENTED`, not `WIRED`.
+
+The richer interface this document originally specified — the half that would own
+materialisation — is still `DESIGNED`:
 
 ```go
 type RuntimeAdapter interface {
@@ -153,7 +161,7 @@ type RuntimeAdapter interface {
 }
 ```
 
-Target strategies: `RemoteHTTPRuntime`, `NodeStdioRuntime`, `PythonStdioRuntime`, `BinaryStdioRuntime`. Today launch specs are constructed ad hoc in `internal/install`, `internal/bridge`, and `internal/host`, and the provider supervisor consumes the `LaunchSpec` shape in [14 §2.2](14-BRIDGE-PROVIDER-MCP.md). The runtime adapter is the missing seam that would make materialisation and launch-spec construction testable and provider-agnostic.
+Target strategies: `RemoteHTTPRuntime`, `NodeStdioRuntime`, `PythonStdioRuntime`, `BinaryStdioRuntime`. In production today launch specs are still constructed ad hoc in `internal/install`, `internal/bridge`, and `internal/host` — nothing calls `internal/runtime` — and the provider supervisor consumes the `LaunchSpec` shape in [14 §2.2](14-BRIDGE-PROVIDER-MCP.md). Wiring this package in (and giving it materialisation) is the seam that would make materialisation and launch-spec construction testable and provider-agnostic.
 
 ---
 

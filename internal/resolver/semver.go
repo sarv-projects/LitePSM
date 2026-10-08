@@ -2,11 +2,31 @@ package resolver
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
+var semverVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$`)
+
+// ImplicitVersion is the release's version-less pin. A listing that publishes
+// no versions still has one published identity: every component id the release
+// emits for it embeds this literal (`<listing-id>@discovery#<kind>/<name>`,
+// internal/catalogbuild/dataset.go `versionForID`), while the version record's
+// own `version` field stays the honest empty string. The resolver selects this
+// pin for such listings so the plan carries a value the catalog already
+// publishes instead of a synthesized version (0.0.0 must never reach
+// plan.Resolved.Version, the plan hash, or an install record).
+//
+// It is NOT a semver: it compares below every published version, equals only
+// itself, and satisfies only constraints that do not name a different version
+// (wildcards, or an explicit request for this literal).
+const ImplicitVersion = "discovery"
+
 // Version represents a parsed Semantic Version 2.0.0.
+//
+// Implicit marks the catalog's version-less pin (ImplicitVersion): a value
+// with no proven release, ordered below every published version.
 type Version struct {
 	Major      int
 	Minor      int
@@ -14,6 +34,7 @@ type Version struct {
 	PreRelease string
 	Build      string
 	Raw        string
+	Implicit   bool
 }
 
 // String returns the canonical semver representation.
@@ -31,67 +52,62 @@ func (v Version) String() string {
 	return s
 }
 
-// ParseVersion parses a string into a Version struct.
+// ParseVersion parses a string into a Version struct. The catalog's
+// version-less pin (ImplicitVersion) parses to itself with Implicit set; it is
+// deliberately NOT valid semver and never masquerades as 0.0.0.
 func ParseVersion(s string) (Version, error) {
 	raw := strings.TrimSpace(s)
+	if raw == ImplicitVersion {
+		return Version{Raw: raw, Implicit: true}, nil
+	}
 	cleaned := strings.TrimPrefix(raw, "v")
-
 	if cleaned == "" {
 		return Version{}, fmt.Errorf("empty version string")
 	}
-
-	var build string
-	if idx := strings.Index(cleaned, "+"); idx != -1 {
-		build = cleaned[idx+1:]
-		cleaned = cleaned[:idx]
+	parts := semverVersionPattern.FindStringSubmatch(cleaned)
+	if parts == nil {
+		return Version{}, fmt.Errorf("invalid semver version %q", s)
 	}
-
-	var preRelease string
-	if idx := strings.Index(cleaned, "-"); idx != -1 {
-		preRelease = cleaned[idx+1:]
-		cleaned = cleaned[:idx]
+	major, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return Version{}, fmt.Errorf("major version %q is outside the supported integer range: %w", parts[1], err)
 	}
-
-	parts := strings.Split(cleaned, ".")
-	if len(parts) > 3 {
-		return Version{}, fmt.Errorf("invalid semver: too many parts %q", s)
+	minor, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return Version{}, fmt.Errorf("minor version %q is outside the supported integer range: %w", parts[2], err)
 	}
-
-	var major, minor, patch int
-	var err error
-
-	if len(parts) >= 1 && parts[0] != "" {
-		major, err = strconv.Atoi(parts[0])
-		if err != nil || major < 0 {
-			return Version{}, fmt.Errorf("invalid major version %q: %w", parts[0], err)
-		}
-	}
-	if len(parts) >= 2 && parts[1] != "" {
-		minor, err = strconv.Atoi(parts[1])
-		if err != nil || minor < 0 {
-			return Version{}, fmt.Errorf("invalid minor version %q: %w", parts[1], err)
-		}
-	}
-	if len(parts) >= 3 && parts[2] != "" {
-		patch, err = strconv.Atoi(parts[2])
-		if err != nil || patch < 0 {
-			return Version{}, fmt.Errorf("invalid patch version %q: %w", parts[2], err)
-		}
+	patch, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return Version{}, fmt.Errorf("patch version %q is outside the supported integer range: %w", parts[3], err)
 	}
 
 	return Version{
 		Major:      major,
 		Minor:      minor,
 		Patch:      patch,
-		PreRelease: preRelease,
-		Build:      build,
+		PreRelease: parts[4],
+		Build:      parts[5],
 		Raw:        raw,
 	}, nil
 }
 
 // Compare compares two versions according to SemVer 2.0.0 precedence.
 // Returns -1 if v < other, 0 if v == other, 1 if v > other.
+//
+// The version-less pin (ImplicitVersion) has no proven release: it compares
+// equal only to itself and below every published version, so an implicit pin
+// can never satisfy a range built from real semver (and never equals 0.0.0).
 func (v Version) Compare(other Version) int {
+	if v.Implicit || other.Implicit {
+		switch {
+		case v.Implicit && other.Implicit:
+			return 0
+		case v.Implicit:
+			return -1
+		default:
+			return 1
+		}
+	}
 	if v.Major != other.Major {
 		if v.Major < other.Major {
 			return -1
@@ -131,20 +147,17 @@ func (v Version) Compare(other Version) int {
 	}
 
 	for i := 0; i < minLen; i++ {
-		vNum, vErr := strconv.Atoi(vParts[i])
-		oNum, oErr := strconv.Atoi(oParts[i])
+		vNumeric := isNumericIdentifier(vParts[i])
+		oNumeric := isNumericIdentifier(oParts[i])
 
-		if vErr == nil && oErr == nil {
-			if vNum != oNum {
-				if vNum < oNum {
-					return -1
-				}
-				return 1
+		if vNumeric && oNumeric {
+			if cmp := compareNumericIdentifiers(vParts[i], oParts[i]); cmp != 0 {
+				return cmp
 			}
-		} else if vErr == nil && oErr != nil {
+		} else if vNumeric && !oNumeric {
 			// Numeric identifiers have lower precedence than non-numeric
 			return -1
-		} else if vErr != nil && oErr == nil {
+		} else if !vNumeric && oNumeric {
 			return 1
 		} else {
 			// Lexical comparison
@@ -163,6 +176,34 @@ func (v Version) Compare(other Version) int {
 		return 1
 	}
 
+	return 0
+}
+
+func isNumericIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func compareNumericIdentifiers(a, b string) int {
+	if len(a) < len(b) {
+		return -1
+	}
+	if len(a) > len(b) {
+		return 1
+	}
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
 	return 0
 }
 

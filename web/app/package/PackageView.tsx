@@ -441,7 +441,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
                 </div>
                 <div>
                   <dt>Runtime</dt>
-                  <dd className="t-mono !text-[12px]">
+                  <dd className="t-mono text-[12px]!">
                     {item.runtime || (
                       <span className="absent">{item.kind === "mcp" ? "unspecified" : "not applicable"}</span>
                     )}
@@ -449,7 +449,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
                 </div>
                 <div>
                   <dt>Transport</dt>
-                  <dd className="t-mono !text-[12px]">
+                  <dd className="t-mono text-[12px]!">
                     {item.transport || (
                       <span className="absent">{item.kind === "mcp" ? "unspecified" : "not applicable"}</span>
                     )}
@@ -572,14 +572,14 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
               <dl className="spec-list pb-1">
                 <div>
                   <dt>effects</dt>
-                  <dd className="!text-[12.5px]">
+                  <dd className="text-[12.5px]!">
                     <span className="absent">designed, not yet published</span> — the per-entry access
                     declaration this page would quote
                   </dd>
                 </div>
                 <div>
                   <dt>command / args</dt>
-                  <dd className="t-mono !text-[12px]">
+                  <dd className="t-mono text-[12px]!">
                     {item.command ? (
                       <span className="break-all">
                         {item.command}
@@ -592,7 +592,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
                 </div>
                 <div>
                   <dt>installHint</dt>
-                  <dd className="t-mono !text-[12px]">
+                  <dd className="t-mono text-[12px]!">
                     {item.installHint ? (
                       <span className="break-all">{item.installHint}</span>
                     ) : (
@@ -602,7 +602,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
                 </div>
                 <div>
                   <dt>skillSource</dt>
-                  <dd className="t-mono !text-[12px]">
+                  <dd className="t-mono text-[12px]!">
                     {item.skillSource ? (
                       <span className="break-all">{item.skillSource}</span>
                     ) : (

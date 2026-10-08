@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/sarv-projects/litespm/internal/catalogbuild"
 	"github.com/sarv-projects/litespm/internal/domain"
+	"github.com/sarv-projects/litespm/internal/egress"
 	"github.com/sarv-projects/litespm/internal/trust"
 )
 
@@ -54,14 +55,44 @@ type Client struct {
 	bundleVerifier *trust.BlobVerifier
 }
 
-// maxCatalogBodyBytes bounds every catalog HTTP body (ARCH/03 §5: 16 MiB per
-// metadata response). Oversized bodies are refused, never truncated.
+// maxCatalogBodyBytes bounds catalog metadata HTTP bodies (ARCH/03 §5: 16 MiB
+// per metadata response). Oversized bodies are refused, never truncated.
 const maxCatalogBodyBytes = 16 << 20
+
+// maxCatalogFileBytes bounds the manifest-sized listings/versions data files.
+// A current real catalog can exceed the metadata cap; its manifest-declared
+// byte size is still checked against this fixed upper bound before reading.
+const maxCatalogFileBytes = 64 << 20
 
 // defaultCatalogTimeout bounds one catalog HTTP exchange when no timeout is
 // configured. It matches config.DefaultConfig's Network.Timeout, so a caller
 // that never looks at configuration still gets the documented 30s.
 const defaultCatalogTimeout = 30 * time.Second
+
+// --- Egress guard -------------------------------------------------------
+//
+// The SSRF guard itself lives in internal/egress (shared with remote-MCP
+// clients; a client package must not become the security library). Catalog
+// keeps these thin, named delegation points so its call sites, tests, and
+// behaviour are unchanged.
+
+// catalogPolicy is the historical catalog egress posture: https-only with
+// the loopback-http exception for hermetic test origins, at most 3 redirect
+// hops, host-changing redirects allowed (CDN edges move — this is the one
+// policy difference from remote MCP, which holds SameOriginRedirects),
+// private destinations refused except the one configured literal host, no
+// proxy, checked-IP dial.
+func catalogPolicy(allowedPrivateHost string) egress.Policy {
+	return egress.Policy{
+		AllowLoopbackHTTP:   true,
+		MaxRedirects:        3,
+		SameOriginRedirects: false,
+		AllowPrivate:        false,
+		AllowedPrivateHost:  allowedPrivateHost,
+		Timeout:             defaultCatalogTimeout,
+		MaxBodyBytes:        maxCatalogBodyBytes,
+	}
+}
 
 // NewClient creates a new catalog client with the default request timeout.
 func NewClient(baseURL, cacheDir string, httpClient *http.Client) *Client {
@@ -73,13 +104,27 @@ func NewClient(baseURL, cacheDir string, httpClient *http.Client) *Client {
 // call sites that read configuration. timeout <= 0 selects
 // defaultCatalogTimeout, so an unset knob cannot disable the bound. The
 // timeout applies to the client LiteSPM builds; a caller-supplied httpClient
-// owns its own timeout but still gets the redirect policy below when it has
-// none of its own.
+// keeps its configured timeout while receiving the catalog URL/redirect
+// guards and, for net/http transports, the checked-IP dialer.
 func NewClientWithTimeout(baseURL, cacheDir string, timeout time.Duration, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = secureCatalogHTTPClient(timeout)
-	} else if httpClient.CheckRedirect == nil {
-		httpClient.CheckRedirect = catalogCheckRedirect
+		httpClient = secureCatalogHTTPClient(timeout, baseURL)
+	} else {
+		// Do not mutate a caller-owned client: the catalog's redirect and
+		// destination policy belongs to this client instance.
+		clone := *httpClient
+		callerRedirect := clone.CheckRedirect
+		clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if err := catalogCheckRedirect(req, via); err != nil {
+				return err
+			}
+			if callerRedirect != nil {
+				return callerRedirect(req, via)
+			}
+			return nil
+		}
+		clone.Transport = guardedCatalogTransport(clone.Transport, configuredPrivateHost(baseURL))
+		httpClient = &clone
 	}
 	c := &Client{
 		baseURL:    baseURL,
@@ -93,75 +138,104 @@ func NewClientWithTimeout(baseURL, cacheDir string, timeout time.Duration, httpC
 }
 
 // secureCatalogHTTPClient builds the default catalog transport: a bounded
-// timeout, at most 3 redirects, no https→http downgrade (ARCH/03 §5).
-func secureCatalogHTTPClient(timeout time.Duration) *http.Client {
+// timeout, at most 3 redirects, no downgrade, and dial-time public-address
+// validation for every redirect target. An explicitly configured literal
+// private base address remains available for private registries.
+func secureCatalogHTTPClient(timeout time.Duration, baseURL string) *http.Client {
 	if timeout <= 0 {
 		timeout = defaultCatalogTimeout
 	}
 	return &http.Client{
 		Timeout:       timeout,
+		Transport:     guardedCatalogTransport(nil, configuredPrivateHost(baseURL)),
 		CheckRedirect: catalogCheckRedirect,
 	}
+}
+
+// guardedCatalogTransport delegates the guard to internal/egress: the inner
+// transport is configured there (proxy off, DialTLSContext cleared,
+// checked-IP dial) and wrapped with the catalog's request checks.
+func guardedCatalogTransport(base http.RoundTripper, allowedPrivateHost string) http.RoundTripper {
+	guard := egress.NewGuardedTransport(base, catalogPolicy(allowedPrivateHost))
+	return catalogURLGuardTransport{base: guard.Base, guard: guard}
+}
+
+type catalogURLGuardTransport struct {
+	// base is the configured inner transport (proxy disabled, DialTLSContext
+	// cleared, checked-IP dial); kept as a field so tests can introspect it.
+	base http.RoundTripper
+	// guard carries the catalog policy applied to every request.
+	guard egress.GuardedTransport
+}
+
+func (t catalogURLGuardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.guard.RoundTrip(req)
+}
+
+func configuredPrivateHost(raw string) string {
+	return egress.ConfiguredPrivateHost(raw)
+}
+
+func catalogDialContext(allowedPrivateHost string) func(context.Context, string, string) (net.Conn, error) {
+	return catalogDialContextWithLookup(allowedPrivateHost, net.DefaultResolver.LookupIPAddr)
+}
+
+func catalogDialContextWithLookup(allowedPrivateHost string, lookup egress.Lookup) func(context.Context, string, string) (net.Conn, error) {
+	return egress.DialContextWithLookup(catalogPolicy(allowedPrivateHost), lookup)
+}
+
+// catalogIPIsPublic reports whether ip is a globally routable address. It
+// delegates to the shared guard (the extracted rule now lives in
+// internal/egress); retained as this package's named entry point.
+func catalogIPIsPublic(ip net.IP) bool {
+	return egress.IsPublicIP(ip)
 }
 
 // catalogCheckRedirect caps the chain at 3 hops and refuses a downgrade from
 // https to http. Identical-origin is not required (CDN edges move), but a
 // downgrade is never a CDN move — it is a strip.
 func catalogCheckRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) >= 3 {
-		return fmt.Errorf("catalog redirect chain exceeds 3 hops")
-	}
-	if len(via) > 0 {
-		prev := via[len(via)-1].URL.Scheme
-		if prev == "https" && req.URL.Scheme != "https" {
-			return fmt.Errorf("refusing catalog redirect downgrade from https to %s", req.URL.Scheme)
-		}
-	}
-	return nil
+	return egress.CheckRedirect(catalogPolicy(""), req, via)
+}
+
+func catalogCheckRedirectWithLookup(req *http.Request, via []*http.Request, lookup egress.Lookup) error {
+	return egress.CheckRedirectWithLookup(catalogPolicy(""), req, via, lookup)
 }
 
 // checkCatalogURL enforces https-only for non-loopback hosts. Loopback http
 // (127.0.0.0/8, ::1, localhost) stays allowed so hermetic httptest servers
 // keep working; everything else must be https.
 func checkCatalogURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return domain.ErrEgressBlocked(raw, fmt.Sprintf("unparseable catalog URL: %v", err))
-	}
-	if u.Scheme == "https" {
-		return nil
-	}
-	if u.Scheme == "http" && isCatalogLoopbackHost(u.Hostname()) {
-		return nil
-	}
-	return domain.ErrEgressBlocked(raw, fmt.Sprintf("catalog fetches require https (got %q)", u.Scheme))
+	return egress.CheckURL(raw, catalogPolicy(""))
 }
 
-// isCatalogLoopbackHost reports loopback/test hosts where plain http is
-// acceptable (httptest binds 127.0.0.1; never a production origin).
-func isCatalogLoopbackHost(host string) bool {
-	h := strings.ToLower(strings.TrimSpace(host))
-	if h == "localhost" || h == "::1" {
-		return true
-	}
-	if strings.HasPrefix(h, "127.") {
-		return true
-	}
-	if strings.HasPrefix(h, "[::1") {
-		return true
-	}
-	return false
-}
-
-// readCatalogBody reads at most maxCatalogBodyBytes+1 and refuses oversized
-// payloads instead of truncating them into corrupt JSON.
+// readCatalogBody refuses oversized metadata bodies instead of truncating them
+// into corrupt JSON.
 func readCatalogBody(body io.Reader) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(body, maxCatalogBodyBytes+1))
+	return readCatalogBodyLimit(body, maxCatalogBodyBytes)
+}
+
+func readCatalogBodyLimit(body io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxCatalogBodyBytes {
-		return nil, fmt.Errorf("catalog response exceeds the %d byte limit", maxCatalogBodyBytes)
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("catalog response exceeds the %d byte limit", limit)
+	}
+	return data, nil
+}
+
+func readCatalogFileBody(body io.Reader, expectedSize int64) ([]byte, error) {
+	if expectedSize < 0 || expectedSize > maxCatalogFileBytes {
+		return nil, fmt.Errorf("catalog file size %d exceeds the %d byte limit", expectedSize, maxCatalogFileBytes)
+	}
+	data, err := readCatalogBodyLimit(body, expectedSize)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != expectedSize {
+		return nil, fmt.Errorf("catalog file size mismatch: manifest declares %d bytes, received %d", expectedSize, len(data))
 	}
 	return data, nil
 }
@@ -508,7 +582,7 @@ func (c *Client) fetchListings(ctx context.Context, releaseID string, manifest *
 		return nil, nil, fmt.Errorf("failed to download listings.json: status %d", resp.StatusCode)
 	}
 
-	body, err := readCatalogBody(resp.Body)
+	body, err := readCatalogFileBody(resp.Body, fileMeta.Size)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -563,7 +637,7 @@ func (c *Client) fetchVersions(ctx context.Context, releaseID string, manifest *
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("failed to download versions.json: status %d", resp.StatusCode)
 	}
-	body, err := readCatalogBody(resp.Body)
+	body, err := readCatalogFileBody(resp.Body, fileMeta.Size)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -598,9 +672,10 @@ func (c *Client) VersionRecordFor(listingID, version string) (*domain.VersionRec
 	return nil, fmt.Errorf("listing %s has no published version %q", listingID, version)
 }
 
-// RuntimeForListing returns the stdio launch line for a listing, taken from the
-// published version record. It fails closed when the record declares no runtime
-// or no command, rather than letting an installer write a broken entry.
+// RuntimeForListing returns the launch line for a listing, taken from the
+// published version record: a stdio command, or -- for a remote (URL) row --
+// the endpoint the client would connect to. It fails closed when the record
+// declares neither, rather than letting an installer write a broken entry.
 func (c *Client) RuntimeForListing(listingID, version string) (*domain.RuntimeDescriptor, error) {
 	rec, err := c.VersionRecordFor(listingID, version)
 	if err != nil {
@@ -610,12 +685,13 @@ func (c *Client) RuntimeForListing(listingID, version string) (*domain.RuntimeDe
 		if component.Runtime == nil {
 			continue
 		}
-		if strings.TrimSpace(component.Runtime.Command) == "" {
+		if strings.TrimSpace(component.Runtime.Command) == "" &&
+			strings.TrimSpace(component.Runtime.Endpoint) == "" {
 			continue
 		}
 		return component.Runtime, nil
 	}
-	return nil, fmt.Errorf("listing %s publishes no runnable command for version %s", listingID, rec.Version)
+	return nil, fmt.Errorf("listing %s publishes no launch line (neither a command nor an endpoint) for version %s", listingID, rec.Version)
 }
 
 // Sync checks for remote catalog updates, verifies integrity, and updates the local cache and index.
@@ -796,6 +872,15 @@ func fsyncParentDir(dir string) error {
 // IndexListings indexes listings directly into the client's search index.
 func (c *Client) IndexListings(listings []*domain.Listing) {
 	c.index.IndexListings(listings)
+}
+
+// IndexVersionRecords indexes published version records directly into the
+// client's in-memory index. Production callers normally populate these via
+// Sync; this mirrors IndexListings for deterministic consumers and tests.
+func (c *Client) IndexVersionRecords(records []*domain.VersionRecord) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.index.IndexVersions(records)
 }
 
 // Search queries the in-memory catalog index.

@@ -10,15 +10,56 @@ the recorded bytes, never from a live response.
 On-disk layout (one directory per fetched URL, under the snapshot root):
 
     source-snapshots/
-      <slug>-<sha256(url)[:12]>/
+      <slug>-<sha256(url)[:12]>/   # the CURRENT (newest) fetch for that URL
         snapshot.json     # {"format": ..., "snapshot": {...}, "fetch": {...}}
         body              # the raw upstream bytes, exactly as received
+      history/
+        <slug>-<sha256(url)[:12]>/
+          <entry>/        # one directory per SUPERSEDED fetch, oldest first
+            snapshot.json # the record exactly as it stood when superseded
+            body          # that fetch's bytes (hard-linked, never rewritten)
       failures.jsonl      # append-only log of fetch attempts that failed
 
 `snapshot.json.snapshot` carries exactly the fields the ARCH/03 §4 record and
 `schemas/source.schema.json#/properties/snapshot` allow; `snapshot.json.fetch`
 is the fetch-layer extension (URL, ETag when the server sent one, HTTP status,
 fetch timestamp, body file name, byte size).
+
+Per-fetch history (supersession is never destruction): `write_snapshot` never
+discards the fetch it replaces. Before the current directory is swapped, the
+record being superseded -- url, sourceId, status (including a completed
+`healthy` + `itemCount` if it earned one), ETag, timestamps, byte size and
+content digest -- is archived verbatim under `history/<key>/<entry>/`. The
+current record is always the newest fetch, so a URL's full per-fetch sequence
+is the `history` entries (oldest first, via `list_history`) followed by the
+current record. A history entry is written once and never rewritten:
+`mark_ingested` finalizes only the current record. Entry names are
+`<UTC of the archive moment, nanosecond precision>-<snapshotId>`; because
+entries are archived in fetch order, names sort chronologically -- the name is
+an ordering key, not a fetch-time claim (the record's `fetch.fetchedAt` is the
+fetch time). History lives beside -- not inside -- the current directory
+because the current directory is swapped wholesale on every write; a snapshot
+key can never equal `history` (keys always contain "-" plus 12 hex chars).
+
+Retention (bounded disk growth -- enforced, never unbounded):
+
+  * At most `HISTORY_MAX_ENTRIES` (8) superseded entries per URL, and their
+    combined size plus the entry about to be added fits `HISTORY_MAX_BYTES`
+    (32 MiB). Pruning drops the oldest entries first.
+  * Pruning runs BEFORE an entry is added, so a prune failure (OSError)
+    aborts the write while the current record is untouched: history cannot
+    grow past the caps while writes still succeed. The current record is
+    never pruned (replay depends on it).
+  * A single entry that alone exceeds the byte budget is kept until the next
+    archive, which prunes it first. The producer bounds one response to
+    16 MiB (`build_full_catalog.MAX_RESPONSE_BYTES`), below the byte budget,
+    so producer writes cannot produce an over-budget entry.
+  * Stale `.entry-tmp-*` staging directories are cleaned opportunistically.
+
+Backward compatibility: stores recorded before history existed (only
+`<key>/{snapshot.json,body}`) load unchanged. `history/` is created lazily on
+the first supersede, which archives the legacy record at that point -- no
+migration step exists because none is needed.
 
 Honesty rules enforced by this module (they are the contract, not the caller's):
 
@@ -29,6 +70,7 @@ Honesty rules enforced by this module (they are the contract, not the caller's):
     whose digest or byte size does not match the recorded values, or whose
     record is malformed (bad format, bad snapshot id, bad source id, unknown
     status). A refused snapshot is an error, never a fallback.
+    `load_history_entry` applies the same refusal rules to a superseded fetch.
   * An ETag-less endpoint snapshots fine: the ETag is recorded as `null` and
     refresh falls back to digest-only comparison.
   * `mark_ingested` only updates a snapshot that already exists; it never
@@ -61,6 +103,17 @@ ADAPTER_VERSION = "py-catalog-1"
 BODY_FILE = "body"
 META_FILE = "snapshot.json"
 FAILURES_FILE = "failures.jsonl"
+# Superseded fetches live under root/history/<key>/<entry>/ (see the module
+# docstring): one directory per replaced record, its record + body byte-shape
+# exactly as they stood when superseded. A snapshot key can never equal
+# "history" (keys always contain "-" plus 12 hex chars), so this directory is
+# never mistaken for a snapshot directory.
+HISTORY_DIR = "history"
+# Retention (enforced before each archive, oldest pruned first; the current
+# record is never pruned): fewer than HISTORY_MAX_ENTRIES superseded entries
+# per URL, combined with the incoming entry within HISTORY_MAX_BYTES.
+HISTORY_MAX_ENTRIES = 8
+HISTORY_MAX_BYTES = 32 * 1024 * 1024
 
 SNAPSHOT_ID_RE = re.compile(r"^snap_[0-9A-Za-z]{26}$")
 DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
@@ -120,6 +173,11 @@ def snapshot_dir(root, url):
     return os.path.join(root, snapshot_key(url))
 
 
+def history_dir(root, url):
+    """Directory holding this URL's superseded fetches (may not exist yet)."""
+    return os.path.join(root, HISTORY_DIR, snapshot_key(url))
+
+
 def digest_bytes(body):
     return "sha256:" + hashlib.sha256(body).hexdigest()
 
@@ -169,13 +227,167 @@ def _record_json(snapshot, fetch):
     ).encode("utf-8")
 
 
+def _history_entries(hist):
+    """Committed entry names under `hist`, oldest first (staging excluded)."""
+    try:
+        names = os.listdir(hist)
+    except FileNotFoundError:
+        return []
+    return sorted(
+        n for n in names
+        if not n.startswith(".") and os.path.isdir(os.path.join(hist, n))
+    )
+
+
+def _dir_size(path):
+    """Total bytes of the files directly inside an entry directory."""
+    total = 0
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return 0
+    for name in names:
+        try:
+            total += os.path.getsize(os.path.join(path, name))
+        except OSError:
+            pass
+    return total
+
+
+def _prune_history(hist, incoming_bytes):
+    """Enforce retention BEFORE a new entry is added (oldest first).
+
+    On return, adding one entry of `incoming_bytes` keeps the directory at
+    most HISTORY_MAX_ENTRIES entries and at most HISTORY_MAX_BYTES total --
+    unless that single entry alone exceeds the byte budget (it is then kept
+    until the next archive, which prunes it first). A removal failure (OSError)
+    propagates with nothing added, so growth is fail-closed, never unbounded.
+    """
+    try:
+        names = os.listdir(hist)
+    except FileNotFoundError:
+        return
+    for name in names:  # stale staging residue from an interrupted archive
+        if name.startswith(".entry-tmp-"):
+            shutil.rmtree(os.path.join(hist, name), ignore_errors=True)
+    entries = _history_entries(hist)
+    sizes = {n: _dir_size(os.path.join(hist, n)) for n in entries}
+    total = sum(sizes.values())
+    while entries and (len(entries) + 1 > HISTORY_MAX_ENTRIES
+                       or total + incoming_bytes > HISTORY_MAX_BYTES):
+        victim = entries.pop(0)
+        total -= sizes[victim]
+        shutil.rmtree(os.path.join(hist, victim))
+
+
+def _link_or_copy(src, dst):
+    """Preserve `src` at `dst`, hard-linking first so supersession costs no
+    extra disk until the superseded directory is removed (copy as fallback)."""
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+
+
+def _new_entry_name(sid):
+    """`<UTC of this archive moment, nanosecond precision>-<snapshotId>`.
+
+    Archives happen in fetch order, so names sort chronologically; the name
+    is an ordering key, not a fetch-time claim (see the module docstring).
+    """
+    ns = time.time_ns()
+    sec, frac = divmod(ns, 1_000_000_000)
+    stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime(sec)) + f".{frac:09d}Z"
+    return f"{stamp}-{sid}"
+
+
+def _archive_current(final, root, key):
+    """Preserve the fetch `write_snapshot` is about to supersede.
+
+    Called BEFORE the directory swap. Every regular file of the current
+    record (the record, its body, and any stray a corrupt record may sit
+    beside) is hard-linked into `root/history/<key>/<entry>/` and committed
+    with one atomic rename, so a crash leaves either both the current record
+    and its archive (retry skips it: identical record already archived), or
+    a committed history entry plus no current record (a re-fetch -- the entry
+    keeps the bytes). Supersession therefore never destroys a recorded byte.
+    Retention runs before the entry is added; any OSError propagates with the
+    current record untouched.
+    """
+    if not os.path.isdir(final):
+        return
+    meta_path = os.path.join(final, META_FILE)
+    if not os.path.isfile(meta_path):
+        return  # no record in this directory: nothing was fetched to preserve
+    with open(meta_path, "rb") as f:
+        meta_bytes = f.read()
+
+    sid = "unknown"
+    try:
+        rec = json.loads(meta_bytes.decode("utf-8"))
+        candidate = (rec.get("snapshot") or {}).get("snapshotId")
+        if SNAPSHOT_ID_RE.match(candidate or ""):
+            sid = candidate
+    except (ValueError, UnicodeDecodeError, AttributeError, TypeError):
+        pass  # a malformed record is archived as it stands, under a derived name
+
+    pending = []
+    incoming = 0
+    for name in sorted(os.listdir(final)):
+        if name.startswith("."):
+            continue  # staging residue of an interrupted swap, not record data
+        path = os.path.join(final, name)
+        if os.path.isfile(path):
+            pending.append((name, path))
+            try:
+                incoming += os.path.getsize(path)
+            except OSError:
+                pass  # accounting only; linking below reports real failures
+    if not any(name == META_FILE for name, _ in pending):
+        return  # vanished between checks: nothing verifiable to archive
+
+    hist = os.path.join(root, HISTORY_DIR, key)
+    if sid != "unknown":  # crash retry: identical record already committed
+        for existing in _history_entries(hist):
+            if existing.endswith("-" + sid):
+                try:
+                    with open(os.path.join(hist, existing, META_FILE), "rb") as f:
+                        if f.read() == meta_bytes:
+                            return
+                except OSError:
+                    pass
+                break
+
+    os.makedirs(hist, exist_ok=True)
+    _prune_history(hist, incoming)
+    name = _new_entry_name(sid)
+    dest = os.path.join(hist, name)
+    n = 1
+    while os.path.exists(dest):
+        n += 1
+        dest = os.path.join(hist, f"{name}-{n}")
+    stage = os.path.join(hist, f".entry-tmp-{os.getpid()}")
+    shutil.rmtree(stage, ignore_errors=True)
+    os.mkdir(stage)
+    try:
+        for entry_name, path in pending:
+            _link_or_copy(path, os.path.join(stage, entry_name))
+        os.rename(stage, dest)
+    except OSError:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+
+
 def write_snapshot(root, url, source_id, etag, http_status, body,
                    started_at=None, fetched_at=None):
     """Record a freshly fetched response as a snapshot (status `partial`).
 
-    The directory swap is staged through a hidden temp directory so a crash
-    can leave either the old snapshot or none (which makes the next run
-    re-fetch), never a half-written mixture of new body and old record.
+    The fetch this replaces is first archived verbatim under
+    `root/history/<key>/<entry>/` (immutable per-fetch history, retention-
+    bounded; see the module docstring), then the directory swap is staged
+    through a hidden temp directory so a crash can leave the old snapshot,
+    an archived copy of it plus none (which makes the next run re-fetch), or
+    none -- never a half-written mixture of new body and old record.
     """
     if http_status != 200:
         raise ValueError(f"only a 200 response can be snapshotted, got {http_status}")
@@ -215,6 +427,14 @@ def write_snapshot(root, url, source_id, etag, http_status, body,
     with open(os.path.join(tmp, META_FILE), "wb") as f:
         f.write(_record_json(snapshot, fetch))
 
+    # Preserve the fetch being superseded before touching the current record.
+    # A failure here aborts the write with the current record untouched.
+    try:
+        _archive_current(final, root, key)
+    except OSError:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+
     old = os.path.join(root, f".{key}.old.{os.getpid()}")
     shutil.rmtree(old, ignore_errors=True)
     had_previous = os.path.isdir(final)
@@ -223,28 +443,28 @@ def write_snapshot(root, url, source_id, etag, http_status, body,
             os.rename(final, old)
         os.rename(tmp, final)
     except OSError:
-        if had_previous and not os.path.isdir(final) and os.path.isdir(old):
-            os.rename(old, final)  # best effort: keep the previous snapshot
+        try:
+            if had_previous and not os.path.isdir(final) and os.path.isdir(old):
+                os.rename(old, final)  # best effort: keep the previous snapshot
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
         raise
     shutil.rmtree(old, ignore_errors=True)
     return json.loads(_record_json(snapshot, fetch).decode("utf-8"))
 
 
-def load_snapshot(root, url):
-    """Return `(raw_bytes, record)` for a recorded snapshot, verified.
+def _load_record_dir(directory, url, missing_message):
+    """Read + fully verify the record stored in `directory`.
 
-    Refuses (raises `SnapshotIntegrityError`) when the record is malformed or
-    the bytes do not hash to the recorded `contentDigest` / `byteSize`.
-    Raises `SnapshotMissing` when nothing was ever recorded -- a missing entry
-    is never invented.
+    Shared by `load_snapshot` (the current record) and `load_history_entry`
+    (a superseded fetch): identical refusal rules either way.
     """
-    key = snapshot_key(url)
-    meta_path = os.path.join(root, key, META_FILE)
+    meta_path = os.path.join(directory, META_FILE)
     try:
         with open(meta_path, "rb") as f:
             raw = f.read()
     except FileNotFoundError:
-        raise SnapshotMissing(f"no recorded snapshot for {url}") from None
+        raise SnapshotMissing(missing_message) from None
     except OSError as exc:
         raise SnapshotIntegrityError(f"unreadable snapshot record {meta_path}: {exc}") from exc
 
@@ -259,7 +479,7 @@ def load_snapshot(root, url):
     body_file = fetch.get("bodyFile") or BODY_FILE
     if body_file != os.path.basename(body_file) or body_file in (".", ".."):
         raise SnapshotIntegrityError(f"snapshot {meta_path} names an unsafe body file {body_file!r}")
-    body_path = os.path.join(root, key, body_file)
+    body_path = os.path.join(directory, body_file)
     try:
         with open(body_path, "rb") as f:
             body = f.read()
@@ -278,6 +498,60 @@ def load_snapshot(root, url):
             f"does not match body digest {actual} -- refused"
         )
     return body, meta
+
+
+def load_snapshot(root, url):
+    """Return `(raw_bytes, record)` for a recorded snapshot, verified.
+
+    Refuses (raises `SnapshotIntegrityError`) when the record is malformed or
+    the bytes do not hash to the recorded `contentDigest` / `byteSize`.
+    Raises `SnapshotMissing` when nothing was ever recorded -- a missing entry
+    is never invented.
+    """
+    key = snapshot_key(url)
+    return _load_record_dir(
+        os.path.join(root, key), url, f"no recorded snapshot for {url}")
+
+
+def list_history(root, url):
+    """Superseded fetches for `url`, oldest first, as `(entry, record)` pairs.
+
+    Verifies each entry's record shape and URL binding but does not hash
+    bodies; use `load_history_entry` for a fully verified replay. An entry
+    whose record fails verification raises `SnapshotIntegrityError` --
+    corruption is refused loudly, never skipped silently. A URL with no
+    history (including one never recorded) returns `[]`.
+    """
+    hist = history_dir(root, url)
+    out = []
+    for name in _history_entries(hist):
+        path = os.path.join(hist, name, META_FILE)
+        try:
+            with open(path, "rb") as f:
+                raw = f.read()
+        except OSError as exc:
+            raise SnapshotIntegrityError(f"unreadable history record {path}: {exc}") from exc
+        try:
+            meta = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise SnapshotIntegrityError(f"history record {path} is not valid JSON: {exc}") from exc
+        _verify_record(meta, path, url)
+        out.append((name, meta))
+    return out
+
+
+def load_history_entry(root, url, entry):
+    """Return `(raw_bytes, record)` for one superseded fetch, verified.
+
+    Same refusal rules as `load_snapshot`. `entry` must be a plain entry
+    name (as returned by `list_history`) -- never a path.
+    """
+    if (not entry or entry in (".", "..") or "/" in entry or "\\" in entry
+            or entry != os.path.basename(entry)):
+        raise SnapshotMissing(f"no history entry {entry!r} for {url}")
+    return _load_record_dir(
+        os.path.join(history_dir(root, url), entry), url,
+        f"no history entry {entry!r} for {url}")
 
 
 def _verify_record(meta, meta_path, url=None):
@@ -440,6 +714,112 @@ def _selftest():
     a, b = new_snapshot_id(), new_snapshot_id()
     ok(a != b, "snapshot ids are unique")
     ok(DIGEST_RE.match(digest_bytes(body)), "digest grammar")
+
+    # 10. Per-fetch history: superseding a URL archives the fetch it replaces.
+    with tempfile.TemporaryDirectory() as root:
+        h_url = "https://example.com/feed/changelog.md"
+        rec1 = write_snapshot(root, h_url, "feed:example-feed", None, 200, b"version one\n")
+        ok(list_history(root, h_url) == [],
+           "no history exists before the first fetch is superseded")
+        got, meta = load_snapshot(root, h_url)
+        ok(got == b"version one\n", "first fetch replays as the current record")
+        meta1, changed1 = mark_ingested(root, h_url, 3)
+        ok(changed1 and meta1["snapshot"]["status"] == "healthy",
+           "first fetch finalized before it can be superseded")
+
+        rec2 = write_snapshot(root, h_url, "feed:example-feed", '"etag-two"', 200,
+                              b"version two\n")
+        entries = list_history(root, h_url)
+        ok(len(entries) == 1, f"superseded fetch archived exactly once, got {len(entries)}")
+        entry1, archived = entries[0]
+        ok(archived["snapshot"]["snapshotId"] == rec1["snapshot"]["snapshotId"],
+           "history holds the exact record that was current")
+        ok(archived["snapshot"]["status"] == "healthy"
+           and archived["snapshot"].get("itemCount") == 3,
+           "history preserves the finalized status and itemCount as they stood")
+        ok(archived["fetch"]["etag"] is None
+           and archived["fetch"]["byteSize"] == len(b"version one\n")
+           and archived["fetch"]["url"] == h_url,
+           "history records what was actually fetched (url, etag, byte size)")
+        body1, rec1b = load_history_entry(root, h_url, entry1)
+        ok(body1 == b"version one\n", "history entry replays the superseded bytes")
+        ok(rec1b["snapshot"]["contentDigest"] == digest_bytes(b"version one\n"),
+           "history digest is the digest of the bytes actually fetched")
+        cur_body, cur = load_snapshot(root, h_url)
+        ok(cur_body == b"version two\n" and cur["snapshot"]["status"] == "partial"
+           and cur["snapshot"]["snapshotId"] == rec2["snapshot"]["snapshotId"],
+           "current record is the newest fetch, fresh and partial")
+
+        # Immutability: finalizing the new current never rewrites history.
+        mark_ingested(root, h_url, 7)
+        _, archived_after = load_history_entry(root, h_url, entry1)
+        ok(archived_after["snapshot"].get("itemCount") == 3,
+           "history entry is immutable while the current record changes")
+
+        # A tampered history entry is refused, never served.
+        with open(os.path.join(history_dir(root, h_url), entry1, BODY_FILE), "ab") as f:
+            f.write(b"tampered")
+        try:
+            load_history_entry(root, h_url, entry1)
+        except SnapshotIntegrityError:
+            checks += 1
+        else:
+            raise AssertionError("tampered history entry must be refused")
+
+        # Entry names are names, never paths.
+        try:
+            load_history_entry(root, h_url, "../" + snapshot_key(h_url))
+        except SnapshotError:
+            checks += 1
+        else:
+            raise AssertionError("history entry path traversal must be refused")
+
+        # 11. Retention: the entry cap prunes oldest; the current record and
+        # the byte budget are enforced by the same pre-archive prune.
+        for i in range(HISTORY_MAX_ENTRIES + 5):
+            write_snapshot(root, h_url, "feed:example-feed", None, 200,
+                           f"filler {i}".encode("utf-8"))
+        entries = list_history(root, h_url)
+        ok(len(entries) == HISTORY_MAX_ENTRIES,
+           f"history capped at {HISTORY_MAX_ENTRIES} entries, got {len(entries)}")
+        ok(load_history_entry(root, h_url, entries[0][0])[0] == b"filler 4",
+           "oldest superseded fetches pruned first")
+        ok(load_history_entry(root, h_url, entries[-1][0])[0] == b"filler 11",
+           "newest superseded fetch kept within the cap")
+        ok(load_snapshot(root, h_url)[0] == b"filler 12",
+           "the current record is never pruned")
+
+        saved_budget = globals()["HISTORY_MAX_BYTES"]
+        globals()["HISTORY_MAX_BYTES"] = 64  # one record already exceeds this
+        try:
+            for i in range(4):
+                write_snapshot(root, h_url, "feed:example-feed", None, 200,
+                               f"tiny {i}".encode("utf-8"))
+            entries = list_history(root, h_url)
+            ok(len(entries) == 1,
+               f"byte budget prunes history to a single entry, got {len(entries)}")
+            ok(load_history_entry(root, h_url, entries[0][0])[0] == b"tiny 2",
+               "the byte-budget survivor is the most recent superseded fetch")
+        finally:
+            globals()["HISTORY_MAX_BYTES"] = saved_budget
+
+    # 12. A store recorded before history existed loads unchanged; history
+    # appears lazily when that legacy record is first superseded (no migration).
+    with tempfile.TemporaryDirectory() as legacy:
+        l_url = "https://example.com/legacy/feed.json"
+        write_snapshot(legacy, l_url, "feed:example-feed", None, 200, b'{"legacy": true}')
+        ok(not os.path.isdir(os.path.join(legacy, HISTORY_DIR)),
+           "first fetch creates no history directory (legacy on-disk layout)")
+        got, meta = load_snapshot(legacy, l_url)
+        ok(got == b'{"legacy": true}', "legacy-shaped store replays unchanged")
+        ok(list_history(legacy, "https://example.com/never/historied.json") == [],
+           "a URL with no history lists empty, never fabricated")
+        write_snapshot(legacy, l_url, "feed:example-feed", None, 200, b'{"legacy": false}')
+        entries = list_history(legacy, l_url)
+        ok(len(entries) == 1,
+           "legacy record archived on first supersede (lazy, no migration)")
+        ok(load_history_entry(legacy, l_url, entries[0][0])[0] == b'{"legacy": true}',
+           "legacy bytes preserved verbatim in history")
 
     print(f"SNAPSHOT STORE SELFTEST OK ({checks} checks)")
 

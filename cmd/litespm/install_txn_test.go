@@ -69,8 +69,8 @@ func TestInstallMCPStateFailureRestoresConfigBytes(t *testing.T) {
 
 	dropLedgerTable(t, db)
 
-	_, err := installMCPFromListing(context.Background(), db, dataRoot,
-		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, nil, false, stdioRuntime(), nil)
+	_, err := installMCPFromListing(authorizedTestContext(), db, dataRoot,
+		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser, []string{"claude-code"}, false, stdioRuntime(), nil)
 	if err == nil {
 		t.Fatal("expected the injected state failure to fail the install")
 	}
@@ -99,7 +99,7 @@ func TestInstallMCPStateFailureRemovesCreatedConfig(t *testing.T) {
 
 	dropLedgerTable(t, db)
 
-	_, err := installMCPFromListing(context.Background(), db, dataRoot,
+	_, err := installMCPFromListing(authorizedTestContext(), db, dataRoot,
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"claude-code"}, false, stdioRuntime(), nil)
 	if err == nil {
@@ -134,7 +134,7 @@ func TestInstallMCPTwoHostStateFailureRestoresBoth(t *testing.T) {
 
 	dropLedgerTable(t, db)
 
-	_, err := installMCPFromListing(context.Background(), db, dataRoot,
+	_, err := installMCPFromListing(authorizedTestContext(), db, dataRoot,
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"claude-code", "cline"}, false, stdioRuntime(), nil)
 	if err == nil {
@@ -190,7 +190,7 @@ func TestInstallMCPRecordsNodeLevelPreImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outcome, err := installMCPFromListing(context.Background(), db, dataRoot,
+	outcome, err := installMCPFromListing(authorizedTestContext(), db, dataRoot,
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"claude-code"}, true, stdioRuntime(), nil)
 	if err != nil {
@@ -239,7 +239,7 @@ func TestInstallRemoveRestoresPriorEntrySymmetrically(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outcome, err := installMCPFromListing(context.Background(), db, dataRoot,
+	outcome, err := installMCPFromListing(authorizedTestContext(), db, dataRoot,
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"claude-code"}, true, stdioRuntime(), nil)
 	if err != nil {
@@ -295,7 +295,7 @@ func TestInstallRemoveKeepsUserEditedNode(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"litespm":{"command":"/usr/local/bin/litespm","args":["bridge","stdio","--host","claude-code"]}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := installMCPFromListing(context.Background(), db, dataRoot,
+	outcome, err := installMCPFromListing(authorizedTestContext(), db, dataRoot,
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"claude-code"}, false, stdioRuntime(), nil)
 	if err != nil {
@@ -341,7 +341,7 @@ func TestInstallRemovePreLedgerStripsViaRegistrations(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"litespm":{"command":"/usr/local/bin/litespm","args":["bridge","stdio","--host","claude-code"]},"mine":{"command":"npx"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := installMCPFromListing(context.Background(), db, dataRoot,
+	outcome, err := installMCPFromListing(authorizedTestContext(), db, dataRoot,
 		mcpListing("mcp:example:demo-mcp", "demo-mcp"), "1.0.0", domain.ScopeUser,
 		[]string{"claude-code"}, false, stdioRuntime(), nil)
 	if err != nil {

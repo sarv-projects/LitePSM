@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sarv-projects/litespm/internal/egress"
 )
 
 // LegacyClient implements the MCP 2025-03-26 / 2025-11-25 stateful Streamable
@@ -40,10 +42,12 @@ type LegacyClient struct {
 
 // ConnectLegacy creates a legacy MCP 2025-11-25 client (session profile
 // introduced in 2025-03-26 and retained in 2025-11-25).
+//
+// A nil httpClient builds a guarded client (fail-closed default); a
+// caller-supplied client is wrapped in the same guard rather than trusted
+// (see remoteEgressPolicy in client_2026.go).
 func ConnectLegacy(ctx context.Context, endpoint string, headers map[string]string, httpClient *http.Client) (*LegacyClient, error) {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 60 * time.Second}
-	}
+	httpClient = egress.WrapClient(httpClient, remoteEgressPolicy())
 
 	c := &LegacyClient{
 		endpoint:          endpoint,

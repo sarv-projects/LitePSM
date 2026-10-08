@@ -631,3 +631,169 @@ func TestSplitPositionals(t *testing.T) {
 		t.Errorf("items = %v", items)
 	}
 }
+
+// --- remote (URL) MCP entries in copy — B1, PART 4 Phase 2 Step 2.6 -------
+
+// TestPortingCopiesRemoteEntryBetweenCapableHosts: a remote entry read from
+// one capable host is written through the TARGET's own spelling (Claude Code's
+// mandatory type discriminator), as a DIRECT row — a URL entry has no argv
+// shape to translate — and L1 verifies the read-back fingerprint.
+func TestPortingCopiesRemoteEntryBetweenCapableHosts(t *testing.T) {
+	home, _ := pinCopyEnv(t)
+	writeCopyConfig(t, filepath.Join(home, ".cursor", "mcp.json"),
+		`{"mcpServers":{"demo":{"url":"https://mcp.example.com/mcp"}}}`)
+
+	var out bytes.Buffer
+	if code := runCopyTo(&out, []string{"--from", "cursor", "--to", "claude-code", "--apply", "--yes"}); code != 0 {
+		t.Fatalf("copy exit = %d, want 0\n%s", code, out.String())
+	}
+
+	got, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+	if err != nil {
+		t.Fatalf("target config not written: %v", err)
+	}
+	want := "{\n  \"mcpServers\": {\n  \"demo\": {\"type\":\"http\",\"url\":\"https://mcp.example.com/mcp\"}\n}\n}"
+	if string(got) != want {
+		t.Errorf("target is not the host's own remote spelling:\n got: %q\nwant: %q", got, want)
+	}
+	text := out.String()
+	if !strings.Contains(text, "DIRECT") || strings.Contains(text, "TRANSLATED") {
+		t.Errorf("a remote row must be DIRECT (no argv translation):\n%s", text)
+	}
+	if !strings.Contains(text, "L1 ok") {
+		t.Errorf("read-back verification did not pass:\n%s", text)
+	}
+}
+
+// TestPortingCopiesRemoteEntryJsonToTOML exercises the other direction: an
+// OpenCode remote entry (type:"remote", shape local-array) lands in Codex's
+// TOML as a bare url table, and the shape difference is NOT reported as a
+// translation because there is no argv to translate.
+func TestPortingCopiesRemoteEntryJsonToTOML(t *testing.T) {
+	home, _ := pinCopyEnv(t)
+	writeCopyConfig(t, filepath.Join(home, ".config", "opencode", "opencode.json"),
+		`{"mcp":{"demo":{"type":"remote","url":"https://mcp.example.com/mcp"}}}`)
+
+	var out bytes.Buffer
+	if code := runCopyTo(&out, []string{"--from", "opencode", "--to", "codex", "--apply", "--yes"}); code != 0 {
+		t.Fatalf("copy exit = %d, want 0\n%s", code, out.String())
+	}
+
+	got, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatalf("target config not written: %v", err)
+	}
+	want := "[mcp_servers.demo]\nurl = \"https://mcp.example.com/mcp\"\n"
+	if string(got) != want {
+		t.Errorf("target is not the byte-pinned TOML render:\n got: %q\nwant: %q", got, want)
+	}
+	if !strings.Contains(out.String(), "DIRECT") {
+		t.Errorf("remote row must be DIRECT:\n%s", out.String())
+	}
+}
+
+// TestPortingRemoteToIncapableTargetRefusesAndWritesNothing: gemini-cli has
+// no verified remote spec, so the row is reported "not copyable" with the
+// reason and the target config stays byte-identical — in plan mode AND in
+// apply mode.
+func TestPortingRemoteToIncapableTargetRefusesAndWritesNothing(t *testing.T) {
+	home, _ := pinCopyEnv(t)
+	t.Setenv("GEMINI_CLI_HOME", "")
+	writeCopyConfig(t, filepath.Join(home, ".cursor", "mcp.json"),
+		`{"mcpServers":{"demo":{"url":"https://mcp.example.com/mcp"}}}`)
+	targetPath := filepath.Join(home, ".gemini", "settings.json")
+	writeCopyConfig(t, targetPath,
+		`{"mcpServers":{"mine":{"command":"npx"}}}`)
+
+	// Plan mode: the refusal is printed, nothing is written.
+	var plan bytes.Buffer
+	if code := runCopyTo(&plan, []string{"--from", "cursor", "--to", "gemini-cli"}); code != 0 {
+		t.Fatalf("plan exit = %d, want 0\n%s", code, plan.String())
+	}
+	if !strings.Contains(plan.String(), "not copyable") || !strings.Contains(plan.String(), "gemini-cli") {
+		t.Errorf("plan must report the explicit not-copyable refusal:\n%s", plan.String())
+	}
+	if !strings.Contains(plan.String(), "LPSM-COPY-002") {
+		t.Errorf("refusal must carry the typed code:\n%s", plan.String())
+	}
+
+	// Apply mode: nothing writable → nothing applied, target untouched.
+	var applied bytes.Buffer
+	if code := runCopyTo(&applied, []string{"--from", "cursor", "--to", "gemini-cli", "--apply", "--yes"}); code != 0 {
+		t.Fatalf("apply exit = %d, want 0\n%s", code, applied.String())
+	}
+	if !strings.Contains(applied.String(), "Nothing to apply") {
+		t.Errorf("apply must report nothing to write:\n%s", applied.String())
+	}
+	after, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(after) != `{"mcpServers":{"mine":{"command":"npx"}}}` {
+		t.Errorf("target config changed:\n%s", after)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cursor", "mcp.json")); err != nil {
+		t.Errorf("source config was modified: %v", err)
+	}
+}
+
+// TestPortingRemoteCopyRestoresByteIdenticalPreInstallState is the cmd-level
+// half of Step 2.3: a remote entry written by copy carries a real install
+// record and deployment mutation, and `restore` puts the pre-install bytes
+// back exactly — the ledger-driven path `litespm restore` replays.
+func TestPortingRemoteCopyRestoresByteIdenticalPreInstallState(t *testing.T) {
+	home, dataRoot := pinCopyEnv(t)
+	writeCopyConfig(t, filepath.Join(home, ".cursor", "mcp.json"),
+		`{"mcpServers":{"demo":{"url":"https://mcp.example.com/mcp"}}}`)
+	targetPath := filepath.Join(home, ".claude.json")
+	original := "{\n  \"mcpServers\": {\n" +
+		"    \"litespm\": {\"command\": \"litespm\", \"args\": [\"bridge\"]},\n" +
+		"    \"mine\": {\"command\": \"npx\"}\n" +
+		"  }\n}\n"
+	writeCopyConfig(t, targetPath, original)
+
+	var out bytes.Buffer
+	if code := runCopyTo(&out, []string{"--from", "cursor", "--to", "claude-code", "--apply", "--yes"}); code != 0 {
+		t.Fatalf("copy exit = %d, want 0\n%s", code, out.String())
+	}
+	installed := string(fileBytes(t, targetPath))
+	if !strings.Contains(installed, "https://mcp.example.com/mcp") || !strings.Contains(installed, `"type":"http"`) {
+		t.Fatalf("remote entry was not installed:\n%s", installed)
+	}
+	if !strings.Contains(installed, `"mine": {"command": "npx"}`) {
+		t.Fatalf("sibling lost during install:\n%s", installed)
+	}
+
+	ctx := context.Background()
+	db, err := state.Open(filepath.Join(dataRoot, "state.db"))
+	if err != nil {
+		t.Fatalf("open state: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	listingID := porting.AdoptedListingID(porting.KindMCP, "cursor", "demo")
+	var installID string
+	recs, err := db.ListInstalls(ctx, domain.ScopeUser, "")
+	if err != nil {
+		t.Fatalf("ListInstalls: %v", err)
+	}
+	for _, r := range recs {
+		if r.ListingID == listingID {
+			installID = r.InstallID
+		}
+	}
+	if installID == "" {
+		t.Fatalf("no install row for %s (rows: %+v)", listingID, recs)
+	}
+
+	if _, err := restoreInstall(ctx, db, dataRoot, installID); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	restored := string(fileBytes(t, targetPath))
+	if restored != original {
+		t.Errorf("restore is not byte-identical\nwant: %q\ngot:  %q", original, restored)
+	}
+	if _, err := db.GetInstall(ctx, installID); err == nil {
+		t.Error("install row survived restore")
+	}
+}

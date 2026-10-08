@@ -4,25 +4,51 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/sarv-projects/litespm/internal/domain"
 )
 
-// MCPRegistryServerSchema represents the upstream server.json schema from the MCP Registry.
+// The structs in this file decode the Official MCP Registry's server.json
+// documents against the authoritative 2025-12-11 schema
+// (https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json,
+// fetched and cross-checked against live documents from
+// https://registry.modelcontextprotocol.io/v0/servers).
+//
+// Two spellings are decoded deliberately, because both describe the same
+// fact and rejecting either would hard-fail documents that were valid for
+// the schema they were published under:
+//
+//   - the live 2025-12-11 schema: `repository` is an object, the package
+//     coordinate is `identifier`, `packages[].transport` is an object,
+//     remotes carry `type`, packages carry `environmentVariables[]`,
+//     `runtimeHint`, `packageArguments[]`, `runtimeArguments[]` and
+//     `fileSha256`;
+//   - the legacy spelling: `repository` a bare URL string, the coordinate
+//     in `name`, `transport` a bare string, remotes carrying `transport`,
+//     and `env`/`command`/`args`/`runtime` on the package.
+//
+// The live schema publishes package *coordinates* and, on roughly 1% of
+// entries, a `runtimeHint` — never a launch line. Nothing here synthesises
+// a command from `registryType`, `identifier` or `runtimeHint`: the legacy
+// `command`/`args` fields are only ever read when the document itself
+// declares them, and `environmentVariables[]` values (which may be
+// secrets) are never decoded at all — names only, mirroring
+// internal/interop's record rule.
 type MCPRegistryServerSchema struct {
 	Name        string                `json:"name"`
 	Title       string                `json:"title,omitempty"`
 	Description string                `json:"description"`
-	Repository  string                `json:"repository,omitempty"`
-	Homepage    string                `json:"homepage,omitempty"`
-	Categories  []string              `json:"categories,omitempty"`
-	Keywords    []string              `json:"keywords,omitempty"`
-	Publisher   *MCPRegistryPublisher `json:"publisher,omitempty"`
+	Repository  MCPRegistryRepository `json:"repository,omitempty"`
+	Homepage    string                `json:"homepage,omitempty"`   // legacy spelling (live: websiteUrl, not consumed)
+	Categories  []string              `json:"categories,omitempty"` // legacy
+	Keywords    []string              `json:"keywords,omitempty"`   // legacy
+	Publisher   *MCPRegistryPublisher `json:"publisher,omitempty"`  // legacy
 	Packages    []MCPRegistryPackage  `json:"packages,omitempty"`
 	Remotes     []MCPRegistryRemote   `json:"remotes,omitempty"`
-	Status      string                `json:"status,omitempty"`
+	Status      string                `json:"status,omitempty"` // legacy
 }
 
 type MCPRegistryPublisher struct {
@@ -31,22 +57,162 @@ type MCPRegistryPublisher struct {
 	Email string `json:"email,omitempty"`
 }
 
+// MCPRegistryRepository is the `repository` field: the 2025-12-11 schema
+// publishes an object (`url` + `source`, optionally `id`/`subfolder`);
+// older documents published the bare URL string. Both spellings carry the
+// same fact — where the source lives — so both decode.
+type MCPRegistryRepository struct {
+	URL       string `json:"url"`
+	Source    string `json:"source"`
+	ID        string `json:"id,omitempty"`
+	Subfolder string `json:"subfolder,omitempty"`
+}
+
+// UnmarshalJSON accepts the object spelling (2025-12-11) and the legacy
+// bare-string spelling. Anything else surfaces as the caller's typed
+// decode error, naming the field.
+func (r *MCPRegistryRepository) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		*r = MCPRegistryRepository{URL: s}
+		return nil
+	}
+	type plain MCPRegistryRepository
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*r = MCPRegistryRepository(p)
+	return nil
+}
+
+// MCPRegistryTransport decodes a package's `transport`: the 2025-12-11
+// schema publishes an object ({"type":"stdio", …}); older documents
+// published a bare string ("stdio"). TransportType returns the declared
+// type exactly as the document spelled it — never a guess.
+type MCPRegistryTransport struct {
+	Type    string                     `json:"type,omitempty"`
+	URL     string                     `json:"url,omitempty"`
+	Headers []MCPRegistryKeyValueInput `json:"headers,omitempty"`
+
+	bare string // legacy bare-string spelling
+}
+
+// UnmarshalJSON accepts the object spelling (2025-12-11) and the legacy
+// bare-string spelling.
+func (t *MCPRegistryTransport) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		*t = MCPRegistryTransport{bare: s}
+		return nil
+	}
+	type plain MCPRegistryTransport
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*t = MCPRegistryTransport(p)
+	return nil
+}
+
+// TransportType returns the declared transport type verbatim ("stdio",
+// "streamable-http", "sse", or the legacy "http"/bare string).
+func (t MCPRegistryTransport) TransportType() string {
+	if b := strings.TrimSpace(t.bare); b != "" {
+		return b
+	}
+	return strings.TrimSpace(t.Type)
+}
+
+// MCPRegistryKeyValueInput is one `environmentVariables[]` or transport
+// `headers[]` entry of the 2025-12-11 schema. Only the NAME is decoded:
+// the schema's `value` member may carry a secret, and neither this adapter
+// nor internal/interop ever reads an environment or header value — the
+// import record is names-only by design.
+type MCPRegistryKeyValueInput struct {
+	Name string `json:"name"`
+}
+
+// MCPRegistryArgument is one `packageArguments[]`/`runtimeArguments[]`
+// entry. Deliberately no fields: LiteSPM records that a document declares
+// arguments (and may name a named flag), never their values, because
+// argument values with no executable to attach them to read like a command
+// line LiteSPM would be inventing.
+type MCPRegistryArgument struct{}
+
 type MCPRegistryPackage struct {
-	RegistryType string            `json:"registryType"` // npm | pypi | cargo | oci | mcpb
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Digest       string            `json:"digest,omitempty"`    // sha256:<hex>
-	Runtime      string            `json:"runtime,omitempty"`   // node | python | docker
-	Transport    string            `json:"transport,omitempty"` // stdio | http | sse
-	Command      string            `json:"command,omitempty"`
-	Args         []string          `json:"args,omitempty"`
-	Env          map[string]string `json:"env,omitempty"`
+	RegistryType         string                     `json:"registryType"` // npm | pypi | cargo | oci | nuget | mcpb
+	Identifier           string                     `json:"identifier,omitempty"`
+	Name                 string                     `json:"name,omitempty"` // legacy spelling of the coordinate
+	Version              string                     `json:"version"`
+	Digest               string                     `json:"digest,omitempty"`     // legacy: sha256:<hex>
+	FileSha256           string                     `json:"fileSha256,omitempty"` // live: bare 64 lowercase hex
+	RegistryBaseURL      string                     `json:"registryBaseUrl,omitempty"`
+	RuntimeHint          string                     `json:"runtimeHint,omitempty"`
+	Transport            MCPRegistryTransport       `json:"transport,omitempty"`
+	EnvironmentVariables []MCPRegistryKeyValueInput `json:"environmentVariables,omitempty"`
+	PackageArguments     []MCPRegistryArgument      `json:"packageArguments,omitempty"`
+	RuntimeArguments     []MCPRegistryArgument      `json:"runtimeArguments,omitempty"`
+
+	// Legacy launch metadata. Read only when the document declares it;
+	// never derived from registryType, identifier or runtimeHint.
+	Runtime string            `json:"runtime,omitempty"` // node | python | docker
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
+// Coordinate returns the registry-qualified package coordinate: the live
+// schema's `identifier`, or the legacy `name` spelling when that is what
+// the document published.
+func (p MCPRegistryPackage) Coordinate() string {
+	if c := strings.TrimSpace(p.Identifier); c != "" {
+		return c
+	}
+	return strings.TrimSpace(p.Name)
 }
 
 type MCPRegistryRemote struct {
-	URL       string `json:"url"`
-	Transport string `json:"transport"`          // http | sse
-	AuthType  string `json:"authType,omitempty"` // oauth2 | api_key | none
+	URL       string                     `json:"url"`
+	Type      string                     `json:"type,omitempty"`      // 2025-12-11 spelling
+	Transport string                     `json:"transport,omitempty"` // legacy spelling
+	AuthType  string                     `json:"authType,omitempty"`  // legacy
+	Headers   []MCPRegistryKeyValueInput `json:"headers,omitempty"`   // 2025-12-11 (values never decoded)
+}
+
+// TransportType returns the declared remote transport verbatim: `type` on
+// the live schema, `transport` on the legacy spelling.
+func (r MCPRegistryRemote) TransportType() string {
+	if t := strings.TrimSpace(r.Type); t != "" {
+		return t
+	}
+	return strings.TrimSpace(r.Transport)
+}
+
+// mcpRegistryHex64 matches the 2025-12-11 schema's fileSha256 pattern
+// (^[a-f0-9]{64}$) exactly as published.
+var mcpRegistryHex64 = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+// IsRegistryListEnvelope reports whether data is the registry API's list
+// response ({"servers":[{"server":{…},"_meta":{…}},…],"metadata":{…}}),
+// which is a collection of versioned server documents with pagination —
+// not a server.json document or feed. Shared with internal/interop so both
+// consumers name the shape the same way instead of failing on an
+// incidental field.
+func IsRegistryListEnvelope(data []byte) bool {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return false
+	}
+	_, hasServers := probe["servers"]
+	_, hasName := probe["name"]
+	return hasServers && !hasName
 }
 
 // MCPRegistryAdapter normalizes the Official MCP Registry feed into LiteSPM domain entities.
@@ -84,6 +250,17 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 		var singleServer MCPRegistryServerSchema
 		if errSingle := json.Unmarshal(a.rawFeed, &singleServer); errSingle != nil {
 			return nil, fmt.Errorf("failed to parse MCP registry feed as array or object: %w", err)
+		}
+		// Two shapes decode as an object but are not a server document;
+		// naming them beats returning an empty ingest as if the feed had
+		// simply contained nothing.
+		if strings.TrimSpace(singleServer.Name) == "" {
+			if IsRegistryListEnvelope(a.rawFeed) {
+				return nil, fmt.Errorf(
+					"feed is a registry API list response ({\"servers\": [...]}), not a server.json feed: pass an array of the server documents it lists (or a single server document)")
+			}
+			return nil, fmt.Errorf(
+				"failed to parse MCP registry feed as array or object: single object declares no server name")
 		}
 		rawServers = []MCPRegistryServerSchema{singleServer}
 	}
@@ -124,7 +301,18 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 		})
 
 		// Process packages
-		for _, pkg := range srv.Packages {
+		for i, pkg := range srv.Packages {
+			coord := pkg.Coordinate()
+			if coord == "" {
+				// The live schema requires `identifier`; the legacy
+				// spelling is `name`. A package with neither declares no
+				// coordinate at all — an unparseable document, refused
+				// with the field that is missing.
+				return nil, fmt.Errorf("server %q packages[%d].identifier is required (the registry package coordinate; legacy documents use \"name\")", srv.Name, i)
+			}
+			if pkg.FileSha256 != "" && !mcpRegistryHex64.MatchString(pkg.FileSha256) {
+				return nil, fmt.Errorf("server %q packages[%d].fileSha256 %q is not 64 lowercase hex characters", srv.Name, i, pkg.FileSha256)
+			}
 			verStr := strings.TrimSpace(pkg.Version)
 			if verStr == "" {
 				// A package that published no version contributes nothing
@@ -152,30 +340,50 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 				artType = domain.ArtifactCargo
 			case "oci":
 				artType = domain.ArtifactOCI
+			case "nuget":
+				artType = domain.ArtifactNuGet
 			case "mcpb":
 				artType = domain.ArtifactMCPB
 			}
 
-			artID := fmt.Sprintf("art_%s_%s", pkg.Name, verStr)
-			locator := pkg.Name
+			artID := fmt.Sprintf("art_%s_%s", coord, verStr)
+			locator := coord
 			if pkg.RegistryType == "npm" {
-				locator = fmt.Sprintf("https://registry.npmjs.org/%s/-/%s-%s.tgz", pkg.Name, pkg.Name, verStr)
+				locator = fmt.Sprintf("https://registry.npmjs.org/%s/-/%s-%s.tgz", coord, coord, verStr)
+			}
+
+			// The live schema publishes a bare package-file hash in
+			// `fileSha256`; the legacy spelling is `digest` with the
+			// sha256: prefix already attached. Both land in the artifact's
+			// digest in the one vocabulary domain.ArtifactRef documents.
+			digest := pkg.Digest
+			if digest == "" && pkg.FileSha256 != "" {
+				digest = "sha256:" + pkg.FileSha256
 			}
 
 			artifact := domain.ArtifactRef{
 				ArtifactID:  artID,
 				Type:        artType,
 				Locator:     locator,
-				Digest:      pkg.Digest,
+				Digest:      digest,
 				FetchPolicy: domain.FetchImmutable,
 			}
 
+			// Command and Args are read only from the document's own
+			// legacy `command`/`args` fields — never derived from
+			// registryType, identifier or runtimeHint, none of which the
+			// live schema claims start anything. `environmentVariables[]`
+			// (live) is deliberately not mapped into Env: Env is a
+			// name→value map, a live entry is a required input that often
+			// declares no value at all, and inventing either a value or an
+			// empty one would be a fabricated fact — interop records the
+			// names instead.
 			component := domain.Component{
 				ID:   string(domain.NewComponentID(listingID, verStr, domain.ComponentMCPProvider, "server")),
 				Kind: domain.ComponentMCPProvider,
 				Name: "server",
 				Runtime: &domain.RuntimeDescriptor{
-					Type:    pkg.Transport,
+					Type:    pkg.Transport.TransportType(),
 					Command: pkg.Command,
 					Args:    pkg.Args,
 					Env:     pkg.Env,
@@ -230,7 +438,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 				Kind: domain.ComponentMCPProvider,
 				Name: "server",
 				Runtime: &domain.RuntimeDescriptor{
-					Type:     rem.Transport,
+					Type:     rem.TransportType(),
 					Endpoint: rem.URL,
 				},
 				SupportedByLiteSPM: domain.SupportYes,
@@ -264,7 +472,7 @@ func (a *MCPRegistryAdapter) Ingest(ctx context.Context, snapshotID string) (*In
 			Source: domain.SourceReference{
 				SourceID:   string(a.sourceID),
 				UpstreamID: srv.Name,
-				URL:        srv.Repository,
+				URL:        srv.Repository.URL,
 			},
 			Versions:             versionSummaries,
 			ComponentsSummary:    compSummaries,

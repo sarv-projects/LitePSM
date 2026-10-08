@@ -76,7 +76,8 @@
     "keyPath": "mcpServers",
     "shape": "object",
     "userPath": "~/.claude.json",
-    "generic": false
+    "generic": false,
+    "remote": true
   },
   {
     "id": "cline",
@@ -85,7 +86,8 @@
     "keyPath": "mcpServers",
     "shape": "object",
     "userPath": "~/.cline/data/settings/cline_mcp_settings.json",
-    "generic": false
+    "generic": false,
+    "remote": true
   },
   {
     "id": "codearts-agent",
@@ -125,7 +127,8 @@
     "keyPath": "mcp_servers",
     "shape": "object",
     "userPath": "~/.codex/config.toml",
-    "generic": false
+    "generic": false,
+    "remote": true
   },
   {
     "id": "command-code",
@@ -165,7 +168,8 @@
     "shape": "object",
     "userPath": "~/.cursor/mcp.json",
     "docsUrl": "https://cursor.com/docs/mcp",
-    "generic": true
+    "generic": true,
+    "remote": true
   },
   {
     "id": "deepagents",
@@ -254,7 +258,8 @@
     "keyPath": "mcp_servers",
     "shape": "object",
     "userPath": "~/.grok/config.toml",
-    "generic": false
+    "generic": false,
+    "remote": true
   },
   {
     "id": "iflow-cli",
@@ -374,7 +379,8 @@
     "keyPath": "mcp",
     "shape": "local-array",
     "userPath": "~/.config/opencode/opencode.json",
-    "generic": false
+    "generic": false,
+    "remote": true
   },
   {
     "id": "openhands",
@@ -393,7 +399,8 @@
     "keyPath": "mcpServers",
     "shape": "object",
     "userPath": "~/.pi/agent/mcp.json",
-    "generic": false
+    "generic": false,
+    "remote": true
   },
   {
     "id": "pochi",
@@ -494,6 +501,7 @@
     "shape": "object",
     "userPath": "~/.config/zed/settings.json",
     "docsUrl": "https://zed.dev/docs/ai/mcp",
-    "generic": true
+    "generic": true,
+    "remote": true
   }
 ]
