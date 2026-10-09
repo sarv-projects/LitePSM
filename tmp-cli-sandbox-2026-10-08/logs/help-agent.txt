@@ -1,0 +1,33 @@
+LITESPM AGENT
+
+List installable coding agents and resolve how to launch one here.
+
+USAGE
+  litespm agent list [--registry <url>] [--file <path>] [--json]
+  litespm agent resolve <id> [--registry <url>] [--file <path>] [--json]
+
+WHAT IT DOES
+  - `list` prints the agents the registry offers, with the launch strategy
+     that applies to this operating system and architecture.
+  - `resolve <id>` computes that agent's launch spec: executable, arguments,
+     environment and — when the registry publishes one — the archive and
+     its SHA-256.
+
+WHAT IT DOES NOT
+  - Does not download, install or start the agent: resolve reports the spec,
+     it does not act on it.
+  - Does not install MCP servers or skills; that is `litespm install` and
+     `litespm skills add`.
+
+EXAMPLES
+  1. litespm agent list
+  2. litespm agent list --json
+  3. litespm agent resolve <agent-id>
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  install · host · capabilities

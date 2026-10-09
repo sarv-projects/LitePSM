@@ -1,0 +1,5 @@
+Removing the LiteSPM bridge entry from every agent host config…
+
+
+Dry run: 0 host config(s) would be modified, 50 had nothing to remove, 0 could not be read.
+Re-run without --dry-run to apply.

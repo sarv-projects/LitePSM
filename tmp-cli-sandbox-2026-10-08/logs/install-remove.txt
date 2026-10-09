@@ -1,0 +1,2 @@
+✓ Removed inst_user_mcp_adopted_codex_sandbox-demo_8770fc60
+  LiteSPM's entries were stripped from the host configs; nodes you edited were kept.

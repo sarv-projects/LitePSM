@@ -1,0 +1,43 @@
+LITESPM INSTALL
+
+Install a capability, or remove one install surgically.
+
+USAGE
+  litespm install <listing-id> [--version <ver>] [--scope user|project]
+                 [--host <host-id>]... [--env <VAR>]...
+                 [--force] [--frozen]
+  litespm install remove <installId>
+
+WHAT IT DOES
+  - Resolves the listing in the local index, records a plan plus your
+     approval, then installs: skills are copied as files into the agent's own
+     skill directory, and MCP servers are registered as a named entry in each
+     configured agent's config.
+  - `--host` names the agents to register with (repeatable; default: every
+     agent where `litespm host setup` has been run). `--env <VAR>` forwards an
+     environment variable NAME as a reference the agent expands.
+  - `install remove <installId>` strips only LiteSPM's entries and keeps any
+     node you edited; `--frozen` installs exactly the version `litespm lock`
+     recorded.
+
+WHAT IT DOES NOT
+  - Never writes a secret value: `--env` records a name/reference only, so the
+     credential stays where your agent was started.
+  - Plugin listings fail closed with LPSM-ARTIFACT-UNAVAILABLE — there is no
+     plugin artifact source yet, so no plugin is ever half-installed.
+  - Does not touch an agent that has no LiteSPM bridge entry, and refuses a
+     name collision instead of overwriting (unless you pass `--force`).
+
+EXAMPLES
+  1. litespm install <listing-id>
+  2. litespm install <listing-id> --host codex --env GITHUB_TOKEN
+  3. litespm install <listing-id> --frozen
+  4. litespm install remove <installId>
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  restore · lock · skills · list

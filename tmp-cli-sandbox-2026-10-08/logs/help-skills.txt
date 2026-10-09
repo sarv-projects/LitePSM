@@ -1,0 +1,38 @@
+LITESPM SKILLS
+
+Add, list, update and remove SKILL.md skills through the skills ledger.
+
+USAGE
+  litespm skills add <source> [--skill <n>] [--agent <id>] [--global] [--yes]
+  litespm skills list [--json]
+  litespm skills update <name>... --source <src> [--ref <r>] [--dry-run]
+  litespm skills remove <name>|--all [--scope project|global] [--dry-run]
+
+WHAT IT DOES
+  - `add` copies portable SKILL.md directories into each selected agent's own
+     skills tree and records every directory it created in the skills ledger.
+  - `list` prints that ledger (skill, host, directory); `update` re-copies a
+     named skill from its source; `remove` deletes only directories the ledger
+     names, and reports what it kept.
+
+WHAT IT DOES NOT
+  - Never guesses a path: a directory the ledger does not name is never
+     removed, and a directory holding files you added afterwards is kept
+     unless you pass `--force`.
+  - Does not audit skill safety: risk data is not collected, so a skill is
+     reported unverified rather than shown as trusted.
+  - Cross-scope removal is refused per entry instead of deleting silently
+     (`remove --all` still respects `--scope`).
+
+EXAMPLES
+  1. litespm skills list
+  2. litespm skills add <source> --list
+  3. litespm skills remove --all --dry-run
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  install · list · agent

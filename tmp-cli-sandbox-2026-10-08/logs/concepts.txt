@@ -1,0 +1,72 @@
+LiteSPM concepts
+
+The words `litespm list`, `litespm inventory` and every help page use.
+
+PACKAGE
+  A thing you install from the catalog: one row with an id such as
+  mcp:<source>:<name>, a version and a publisher. A package may contain more
+  than one piece (a plugin can bundle a skill, an MCP server and a hook).
+
+CAPABILITY
+  something your agent can DO. A tool such as "search the web" or "read a
+  file" is a capability. `litespm capabilities list` shows the ones
+  discovered from your installed MCP servers.
+
+AGENT
+  the AI coding tool you actually work with. LiteSPM configures agents; it is
+  not one. Each supported agent reads its own config file, and LiteSPM's
+  adapters know where each of them keeps it (`litespm host list`).
+
+MCP SERVER
+  a small service an agent can talk to through the Model Context Protocol —
+  this is what lets an AI work with services such as GitHub, databases and
+  browsers. In an agent's config it appears as one named entry with a command
+  and arguments.
+
+SKILL
+  a portable set of instructions (a SKILL.md directory) that teaches an agent
+  how to do a kind of task. LiteSPM copies it into the agent's own skills
+  tree and records the directory in the skills ledger.
+
+PLUGIN
+  a bundle of several of the pieces above (skill, MCP server, rules, hooks)
+  shipped as one package. Plugin installs are not available yet: they fail
+  with LPSM-ARTIFACT-UNAVAILABLE rather than installing half a bundle.
+
+BRIDGE
+  the one entry LiteSPM registers in an agent's config. The agent starts
+  `litespm bridge stdio` when it needs a capability, and the bridge
+  forwards to the LiteSPM daemon. One entry serves every managed package, so
+  installing does not grow your config.
+
+SCOPE
+  user (also called global) means it applies to everything you run on this
+  machine; project means it applies to one checkout of a project. `--global`
+  and `--project <dir>` select between them.
+
+MANAGED / OBSERVED / ADOPTED
+  managed: LiteSPM controls its lifecycle — it wrote it, and `install remove`
+  or `restore` can take it out again.
+  observed: LiteSPM FOUND it in an agent's own config and reports it read-only;
+  it never edits or removes an observed entry.
+  adopted: you asked LiteSPM to take over an existing entry (via `copy`),
+  so it is managed now, with its origin recorded as adopted — never as
+  catalog-verified.
+
+CAPABILITY vs DEPLOYMENT
+  a capability is the thing itself; a deployment is one copy of it living in
+  one place. The same skill in three agents is ONE capability and THREE
+  deployments, which is why `litespm list` counts both, like this:
+  18 unique capabilities · 27 deployments.
+
+REFERENCE vs VALUE
+  a reference is the NAME of an environment variable (GITHUB_TOKEN); a value
+  is what the variable holds. LiteSPM moves references only: `install --env`
+  records ${GITHUB_TOKEN} in a config, and a literal secret found in a source
+  is reported by name and dropped, never written anywhere.
+
+Drift, and the quiet cells:
+  drifted means the recorded write and what is on disk no longer agree —
+  LiteSPM reports it and changes nothing. broken means something recorded is
+  missing. A cell the data cannot answer shows —` or "not knowable";
+  LiteSPM never fills it in with a plausible guess.

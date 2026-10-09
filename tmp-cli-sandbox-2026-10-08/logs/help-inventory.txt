@@ -1,0 +1,37 @@
+LITESPM INVENTORY
+
+Print machine-state truth as JSON: one record per deployment.
+
+USAGE
+  litespm inventory [mcp|skills|plugins] [--agent <id>]
+    [--managed|--observed|--drifted]  [--project <dir>|--global]  [--json]
+
+WHAT IT DOES
+  - Reads exactly the sources `litespm list` reads and emits them as a stable
+     JSON document (schema `litespm.inventory/v1`): one record per deployment,
+     with kind, id, name, agent, scope, state, placement, origin, install id,
+     config path, locator, entry style, digests, timestamps and a
+     plain-language detail.
+  - `counts` separates `uniqueCapabilities` from `deployments`, `capturedAt`
+     is when the observations were taken, and `warnings` carries every source
+     that could not be read — a degraded read is reported, never silently
+     treated as empty.
+
+WHAT IT DOES NOT
+  - Does not health-check, and does not report a value it did not read:
+     unknown fields are empty strings, never a plausible guess.
+  - Does not write anything, and adds no state table. `--json` is accepted for
+     symmetry; JSON is the only output this command has.
+
+EXAMPLES
+  1. litespm inventory
+  2. litespm inventory --json
+  3. litespm inventory mcp --agent codex --json
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  list · doctor

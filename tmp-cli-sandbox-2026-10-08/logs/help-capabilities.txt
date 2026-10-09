@@ -1,0 +1,38 @@
+LITESPM CAPABILITIES
+
+List, search and describe the tools discovered from installed MCP servers.
+
+USAGE
+  litespm capabilities list [--limit <n>]
+  litespm capabilities search <query> [--limit <n>]
+  litespm capabilities describe --capability <id>
+  litespm capabilities refresh [--host <id>]...
+
+WHAT IT DOES
+  - `refresh` starts each installed MCP server LiteSPM registered and records
+     the tools it actually exposes; `list` and `search` read those recorded
+     rows; `describe` prints one tool's input schema and the command behind
+     it.
+  - `refresh --host` restricts probing to named agents (repeatable); the
+     default is every agent with a verified bridge entry. `--host` is not
+     accepted by `list` or `search` because discovered rows are stored per
+     provider, not per host.
+
+WHAT IT DOES NOT
+  - Nothing is probed until you run `refresh`: an empty list means nothing has
+     been discovered yet, not that you have no tools.
+  - Does not invoke tools — that is `litespm invoke` — and a server that
+     will not start is reported per server, without abandoning the others.
+
+EXAMPLES
+  1. litespm capabilities refresh
+  2. litespm capabilities list
+  3. litespm capabilities search github
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  invoke · grant · doctor

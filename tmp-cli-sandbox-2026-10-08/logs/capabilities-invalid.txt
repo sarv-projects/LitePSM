@@ -1,0 +1,14 @@
+Unknown command "nonsense"
+
+Usage: litespm capabilities <command> [flags]
+
+Commands:
+  list        List the tools discovered from installed MCP servers
+  search      Search discovered tools by name or description
+  describe    Show one discovered tool's input schema and the command behind it
+  refresh     Re-probe installed MCP servers and update their tool lists
+
+Flags:
+  --host <id>   For refresh only, probe this host (repeatable; default: configured hosts)
+  --capability <id>   For describe, the capability to show
+  --limit <n>   For list/search, maximum rows to print (default 50)

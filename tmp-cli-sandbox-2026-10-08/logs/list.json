@@ -1,0 +1,24 @@
+{
+  "schema": "litespm.inventory/v1",
+  "capturedAt": "2026-10-08T21:16:15Z",
+  "filters": {
+    "kind": "",
+    "agent": "",
+    "state": "",
+    "scope": "all",
+    "projectDir": ""
+  },
+  "counts": {
+    "uniqueCapabilities": 0,
+    "deployments": 0,
+    "unplaced": 0,
+    "managed": 0,
+    "observed": 0,
+    "adopted": 0,
+    "drifted": 0,
+    "broken": 0,
+    "unknown": 0
+  },
+  "records": [],
+  "warnings": []
+}

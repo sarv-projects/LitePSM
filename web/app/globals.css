@@ -61,6 +61,7 @@
 @layer base {
   :root {
     color-scheme: light;
+    --site-header-height: 48px;
 
     --paper: #f5f7fb;
     --surface: #ffffff;
@@ -128,6 +129,12 @@
     --h-ctl: 36px;
     --h-ctl-sm: 32px;
     --h-ctl-lg: 40px;
+  }
+
+  @media (max-width: 767px) {
+    :root {
+      --site-header-height: 92px;
+    }
   }
 
   /*

@@ -46,14 +46,15 @@ def main() -> int:
             raise AssertionError(msg)
         checks += 1
 
-    record_url = "https://skills.sh/api/download/acme/demo-skill/demo"
+    record_url = "https://skills.sh/acme/demo-skill/demo"
     nav_url = "https://skills.sh/sitemap-skills-1.xml"
     never_url = "https://example.org/never/recorded"
+    record_body = b'<script type="application/ld+json">{}</script>'
 
     with tempfile.TemporaryDirectory() as root:
         # Two recordings, both fresh: the store marks them `partial`.
         snapshot_store.write_snapshot(
-            root, record_url, "feed:skills-sh", None, 200, b'{"files": []}')
+            root, record_url, "feed:skills-sh", None, 200, record_body)
         snapshot_store.write_snapshot(
             root, nav_url, "feed:skills-sh", None, 200, b"<urlset></urlset>")
 
@@ -100,7 +101,7 @@ def main() -> int:
         ok(open(meta_path, "rb").read() == before, "healthy record byte-stable across re-runs")
 
         # A recording the run never consumed must stay partial.
-        cold_url = "https://skills.sh/api/download/acme/cold/cold"
+        cold_url = "https://skills.sh/acme/cold/cold"
         snapshot_store.write_snapshot(root, cold_url, "feed:skills-sh", None, 200, b"{}")
         producer._reset_run_ledger()
         promoted3, _, _, missing3 = producer.finalize_consumed_snapshots(root)
@@ -129,9 +130,9 @@ def main() -> int:
            and archived["snapshot"].get("itemCount") == 1,
            "history keeps the finalized record exactly as it stood")
         body1, rec1 = snapshot_store.load_history_entry(root, record_url, entry1)
-        ok(body1 == b'{"files": []}',
+        ok(body1 == record_body,
            "history replays the bytes that were actually fetched")
-        ok(rec1["snapshot"]["contentDigest"] == snapshot_store.digest_bytes(b'{"files": []}'),
+        ok(rec1["snapshot"]["contentDigest"] == snapshot_store.digest_bytes(record_body),
            "history digest matches the archived bytes")
         cur_body, cur = snapshot_store.load_snapshot(root, record_url)
         ok(cur_body == b'{"files": [{}]}' and cur["snapshot"]["status"] == "partial",
@@ -144,7 +145,7 @@ def main() -> int:
         entries = snapshot_store.list_history(root, record_url)
         ok(len(entries) == 2, f"both superseded fetches kept, got {len(entries)}")
         ok(snapshot_store.load_history_entry(root, record_url, entries[0][0])[0]
-           == b'{"files": []}',
+           == record_body,
            "history entries stay ordered oldest-first")
         ok(len(snapshot_store.list_history(root, never_url)) == 0,
            "a URL never recorded has no history (never fabricated)")

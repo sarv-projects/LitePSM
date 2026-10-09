@@ -95,6 +95,29 @@ func TestBuildCatalogReleaseAdvancesAuthority(t *testing.T) {
 	}
 }
 
+func TestCatalogBuildPrintsActualManifestDigest(t *testing.T) {
+	dataset := writeBuildDataset(t)
+	outDir := t.TempDir()
+	prevPath := filepath.Join(outDir, "v1", "current.json")
+
+	output := captureStdout(t, func() {
+		runCatalogBuild([]string{
+			"--dataset", dataset,
+			"--out", outDir,
+			"--prev", prevPath,
+			"--created-at", "2026-10-08T12:00:00Z",
+		})
+	})
+	pointer, _, err := catalogbuild.VerifyMaterializedTree(outDir)
+	if err != nil {
+		t.Fatalf("verify CLI-built tree: %v", err)
+	}
+	if !strings.Contains(output, "Manifest: "+pointer.ManifestDigest) {
+		t.Fatalf("catalog build did not print the pointer's actual manifest digest %s:\n%s",
+			pointer.ManifestDigest, output)
+	}
+}
+
 func TestBuildCatalogReleaseRejectsNonAdvancingSequence(t *testing.T) {
 	dataset := writeBuildDataset(t)
 	outDir := t.TempDir()

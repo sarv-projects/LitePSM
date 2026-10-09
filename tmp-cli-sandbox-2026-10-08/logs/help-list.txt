@@ -1,0 +1,49 @@
+LITESPM LIST
+
+Show what is deployed on this machine, for a person to read.
+
+USAGE
+  litespm list [agents|mcp|skills|plugins] [flags]
+    --agent <id>        only this agent
+    --managed           only what LiteSPM controls
+    --observed          only what LiteSPM found but does not control
+    --drifted           only what changed (or went missing) since install
+    --project <dir>     only project-scope rows for that directory
+    --global            only user-scope rows
+    --kind <kind>       the same kind filter as the positional word
+    --json              the machine-readable inventory instead of tables
+
+WHAT IT DOES
+  - Reads the same sources as `litespm inventory` — install rows, the
+     deployment ledger, the skills ledger and each agent adapter's read-only
+     detection — and prints tables grouped by agent and by kind.
+  - Counts unique capabilities separately from deployments: one capability
+     installed for three agents is one capability and three deployments, and
+     the headline says so (`N unique capabilities · M deployments`).
+  - Labels every row honestly: managed (LiteSPM controls its lifecycle),
+     observed (LiteSPM found it in an agent config), adopted (copied from
+     another agent and now managed), drifted (changed since install), broken
+     (recorded but missing). A cell the data cannot answer renders `—`.
+
+WHAT IT DOES NOT
+  - Does not health-check anything: no process is started, so no row claims
+     Ready, running or verified. State comes from recorded rows plus a config
+     read-back, and nothing else.
+  - Does not write, repair or adopt anything — `list` is read-only. Adoption
+     is not implemented yet, so an observed row stays observed.
+  - Does not invent counts, versions or compatibility: a field with no
+     recorded value renders `—` or `not knowable`.
+
+EXAMPLES
+  1. litespm list
+  2. litespm list agents
+  3. litespm list --drifted
+  4. litespm list --json
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  inventory · doctor · host

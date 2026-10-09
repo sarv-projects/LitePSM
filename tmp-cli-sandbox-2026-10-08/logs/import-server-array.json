@@ -1,0 +1,61 @@
+{
+  "format": "server.json",
+  "source": "/home/sarvesh/business_Dev/liteSPM/internal/interop/testdata/server-array.json",
+  "target": "/home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/imports/server-array/litespm.toml",
+  "targetState": "create",
+  "entries": [
+    {
+      "action": "add",
+      "id": "mcp:builtin:mcp-registry:remote-search",
+      "kind": "mcp",
+      "foreign": {
+        "remotes": [
+          {
+            "url": "https://mcp.example.com/sse",
+            "transport": "sse",
+            "authType": "oauth2"
+          }
+        ],
+        "transport": "sse"
+      },
+      "warnings": [
+        "server remote-search declares a remote endpoint only; imported unconstrained (endpoints publish no version)"
+      ]
+    },
+    {
+      "action": "add",
+      "id": "mcp:builtin:mcp-registry:versionless",
+      "kind": "mcp",
+      "foreign": {
+        "packages": [
+          {
+            "registryType": "pypi",
+            "name": "example-mcp",
+            "transport": "stdio",
+            "hasCommand": true
+          }
+        ],
+        "transport": "stdio"
+      },
+      "warnings": [
+        "server versionless.packages[0] publishes no version; its coordinate is reported, not pinned",
+        "server versionless publishes no package version; imported unconstrained (discovery-only upstream)"
+      ]
+    }
+  ],
+  "preservedExisting": 0,
+  "lossy": [
+    "server.json packages[]/remotes[] map to artifact and transport metadata — reported in the record above; the manifest writes id and constraint only (ARCH/32 §5 row 6)",
+    "publisher namespace-verification assertions (publisher plus registry-qualified package coordinates) are preserved in the record above, not flattened into the id",
+    "launch commands and environment VALUES are never imported or executed; only environment variable names are recorded",
+    "title, description, license, categories, keywords and homepage metadata are not imported (unknown fields are additionally reported as warnings)",
+    "litespm.lock is not written by import; run `litespm lock` to resolve the new requires against the local catalog index",
+    "import writes the manifest only — installing is a separate `litespm install` step (ARCH/32 §5)"
+  ],
+  "warnings": [
+    "mcp:builtin:mcp-registry:remote-search: server remote-search declares a remote endpoint only; imported unconstrained (endpoints publish no version)",
+    "mcp:builtin:mcp-registry:versionless: server versionless.packages[0] publishes no version; its coordinate is reported, not pinned",
+    "mcp:builtin:mcp-registry:versionless: server versionless publishes no package version; imported unconstrained (discovery-only upstream)"
+  ],
+  "applied": false
+}

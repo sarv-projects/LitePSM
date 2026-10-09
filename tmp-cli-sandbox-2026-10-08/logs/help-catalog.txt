@@ -1,0 +1,33 @@
+LITESPM CATALOG
+
+Synchronize the catalog index, or build the static release tree.
+
+USAGE
+  litespm catalog sync
+  litespm catalog build [--dataset <file>] [--out <dir>] [--release-id <id>]
+
+WHAT IT DOES
+  - `sync` fetches the published release pointer, manifest and listings,
+     verifies every digest, and rewrites the local index only when the whole
+     chain checks out.
+  - `build` compiles the catalog dataset into the static /v1 release tree the
+     website serves; `--verify` re-checks a tree against its own pointer.
+
+WHAT IT DOES NOT
+  - Does not install, update or remove anything: the catalog only feeds
+     `search`, `install` and `lock`.
+  - Does not write a partial index: a failed sync leaves the existing local
+     cache unchanged.
+
+EXAMPLES
+  1. litespm catalog sync
+  2. litespm search postgres # after a sync
+  3. litespm catalog build --verify web/public
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  search · install · lock

@@ -1,0 +1,3 @@
+lock digest sha256:19d4bbf919750b8e7324862573fc4ae12e97d9a2f0827ea5befaea8893384e30 verified
+manifest digest sha256:2d9b71e22ccdf88a98a02b22ab667fa991b0514e571597aa49f1a8c4e1a183c3 matches litespm.toml
+  plugin:claude-official:security-guidance 2.0.10  signature=none  result=unavailable  license=NOASSERTION

@@ -1501,7 +1501,7 @@ func runCatalogBuild(args []string) {
 	fmt.Printf("✓ Catalog release built\n")
 	fmt.Printf("  Release:  %s (sequence %d, %d items)\n", manifest.ReleaseID, output.Current.Sequence, manifest.ItemCount)
 	fmt.Printf("  Snapshot: %s\n", snapshotID)
-	fmt.Printf("  Manifest: %s\n", manifest.ContentDigest)
+	fmt.Printf("  Manifest: %s\n", output.ManifestDigest)
 	fmt.Printf("  Pointer:  %s\n", filepath.Join(*outDir, "v1", "current.json"))
 	fmt.Printf("  Tree:     %s\n", filepath.Join(*outDir, "v1", "releases", manifest.ReleaseID))
 }

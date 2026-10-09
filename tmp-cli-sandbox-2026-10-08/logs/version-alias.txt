@@ -1,0 +1,1 @@
+LiteSPM v0.3.0 (Protocol 2026-07-28, linux/amd64, go1.26.0)

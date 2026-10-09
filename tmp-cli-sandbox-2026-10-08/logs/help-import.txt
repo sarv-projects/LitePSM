@@ -1,0 +1,39 @@
+LITESPM IMPORT
+
+Import a foreign manifest (skills-lock, server.json, marketplace, plugin) into litespm.yml.
+
+USAGE
+  litespm import <format> <path> [--project <dir>] [--json]
+  litespm import <format> <path> --apply [--yes]
+
+WHAT IT DOES
+  - Parses the named file as untrusted input (size- and depth-bounded,
+     strictly schema-validated), normalizes it to LiteSPM `requires`, and
+     prints a plan: target file, entries added/changed/unchanged, the
+     preserved foreign record and a Skipped/lossy section — before anything
+     is written.
+  - Writes the project manifest only, and only after you approve the printed
+     plan: a terminal y/N, or `--apply --yes` for scripts. Installing is the
+     separate `litespm install` step; `litespm lock` resolves the new requires
+     afterwards.
+
+WHAT IT DOES NOT
+  - Never executes or fetches anything the file names: `command` marketplace
+     sources are rejected (LPSM-IMPORT-005), ids and paths with `..` or
+     absolute are refused (LPSM-IMPORT-003), and the input is capped at 8 MiB
+     (LPSM-IMPORT-001).
+  - Does not write litespm.lock and does not install: a lock entry must stay
+     reproducible from the manifest plus the local catalog, and v1 is
+     import-only (ARCH/32 §5).
+
+EXAMPLES
+  1. litespm import skills-lock ./skills-lock.json
+  2. litespm import server.json ./server.json --project . --apply --yes
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  lock · install · copy

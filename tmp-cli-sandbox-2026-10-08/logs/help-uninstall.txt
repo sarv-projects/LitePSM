@@ -1,0 +1,30 @@
+LITESPM UNINSTALL
+
+Remove LiteSPM's bridge entry from every agent config it touched.
+
+USAGE
+  litespm uninstall [--dry-run]
+
+WHAT IT DOES
+  - Plans first with `--dry-run`, then strips the LiteSPM bridge entry from
+     each agent config, keeping a pre-edit backup and leaving sibling entries
+     untouched.
+  - Prints what is still on disk afterwards, with the exact commands that deal
+     with it.
+
+WHAT IT DOES NOT
+  - Does not delete skill directories — they may hold files you added, so
+     they are reported, and `litespm skills remove` is the explicit opt-in.
+  - Does not delete the backups it wrote; those are your restore points.
+
+EXAMPLES
+  1. litespm uninstall --dry-run
+  2. litespm uninstall
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  host · skills · restore

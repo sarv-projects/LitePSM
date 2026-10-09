@@ -1,0 +1,35 @@
+LITESPM GRANT
+
+Issue, list and revoke the grants that authorize tool invocations.
+
+USAGE
+  litespm grant <capability-id>
+  litespm grant list
+  litespm grant revoke <capability-id>
+
+WHAT IT DOES
+  - `grant <capability-id>` shows what the tool may do and records your
+     decision, bound to the capability's current input schema; `list` shows
+     recorded grants and `revoke` withdraws one.
+  - Grants are what the policy engine checks before an invocation runs through
+     the bridge.
+
+WHAT IT DOES NOT
+  - Refuses to run without an interactive terminal: a grant is given by a
+     person, not scripted by the process asking for it.
+  - Does not grant an undiscovered capability (`litespm capabilities refresh`
+     first), and a grant stops matching once the tool's input schema changes
+     — you re-approve it.
+
+EXAMPLES
+  1. litespm grant <capability-id>
+  2. litespm grant list
+  3. litespm grant revoke <capability-id>
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  approve · invoke · capabilities

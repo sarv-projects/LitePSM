@@ -1,0 +1,1 @@
+import: LPSM-IMPORT-003: skills.../evil (skill name) contains a path traversal segment (".."): "../evil"

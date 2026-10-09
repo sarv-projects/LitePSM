@@ -1,0 +1,30 @@
+LITESPM APPROVE
+
+Approve a stored install plan as a person, in a terminal.
+
+USAGE
+  litespm approve <plan-id>
+
+WHAT IT DOES
+  - Shows the stored plan and, when you type yes, records a single-use
+     approval and prints the token an agent passes to `request_install`.
+  - The approval is recorded in state with its origin, so the audit trail says
+     a human approved this exact plan.
+
+WHAT IT DOES NOT
+  - Refuses to run without an interactive terminal: approvals cannot be
+     scripted by the process that wants them.
+  - Does not execute the plan itself — approval only unblocks the install
+     that asks for it.
+
+EXAMPLES
+  1. litespm approve <plan-id>
+  2. litespm approve <plan-id> # type yes; the printed token is single-use
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  grant · install

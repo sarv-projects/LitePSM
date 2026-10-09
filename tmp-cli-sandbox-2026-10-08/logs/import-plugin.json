@@ -1,0 +1,31 @@
+{
+  "format": "plugin",
+  "source": "/home/sarvesh/business_Dev/liteSPM/internal/interop/testdata/plugin.json",
+  "target": "/home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/imports/plugin/litespm.toml",
+  "targetState": "create",
+  "entries": [
+    {
+      "action": "add",
+      "id": "plugin:git:github-com-acme-hello-plugin:hello-plugin",
+      "kind": "plugin",
+      "constraint": "1.2.0",
+      "foreign": {
+        "source": "https://github.com/acme/hello-plugin",
+        "version": "1.2.0",
+        "notes": [
+          "license MIT declared (reported only; the manifest has no license field)",
+          "extensions namespace com.example.client declared (client-specific; not imported)"
+        ]
+      }
+    }
+  ],
+  "preservedExisting": 0,
+  "lossy": [
+    "plugin import records the manifest only: it brings no trust and no install semantics — skills/ and mcp.json components are discovered by `litespm install`, not by import (ARCH/32 §5 row 3)",
+    "description, author, homepage and keywords are validated but have no manifest field; license and extension namespaces appear as record notes",
+    "litespm.lock is not written by import; run `litespm lock` to resolve the new requires against the local catalog index",
+    "import writes the manifest only — installing is a separate `litespm install` step (ARCH/32 §5)"
+  ],
+  "warnings": [],
+  "applied": false
+}

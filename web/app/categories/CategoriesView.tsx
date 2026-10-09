@@ -21,7 +21,7 @@ export interface CategoriesViewProps {
 export default function CategoriesPage({ total, categories }: CategoriesViewProps) {
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "var(--site-header-height)" }}>
       <Header />
 
       <main id="main" className="shell flex-1 pt-8">
@@ -41,7 +41,7 @@ export default function CategoriesPage({ total, categories }: CategoriesViewProp
         {/* Column headers are a real table header, not an ALL-CAPS eyebrow. */}
         <div className="mt-7 border-b border-ink pb-2">
           <h2 className="sr-only">All categories with entry counts</h2>
-          <div className="t-mono grid grid-cols-[minmax(0,1fr)_56px_130px] items-center gap-4 text-[10px] text-ink-3 md:grid-cols-[260px_64px_170px_minmax(120px,1fr)]">
+          <div className="t-mono grid grid-cols-[minmax(0,1fr)_56px] items-center gap-4 text-[10px] text-ink-3 md:grid-cols-[260px_64px_170px_minmax(120px,1fr)]">
             <span>Category</span>
             <span className="text-right">Entries</span>
             <span className="hidden md:block">Kind mix</span>
@@ -54,7 +54,7 @@ export default function CategoriesPage({ total, categories }: CategoriesViewProp
             <li key={cat.name}>
               <Link
                 href={`/explore/?category=${encodeURIComponent(cat.name)}`}
-                className="grid grid-cols-[minmax(0,1fr)_56px_130px] items-center gap-4 border-b border-rule py-2.5 transition-colors hover:bg-hover md:grid-cols-[260px_64px_170px_minmax(120px,1fr)]"
+                className="grid grid-cols-[minmax(0,1fr)_56px] items-center gap-4 border-b border-rule py-2.5 transition-colors hover:bg-hover md:grid-cols-[260px_64px_170px_minmax(120px,1fr)]"
               >
                 <span className="t-cond truncate text-[14px] font-medium text-ink">{cat.name}</span>
 

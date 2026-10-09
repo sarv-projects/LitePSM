@@ -1,0 +1,2 @@
+✓ Restored inst_user_mcp_adopted_codex_sandbox-demo_8770fc60
+  - /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/opencode-copy-config/opencode.json restored to its pre-install bytes

@@ -1,0 +1,35 @@
+LITESPM HOST
+
+Inspect and configure the agent host adapters.
+
+USAGE
+  litespm host list
+  litespm host detect
+  litespm host setup <host-id>
+  litespm host remove <host-id> | --all
+
+WHAT IT DOES
+  - `list` prints every supported agent adapter and the config file it reads;
+     `detect` scans this machine and reports which configs exist and whether
+     the LiteSPM bridge is registered in each.
+  - `setup <host-id>` plans and applies the bridge entry (with a backup);
+     `remove <host-id>` or `remove --all` takes it back out.
+
+WHAT IT DOES NOT
+  - `list` and `detect` are read-only; `remove` keeps the pre-edit backup and
+     never deletes the rest of your config.
+  - Detection only looks at the documented config file of each adapter — a
+     project-scope or undocumented location is not scanned.
+
+EXAMPLES
+  1. litespm host list
+  2. litespm host detect
+  3. litespm host setup <host-id>
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  bridge · install · list

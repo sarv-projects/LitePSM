@@ -1,0 +1,46 @@
+{
+  "format": "codex-marketplace",
+  "source": "/home/sarvesh/business_Dev/liteSPM/internal/interop/testdata/codex-marketplace.json",
+  "target": "/home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/imports/codex-marketplace/litespm.toml",
+  "targetState": "create",
+  "entries": [
+    {
+      "action": "add",
+      "id": "plugin:git:openai-plugins:pdf-tools",
+      "kind": "plugin",
+      "constraint": "0.3.1",
+      "foreign": {
+        "source": "https://github.com/acme/pdf-tools",
+        "sourceType": "github",
+        "version": "0.3.1",
+        "notes": [
+          "declared authentication: required (reported only; no trust semantics imported)",
+          "declared installation policy: available (reported only)"
+        ]
+      }
+    },
+    {
+      "action": "add",
+      "id": "plugin:git:openai-plugins:no-version-helper",
+      "kind": "plugin",
+      "foreign": {
+        "source": "acme/helpers",
+        "sourceType": "local"
+      },
+      "warnings": [
+        "plugins[1] (\"no-version-helper\") declares no version or ref; imported unconstrained"
+      ]
+    }
+  ],
+  "preservedExisting": 0,
+  "lossy": [
+    "descriptions, categories, display names and interface metadata are not written to the manifest",
+    "declared policy (installation/authentication) is reported as a record note; import records no trust or install semantics (ARCH/32 §5)",
+    "litespm.lock is not written by import; run `litespm lock` to resolve the new requires against the local catalog index",
+    "import writes the manifest only — installing is a separate `litespm install` step (ARCH/32 §5)"
+  ],
+  "warnings": [
+    "plugin:git:openai-plugins:no-version-helper: plugins[1] (\"no-version-helper\") declares no version or ref; imported unconstrained"
+  ],
+  "applied": false
+}

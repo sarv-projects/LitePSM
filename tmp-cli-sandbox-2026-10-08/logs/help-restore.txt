@@ -1,0 +1,34 @@
+LITESPM RESTORE
+
+Roll an install back to its exact pre-install bytes, or refuse.
+
+USAGE
+  litespm restore <installId> [--dry-run]
+  litespm restore --host <host-id> [--dry-run]
+
+WHAT IT DOES
+  - Replays the pre-write backup recorded for each write LiteSPM made, so the
+     affected config ends up exactly as it was before the install —
+     formatting and comments included.
+  - `--host` rolls back every install that touched one agent; `--dry-run`
+     prints the plan and writes nothing.
+
+WHAT IT DOES NOT
+  - Refuses when a node you edited after the install would be overwritten, or
+     when the difference to revert lies outside LiteSPM's own entries; it
+     prints what differs instead.
+  - Never recreates a file the user deleted, and never restores another
+     install's writes.
+
+EXAMPLES
+  1. litespm restore <installId> --dry-run
+  2. litespm restore <installId>
+  3. litespm restore --host codex
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  install · doctor · list

@@ -2,7 +2,7 @@
 
 ## Active Goal
 
-Remediate the actionable bugs reproduced in the completed LiteSPM end-to-end audit, verify each change, and preserve producer-owned dirty work. The user explicitly authorized fixes and parallel subagents.
+Resume the guarded `feed:skills-sh` source-only replay and rebuild only from reviewed, complete producer output; separately review/fix website UI defects. Preserve producer-owned data, source snapshots, the pre-session stash, and the CLI sandbox. Keep all changes unstaged, uncommitted, and unpublished.
 
 ## Repository State at Audit Close
 
@@ -59,11 +59,52 @@ Their findings were reconciled with local source where noted below. Reports were
 - Dynamic tests reproduced MCP deny bypass and changed-input materialization as above. The approval/host-target binding gap remains source-derived only; no host-target mutation test, SSRF probe, crash injection, Windows/macOS runtime acceptance, or real live-catalog install success was performed (the live release has no installable rows).
 - All findings are candidates prioritized by severity and evidence, not an assertion that every risk was reproduced. Separate committed HEAD issues from dirty producer observations and from docs-only drift.
 
+## Website Link-Breakage Fix (2026-10-08 evening)
+
+User reported: "check the website, the links not working."
+
+### Root cause (found via two-browser reproduction + dev-mode `pageerror` capture)
+
+`web/app/HomeView.tsx:97` / `web/app/explore/ExploreView.tsx:158` passed `full ?? []` into
+`useCatalogSearch` — before the catalog loads, `full` is `null`, so **`[]` was a fresh array every
+render**. That churned the hook's drive-effect deps (`[listings, ...]`) every render, and its
+`!worker` branch (`web/lib/useCatalogSearch.ts`) called `setResults(new array)` **without the
+`lastKeyRef` guard the fallback branch has** → infinite `setState`-in-effect loop → React logged
+`Maximum update depth exceeded` forever, which **starved the router's transition so every
+client-side `<Link>` navigation silently never committed** (no fetch when prefetched, no
+`pushState`, no error — dead links). Typing in search loaded the catalog (`full` became stable),
+the loop stopped, and navigation flushed — matching every observed behavior (links "worked" only
+after typing or from `/package/`).
+
+### Fix (uncommitted, on top of `29643c3`)
+
+`web/lib/useCatalogSearch.ts` only:
+1. Normalizes empty row sets to one shared `EMPTY_LISTINGS` identity (kills dep churn from any caller).
+2. Key-gates the `!worker` branch with `lastKeyRef` exactly like the fallback branch (kills the unguarded `setResults`).
+
+Call sites unchanged; `npx tsc --noEmit` passes.
+
+### Evidence
+
+- **Dev** (`next dev`): full click-through — nav Explore/Agents/Categories/Coverage, footer, card→`/package/?slug=agent-rail`, logo→home — all navigate; 0 update-depth errors.
+- **Prod** (fresh `npm run build` static export served on :8795): same 7/7 click-through navigates; **0 console errors**; search still returns "Showing 24 of 46,166 results".
+- Reproduced BEFORE the fix in **both** chrome-devtools and Playwright Chromium; dev `pageerror` capture showed `Maximum update depth exceeded` ×40+ plus a `useId` hydration warning.
+- The `useId` hydration warning (`_R_…` id mismatch on `SearchBar`, `/` and `/explore/`) appears in **dev only** (0 errors in prod) and matches the Next 15.5 known-issue class (radix-ui/primitives#3700); `SearchBar` is the app's only `useId`. Cosmetic in dev; no prod impact. Not fixed — documented.
+
+### Working-tree note (IMPORTANT)
+
+During the 18:45 server restart the tree was committed by an external actor: **`29643c3 "Commit"`
+(sarvesh, 2026-10-08 17:55, 120 files, +914,387)** contains ALL session work (remediation + waves
+1-5 + B1 + docs). Not an agent action — nothing was rewritten. Current dirty state is exactly:
+`web/lib/useCatalogSearch.ts` (this fix) + `web/next-env.d.ts` (build artifact, restore after the
+final web build) + this handover update. A **pre-session stash** `stash@{0} "WIP on main: 927e244
+commit"` (yesterday 04:29, zero session markers) exists and was deliberately left untouched.
+
 ## Final Next Steps
 
-1. **Producer rebuild is running** (started 2026-10-08, background shell `sh_11c4687cc001CFtR3zpfnfGs1P`): replay recorded snapshots, fetch missing mcpmarket pages (bounded ≤2,000/run, 1 s crawl-delay, robots-permitted paths only), skill `SKILL.md` verification probes, officialskills.sh page adoption. When it finishes: inspect the run ledger (stale/incomplete counts + `extra_endpoint_rows`), confirm promotion/`url` row counts.
-2. **Release cut**: `go run ./cmd/litespm catalog build` (defaults: `web/data/catalog.json` → new `rel-2026-10-08-01`, sequence 146, `current.json` + `web/data/release.json` identity sync), then `go run ./cmd/litespm catalog build --verify web/public`, then full `go test ./...` (dirty-dataset E2E), web `tsc` + `npm run build`, and a browser spot-check (a promoted skill page must now show an install command; a remote MCP page likewise).
-3. User reviews the combined uncommitted diff; nothing is staged, committed, or published (producer-owned files and prior dirty hunks preserved throughout).
+1. **Producer rebuild is running** as detached PID `2456`; log: `/tmp/opencode/rebuild.log`. Last observed in replay mode at `skills.sh: 500/19,388 processed (384 added)`, after 764/1,114 skill rows had been verified/promoted. The process may have progressed since that observation. It will then enrich remaining feeds and crawl mcpmarket (≤2,000 pages/run, 1 s crawl delay, robots-permitted paths only). Wait for the completion notification from watcher `sh_11cf03444001V0ABq3JIDQxSHo`; then inspect final ingestion completeness/stale status, skill verification totals, endpoint-drop counts, and source rows before cutting a release.
+2. **Release cut** (explicitly authorized): `go run ./cmd/litespm catalog build` from the completed producer dataset; verify the resulting release ID/sequence/digests and synced `web/data/release.json` + `web/public/v1/current.json`, then run `go run ./cmd/litespm catalog build --verify web/public`. Expected next sequence is 146 from the current 145 pointer, but confirm the pointer at execution time rather than assume it.
+3. Run the final full Go/Python checks and web type-check/build after the dataset lands. Serve the final export on a fresh port and click-test routes plus promoted skill/remote-MCP pages. Restore only the generated `web/next-env.d.ts` route-types line after the last build. Leave the existing commit untouched; keep subsequent changes unstaged, uncommitted, and unpublished as requested.
 4. If catalog sync must work behind an egress proxy, revisit the deliberate proxy bypass in `internal/catalog/client.go` (see Closeout decisions).
 5. Open follow-ups recorded below: private-literal LAN endpoint opt-in (plan-time refusal has no consent flag), ingest-path `metadata_verified` alignment for remote-only records, `mcpmarket` accumulation across runs, residual shim.go line-cite drift in older docs.
 
@@ -176,3 +217,107 @@ User selected ALL five open limitations (docs drift, release cut, installability
 - Tailwind v4's official upgrader was run only in `/tmp/opencode`; its broad template/CSS rewrite was not copied wholesale. The focused migration keeps the old config via `@config` and preserves CSS component-layer ordering.
 - Next 15.5.27 emitted a workspace-root warning because it sees `/home/sarvesh/business_Dev/package-lock.json`; this did not prevent static export. Browser console had zero errors and four font-preload warnings.
 - Do not stage/commit this lane; the user explicitly requested that it remain uncommitted.
+
+## Safe Catalog Retry Handover (2026-10-08)
+
+### Active Goal
+
+Resume the catalog rebuild after `skills.sh` HTTP 429 responses, honoring retry timing, avoiding duplicate rows, and only cutting a release from a complete build. Preserve current producer data and leave all follow-up changes unstaged, uncommitted, and unpublished.
+
+### Where We Stopped
+
+- The previous producer PID `2456` was SIGSTOP-paused with old code loaded. It was terminated via SIGTERM/SIGCONT; its durable snapshots under `source-snapshots/` were retained.
+- `scripts/build_full_catalog.py` now honors `Retry-After` delay-seconds and HTTP-dates; absent/invalid headers use a 60-second wait. Automatic waits are bounded to one hour; an excessive delay fails closed. One retry is allowed after a source's first 429; a persistent/later 429 opens the source circuit, marks it incomplete, and stops that feed instead of hammering it.
+- Skills.sh and mcpservers.org sitemap IDs are deduplicated before queuing fetches; a final unique-listing-ID invariant aborts before writing output if any duplicates remain.
+- `scripts/test_skill_promotion.py` adds duplicate sitemap and snapshot replay checks plus 429 retry/circuit-breaker checks.
+- Focused verification passed: `scripts/test_skill_promotion.py` (211), `scripts/test_catalog_ingestion_safety.py` (31), `scripts/test_snapshot_lifecycle.py` (23), `scripts/test_remote_endpoints.py` (77), `scripts/test_mcpmarket_source.py` (105), `build_full_catalog.py --check`, `py_compile`, and `git diff --check`.
+- The replacement producer shell `sh_11d4dbbf1001SZnq9OtHhWiYvb` completed, writing only to `/tmp/opencode/litespm-catalog-rebuild-20261008-retry1`; log: `/tmp/opencode/rebuild-retry1.log`. It did not write production `web/data/`.
+- After that run started, `obtain()` was also tightened so refresh-mode 429s propagate to `_obtain_bulk` instead of being mistaken for stale-cache fallback. The active run uses default replay mode (not `--refresh`), so this follow-up does not change its behavior; the refresh path has its own regression check.
+- Completion gate failed: `CATALOG_INGESTION_STATUS` is `incomplete` for `feed:skills-sh` and the deliberately bounded `feed:mcpmarket-com`. `skills.sh` reported 19,239 not-yet-catalogued skills (612 already present, 586 to enrich), then returned HTTP 429 again after the single 60-second `Retry-After` recovery; the producer stopped that feed as designed. Do not promote this output or cut a release.
+- Source-policy investigation found `https://skills.sh/robots.txt` disallows `/api/`; the old producer's `/api/download/...` route was therefore not retried. A permitted sample listing page exposes the full description as `SoftwareApplication` JSON-LD.
+- `scripts/build_full_catalog.py` now reads the sitemap-listed public skill pages, extracts their JSON-LD description (description-meta fallback), refuses `/api/`, `/internal/`, `/debug-security/`, `/search`, foreign hosts, query-bearing page URLs, and traversal paths, and preserves discovery-only installability. `scripts/test_skill_promotion.py` and `scripts/test_snapshot_lifecycle.py` cover the new page/snapshot behavior; `ARCH/03-CATALOG-SOURCES.md` and `ARCH/27-CAPABILITY-SOURCE-SUPPORT-MATRIX.md` document the source policy.
+- Offline verification after the source change passed: `scripts/test_skill_promotion.py` (221), `scripts/test_snapshot_lifecycle.py` (23), `scripts/test_catalog_ingestion_safety.py` (31), `scripts/test_remote_endpoints.py` (77), `scripts/test_mcpmarket_source.py` (105), producer `--check`, and `py_compile`.
+- An initial live `--only-source feed:skills-sh --refresh` attempt (`sh_11f13b8a5001hFd2lDikdsgOQO`) was terminated with exit 143 after review found it had started just before the complete robots path/redirect guard was added. Its log `/tmp/opencode/litespm-skills-sh-pages-20261009/producer.log` shows it reached the skill URL queue (19,792 URLs) and wrote no catalog; any source snapshots it recorded are retained. The refreshed sitemap snapshots can now be replayed under the complete guard.
+- The first guarded replay-mode source-only pass (`sh_11f173757001toDXZ6sar6qXDu`) was canceled by a session/server restart. Its `/tmp/opencode` log directory was cleared by that restart; no producer process remains. Durable `source-snapshots/` data survived: 3,847 `feed:skills-sh` snapshots (3,599 partial from the interrupted pass, 248 healthy), latest fetch at `2026-10-09T06:11:32Z`. The production catalog/release/pointer timestamps remain unchanged (catalog and release from Oct 7; pointer from Oct 7).
+- Resumed the same default replay-mode source-only command as shell `sh_11f4f686c0012J2GPKNiqld2x0`, logging to `/tmp/opencode/litespm-skills-sh-pages-20261009-resume/producer-resume.log`. Default replay reuses recorded snapshot bodies and fetches only missing URLs; this command writes/finalizes source snapshots only, not a dataset. It is active; do not poll its output. Post-guard regression checks passed (221 skill, 23 snapshot, 31 ingestion-safety, 77 remote-endpoint, 105 mcpmarket checks; producer `--check`, `py_compile`, diff check); no producer/test code contains the old `/api/download` route.
+- The permitted mcpmarket partial crawl added 2,000 rows, deferred 414,727, and reported 0 fetch failures, 0 rows missing name/summary, and 19 non-listing URLs. This is the documented bounded-partial case, but it does not waive the separate skills.sh completeness gate.
+- Isolated output has 48,417 rows (46,418 MCP, 1,361 skills, 638 plugins), SHA-256 `cc2ff8aaf701859ebf39f953ead554327bf7b3b2c010ced64c91b4f29da52043`; all 48,417 IDs are unique and temporary `release.json` count/digest reconcile. Remote MCP check: 25,401 URL+transport rows are `metadata_verified`, all pass the static publishability rule, and none invent command/args. Registry summary records 509 multi-endpoint rows with extra endpoints dropped by the one-endpoint schema and 14 rows whose selected endpoint was refused; no duplicate registry IDs.
+- Existing production inputs remain unchanged: current pointer is still `rel-2026-10-07-01`, sequence 145, 5,825 items; `web/data/release.json` still describes the 46,166-row producer dataset. The temporary 48,417-row output was not copied into `web/data/` and no release was built.
+
+### Next Exact Steps
+
+1. Wait for shell `sh_11f4f686c0012J2GPKNiqld2x0`'s completion notification; inspect its log/status once. Require no incomplete/stale `feed:skills-sh` and no rate-limit circuit before rebuilding.
+2. If the source-only replay completes cleanly, run the full producer in replay mode into a new isolated output directory; retain both earlier temp outputs. The mcpmarket source may remain bounded-partial only with the exact deferred count and zero fetch/layout failures.
+3. Inspect completeness, unique IDs, endpoint safety, counts, and digest/stats of the new full output. Do not promote if any core source is incomplete or stale.
+4. Only after the gate passes, confirm production `web/data/catalog.json` and `web/data/release.json` remain the existing 46,166-row data, transfer the accepted output, then cut and verify the release. Confirm the current pointer before assuming sequence 146; run final Go/Python checks, web build, and browser checks.
+5. Leave the pre-session stash untouched; do not stage, commit, push, or publish.
+
+### Decisions & Gotchas
+
+- The temporary producer output protects the existing producer dataset from a run that finishes with an incomplete/rate-limited source. `--output` directs both `catalog.json` and producer stats into that directory; the producer still replays/fetches snapshots from the repository snapshot store.
+- A complete HTTP fetch/build is not release evidence by itself: inspect the machine-readable completeness report before promoting output. The accepted mcpmarket crawl budget can produce an intentionally partial source; distinguish this from an accidental skills.sh rate-limit stop.
+- Existing browser-only dev `useId` hydration warning remains documented above; it is not part of this rate-limit change.
+
+## Terminal CLI Recheck (2026-10-08)
+
+### Active Goal
+
+Recheck LiteSPM's terminal CLI, local daemon/MCP bridge, stateful workflows, and repository checks in an isolated root sandbox. Do not touch the user's real config/keyring or publish a release.
+
+### Where We Stopped
+
+- Created and used the requested root sandbox `tmp-cli-sandbox-2026-10-08/` (currently untracked; intentionally retained for inspection). It contains a Go-built `litespm`, isolated HOME/XDG/LiteSPM roots, local fixture inputs, logs, and a sandbox catalog tree. No production `web/public` pointer or `web/data` file was written by the CLI acceptance run.
+- Built `tmp-cli-sandbox-2026-10-08/litespm` and exercised all documented help pages and command families, aliases, version, setup/init wizard quit, host list/detect/setup/remove/uninstall, local and live agent list/resolve, catalog search/sync/build+verify, inventory/list, lock write/check/verify/SPDX, copy/apply/remove/restore, every import format (including server object/array), local and GitHub skill add/list/update/remove, and CLI installability refusals. Import traversal was refused (`LPSM-IMPORT-003`), a command-source marketplace was refused (`LPSM-IMPORT-005`), and server.json secret values were reduced to environment-variable names in the preview. The environment-mismatch during one install-remove probe was corrected; repeat with matching `$CODEX_HOME`/`$OPENCODE_CONFIG_DIR` passed and removed only the test entry.
+- Live sandbox network checks passed: catalog sync fetched `rel-2026-10-07-01` (5,825 entries), ACP agent list returned 41 entries, local catalog search returned results, and both `self-update`/`update` reported v0.3.0 current. A real GitHub-backed skill was fetched, installed, listed, updated in dry-run mode, and removed. No production catalog path was written.
+- Installability was checked against that fetched release: its MCP/skill entries were discovery-only; `install`/`add`/`i` refused the skill with `LPSM-NOT-INSTALLABLE`. A frozen plugin install passed lock verification but correctly failed `LPSM-ARTIFACT-UNAVAILABLE` because the catalog has no plugin artifact source. This is a current catalog/product limitation, not evidence that end-to-end package installation succeeds.
+- The daemon started and shut down cleanly using isolated data/config/runtime roots and a sandbox-only `secret-tool` shim. MCP `initialize`, `tools/list`, and all 12 advertised tool calls were exercised. Catalog search/detail and installed/capability listing worked; unavailable/unsafe routes failed closed. `get_invocation` and `cancel_invocation` returned the documented JSON-RPC `-32601` not-implemented errors.
+- Doctor/daemon vault behavior was tested two ways: a deliberately failing sandbox shim made `doctor` report `LPSM-AUTH-VAULT-UNAVAILABLE` and made daemon startup refuse; a separate successful sandbox shim allowed the live daemon test. The real desktop keyring was never reachable or touched.
+- `doctor --repair` and `doctor --repair --yes` found no automated actions because staging was clean; they reported the same expected vault failure (exit 50) and made no repair changes.
+- Sandbox catalog build used the current 46,166-row input and produced `rel-2026-10-08-01`, sequence 146, in the sandbox only. After the fix below, build and verify print the same actual pointer manifest digest.
+- Found/fixed a CLI reporting bug: `catalog build` had labeled `manifest.ContentDigest` as `Manifest`, while verify reports `current.json.manifestDigest`. `cmd/litespm/main.go` now prints `output.ManifestDigest`; `cmd/litespm/catalog_build_test.go` adds `TestCatalogBuildPrintsActualManifestDigest` (first observed failing, then passing).
+- Fixed the flaky IPC race test: it assumed that reading a handler response meant the handler's deferred semaphore release had already run, then waited for another handler without consuming a possible valid rate-limit response. `internal/ipc/ipc_test.go` now consumes transient `CodeRateLimited` replies and retries with a five-second client-side deadline; server concurrency/backpressure semantics are unchanged.
+- Verification passed after the fix: `go test ./... -count=1`; default-parallel `go test -race ./... -count=1 -timeout=15m`; `go vet ./...`; `gofmt -l .` clean; `git diff --check`. The IPC race test also passed at `-count=100`.
+- Broader checks passed before this IPC test-only adjustment: `bash -n scripts/*.sh`; `node --check` for npm entry points; all five Python suites (31/211/23/77/105 checks) plus producer `--check`/`py_compile`; `cd npm && npm test`; `cd web && npx tsc --noEmit && NEXT_TELEMETRY_DISABLED=1 npm run build`.
+- The first default-parallel race run had hit the package's 10-minute test timeout in `internal/ipc/TestServerBoundsConcurrentHandlers`; after correcting the response/semaphore ordering assumption, the full default-parallel race suite passed. The manifest-digest display correction above was also reverified by the normal and race Go suites.
+- The Next build regenerated the known route-types reference in `web/next-env.d.ts`; that generated line was restored per the prior handover. Build emitted only the existing workspace-root/multiple-lockfiles warning.
+
+### Next Exact Steps
+
+1. The earlier producer output failed the release gate and remains isolated. The `/api/` endpoint was found disallowed by robots.txt; a guarded replay-mode source-only pass is active on public pages (see preceding handover). No dataset was promoted and no release has been cut.
+2. Continue release workflow only after every core feed is complete, then finish catalog identity/digest verification and browser smoke tests; keep every change unstaged, uncommitted, and unpublished.
+3. No follow-up is needed for the observed CLI/test defects; the first parallel race timeout is resolved at the test seam. Do not change server semaphore behavior without a separate product requirement.
+
+### Decisions & Gotchas
+
+- The root sandbox is intentionally not deleted: user asked to create it, and its binary, generated catalog tree, fixture inputs, and logs are useful evidence. It is untracked and must not be staged.
+- All live CLI network tests were pointed at sandbox state; the incomplete 48,417-row producer dataset remains isolated in `/tmp/opencode/litespm-catalog-rebuild-20261008-retry1` and was not promoted. A stopped source-only refresh wrote no dataset; retained source snapshots do not touch production catalog data.
+- A successful daemon run with the test shim proves local daemon/IPC behavior only; it does not prove the real OS secret vault is configured. The sandbox doctor correctly leaves that as a failure.
+- The race test now reflects the actual ordering contract: response delivery may precede semaphore release, and a request in that interval can be legitimately rate-limited. The test retries that response rather than deadlocking.
+
+## Website UI Review (2026-10-09)
+
+### Active Goal
+
+Review the website UI while the guarded catalog replay runs; fix only reproduced website issues. Do not alter producer data or release artifacts.
+
+### Where We Stopped
+
+- `web/components/navigation/Header.tsx`: narrow screens now use a 92px content-height two-row header, giving primary navigation its own 44px touch row. Desktop returns to the original 48px content height. The Search affordance can focus the Explore search field when clicked while already on that route.
+- `web/app/globals.css` defines responsive `--site-header-height` (48px desktop / 92px narrow). The `--stack-top` value in `HomeView.tsx`, `ExploreView.tsx`, `AgentsView.tsx`, `CategoriesView.tsx`, `TrendingView.tsx`, and all four route states in `PackageView.tsx` now follows that token.
+- `CategoriesView.tsx` no longer reserves a hidden 130px mobile grid track. At 375px, the category-name track increased from 115px to 261px.
+- Browser verification at 320/375/767px found all four primary links visible and hittable; desktop layout at 768/1280px retained the single-row header. A Categories → Coverage click navigated and marked Coverage active. On Explore, the header Search click navigated to `?focus=search` and focused the input, including the same-route case. The sticky Explore toolbar settled at 92px on mobile (header is 93px including its border) and 48px on desktop.
+- Mobile screenshot: `.playwright-mcp/litespm-categories-mobile-fixed.png`.
+- `./node_modules/.bin/tsc --noEmit --pretty false` passed after stopping the dev server; `git diff --check` passed. The Next dev server was stopped after browser verification. No production build was run for this focused UI pass.
+- Existing Next dev `useId` hydration mismatch remains visible on Home/Explore in development, matching the prior recorded finding; it was not introduced or changed here. The prior clean production build/browser check had no hydration errors.
+
+### Next Exact Steps
+
+1. Continue the active source-only replay using the state above; do not reread/re-fetch completed snapshots or run a full producer build before its completeness gate passes.
+2. On completion, inspect the new replay log and source status once. If complete and non-stale, run the full producer in a new isolated output directory and perform the existing completeness/uniqueness/endpoint/digest review before any promotion.
+3. If resuming the website task later, test a resolved package-detail slug and optionally run a static production build; do not repeat the responsive checks already recorded above.
+
+### Decisions & Gotchas
+
+- Mobile header growth is intentional: keeping all four primary destinations visible at 320px is preferable to hiding links behind an unmarked, 99px horizontal scroll viewport. Sticky offsets track the responsive header token.
+- The interrupted skills.sh replay left reusable partial snapshots, not a promotable catalog. The resumed command runs without `--refresh`, so completed page snapshots are replayed locally; only missing URLs can trigger network requests.
+- All files remain unstaged, uncommitted, and unpublished. Producer-owned `web/data/*`, the pre-session stash, and `tmp-cli-sandbox-2026-10-08/` remain preserved.

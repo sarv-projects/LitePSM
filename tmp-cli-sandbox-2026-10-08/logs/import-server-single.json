@@ -1,0 +1,54 @@
+{
+  "format": "server.json",
+  "source": "/home/sarvesh/business_Dev/liteSPM/internal/interop/testdata/server-single.json",
+  "target": "/home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/imports/server-single/litespm.toml",
+  "targetState": "create",
+  "entries": [
+    {
+      "action": "add",
+      "id": "mcp:builtin:mcp-registry:postgres",
+      "kind": "mcp",
+      "constraint": "0.6.2",
+      "foreign": {
+        "source": "https://github.com/modelcontextprotocol/servers",
+        "publisher": "Model Context Protocol",
+        "publisherUrl": "https://modelcontextprotocol.io",
+        "packages": [
+          {
+            "registryType": "npm",
+            "name": "@modelcontextprotocol/server-postgres",
+            "version": "0.6.2",
+            "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "transport": "stdio",
+            "envNames": [
+              "POSTGRES_CONNECTION_SECRET"
+            ],
+            "hasCommand": true
+          }
+        ],
+        "transport": "stdio",
+        "status": "active",
+        "notes": [
+          "publisher contact registry@modelcontextprotocol.io (reported only, not written)"
+        ]
+      },
+      "warnings": [
+        "unknown field server postgres.license — reported, not imported"
+      ]
+    }
+  ],
+  "preservedExisting": 0,
+  "lossy": [
+    "server.json packages[]/remotes[] map to artifact and transport metadata — reported in the record above; the manifest writes id and constraint only (ARCH/32 §5 row 6)",
+    "publisher namespace-verification assertions (publisher plus registry-qualified package coordinates) are preserved in the record above, not flattened into the id",
+    "launch commands and environment VALUES are never imported or executed; only environment variable names are recorded",
+    "title, description, license, categories, keywords and homepage metadata are not imported (unknown fields are additionally reported as warnings)",
+    "package digests have no litespm.yml field; reported in the record above, never written",
+    "litespm.lock is not written by import; run `litespm lock` to resolve the new requires against the local catalog index",
+    "import writes the manifest only — installing is a separate `litespm install` step (ARCH/32 §5)"
+  ],
+  "warnings": [
+    "mcp:builtin:mcp-registry:postgres: unknown field server postgres.license — reported, not imported"
+  ],
+  "applied": false
+}

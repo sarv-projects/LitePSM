@@ -4,6 +4,7 @@ import urllib.request
 import contextlib
 import http.client
 import html
+from html.parser import HTMLParser
 import ipaddress
 import io
 import re
@@ -12,6 +13,8 @@ import os
 import socket
 import sys
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -45,7 +48,7 @@ FEED_OFFICIAL_SERVERS = (
 )
 # skills.sh and mcpservers.org are directories, not git manifests: the
 # producer walks each site's sitemap and reads one record per capability
-# (skills.sh: SKILL.md frontmatter through its download API; mcpservers.org:
+# (skills.sh: JSON-LD from its public listing page; mcpservers.org:
 # public Wayback Machine replays of the directory pages -- the site's own
 # API paths are robots-disallowed, so pages are never fetched from
 # mcpservers.org itself). Both sourceIds follow the domain.SourceID grammar.
@@ -122,6 +125,8 @@ SOURCE_ALLOWED_HOSTS = {
     "git:xai-plugin-marketplace": frozenset({"raw.githubusercontent.com"}),
 }
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+RATE_LIMIT_FALLBACK_DELAY_SECONDS = 60
+RATE_LIMIT_MAX_WAIT_SECONDS = 3600
 
 # MCPMARKET.COM CRAWL BOUNDS
 # robots.txt declares `Crawl-delay: 1` for every user agent and the sitemap
@@ -149,6 +154,7 @@ MCPMARKET_SKILL_PATH = r"/tools/skills/[A-Za-z0-9._~%+-]+"
 
 _INCOMPLETE_SOURCES = set()
 _STALE_SOURCES = set()
+_RATE_LIMIT_RECOVERED = set()
 
 
 def _mark_incomplete(source_id):
@@ -186,6 +192,16 @@ def _validate_request_url(url, source_id, check_dns=True):
     host = host.lower().rstrip(".")
     if host not in SOURCE_ALLOWED_HOSTS.get(source_id, frozenset()):
         raise ValueError(f"host {host!r} is not allowed for source {source_id!r}")
+    if source_id == FEED_SKILLSH[1]:
+        decoded_path = urllib.parse.unquote(parsed.path).replace("\\", "/")
+        path_parts = [part for part in decoded_path.split("/") if part]
+        if any(part in (".", "..") for part in path_parts):
+            raise ValueError(f"refusing skills.sh path traversal in {url!r}")
+        path_lower = decoded_path.lower()
+        if path_lower in {"/api", "/internal", "/debug-security"} or \
+                path_lower.startswith(("/api/", "/internal/", "/debug-security/",
+                                       "/search")):
+            raise ValueError(f"refusing robots-disallowed skills.sh path in {url!r}")
     if not check_dns:
         return
     try:
@@ -854,6 +870,11 @@ def obtain(url, source_id, timeout, refresh, label):
     try:
         status, headers, body = _http_get(url, timeout, etag, source_id=source_id)
     except Exception as exc:
+        # Let _obtain_bulk apply Retry-After even when a prior snapshot exists;
+        # treating 429 as an ordinary stale refresh would hide the rate limit
+        # and allow the next record request to hammer the same source.
+        if isinstance(exc, urllib.error.HTTPError) and exc.code == 429:
+            raise
         if rec_meta is None:
             snapshot_store.log_failure(root, url, "refresh", str(exc))
             _mark_incomplete(source_id)
@@ -895,25 +916,92 @@ def _obtain_quiet(url, source_id, timeout, refresh, label):
         return obtain(url, source_id, timeout, refresh, label)
 
 
+class RateLimitExceeded(RuntimeError):
+    """A source stayed rate-limited after its one bounded Retry-After retry."""
+
+
+def _retry_after_delay(value, now=None):
+    """Parse Retry-After as delay-seconds or HTTP-date; invalid values return None."""
+    if not value:
+        return None
+    value = str(value).strip()
+    if value.isascii() and value.isdigit():
+        return int(value)
+    try:
+        retry_at = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return max(0.0, (retry_at - now).total_seconds())
+
+
 def _obtain_bulk(url, source_id, timeout, refresh, label, attempts=4,
                  base_delay=3.0, fatal=False):
-    """_obtain_quiet with bounded exponential backoff for transient errors.
+    """Obtain a bulk record with bounded backoff and safe 429 recovery.
 
     fatal=True re-raises after the retries: it is for the few requests the
     whole block depends on (a CDX page, a sitemap), where silently losing
     one would understate coverage. fatal=False returns None so a single
     flaky per-item fetch skips that item instead of failing a multi-hour
-    run. SnapshotIntegrityError is never retried -- a corrupt recording is
-    a local bug, not a transient network condition.
+    run. HTTP 429 gets one Retry-After-guided retry per source; another 429
+    opens the source circuit. SnapshotIntegrityError is never retried -- a
+    corrupt recording is a local bug, not a transient network condition.
     """
     delay = base_delay
-    for attempt in range(1, attempts + 1):
+    transient_attempts = 0
+    while transient_attempts < attempts:
         try:
             return _obtain_quiet(url, source_id, timeout, refresh, label)
         except snapshot_store.SnapshotIntegrityError:
             raise
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429:
+                transient_attempts += 1
+                if transient_attempts >= attempts:
+                    snapshot_store.log_failure(snapshot_store.default_root(),
+                                               url, label, str(exc))
+                    _mark_incomplete(source_id)
+                    if fatal:
+                        raise
+                    return None
+                time.sleep(delay)
+                delay *= 2
+                continue
+
+            if source_id in _RATE_LIMIT_RECOVERED:
+                message = (f"HTTP 429 persisted for {source_id}; stopping this source "
+                           "after its single Retry-After recovery")
+                _mark_incomplete(source_id)
+                snapshot_store.log_failure(snapshot_store.default_root(),
+                                           url, "rate-limit", message)
+                raise RateLimitExceeded(message) from exc
+
+            raw_retry_after = (exc.headers.get("Retry-After")
+                               if exc.headers is not None else None)
+            retry_delay = _retry_after_delay(raw_retry_after)
+            if retry_delay is None:
+                retry_delay = RATE_LIMIT_FALLBACK_DELAY_SECONDS
+            if retry_delay > RATE_LIMIT_MAX_WAIT_SECONDS:
+                message = (f"HTTP 429 Retry-After {retry_delay:g}s exceeds the "
+                           f"{RATE_LIMIT_MAX_WAIT_SECONDS}s automatic-wait limit for "
+                           f"{source_id}; stopping this source without an early retry")
+                _mark_incomplete(source_id)
+                snapshot_store.log_failure(snapshot_store.default_root(),
+                                           url, "rate-limit", message)
+                raise RateLimitExceeded(message) from exc
+
+            _RATE_LIMIT_RECOVERED.add(source_id)
+            print(f"    {label}: HTTP 429; honoring Retry-After for "
+                  f"{retry_delay:g}s and retrying once")
+            time.sleep(retry_delay)
         except Exception as exc:
-            if attempt == attempts:
+            transient_attempts += 1
+            if transient_attempts >= attempts:
                 snapshot_store.log_failure(snapshot_store.default_root(),
                                            url, label, str(exc))
                 _mark_incomplete(source_id)
@@ -931,7 +1019,7 @@ def _obtain_bulk(url, source_id, timeout, refresh, label, attempts=4,
 # are only promoted to `healthy` + `completedAt` + `itemCount` by
 # mark_ingested AFTER their bytes were actually parsed. The completion step
 # used to run over one URL per source, which left
-# every record-level snapshot -- skills.sh /api/download records, Wayback
+# every record-level snapshot -- skills.sh listing pages, Wayback
 # page replays, registry cursor pages, sitemap and CDX pagination documents --
 # stuck at `partial` forever even though the build parsed them. The ledger
 # below records exactly what the run parsed (registered at each parse site,
@@ -951,6 +1039,7 @@ def _reset_run_ledger():
     _ROW_ATTRIB.clear()
     _INCOMPLETE_SOURCES.clear()
     _STALE_SOURCES.clear()
+    _RATE_LIMIT_RECOVERED.clear()
     _PROBE_CACHE.clear()
 
 
@@ -1022,76 +1111,112 @@ def finalize_consumed_snapshots(root):
     return promoted, promoted_rows, unchanged, missing
 
 
-def _frontmatter_block(body):
-    """The raw YAML frontmatter text of a SKILL.md document, or "" .
+class _SkillsShPageParser(HTMLParser):
+    """Collect JSON-LD and page descriptions from a public skills.sh page."""
 
-    Shared by the two frontmatter readers below: the skills.sh row summary
-    (fold-aware, a display field) and the verification parse (Go-mirroring,
-    an installability gate). A document that does not open with `---` has no
-    frontmatter and therefore no publishable description.
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.jsonld = []
+        self.meta_descriptions = []
+        self._script = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = {key.lower(): value for key, value in attrs if key}
+        if tag.lower() == "script" and \
+                (attrs.get("type") or "").split(";", 1)[0].strip().lower() == \
+                "application/ld+json":
+            self._script = []
+        if tag.lower() == "meta":
+            name = (attrs.get("name") or "").strip().lower()
+            prop = (attrs.get("property") or "").strip().lower()
+            if name == "description" or prop == "og:description":
+                content = (attrs.get("content") or "").strip()
+                if content:
+                    self.meta_descriptions.append(content)
+
+    def handle_data(self, data):
+        if self._script is not None:
+            self._script.append(data)
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "script" and self._script is not None:
+            self.jsonld.append("".join(self._script))
+            self._script = None
+
+
+def _jsonld_software_descriptions(value):
+    """Yield descriptions attached to SoftwareApplication JSON-LD nodes."""
+    if isinstance(value, list):
+        for child in value:
+            yield from _jsonld_software_descriptions(child)
+        return
+    if not isinstance(value, dict):
+        return
+    type_value = value.get("@type")
+    types = type_value if isinstance(type_value, list) else [type_value]
+    if any(str(item).rsplit("/", 1)[-1] == "SoftwareApplication"
+           for item in types if item):
+        description = value.get("description")
+        if isinstance(description, str) and description.strip():
+            yield description
+    for child in value.values():
+        if isinstance(child, (dict, list)):
+            yield from _jsonld_software_descriptions(child)
+
+
+def skills_sh_page_description(payload):
+    """Read a skill description published on a skills.sh listing page.
+
+    robots.txt disallows `/api/`, so the producer uses the sitemap-listed
+    public page instead of the download API. Prefer its SoftwareApplication
+    JSON-LD description; fall back to the page's own description metadata.
+    Missing or malformed descriptions are not synthesized.
     """
-    if not isinstance(body, str):
-        return ""
-    if not body.startswith("---"):
-        return ""
-    end = body.find("\n---", 3)
-    return body[3:end] if end > 0 else ""
-
-
-def _frontmatter_value(front, key):
-    """Single-line or folded value of `key` inside a frontmatter block.
-
-    A folded/literal YAML block carries its text on the following indented
-    lines; those are collected instead of the indicator itself. Quoted
-    scalars are unquoted only when the quotes match.
-    """
-    m = re.search(rf"^{re.escape(key)}:[ \t]*(.*)$", front, re.M)
-    if not m:
+    if isinstance(payload, (bytes, bytearray)):
+        text = bytes(payload).decode("utf-8", errors="replace")
+    elif isinstance(payload, str):
+        text = payload
+    else:
         return None
-    value = m.group(1).strip()
-    if value in ("", ">", ">-", "|", "|-") or re.fullmatch(r"[>|][+-]?\d?", value or ""):
-        parts = []
-        for line in front[m.end():].splitlines():
-            if not line.strip():
-                continue
-            if not line.startswith((" ", "\t")):
-                break
-            parts.append(line.strip())
-        value = " ".join(parts).strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", chr(34)):
-        value = value[1:-1].strip()
-    value = re.sub(r"\s+", " ", value).strip()
-    return value or None
+    parser = _SkillsShPageParser()
+    parser.feed(text)
+    parser.close()
+    for raw in parser.jsonld:
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        for description in _jsonld_software_descriptions(data):
+            normalized = re.sub(r"\s+", " ", description).strip()
+            if normalized:
+                return normalized
+    for description in parser.meta_descriptions:
+        normalized = re.sub(r"\s+", " ", description).strip()
+        if normalized:
+            return normalized
+    return None
 
 
-def skill_md_description(payload):
-    """Pull `description` from the SKILL.md inside a skills.sh download
-    payload, or None when the payload carries no usable description.
-
-    A row without a summary would be a thin row and the dataset has none,
-    so an item whose SKILL.md lacks a frontmatter description is skipped.
-    """
+def skills_sh_listing_parts(url):
+    """Return decoded owner/repo/slug for a safe sitemap-listed skill page."""
+    source_id = FEED_SKILLSH[1]
     try:
-        data = json.loads(payload)
-    except (ValueError, TypeError):
+        _validate_request_url(url, source_id, check_dns=False)
+        parsed = urllib.parse.urlsplit(url)
+    except (TypeError, ValueError):
         return None
-    files = data.get("files") if isinstance(data, dict) else None
-    if not isinstance(files, list):
+    if parsed.query or parsed.fragment or parsed.path.startswith("/api/"):
         return None
-    main = None
-    for f in files:
-        if isinstance(f, dict) and f.get("path") == "SKILL.md":
-            main = f
-            break
-    if main is None:
-        for f in files:
-            if isinstance(f, dict) and str(f.get("path", "")).endswith("/SKILL.md"):
-                main = f
-                break
-    if main is None:
+    if not parsed.path.startswith("/") or parsed.path.endswith("/"):
         return None
-    return _frontmatter_value(_frontmatter_block(main.get("contents") or ""),
-                              "description")
+    raw_parts = parsed.path[1:].split("/")
+    if len(raw_parts) != 3 or not all(raw_parts):
+        return None
+    parts = [urllib.parse.unquote(part) for part in raw_parts]
+    if any(part in ("", ".", "..") or "/" in part or "\\" in part
+           or any(ord(char) < 0x20 for char in part) for part in parts):
+        return None
+    return tuple(parts)
 
 
 # SKILL VERIFICATION -- WHAT THE BUILD ACTUALLY READ
@@ -2490,20 +2615,21 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
 
     print_verify_tally(verify_tally, "skill verification")
 
-    # --- skills.sh: directory of agent skills (sitemap + SKILL.md records) ---
-    # The sitemap lists ~20k skill pages; for ids the rest of the catalog
-    # does not already carry, the download API returns the skill's files and
-    # the row is built from SKILL.md frontmatter. Nothing is invented when
-    # the frontmatter has no description (skipped and counted below).
+    # --- skills.sh: directory of agent skills (sitemap + public pages) ---
+    # The sitemap lists ~20k skill pages. robots.txt disallows /api/, so read
+    # each public listing page and use its published JSON-LD description
+    # (falling back to its description meta tag). Nothing is invented when a
+    # page has no usable description (skipped and counted below).
     # Snapshot lifecycle: the index and sub-sitemaps are navigation documents
     # (consumed, 0 rows attributed); every per-skill record is consumed after
-    # its payload parses and gets the 0/1 rows it actually contributed, so a
+    # its page parses and gets the 0/1 rows it actually contributed, so a
     # completed run finalizes ALL of them -- not just the sitemap index.
     print("5/7 skills.sh...")
     skillsh_source = FEED_SKILLSH[1]
     skillsh_index = FEED_SKILLSH[0]
     skillsh_added = skillsh_seen = skillsh_nodesc = skillsh_failed = 0
     skillsh_enriched = skillsh_enrich_fail = 0
+    skillsh_duplicates = 0
     if not runs(skillsh_source):
         print("  skills.sh: skipped (scoped out of this run)")
     else:
@@ -2523,53 +2649,55 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
             submaps.sort()
             _consume(skillsh_index, skillsh_source)
             # A3: an id another feed already published used to be counted
-            # `seen` and dropped, discarding the SKILL.md content this block
-            # had just fetched. It now feeds the row's summary instead: the
-            # skill's own frontmatter is the strongest description available
-            # for it. The row's id, source and installability are NOT
-            # rewritten -- skills.sh content proves a description, not a
-            # clonable git path, so enrichment never promotes a row.
+            # `seen` and dropped, discarding the page description. It now
+            # enriches that row without rewriting its id, source or
+            # installability: page metadata is not a clonable git path, so
+            # enrichment never promotes a row.
             rows_by_id = {item["id"]: item for item in items}
             skill_urls = []
             enrich_urls = []
+            queued_skill_ids = set()
+            queued_enrich_ids = set()
             for sm in submaps:
                 sm_bytes = _obtain_bulk(sm, skillsh_source, 30, refresh,
                                         "skills.sh skills sitemap", fatal=True)
                 sm_text = sm_bytes.decode("utf-8", errors="replace")
                 _consume(sm, skillsh_source)
                 for loc in re.findall(r"<loc>([^<]+)</loc>", sm_text):
-                    for prefix in ("https://www.skills.sh/", "https://skills.sh/"):
-                        if loc.startswith(prefix):
-                            break
-                    else:
-                        continue
-                    parts = loc[len(prefix):].split("/")
-                    if len(parts) != 3 or not all(parts):
+                    parts = skills_sh_listing_parts(loc)
+                    if parts is None:
+                        _mark_incomplete(skillsh_source)
                         continue
                     owner, repo, sslug = parts
                     item_id = canonical_id("skill", owner, canonical_slug(sslug.lower()))
                     if item_id in seen_ids:
                         skillsh_seen += 1
                         existing = rows_by_id.get(item_id)
-                        if existing is not None:
-                            enrich_urls.append((owner, repo, sslug, existing))
+                        if existing is not None and item_id not in queued_enrich_ids:
+                            queued_enrich_ids.add(item_id)
+                            enrich_urls.append((loc, existing))
+                        else:
+                            skillsh_duplicates += 1
                         continue
+                    if item_id in queued_skill_ids:
+                        skillsh_duplicates += 1
+                        continue
+                    queued_skill_ids.add(item_id)
                     skill_urls.append((loc, owner, repo, sslug, item_id))
             total = len(skill_urls)
             print(f"  skills.sh: {total} skills not yet in the catalog "
                   f"({skillsh_seen} already present, "
-                  f"{len(enrich_urls)} to enrich from their SKILL.md)")
+                  f"{len(enrich_urls)} to enrich from public pages)")
             for n, (loc, owner, repo, sslug, item_id) in enumerate(skill_urls, 1):
-                payload_url = f"https://skills.sh/api/download/{owner}/{repo}/{sslug}"
-                payload = _obtain_bulk(payload_url, skillsh_source, 25, refresh,
-                                       "skills.sh skill record")
+                payload = _obtain_bulk(loc, skillsh_source, 25, refresh,
+                                       "skills.sh skill page")
                 if payload is None:
                     skillsh_failed += 1
                 else:
-                    # The payload parses here (skill_md_description decides
-                    # row or no-row), so this record is consumed either way.
-                    _consume(payload_url, skillsh_source)
-                    desc = skill_md_description(payload)
+                    # The public page parses here, so this record is consumed
+                    # either way; missing descriptions are counted, not guessed.
+                    _consume(loc, skillsh_source)
+                    desc = skills_sh_page_description(payload)
                     if not desc:
                         skillsh_nodesc += 1
                     else:
@@ -2589,23 +2717,22 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
                             "source": skillsh_source,
                         })
                         skillsh_added += 1
-                        attribute_rows(payload_url, 1)
+                        attribute_rows(loc, 1)
                 if n % 500 == 0:
                     print(f"  skills.sh: {n}/{total} processed ({skillsh_added} added)")
                 time.sleep(0.03)  # pacing: one polite request at a time
             # Enrichment pass over ids the rest of the catalog already owns.
             # The record created no row, so it is consumed with 0 rows
             # attributed: the row belongs to whichever feed made it.
-            for n, (owner, repo, sslug, existing) in enumerate(enrich_urls, 1):
-                payload_url = f"https://skills.sh/api/download/{owner}/{repo}/{sslug}"
-                payload = _obtain_bulk(payload_url, skillsh_source, 25, refresh,
-                                       "skills.sh skill record")
+            for n, (loc, existing) in enumerate(enrich_urls, 1):
+                payload = _obtain_bulk(loc, skillsh_source, 25, refresh,
+                                       "skills.sh skill page")
                 if payload is None:
                     skillsh_enrich_fail += 1
                     continue
-                _consume(payload_url, skillsh_source)
-                attribute_rows(payload_url, 0)
-                desc = skill_md_description(payload)
+                _consume(loc, skillsh_source)
+                attribute_rows(loc, 0)
+                desc = skills_sh_page_description(payload)
                 if desc and desc != existing.get("summary"):
                     existing["summary"] = desc
                     skillsh_enriched += 1
@@ -2613,9 +2740,10 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
                     print(f"  skills.sh: {n}/{len(enrich_urls)} enriched")
                 time.sleep(0.03)
             print(f"  skills.sh: +{skillsh_added} rows "
-                  f"({skillsh_seen} already present, {skillsh_enriched} summaries "
-                  f"refreshed from SKILL.md, {skillsh_nodesc} without a "
-                  f"SKILL.md description, {skillsh_failed + skillsh_enrich_fail} "
+                  f"({skillsh_seen} already present, {skillsh_duplicates} duplicate "
+                  f"sitemap ids skipped, {skillsh_enriched} summaries "
+                  f"refreshed from public pages, {skillsh_nodesc} without a "
+                  f"page description, {skillsh_failed + skillsh_enrich_fail} "
                   f"fetch failures)")
         except snapshot_store.SnapshotIntegrityError:
             raise
@@ -2640,6 +2768,7 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
     mcps_source = FEED_MCPSERVERS[1]
     mcps_index = FEED_MCPSERVERS[0]
     mcps_added = mcps_seen = mcps_nocapture = mcps_nodesc = mcps_failed = 0
+    mcps_duplicates = 0
     if not runs(mcps_source):
         print("  mcpservers.org: skipped (scoped out of this run)")
     else:
@@ -2659,6 +2788,7 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
             server_sitemaps = sorted(server_sitemaps)
             _consume(mcps_index, mcps_source)
             new_pages = []
+            new_page_ids = set()
             for sm in server_sitemaps:
                 sm_bytes = _obtain_bulk(sm, mcps_source, 40, refresh,
                                         "mcpservers servers sitemap", fatal=True)
@@ -2676,6 +2806,10 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
                     if item_id in seen_ids:
                         mcps_seen += 1
                         continue
+                    if item_id in new_page_ids:
+                        mcps_duplicates += 1
+                        continue
+                    new_page_ids.add(item_id)
                     new_pages.append((loc, path, owner, sslug, item_id))
             print(f"  mcpservers.org: {len(new_pages)} servers not yet in the catalog "
                   f"({mcps_seen} already present); loading capture index...")
@@ -2762,7 +2896,8 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
                           f"({mcps_added} added)")
                 time.sleep(0.1)  # pacing against archive.org
             print(f"  mcpservers.org: +{mcps_added} rows "
-                  f"({mcps_seen} already present, {mcps_nocapture} not archived, "
+                  f"({mcps_seen} already present, {mcps_duplicates} duplicate sitemap "
+                  f"ids skipped, {mcps_nocapture} not archived, "
                   f"{mcps_nodesc} without title+description, {mcps_failed} fetch failures)")
         except snapshot_store.SnapshotIntegrityError:
             raise
@@ -2920,6 +3055,20 @@ def build_full_catalog(refresh=False, skip_sources=frozenset(), only_source=None
     # has none. Because the catalog was ranked by stars, those fabricated rows
     # occupied the top of the public index. Removed: the catalog lists only
     # capabilities that were actually ingested from a named upstream source.
+
+    # Last-line guard: interrupted/replayed feeds and duplicate sitemap URLs
+    # must never create two catalog rows with the same canonical listing id.
+    # Fail before writing catalog.json rather than publishing an ambiguous row.
+    output_ids = set()
+    duplicate_ids = set()
+    for item in items:
+        item_id = item.get("id")
+        if item_id in output_ids:
+            duplicate_ids.add(item_id)
+        output_ids.add(item_id)
+    if duplicate_ids:
+        sample = ", ".join(sorted(duplicate_ids)[:10])
+        raise ValueError(f"catalog contains {len(duplicate_ids)} duplicate listing id(s): {sample}")
 
     # Sort catalog deterministically.
     #

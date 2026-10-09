@@ -1,0 +1,5 @@
+[daemon] startup recovery: examined=0 rolledBack=0 committed=0 failed=0
+[daemon] LiteSPM Daemon v0.3.0 listening on /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/litespm-runtime/litespm.sock (PID 29097)
+
+[daemon] Received signal terminated, shutting down gracefully...
+[daemon] Shutdown complete.

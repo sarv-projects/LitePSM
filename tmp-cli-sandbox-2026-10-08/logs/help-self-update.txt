@@ -1,0 +1,31 @@
+LITESPM SELF-UPDATE
+
+Check for a newer LiteSPM binary and replace this one atomically.
+
+USAGE
+  litespm self-update [--force] [--help]
+
+WHAT IT DOES
+  - Fetches the published release manifest, and when a newer version exists
+     downloads the release ASSET (never the release page), verifies its
+     SHA-256 checksum, and replaces the running executable atomically.
+  - `--force` reinstalls or downgrades even when the manifest version is not
+     newer.
+
+WHAT IT DOES NOT
+  - Does not update installed packages or skills — that is `litespm skills
+     update`.
+  - Refuses to fall back to an unverified download when signature verification
+     is required and unavailable.
+
+EXAMPLES
+  1. litespm self-update
+  2. litespm self-update --force
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  version · skills

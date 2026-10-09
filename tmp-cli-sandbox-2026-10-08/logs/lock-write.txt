@@ -1,0 +1,1 @@
+✓ Wrote /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/lock-workspace/litespm.lock (1 resolved entries, lockDigest sha256:19d4bbf919750b8e7324862573fc4ae12e97d9a2f0827ea5befaea8893384e30)

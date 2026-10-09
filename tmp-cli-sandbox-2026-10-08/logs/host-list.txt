@@ -1,0 +1,54 @@
+Registered Agent Host Adapters (50):
+
+HOST ID        DISPLAY NAME         FORMAT     CONFIG FILE
+----------------------------------------------------------------------
+deepagents     Deep Agents          json       deepagents.json
+codestudio     Code Studio          json       codestudio.json
+cortex         Cortex Code          json       cortex.json
+ona            Ona                  json       ona.json
+neovate        Neovate              json       neovate.json
+devin          Devin                json       devin.json
+firebender     Firebender           json       firebender.json
+kilo           Kilo Code            json       kilo.json
+openhands      OpenHands            json       openhands.json
+cline          Cline (VS Code Extension) json       cline_mcp_settings.json
+github-copilot GitHub Copilot CLI   json       github-copilot.json
+kimchi         Kimchi               json       kimchi.json
+bob            IBM Bob              json       bob.json
+codearts-agent CodeArts Agent       json       codearts-agent.json
+command-code   Command Code         json       command-code.json
+qoder          Qoder                json       qoder.json
+qwen-code      Qwen Code            json       qwen-code.json
+opencode       OpenCode CLI         json       opencode.json
+aider-desk     AiderDesk            json       aider-desk.json
+antigravity-cli Antigravity CLI      json       antigravity-cli.json
+junie          Junie                json       junie.json
+pochi          Pochi                json       pochi.json
+mux            Mux (Xum)            json       mux.json
+roo            Roo Code             json       roo.json
+grok-build     Grok Build (xAI Dev Tool) toml       config.toml
+fx             fx                   json       fx.json
+gemini-cli     Gemini CLI           json       gemini-cli.json
+jazz           Jazz                 json       jazz.json
+codebuddy      CodeBuddy            json       codebuddy.json
+tabnine-cli    Tabnine CLI          json       tabnine-cli.json
+antigravity    Antigravity          json       antigravity.json
+astrbot        AstrBot              json       astrbot.json
+cursor         Cursor               json       cursor.json
+kiro-cli       Kiro CLI             json       kiro-cli.json
+crush          Crush                json       crush.json
+zcode          ZCode                json       zcode.json
+zed            Zed                  json       zed.json
+rovodev        Rovo Dev             json       rovodev.json
+pi-agent       Pi Agent (Terminal Agent) json       mcp.json
+augment        Augment              json       augment.json
+droid          Droid                json       droid.json
+forgecode      ForgeCode            json       forgecode.json
+kode           Kode                 json       kode.json
+claude-code    Claude Code CLI      json       .claude.json
+iflow-cli      iFlow CLI            json       iflow-cli.json
+kimi-code-cli  Kimi Code CLI        json       kimi-code-cli.json
+posit-assistant Posit Assistant      json       posit-assistant.json
+qoder-cn       Qoder CN             json       qoder-cn.json
+codex          OpenAI Codex CLI     toml       config.toml
+amp            Amp                  json       amp.json

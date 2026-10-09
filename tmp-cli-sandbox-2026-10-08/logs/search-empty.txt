@@ -1,0 +1,2 @@
+No capabilities found: the local catalog index is empty.
+Run 'litespm catalog sync' to populate it from the registry.

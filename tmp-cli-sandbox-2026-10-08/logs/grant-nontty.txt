@@ -1,0 +1,1 @@
+litespm grant requires an interactive terminal: grants are given by a person, not a script.

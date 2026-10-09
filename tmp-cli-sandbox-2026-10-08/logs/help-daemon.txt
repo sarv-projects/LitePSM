@@ -1,0 +1,31 @@
+LITESPM DAEMON
+
+Run the LiteSPM background supervisor and IPC engine.
+
+USAGE
+  litespm daemon serve
+
+WHAT IT DOES
+  - Recovers any interrupted install from the operation journal, then serves
+     the IPC endpoint the bridge and agents call for search, plan, approval
+     and invocation.
+  - Runs in the foreground so your terminal or process supervisor owns its
+     lifetime.
+
+WHAT IT DOES NOT
+  - Does not install itself as an operating-system service: starting it is up
+     to you.
+  - Does not install packages or edit agent configs; those effects belong to
+     `install`, `copy` and `setup`.
+
+EXAMPLES
+  1. litespm daemon serve
+  2. litespm daemon serve >> litespm.log 2>&1 # keep the log
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  bridge · setup · invoke

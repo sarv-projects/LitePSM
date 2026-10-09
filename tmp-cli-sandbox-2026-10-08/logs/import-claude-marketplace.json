@@ -1,0 +1,47 @@
+{
+  "format": "claude-marketplace",
+  "source": "/home/sarvesh/business_Dev/liteSPM/internal/interop/testdata/claude-marketplace.json",
+  "target": "/home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/imports/claude-marketplace/litespm.toml",
+  "targetState": "create",
+  "entries": [
+    {
+      "action": "add",
+      "id": "plugin:builtin:claude-plugins:web-toolkit",
+      "kind": "plugin",
+      "constraint": "2.0.0",
+      "foreign": {
+        "source": "https://github.com/acme/web-toolkit",
+        "sourceType": "github",
+        "version": "2.0.0",
+        "components": [
+          "./skills/web",
+          "./skills/css"
+        ]
+      }
+    },
+    {
+      "action": "add",
+      "id": "plugin:builtin:claude-plugins:docs-helper",
+      "kind": "plugin",
+      "constraint": "1.2.0",
+      "foreign": {
+        "source": "./plugins/docs-helper",
+        "sourceType": "local",
+        "version": "1.2.0",
+        "notes": [
+          "1 lspServers declared (reported only; components are discovered at install)"
+        ]
+      }
+    }
+  ],
+  "preservedExisting": 0,
+  "lossy": [
+    "marketplace descriptions, categories, renames and per-plugin behavior flags are not written to the manifest",
+    "skill and lspServer component lists are reported in the record above; components are discovered at install time, not by import",
+    "import records plugin ids only — plugin install and trust semantics are not imported (ARCH/32 §5)",
+    "litespm.lock is not written by import; run `litespm lock` to resolve the new requires against the local catalog index",
+    "import writes the manifest only — installing is a separate `litespm install` step (ARCH/32 §5)"
+  ],
+  "warnings": [],
+  "applied": false
+}

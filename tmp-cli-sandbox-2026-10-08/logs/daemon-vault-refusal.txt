@@ -1,0 +1,1 @@
+Fatal: [LPSM-AUTH-VAULT-UNAVAILABLE] [LPSM-AUTH-VAULT-UNAVAILABLE] secure platform authentication vault is unavailable: failed to store vault master key via secret-tool: exit status 1 (category: LPSM-AUTH, details: map[reason:failed to store vault master key via secret-tool: exit status 1])

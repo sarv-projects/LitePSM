@@ -1,0 +1,9 @@
+schemaVersion = 1
+
+[project]
+name = "sandbox-lock-check"
+defaultScope = "project"
+
+[[requires]]
+id = "plugin:claude-official:security-guidance"
+constraint = "2.0.10"

@@ -1,0 +1,2 @@
+✓ Successfully configured OpenCode CLI:
+  • Config File: /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/config/opencode/opencode.json

@@ -217,7 +217,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
   // real links, not a spinner and not a false "not found".
   if (!resolved || !slug) {
     return (
-      <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+      <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "var(--site-header-height)" }}>
         <Header />
         <PackageIndexShell total={total} indexRows={indexRows} />
         <SiteFooter />
@@ -232,7 +232,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
     // so with a retry, and only a completed snapshot may declare a key absent.
     if (status === "ready") {
       return (
-        <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+        <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "var(--site-header-height)" }}>
           <Header />
           <NotFound total={total} />
           <SiteFooter />
@@ -241,7 +241,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
     }
     const pending = status === "loading" || status === "idle";
     return (
-      <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+      <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "var(--site-header-height)" }}>
         <Header />
         <PackageIndexShell
           total={total}
@@ -331,7 +331,7 @@ function PackageContent({ total, hostTotal, indexRows }: PackageViewProps) {
   }[item.kind];
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "var(--site-header-height)" }}>
       <Header />
 
       <script

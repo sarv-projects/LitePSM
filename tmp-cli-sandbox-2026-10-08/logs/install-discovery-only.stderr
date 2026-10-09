@@ -1,0 +1,1 @@
+Install failed: [LPSM-NOT-INSTALLABLE] listing skill:anthropics:docx is not installable: this listing is discovery-only metadata with no proven artifact (category: LPSM-INSTALL, details: map[listingId:skill:anthropics:docx reason:this listing is discovery-only metadata with no proven artifact])

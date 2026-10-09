@@ -1,0 +1,1 @@
+litespm approve requires an interactive terminal: approvals are given by a person, not a script.

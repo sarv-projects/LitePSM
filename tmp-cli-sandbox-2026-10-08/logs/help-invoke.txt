@@ -1,0 +1,30 @@
+LITESPM INVOKE
+
+Call one discovered capability from the terminal.
+
+USAGE
+  litespm invoke <capability-id> [--arguments '<json>']
+
+WHAT IT DOES
+  - Calls the tool through the same path the bridge uses, after re-checking
+     that the tool's input schema still matches what was granted — so the
+     terminal and an agent cannot behave differently.
+  - Prints the tool's own output and exits non-zero when the tool reported an
+     error.
+
+WHAT IT DOES NOT
+  - Does not bypass policy: without an engine that can enforce your rules the
+     invocation is refused, never silently allowed.
+  - Does not accept malformed arguments: `--arguments` must be valid JSON.
+
+EXAMPLES
+  1. litespm invoke <capability-id>
+  2. litespm invoke <capability-id> --arguments '{"q":"lite"}'
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  capabilities · grant

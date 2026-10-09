@@ -43,6 +43,7 @@ import re
 import sys
 import tempfile
 import urllib.error
+from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -76,12 +77,17 @@ def skill_md(name, description):
             f"# {name}\n\nInstructions.\n").encode()
 
 
-def download_payload(name, description):
-    """The skills.sh download envelope skill_md_description reads."""
-    return json.dumps({
-        "files": [{"path": "SKILL.md",
-                   "contents": skill_md(name, description).decode()}]
-    }).encode()
+def skills_sh_page(description, meta_description=None):
+    """A public skills.sh page with its published JSON-LD description."""
+    data = json.dumps({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "description": description,
+    })
+    meta = (f'<meta name="description" content="{meta_description}">'
+            if meta_description else "")
+    return (f"<html><head>{meta}<script type=\"application/ld+json\">"
+            f"{data}</script></head><body></body></html>").encode()
 
 
 # --- canned fixtures -------------------------------------------------------
@@ -198,19 +204,22 @@ SKILLSH_SUBMAP = (
     b'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     b"<url><loc>https://skills.sh/acme/repo/existing</loc></url>\n"
     b"<url><loc>https://skills.sh/brand/new-skill/thing</loc></url>\n"
+    # Duplicate sitemap locations must not cause duplicate row appends or
+    # repeated requests within one build.
+    b"<url><loc>https://skills.sh/brand/new-skill/thing</loc></url>\n"
     b"</urlset>\n"
 )
-SKILLSH_ENRICH_URL = "https://skills.sh/api/download/acme/repo/existing"
-SKILLSH_NEW_URL = "https://skills.sh/api/download/brand/new-skill/thing"
-ENRICH_DESC = "Summary read from the skill's own SKILL.md frontmatter."
+SKILLSH_ENRICH_URL = "https://skills.sh/acme/repo/existing"
+SKILLSH_NEW_URL = "https://skills.sh/brand/new-skill/thing"
+ENRICH_DESC = "Summary published in the skills.sh page JSON-LD."
 
 SKILLSH_CANNED = {
     README_URL: MIN_README,
     "https://raw.githubusercontent.com/acme/skills/main/skills/existing/SKILL.md": 404,
     producer.FEED_SKILLSH[0]: SKILLSH_INDEX,
     "https://skills.sh/sitemap-skills-1.xml": SKILLSH_SUBMAP,
-    SKILLSH_ENRICH_URL: download_payload("existing", ENRICH_DESC),
-    SKILLSH_NEW_URL: download_payload("thing", "A brand new skill."),
+    SKILLSH_ENRICH_URL: skills_sh_page(ENRICH_DESC),
+    SKILLSH_NEW_URL: skills_sh_page("A brand new skill."),
 }
 
 
@@ -285,6 +294,225 @@ def snapshot_status(root, url):
     return meta["snapshot"]
 
 
+def check_rate_limit_contract(ok):
+    """429s wait once, then open a source circuit instead of retrying each row."""
+    fixed_now = datetime(2015, 10, 21, 7, 27, 53, tzinfo=timezone.utc)
+    ok(producer._retry_after_delay("7", now=fixed_now) == 7,
+       "Retry-After delay-seconds were not parsed")
+    ok(producer._retry_after_delay(
+        "Wed, 21 Oct 2015 07:28:00 GMT", now=fixed_now) == 7,
+       "Retry-After HTTP-date was not parsed")
+    ok(producer._retry_after_delay("not-a-date", now=fixed_now) is None,
+       "invalid Retry-After was accepted")
+
+    refresh_url = "https://skills.sh/acme/repo/refresh-429"
+    refresh_body = skills_sh_page("Refresh fixture.")
+    refresh_calls = []
+    refresh_sleeps = []
+
+    def seed_snapshot(url, timeout, etag=None, source_id=None):
+        return 200, {"ETag": '"v1"'}, refresh_body
+
+    def rate_limit_then_not_modified(url, timeout, etag=None, source_id=None):
+        refresh_calls.append((url, etag))
+        if len(refresh_calls) == 1:
+            raise urllib.error.HTTPError(
+                url, 429, "Too Many Requests", {"Retry-After": "5"}, io.BytesIO())
+        return 304, {"ETag": '"v1"'}, b""
+
+    with tempfile.TemporaryDirectory() as root:
+        producer._reset_run_ledger()
+        with mock.patch.object(producer, "_http_get",
+                               side_effect=seed_snapshot), \
+                mock.patch.object(producer.socket, "getaddrinfo",
+                                  side_effect=_public_dns), \
+                mock.patch.object(snapshot_store, "default_root",
+                                  return_value=root):
+            seeded = producer._obtain_bulk(refresh_url, SKILLSH, 25, False,
+                                           "skills.sh refresh seed")
+        producer._reset_run_ledger()
+        with mock.patch.object(producer, "_http_get",
+                               side_effect=rate_limit_then_not_modified), \
+                mock.patch.object(producer.socket, "getaddrinfo",
+                                  side_effect=_public_dns), \
+                mock.patch.object(producer.time, "sleep",
+                                  side_effect=refresh_sleeps.append), \
+                mock.patch.object(snapshot_store, "default_root",
+                                  return_value=root):
+            refreshed = producer._obtain_bulk(refresh_url, SKILLSH, 25, True,
+                                              "skills.sh refresh 429 test")
+        ok(seeded == refresh_body and refreshed == seeded,
+           "refresh-mode 429 recovery did not retain the recorded response")
+        ok(len(refresh_calls) == 2 and
+           [call[1] for call in refresh_calls] == ['"v1"', '"v1"'] and
+           refresh_sleeps == [5],
+           "refresh-mode 429 was swallowed instead of retried after Retry-After")
+        ok(SKILLSH not in producer._STALE_SOURCES,
+           "successful refresh after 429 was incorrectly marked stale")
+
+    rate_url = "https://skills.sh/acme/repo/rate-limited"
+    requests = []
+    sleeps = []
+
+    def always_rate_limited(url, timeout, etag=None, source_id=None):
+        requests.append(url)
+        raise urllib.error.HTTPError(
+            url, 429, "Too Many Requests", {"Retry-After": "7"}, io.BytesIO())
+
+    recover_url = "https://skills.sh/acme/repo/recover-after-wait"
+    recover_requests = []
+    recover_sleeps = []
+
+    def recover_once(url, timeout, etag=None, source_id=None):
+        recover_requests.append(url)
+        if len(recover_requests) == 1:
+            raise urllib.error.HTTPError(
+                url, 429, "Too Many Requests", {"Retry-After": "7"}, io.BytesIO())
+        return 200, {"ETag": '"stable"'}, skills_sh_page("Recovered.")
+
+    with tempfile.TemporaryDirectory() as root:
+        producer._reset_run_ledger()
+        with mock.patch.object(producer, "_http_get",
+                               side_effect=recover_once), \
+                mock.patch.object(producer.socket, "getaddrinfo",
+                                  side_effect=_public_dns), \
+                mock.patch.object(producer.time, "sleep",
+                                  side_effect=recover_sleeps.append), \
+                mock.patch.object(snapshot_store, "default_root",
+                                  return_value=root):
+            body = producer._obtain_bulk(recover_url, SKILLSH, 25, False,
+                                         "skills.sh recover test")
+            replay = producer._obtain_bulk(recover_url, SKILLSH, 25, False,
+                                           "skills.sh replay test")
+
+        ok(body == skills_sh_page("Recovered.") and replay == body,
+           "the bounded Retry-After retry did not produce a replayable snapshot")
+        ok(len(recover_requests) == 2,
+           f"the successful retry/replay made {len(recover_requests)} requests")
+        ok(recover_sleeps == [7],
+           f"successful Retry-After delay was not honored: {recover_sleeps}")
+
+    # The allowance is source-wide, not one retry per URL: if the same feed
+    # rate-limits again later in this run, stop immediately rather than retrying.
+    later_url = "https://skills.sh/acme/repo/later-429"
+    later_requests = []
+
+    def later_rate_limit(url, timeout, etag=None, source_id=None):
+        later_requests.append(url)
+        raise urllib.error.HTTPError(
+            url, 429, "Too Many Requests", {"Retry-After": "7"}, io.BytesIO())
+
+    with tempfile.TemporaryDirectory() as root:
+        caught = None
+        with mock.patch.object(producer, "_http_get",
+                               side_effect=later_rate_limit), \
+                mock.patch.object(producer.socket, "getaddrinfo",
+                                  side_effect=_public_dns), \
+                mock.patch.object(producer.time, "sleep",
+                                  side_effect=recover_sleeps.append), \
+                mock.patch.object(snapshot_store, "default_root",
+                                  return_value=root):
+            try:
+                producer._obtain_bulk(later_url, SKILLSH, 25, False,
+                                      "skills.sh later 429 test")
+            except Exception as exc:
+                caught = exc
+        ok(type(caught).__name__ == "RateLimitExceeded" and
+           len(later_requests) == 1,
+           "a later skills.sh 429 did not immediately open the source circuit")
+        ok(recover_sleeps == [7],
+           "a later source-level 429 caused an extra wait/retry")
+
+    with tempfile.TemporaryDirectory() as root:
+        producer._reset_run_ledger()
+        caught = None
+        with mock.patch.object(producer, "_http_get",
+                               side_effect=always_rate_limited), \
+                mock.patch.object(producer.socket, "getaddrinfo",
+                                  side_effect=_public_dns), \
+                mock.patch.object(producer.time, "sleep",
+                                  side_effect=sleeps.append), \
+                mock.patch.object(snapshot_store, "default_root",
+                                  return_value=root):
+            try:
+                producer._obtain_bulk(rate_url, SKILLSH, 25, False,
+                                      "skills.sh rate-limit test")
+            except Exception as exc:  # the source circuit must fail closed
+                caught = exc
+
+        ok(type(caught).__name__ == "RateLimitExceeded",
+           f"persistent 429 did not stop the source: {caught!r}")
+        ok(len(requests) == 2,
+           f"429 handling made {len(requests)} requests; expected one retry")
+        ok(sleeps == [7],
+           f"Retry-After was not honored exactly once: {sleeps}")
+        ok(SKILLSH in producer._INCOMPLETE_SOURCES,
+           "rate-limited source was not marked incomplete")
+
+    # Missing Retry-After uses a conservative fallback; an excessive server
+    # wait is not shortened into an early retry.
+    fallback_url = "https://skills.sh/acme/repo/no-retry-after"
+    fallback_requests = []
+    fallback_sleeps = []
+
+    def no_retry_after(url, timeout, etag=None, source_id=None):
+        fallback_requests.append(url)
+        raise urllib.error.HTTPError(
+            url, 429, "Too Many Requests", {}, io.BytesIO())
+
+    with tempfile.TemporaryDirectory() as root:
+        producer._reset_run_ledger()
+        caught = None
+        with mock.patch.object(producer, "_http_get",
+                               side_effect=no_retry_after), \
+                mock.patch.object(producer.socket, "getaddrinfo",
+                                  side_effect=_public_dns), \
+                mock.patch.object(producer.time, "sleep",
+                                  side_effect=fallback_sleeps.append), \
+                mock.patch.object(snapshot_store, "default_root",
+                                  return_value=root):
+            try:
+                producer._obtain_bulk(fallback_url, SKILLSH, 25, False,
+                                      "skills.sh missing Retry-After test")
+            except Exception as exc:
+                caught = exc
+        ok(type(caught).__name__ == "RateLimitExceeded",
+           f"missing Retry-After did not stop after its bounded retry: {caught!r}")
+        ok(len(fallback_requests) == 2 and
+           fallback_sleeps == [producer.RATE_LIMIT_FALLBACK_DELAY_SECONDS],
+           "missing Retry-After did not use the conservative fallback exactly once")
+
+    too_long_url = "https://skills.sh/acme/repo/too-long-wait"
+    too_long_requests = []
+    too_long_sleeps = []
+
+    def excessive_retry_after(url, timeout, etag=None, source_id=None):
+        too_long_requests.append(url)
+        raise urllib.error.HTTPError(
+            url, 429, "Too Many Requests", {"Retry-After": "3601"}, io.BytesIO())
+
+    with tempfile.TemporaryDirectory() as root:
+        producer._reset_run_ledger()
+        caught = None
+        with mock.patch.object(producer, "_http_get",
+                               side_effect=excessive_retry_after), \
+                mock.patch.object(producer.socket, "getaddrinfo",
+                                  side_effect=_public_dns), \
+                mock.patch.object(producer.time, "sleep",
+                                  side_effect=too_long_sleeps.append), \
+                mock.patch.object(snapshot_store, "default_root",
+                                  return_value=root):
+            try:
+                producer._obtain_bulk(too_long_url, SKILLSH, 25, False,
+                                      "skills.sh excessive Retry-After test")
+            except Exception as exc:
+                caught = exc
+        ok(type(caught).__name__ == "RateLimitExceeded",
+           f"excessive Retry-After was not refused: {caught!r}")
+        ok(len(too_long_requests) == 1 and not too_long_sleeps,
+           "an excessive Retry-After was shortened or retried early")
+
+
 # --- (iv) the Go ParseSkillSource mirror -----------------------------------
 
 # internal/skills/source_test.go TestParseSkillSourceURLForms (and Rejects),
@@ -338,6 +566,7 @@ def main():
 
     ok(len(ALL_SOURCES) >= 13,
        f"source registry shrank: {sorted(ALL_SOURCES)}")
+    check_rate_limit_contract(ok)
 
     # --- (iv) Python mirror of internal/skills ----------------------------
     for raw, want in GO_SOURCE_TABLE:
@@ -373,12 +602,46 @@ def main():
     ok(producer.skill_md_frontmatter(
         "---\nname: x\ndescription: y\n---\n" + "z" * 70000) == (None, None),
        "a line beyond bufio.Scanner's token limit must not verify")
-    # The existing skills.sh reader keeps its exact acceptance.
-    ok(producer.skill_md_description(
-        download_payload("demo", "Skill description.")) == "Skill description.",
-       "skill_md_description lost a valid description")
-    ok(producer.skill_md_description(b'{"files": []}') is None,
-       "skill_md_description accepted a payload without SKILL.md")
+    # Public skills.sh pages expose the catalog summary via JSON-LD, with a
+    # metadata fallback. The /api path is disallowed by robots.txt.
+    long_desc = "A full public-page description that is not truncated."
+    ok(producer.skills_sh_page_description(skills_sh_page(long_desc)) == long_desc,
+       "skills.sh JSON-LD description was not parsed")
+    ok(producer.skills_sh_page_description(
+        b'<meta property="og:description" content="Page summary">') == "Page summary",
+       "skills.sh page metadata fallback was not parsed")
+    ok(producer.skills_sh_page_description(
+        b'<script type="application/ld+json">not json</script>') is None,
+       "malformed skills.sh JSON-LD produced a description")
+    ok(producer.skills_sh_listing_parts(
+        "https://www.skills.sh/anthropics/skills/pdf")
+       == ("anthropics", "skills", "pdf"),
+       "a sitemap-listed public skill page was not accepted")
+    for forbidden in (
+            "https://skills.sh/api/repo/slug",
+            "https://skills.sh/internal/repo/slug",
+            "https://skills.sh/debug-security/repo/slug",
+            "https://skills.sh/search/repo/slug",
+            "https://elsewhere.example/a/b/c",
+            "https://skills.sh/a/b/c?query=1",
+            "https://skills.sh/a/b/../c"):
+        ok(producer.skills_sh_listing_parts(forbidden) is None,
+           f"unsafe or non-public skills.sh URL was accepted: {forbidden}")
+    for forbidden in (
+            "https://skills.sh/api/repo/slug",
+            "https://skills.sh/internal/repo/slug",
+            "https://skills.sh/debug-security/repo/slug",
+            "https://skills.sh/search/repo/slug",
+            "https://elsewhere.example/a/b/c",
+            "https://skills.sh/a/b/../c"):
+        try:
+            producer._validate_request_url(
+                forbidden, SKILLSH, check_dns=False)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(
+                f"robots-disallowed or unsafe skills.sh URL was accepted: {forbidden}")
     # Probe URLs: one for a tree source, at most three (depth <= 2) for a
     # bare repository, none for a host nothing can verify.
     ok(producer.skill_probe_urls(
@@ -583,7 +846,7 @@ def main():
             root, SKILLSH_CANNED, keep=[VOLT, SKILLSH])
         ok(not unexpected,
            f"block fetched URLs outside the fixture: {unexpected}")
-        ok("1 summaries refreshed from SKILL.md" in out,
+        ok("1 summaries refreshed from public pages" in out,
            f"existing row was not enriched: {out.splitlines()[-14:]}")
         ok("+1 rows" in out, "the new skills.sh id did not add a row")
         ok("BUG" not in out, "a consumed snapshot had no recording")
@@ -591,9 +854,13 @@ def main():
         rows = read_catalog(out_dir)
         existing = row_by_id(rows, "skill:acme:existing")
         fresh = row_by_id(rows, "skill:brand:thing")
+        ok(sum(1 for row in rows if row["id"] == "skill:brand:thing") == 1,
+           "duplicate skills.sh sitemap locations emitted duplicate rows")
+        ok(requested.count(SKILLSH_NEW_URL) == 1,
+           "duplicate skills.sh sitemap locations fetched the same record twice")
         ok(existing is not None, "the existing row disappeared")
         ok(existing["summary"] == ENRICH_DESC,
-           f"summary was not refreshed from SKILL.md: {existing['summary']!r}")
+            f"summary was not refreshed from public page: {existing['summary']!r}")
         ok(existing["source"] == VOLT,
            f"enrichment rewrote the row's source: {existing['source']!r}")
         ok(existing["skillSource"]
@@ -606,7 +873,9 @@ def main():
            "an enriched row carries a fabricated claim")
         ok(fresh is not None and fresh["source"] == SKILLSH
            and fresh["summary"] == "A brand new skill.",
-           "the new skills.sh row was not built from its SKILL.md")
+            "the new skills.sh row was not built from its public page")
+        ok(all("/api/" not in url for url in requested),
+           "producer requested a robots-disallowed skills.sh API path")
 
         # Ledger: the enrichment record created no row, the new one created one.
         ok(snapshot_status(root, SKILLSH_ENRICH_URL)["itemCount"] == 0,
@@ -615,6 +884,20 @@ def main():
            "the new row was not attributed to its own record")
         ok(snapshot_status(root, SKILLSH_ENRICH_URL)["status"] == "healthy",
            "a parsed enrichment record was not finalized")
+
+        # Replaying the durable snapshots after interruption must rebuild the
+        # same unique dataset without re-fetching successful skills.sh records.
+        out2, requested2, unexpected2, out_dir2, _ = run_producer(
+            root, SKILLSH_CANNED, keep=[VOLT, SKILLSH])
+        rows2 = read_catalog(out_dir2)
+        ok(not unexpected2,
+           f"replay fetched URLs outside the fixture: {unexpected2}")
+        ok(rows2 == rows,
+           "snapshot replay changed rows or introduced duplicates")
+        ok(sum(1 for row in rows2 if row["id"] == "skill:brand:thing") == 1,
+           "snapshot replay emitted duplicate skills.sh rows")
+        ok(SKILLSH_NEW_URL not in requested2,
+           "snapshot replay re-fetched the already recorded skill")
 
     print(f"SKILL PROMOTION TEST OK ({checks} checks)")
     return 0

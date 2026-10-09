@@ -1,0 +1,3 @@
+{"mcp":{
+  "sandbox-demo": {"command":["node","server.js","--stdio"],"type":"local"}
+}}

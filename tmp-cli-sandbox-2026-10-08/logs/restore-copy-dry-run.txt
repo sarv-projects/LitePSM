@@ -1,0 +1,2 @@
+Would restore inst_user_mcp_adopted_codex_sandbox-demo_8770fc60:
+  - restore /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/opencode-copy-config/opencode.json from /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/litespm-data/backups/opencode_20261008_212911_9235f682.bak

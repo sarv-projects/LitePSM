@@ -1,0 +1,32 @@
+LITESPM SEARCH
+
+Search the local catalog index for MCP servers, skills and plugins.
+
+USAGE
+  litespm search <query>
+
+WHAT IT DOES
+  - Looks up your words in the catalog index that `litespm catalog sync` keeps
+     on disk and prints up to 25 matches with their id, kind, publisher and
+     summary. Plain words work: `litespm search github`.
+  - The index is local, so search answers the same way every time you run it
+     with the same synced release.
+
+WHAT IT DOES NOT
+  - Does not search the network: an empty index is reported as empty, with the
+     `litespm catalog sync` hint, never filled in from a guess.
+  - Does not install anything, and does not rank results by popularity — the
+     catalog publishes no popularity numbers.
+
+EXAMPLES
+  1. litespm search github
+  2. litespm search postgres
+  3. litespm catalog sync # refresh the index first if it is empty
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  install · catalog · list

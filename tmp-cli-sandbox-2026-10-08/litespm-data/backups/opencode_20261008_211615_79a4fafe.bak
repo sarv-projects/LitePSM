@@ -1,0 +1,5 @@
+{
+  "mcp": {
+  "litespm": {"command":["/home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/litespm","bridge","stdio","--host","opencode"],"type":"local"}
+}
+}

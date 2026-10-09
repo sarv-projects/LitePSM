@@ -117,7 +117,7 @@ export default function Home(props: HomeViewProps) {
   const error = status === "error";
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "var(--site-header-height)" }}>
       <Header />
 
       <main id="main" className="flex-1">

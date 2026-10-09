@@ -1,0 +1,6 @@
+Removing the LiteSPM bridge entry from every agent host config…
+
+  - opencode         would remove from /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/config/opencode/opencode.json
+
+Dry run: 1 host config(s) would be modified, 49 had nothing to remove, 0 could not be read.
+Re-run without --dry-run to apply.

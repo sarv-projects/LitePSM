@@ -1,0 +1,31 @@
+LITESPM SETUP
+
+Run the interactive setup wizard.
+
+USAGE
+  litespm setup
+  litespm init     # same command
+
+WHAT IT DOES
+  - Walks you through choosing an agent, detects its configuration file, and
+     registers the LiteSPM bridge entry — showing what will change before it
+     changes it.
+  - If the config file is not where detection expects, the wizard offers a
+     manual path, a copy-paste snippet and a retry.
+
+WHAT IT DOES NOT
+  - Does not run non-interactively: it has no flags and needs a terminal.
+  - Does not install packages — it only wires the bridge. `litespm install`
+     installs capabilities.
+
+EXAMPLES
+  1. litespm setup
+  2. litespm host detect
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  host · daemon · install

@@ -1,0 +1,15 @@
+Copy OpenAI Codex CLI → OpenCode CLI
+
+Found     1 MCP server
+TRANSLATED 1 MCP
+
+Rows:
+  mcp     sandbox-demo             translated   command + args → combined command array
+
+Verify    L1 read-back: target entry fingerprint equals the plan · L2 executable: Command resolves on this machine (levels 1–2 only)
+
+Applying 1 change(s) to OpenCode CLI...
+  ✓ mcp    sandbox-demo             install inst_user_mcp_adopted_codex_sandbox-demo_8770fc60 → /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/opencode-copy-config/opencode.json (L1 ok · L2 ok)
+
+Applied 1 · failed 0 · skipped 0
+Reverse a copied install with `litespm install remove <installId>` (or `litespm restore <installId>`).

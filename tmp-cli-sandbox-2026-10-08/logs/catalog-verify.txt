@@ -1,0 +1,4 @@
+✓ Catalog tree verified against its pointer
+  Release:  rel-2026-10-08-01 (sequence 146, 46166 items)
+  Manifest: sha256:3df19fbe224acec373ada4401bab5a1b757b626299e7d33e6b5ecedbbb7319ff
+  Files:    2 verified byte-for-byte

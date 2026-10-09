@@ -1,0 +1,11 @@
+Copy OpenAI Codex CLI → OpenCode CLI   (no changes have been made)
+
+Found     1 MCP server
+TRANSLATED 1 MCP
+
+Rows:
+  mcp     sandbox-demo             translated   command + args → combined command array
+
+Verify    L1 read-back: target entry fingerprint equals the plan · L2 executable: Command resolves on this machine (levels 1–2 only)
+
+Apply:  litespm copy --from codex --to opencode --apply

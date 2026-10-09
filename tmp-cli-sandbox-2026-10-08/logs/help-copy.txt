@@ -1,0 +1,42 @@
+LITESPM COPY
+
+Port one agent's MCP servers and skills into another agent.
+
+USAGE
+  litespm copy [items|kinds...] --from <host> --to <host> [flags]
+    --conflict ask|keep-target|use-source|compatible|skip   --apply   --yes
+    --exclude <id>   --dry-run   --project <dir>   --global
+
+WHAT IT DOES
+  - Reads the source agent through its own adapter, normalizes every entry to
+     one intermediate representation, and renders it through the target
+     adapter's writer — so an array-shaped command becomes the target's own
+     command-plus-args layout without any per-pair translator.
+  - Prints the plan first and writes nothing until you approve it:
+     interactively in a terminal, or explicitly with `--apply --yes`. Writes
+     go through the normal install path, so a copy is recorded, listed by
+     `litespm list` and undoable with `install remove` or `restore`.
+
+WHAT IT DOES NOT
+  - Does not copy plaintext secrets: an environment variable found in the
+     source is reported by NAME under `Needs` and dropped, never written to
+     the target.
+  - Does not modify the source agent, is not a file copy, is not a config
+     diff, and does not keep the two agents in sync afterwards.
+  - Kinds v1 cannot represent are reported with a reason, never silently
+     dropped or converted.
+
+EXAMPLES
+  1. litespm copy --from <source-host> --to <target-host>
+  2. litespm copy --from <source-host> --to <target-host> --apply --yes
+  3. litespm copy mcp --from <source-host> --to <target-host> --conflict
+      keep-target
+  4. litespm copy --from <source-host> --to <target-host> --dry-run
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  list · install · restore

@@ -1,0 +1,14 @@
+Removing the LiteSPM bridge entry from every agent host config…
+
+  ✓ opencode         removed from /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/config/opencode/opencode.json
+
+Done: 1 host config(s) cleaned, 49 had nothing to remove, 0 could not be read.
+
+Still on disk:
+  • Skill directories copied by `litespm skills add`. They live inside each
+    agent's own skills tree and may hold files you added yourself, so this
+    command does not delete them. See what is tracked, then remove it:
+        litespm skills list
+        litespm skills remove --all
+  • Backups written next to each config. They are your restore points;
+    delete them yourself once you are satisfied.

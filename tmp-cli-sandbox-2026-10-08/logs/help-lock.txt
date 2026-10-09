@@ -1,0 +1,35 @@
+LITESPM LOCK
+
+Resolve litespm.yml into a deterministic litespm.lock.
+
+USAGE
+  litespm lock [--check] [--sbom cyclonedx-json|spdx-json] [--verify]
+
+WHAT IT DOES
+  - Reads the manifest and the locally synced catalog index and writes a
+     byte-identical lock for the same inputs, so committing it and running
+     `litespm lock --check` in CI catches a manifest or catalog that moved
+     without a re-lock.
+  - `--sbom` emits an SBOM from the lock; `--verify` re-checks the recorded
+     lock digest and manifest binding and reports each entry as recorded.
+
+WHAT IT DOES NOT
+  - Does not fetch anything: an unsynced index must be refreshed with `litespm
+     catalog sync` first.
+  - Never invents a field the catalog does not publish — signature and
+     license stay `none` / `NOASSERTION` until a real check produces a value,
+     and `--verify` never upgrades an entry to green.
+
+EXAMPLES
+  1. litespm lock
+  2. litespm lock --check
+  3. litespm lock --verify
+  4. litespm install <listing-id> --frozen
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  install · catalog

@@ -1,0 +1,30 @@
+LITESPM BRIDGE
+
+Serve the stdio MCP bridge an agent host launches.
+
+USAGE
+  litespm bridge stdio [--host <host-id>]
+
+WHAT IT DOES
+  - Speaks MCP over stdio on the agent's behalf and forwards each request to
+     the running daemon: catalog search, plans, `list_installed`, skill
+     loading and capability invocation.
+  - Without the daemon it still starts, and says so, so an agent sees an
+     honest empty bridge instead of a hang.
+
+WHAT IT DOES NOT
+  - Does not persist anything itself, and does not health-check installed
+     capabilities — an unobserved status is rendered unknown, never Ready.
+  - Does not start the daemon for you.
+
+EXAMPLES
+  1. litespm bridge stdio --host codex
+  2. litespm bridge stdio # --host defaults to generic
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+
+SEE ALSO
+  daemon · host · capabilities

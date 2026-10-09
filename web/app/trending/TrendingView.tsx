@@ -112,7 +112,7 @@ function CountBoard({
 
 export default function CoveragePage({ total, boards }: TrendingViewProps) {
   return (
-    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "48px" }}>
+    <div className="flex min-h-screen flex-col" style={{ ["--stack-top" as string]: "var(--site-header-height)" }}>
       <Header />
 
       <main id="main" className="shell flex-1 pt-8">

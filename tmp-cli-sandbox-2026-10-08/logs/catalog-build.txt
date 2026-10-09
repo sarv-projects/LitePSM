@@ -1,0 +1,6 @@
+✓ Catalog release built
+  Release:  rel-2026-10-08-01 (sequence 146, 46166 items)
+  Snapshot: snap-489f78bcdf3d0d77
+  Manifest: sha256:384aaf3fe4555f1492fb9d78fd9cdc0c1645f6656d0fcc3643dc750d45252ab4
+  Pointer:  /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/catalog-tree/v1/current.json
+  Tree:     /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/catalog-tree/v1/releases/rel-2026-10-08-01

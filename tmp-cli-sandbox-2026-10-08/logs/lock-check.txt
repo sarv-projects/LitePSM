@@ -1,0 +1,1 @@
+✓ litespm.lock is up to date with litespm.toml and the local catalog index

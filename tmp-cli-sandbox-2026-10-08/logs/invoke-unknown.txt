@@ -1,0 +1,1 @@
+Invoke failed: [LPSM-DOMAIN-INVALID-ID] invalid identifier "sandbox-capability": expected <install-id>/<component-name>/<provider-native-tool-name> (category: LPSM-DOMAIN, details: map[expectedGrammar:<install-id>/<component-name>/<provider-native-tool-name> raw:sandbox-capability])

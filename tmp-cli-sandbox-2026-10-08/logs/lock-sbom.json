@@ -1,0 +1,15 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "comment": "generated from lock sha256:19d4bbf919750b8e7324862573fc4ae12e97d9a2f0827ea5befaea8893384e30",
+  "dataLicense": "CC0-1.0",
+  "name": "litespm-lock-sbom",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-1",
+      "licenseConcluded": "NOASSERTION",
+      "name": "plugin:claude-official:security-guidance",
+      "versionInfo": "2.0.10"
+    }
+  ],
+  "spdxVersion": "SPDX-2.3"
+}

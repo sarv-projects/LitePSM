@@ -63,6 +63,14 @@ function toListingMap(listings: Listing[]): Map<string, Listing> {
 }
 
 /**
+ * Shared identity for "no rows yet". Callers legitimately pass `full ?? []`,
+ * and a fresh `[]` literal per render would change this hook's effect
+ * dependencies on every render — see the guard comment on the `!worker`
+ * branch below for why that became an infinite update loop.
+ */
+const EMPTY_LISTINGS: Listing[] = [];
+
+/**
  * Search the catalog with a MiniSearch Web Worker, falling back to main-thread
  * matching. Results always reflect the latest query/filter combination.
  */
@@ -71,18 +79,22 @@ export function useCatalogSearch(
   query: string,
   filters: CatalogSearchFilters
 ): CatalogSearchState {
+  // Normalize every "empty" input to one shared identity: an empty row set is
+  // an empty row set, and callers passing `full ?? []` would otherwise hand a
+  // brand-new array to the effect below on every render.
+  const rows = listings.length === 0 ? EMPTY_LISTINGS : listings;
   const kind = filters.kind ?? null;
   const category = filters.category ?? null;
 
   const [mode, setMode] = useState<"worker" | "fallback">("worker");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<Listing[]>(() =>
-    searchInThread(listings, query, kind, category)
+    searchInThread(rows, query, kind, category)
   );
 
   const workerRef = useRef<Worker | null>(null);
-  const listingsRef = useRef<Listing[]>(listings);
-  const listingMapRef = useRef<Map<string, Listing>>(toListingMap(listings));
+  const listingsRef = useRef<Listing[]>(rows);
+  const listingMapRef = useRef<Map<string, Listing>>(toListingMap(rows));
   const requestIdRef = useRef(0);
   const initializedSigRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
@@ -92,7 +104,7 @@ export function useCatalogSearch(
   // dataset fetch, so before the first interaction there is nothing to index —
   // and building (or even downloading) a MiniSearch worker for an empty set
   // would put the search engine itself back on the first-visit path.
-  const indexed = listings.length > 0;
+  const indexed = rows.length > 0;
   useEffect(() => {
     if (!indexed) return;
     if (typeof window === "undefined" || typeof Worker === "undefined") {
@@ -155,23 +167,32 @@ export function useCatalogSearch(
 
   // Drive searches from listing/query/filter changes, debounced.
   useEffect(() => {
-    listingMapRef.current = toListingMap(listings);
+    listingMapRef.current = toListingMap(rows);
 
-    const sig = listSignature(listings);
+    const sig = listSignature(rows);
     const key = `${mode}::${sig}::${query}::${kind ?? ""}::${category ?? ""}`;
 
     if (mode === "fallback") {
       if (lastKeyRef.current === key) return;
       lastKeyRef.current = key;
-      setResults(searchInThread(listings, query, kind, category));
+      setResults(searchInThread(rows, query, kind, category));
       setSearching(false);
       return;
     }
 
     const worker = workerRef.current;
     if (!worker) {
-      // Worker not available yet, but stay correct while we wait.
-      setResults(searchInThread(listings, query, kind, category));
+      // Worker not created yet (rows not indexed). This branch must be
+      // key-gated exactly like the fallback branch above: without the guard it
+      // called setResults() with a fresh array on every effect run, and any
+      // caller passing a per-render array identity (e.g. `full ?? []` before
+      // the catalog loads) re-ran this effect every render — an infinite
+      // "Maximum update depth exceeded" loop that starved the router's
+      // transition so client-side navigation silently never committed.
+      if (lastKeyRef.current === key) return;
+      lastKeyRef.current = key;
+      setResults(searchInThread(rows, query, kind, category));
+      setSearching(false);
       return;
     }
 
@@ -181,7 +202,7 @@ export function useCatalogSearch(
 
     if (needsInit) {
       initializedSigRef.current = sig;
-      const initMessage: WorkerInboundMessage = { type: "init", listings };
+      const initMessage: WorkerInboundMessage = { type: "init", listings: rows };
       try {
         worker.postMessage(initMessage);
       } catch {
@@ -210,7 +231,7 @@ export function useCatalogSearch(
     }, DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [listings, query, kind, category, mode]);
+  }, [rows, query, kind, category, mode]);
 
   return { results, searching, mode };
 }

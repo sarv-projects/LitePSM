@@ -1,0 +1,23 @@
+WARNING: [LPSM-AUTH-VAULT-UNAVAILABLE] secure credential vault unavailable: [LPSM-AUTH-VAULT-UNAVAILABLE] secure platform authentication vault is unavailable: failed to store vault master key via secret-tool: exit status 1 (category: LPSM-AUTH, details: map[reason:failed to store vault master key via secret-tool: exit status 1])
+
+LiteSPM Diagnostic Health Report
+============================================================
+✓ [PASS]  Directory Permissions & Structure: directories verified (read-only check) in /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/litespm-data
+✓ [PASS]  SQLite State Database Integrity : relational tables verified (PRAGMA integrity_check ok, journal_mode=wal measured)
+✓ [PASS]  Incomplete Operation Journal    : no non-terminal operations in the journal
+⚠ [WARN]  CAS Store Integrity             : CAS store has no content trees yet (nothing to verify)
+          ➜ Recommendation: Trees are created on the first install.
+✓ [PASS]  Staging Scratch Hygiene         : staging scratch area clean (0 leftover files)
+⚠ [WARN]  OS Secret Store & Keyring       : secret store is not configured; no canary was written and none can remain stored
+          ➜ Recommendation: Initialize OS secret vault for secure OAuth and API token storage.
+⚠ [WARN]  Agent Host Registrations        : no host configurations registered yet (run `litespm` to connect an agent)
+          ➜ Recommendation: Run `litespm` and pick an agent to register the bridge entry.
+✓ [PASS]  Host Configuration Backups      : 7 configuration backup(s) found in /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/litespm-data/backups
+✓ [PASS]  Provider Runtimes Environment   : detected: Node.js, Python 3, uvx, npx
+✓ [PASS]  Local Storage Disk Space        : 839.4 GiB free in /home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/litespm-data
+✗ [FAIL]  Secret Vault Availability       : the secure credential vault could not be opened: [LPSM-AUTH-VAULT-UNAVAILABLE] secure platform authentication vault is unavailable: failed to store vault master key via secret-tool: exit status 1 (category: LPSM-AUTH, details: map[reason:failed to store vault master key via secret-tool: exit status 1])
+          ➜ Recommendation: Provide a functional OS credential vault; LiteSPM refuses to store credentials in plaintext (ARCH/19).
+------------------------------------------------------------
+Summary: 7 Passed, 3 Warnings, 1 Failures (Overall: FAIL)
+
+No automated repair actions necessary.

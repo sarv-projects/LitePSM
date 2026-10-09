@@ -455,7 +455,7 @@ func TestServerHandshakeDeadline(t *testing.T) {
 func TestServerBoundsConcurrentHandlers(t *testing.T) {
 	release := make(chan struct{})
 	entered := make(chan struct{}, 4)
-	_, codec, _ := startRawServer(t, func(s *Server) {
+	_, codec, conn := startRawServer(t, func(s *Server) {
 		s.SetMaxConcurrentHandlers(2)
 		s.RegisterHandler("test.block", func(ctx context.Context, params json.RawMessage) (any, *RPCError) {
 			entered <- struct{}{}
@@ -492,11 +492,40 @@ func TestServerBoundsConcurrentHandlers(t *testing.T) {
 			t.Fatalf("in-flight request failed: %v %+v", err, resp)
 		}
 	}
-	// Capacity is released afterwards.
-	send(4)
-	<-entered
-	resp, err = codec.ReadResponse()
-	if err != nil || resp.Error != nil {
-		t.Fatalf("request after release failed: %v %+v", err, resp)
+	// A handler's response can reach the client just before its deferred
+	// semaphore release runs. Consume a transient rate-limit reply and retry
+	// rather than assuming response delivery and capacity release are atomic.
+	deadline := time.Now().Add(5 * time.Second)
+	if err := conn.SetDeadline(deadline); err != nil {
+		t.Fatalf("set retry deadline: %v", err)
+	}
+	defer func() { _ = conn.SetDeadline(time.Time{}) }()
+	accepted := false
+	for id := 4; time.Now().Before(deadline); id++ {
+		send(id)
+		resp, err = codec.ReadResponse()
+		if err != nil {
+			t.Fatalf("request after release: %v", err)
+		}
+		if resp.Error != nil {
+			if resp.Error.Code != CodeRateLimited {
+				t.Fatalf("request after release returned unexpected error: %+v", resp.Error)
+			}
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		if string(resp.Result) != `"done"` {
+			t.Fatalf("request after release returned unexpected result: %s", resp.Result)
+		}
+		accepted = true
+		break
+	}
+	if !accepted {
+		t.Fatal("handler capacity was not released within 5 seconds")
+	}
+	select {
+	case <-entered:
+	default:
+		t.Fatal("request accepted after capacity release did not enter the handler")
 	}
 }

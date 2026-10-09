@@ -1,0 +1,1 @@
+import: LPSM-IMPORT-005: plugins[3] ("run-me") has a `command` source; command sources are rejected on import (ARCH/32 §5 row 4) and never executed

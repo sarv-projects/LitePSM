@@ -1,0 +1,28 @@
+LiteSPM — the package manager for AI agents.
+Discover, install, port and manage MCP servers, skills and plugins across
+the agent hosts LiteSPM supports (`litespm host list` prints them).
+
+QUICK START
+  litespm host detect          which agent hosts this machine has
+  litespm search github        find capabilities in the local index
+  litespm list                 see what is deployed here
+  litespm doctor               check the setup and how to fix it
+
+DISCOVER    search · agent · catalog
+VIEW        list · inventory
+MANAGE      install · copy · lock · import · skills · grant · approve
+RECOVER     restore · doctor · uninstall
+CONFIGURE   setup · host · daemon · bridge
+SYSTEM      self-update · version · capabilities · invoke
+HELP        help
+
+EXAMPLES
+  litespm search github
+  litespm list --json
+  litespm skills list
+  litespm help concepts
+
+Run `litespm help <command>` for detail on one command, `litespm help concepts`
+for the vocabulary. Exit codes: 0 success · 1 refused or failed · 2 usage.
+
+Documentation: https://github.com/sarv-projects/litespm

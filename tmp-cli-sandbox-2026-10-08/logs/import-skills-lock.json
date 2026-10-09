@@ -1,0 +1,64 @@
+{
+  "format": "skills-lock",
+  "source": "/home/sarvesh/business_Dev/liteSPM/internal/interop/testdata/skills-lock.json",
+  "target": "/home/sarvesh/business_Dev/liteSPM/tmp-cli-sandbox-2026-10-08/imports/skills-lock/litespm.toml",
+  "targetState": "create",
+  "entries": [
+    {
+      "action": "add",
+      "id": "skill:git:vercel-labs-agent-skills:frontend-design",
+      "kind": "skill",
+      "constraint": "main",
+      "foreign": {
+        "source": "vercel-labs/agent-skills",
+        "sourceType": "github",
+        "skillPath": "skills/frontend-design/SKILL.md",
+        "ref": "main",
+        "digest": "e8a9f1c2d3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c"
+      },
+      "warnings": [
+        "skills.frontend-design \"main\" is a branch or tag name, not a semver or commit constraint; recorded verbatim — `litespm lock` may refuse it"
+      ]
+    },
+    {
+      "action": "add",
+      "id": "skill:npm:acme-skills:pdf-tools",
+      "kind": "skill",
+      "foreign": {
+        "source": "@acme/skills",
+        "sourceType": "node_modules",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "warnings": [
+        "skills.pdf-tools declares no version or ref; imported unconstrained (resolves to whatever the catalog publishes)"
+      ]
+    },
+    {
+      "action": "add",
+      "id": "skill:git:vercel-labs-skills:release-notes",
+      "kind": "skill",
+      "foreign": {
+        "source": "vercel-labs/skills",
+        "sourceType": "github",
+        "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "warnings": [
+        "skills.release-notes declares no version or ref; imported unconstrained (resolves to whatever the catalog publishes)"
+      ]
+    }
+  ],
+  "preservedExisting": 0,
+  "lossy": [
+    "skills-lock.json carries no effect or permission data in any version; there is nothing to map into policy fields (ARCH/32 §5 row 2)",
+    "sourceUrl/sourceBaseUrl and install timestamps (installedAt/updatedAt) are validated but have no manifest field; they are not written",
+    "content hashes (computedHash/skillFolderHash/wellKnownDigest) have no litespm.yml field; reported in the record above, never written",
+    "litespm.lock is not written by import; run `litespm lock` to resolve the new requires against the local catalog index",
+    "import writes the manifest only — installing is a separate `litespm install` step (ARCH/32 §5)"
+  ],
+  "warnings": [
+    "skill:git:vercel-labs-agent-skills:frontend-design: skills.frontend-design \"main\" is a branch or tag name, not a semver or commit constraint; recorded verbatim — `litespm lock` may refuse it",
+    "skill:npm:acme-skills:pdf-tools: skills.pdf-tools declares no version or ref; imported unconstrained (resolves to whatever the catalog publishes)",
+    "skill:git:vercel-labs-skills:release-notes: skills.release-notes declares no version or ref; imported unconstrained (resolves to whatever the catalog publishes)"
+  ],
+  "applied": false
+}

@@ -1,0 +1,1 @@
+Lock check failed: LPSM-LOCK-DRIFT: litespm.lock differs from the lock recomputed from litespm.toml (manifest or local catalog changed); run "litespm lock" and commit the result

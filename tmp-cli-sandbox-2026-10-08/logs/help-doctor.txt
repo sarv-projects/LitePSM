@@ -1,0 +1,36 @@
+LITESPM DOCTOR
+
+Run the diagnostic checks and report what is actually true.
+
+USAGE
+  litespm doctor [--repair] [--yes]
+
+WHAT IT DOES
+  - Runs the 10 system diagnostics — storage directories, the state
+     database, the operation journal, the CAS store, staging, the credential
+     vault and the rest — and prints each as PASS, WARN or FAIL with a
+     recommendation.
+  - `--repair` fixes what can be fixed, asking first (`--yes` approves
+     non-interactively).
+
+WHAT IT DOES NOT
+  - Does not start your MCP servers or probe their tools, so it reports
+     configuration and storage health, not runtime health; `litespm
+     capabilities refresh` is what probes servers.
+  - Changes nothing without `--repair`, and never hides a failure to make the
+     report look green.
+
+EXAMPLES
+  1. litespm doctor
+  2. litespm doctor --repair
+
+EXIT CODES
+  0  success, including nothing to do
+  1  refused or failed
+  2  usage error (unknown flag, missing argument, unknown command)
+  a failed check also returns its category code: 10 catalog · 20 resolve ·
+   30 approval · 40 install · 50 provider · 60 host · 70 state; the most
+   severe failed category wins (ARCH/20).
+
+SEE ALSO
+  capabilities · list · restore
